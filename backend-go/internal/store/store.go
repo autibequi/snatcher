@@ -145,6 +145,17 @@ type Store interface {
 	DeletePublicLink(id int64) error
 	IncrementRoundRobinIdx(id int64, newIdx int) error
 
+	// Clusters
+	ListClusters() ([]models.Cluster, error)
+	GetCluster(id int64) (models.Cluster, error)
+	UpsertClusters(clusters []models.Cluster) error
+
+	// GroupSpies (spy crawlers)
+	ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error)
+	GetGroupSpy(id int64) (models.GroupSpy, error)
+	CreateGroupSpy(g models.GroupSpy) (int64, error)
+	SoftDeleteGroupSpy(id int64) error
+
 	// Dispatches
 	CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error)
 	GetDispatch(id int64) (models.Dispatch, error)

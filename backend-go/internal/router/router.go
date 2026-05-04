@@ -69,6 +69,10 @@ func Build(
 	matchH      := handlers.NewMatchHandler(st)
 	publLinks   := handlers.NewPublicLinksHandler(st)
 	affPrograms := handlers.NewAffiliateProgramsHandler(st)
+	groupSpies  := handlers.NewGroupSpiesHandler(st)
+	clustersH   := handlers.NewClustersHandler(st)
+	dash        := handlers.NewDashboardHandler(st, db)
+	team        := handlers.NewTeamHandler(db)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *handlers.ComposeHandler
@@ -102,6 +106,9 @@ func Build(
 	// ---------------------------------------------------------------------------
 	// Rotas públicas
 	// ---------------------------------------------------------------------------
+	postbackH := handlers.NewAffiliatePostbackHandler(db)
+	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
+
 	r.Get("/api/health", healthHandler)
 
 	// /api/auth/login: 5 req/min per IP (burst 5) — brute-force protection
@@ -299,6 +306,7 @@ func Build(
 		r.Get("/api/groups/{id}", groups.Get)
 		r.Patch("/api/groups/{id}", groups.Update)
 		r.Delete("/api/groups/{id}", groups.Delete)
+		r.Get("/api/groups/{id}/members", groups.Members)
 
 		// ReDesign: Match
 		r.Post("/api/match", matchH.Match)
@@ -329,6 +337,33 @@ func Build(
 		// ReDesign: Channels extras (audience + metrics)
 		r.Get("/api/channels/{id}/audience", channels.GetAudience)
 		r.Get("/api/channels/{id}/metrics", channels.GetMetrics)
+
+		// Crawlers: Group Spies
+		r.Get("/api/crawlers/group-spy", groupSpies.List)
+		r.Post("/api/crawlers/group-spy", groupSpies.Create)
+		r.Get("/api/crawlers/group-spy/{id}", groupSpies.Get)
+		r.Delete("/api/crawlers/group-spy/{id}", groupSpies.Delete)
+
+		// Clusters analíticos
+		r.Get("/api/clusters", clustersH.List)
+		r.Post("/api/clusters/recompute", clustersH.Recompute)
+
+		// Dashboard
+		r.Get("/api/dashboard/kpis", dash.KPIs)
+		r.Get("/api/dashboard/feed", dash.Feed)
+
+		// Team (operadores)
+		r.Get("/api/team", team.List)
+		r.Post("/api/team", team.Invite)
+		r.Patch("/api/team/{id}/role", team.UpdateRole)
+		r.Delete("/api/team/{id}", team.Remove)
+
+		// Admin: LLM observability
+		llmAdmin := handlers.NewLLMAdminHandler(db)
+		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
+		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
+		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
+		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
 	})
 
 	return r

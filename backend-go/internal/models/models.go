@@ -499,6 +499,34 @@ type PublicLink struct {
 	CreatedAt        time.Time `db:"created_at" json:"created_at"`
 }
 
+// Cluster é um agrupamento analítico de canais.
+type Cluster struct {
+	ID             int64     `db:"id" json:"id"`
+	Label          string    `db:"label" json:"label"`
+	Description    string    `db:"description" json:"description"`
+	MemberChannels []byte    `db:"member_channels" json:"member_channels"`
+	Metrics        []byte    `db:"metrics" json:"metrics"`
+	TopCategories  []byte    `db:"top_categories" json:"top_categories"`
+	TopBrands      []byte    `db:"top_brands" json:"top_brands"`
+	ComputedAt     time.Time `db:"computed_at" json:"computed_at"`
+}
+
+// GroupSpy é um grupo concorrente sendo espionado.
+type GroupSpy struct {
+	ID            int64      `db:"id"              json:"id"`
+	ShortID       string     `db:"short_id"        json:"short_id"`
+	GroupName     string     `db:"group_name"      json:"group_name"`
+	Platform      string     `db:"platform"        json:"platform"` // whatsapp|telegram
+	InviteLink    string     `db:"invite_link"     json:"invite_link"`
+	ReaderWAID    NullInt64  `db:"reader_wa_id"    json:"reader_wa_id,omitempty"`
+	ReaderTGID    NullInt64  `db:"reader_tg_id"    json:"reader_tg_id,omitempty"`
+	RemoteGroupID NullString `db:"remote_group_id" json:"remote_group_id,omitempty"`
+	Active        bool       `db:"active"          json:"active"`
+	JoinedAt      time.Time  `db:"joined_at"       json:"joined_at"`
+	Stats         []byte     `db:"stats"           json:"stats"`
+	DeletedAt     NullTime   `db:"deleted_at"      json:"-"`
+}
+
 type TelegramChat struct {
 	ChatID          string         `db:"chat_id" json:"chat_id"`
 	Type            string         `db:"type" json:"type"`

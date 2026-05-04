@@ -9,6 +9,7 @@ import (
 
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/prompts"
 )
 
 // Suggestion é a resposta gerada pelo LLM para copy de disparo.
@@ -33,38 +34,65 @@ type ProductInput struct {
 
 // Service encapsula a lógica de geração de copy via LLM.
 type Service struct {
-	llm llm.Client
+	cli      llm.Client
+	registry *prompts.Registry
 }
 
 // NewService cria um Service com o llm.Client injetado.
 // Passar um llm.CachedClient garante TTL 1h via cache Postgres.
 func NewService(cli llm.Client) *Service {
-	return &Service{llm: cli}
+	return &Service{
+		cli:      cli,
+		registry: prompts.NewRegistry(),
+	}
+}
+
+// NewServiceWithRegistry cria um Service com llm.Client e Registry externos (útil em testes).
+func NewServiceWithRegistry(cli llm.Client, reg *prompts.Registry) *Service {
+	return &Service{cli: cli, registry: reg}
 }
 
 // Preview gera copy de disparo para um produto + canal opcional.
 //
+// Usa o prompt registry para renderizar o prompt "compose" ativo.
 // Timeout interno de 8s; em caso de falha retorna fallback humano sem error.
 func (s *Service) Preview(ctx context.Context, product ProductInput, channel *models.Channel) (Suggestion, error) {
+	p, err := s.registry.Active("compose")
+	if err != nil {
+		return s.fallback(product), nil
+	}
+
+	type renderData struct {
+		Product ProductInput
+		Channel *models.Channel
+	}
+	rendered, err := p.Render(renderData{Product: product, Channel: channel})
+	if err != nil {
+		return s.fallback(product), nil
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
-	channelCtx := buildChannelContext(channel)
-	prompt := buildPrompt(product, channelCtx)
-
-	raw, err := s.llm.Complete(ctx, prompt, llm.Options{
-		Operation: "compose",
-		MaxTokens: 400,
-	})
-	if err != nil {
-		return fallback(product), nil
+	opts := llm.Options{
+		Operation:   "compose",
+		MaxTokens:   p.MaxTokens,
+		Temperature: p.Temperature,
+	}
+	if p.Model != "" {
+		opts.Model = p.Model
 	}
 
-	return parseResponse(raw, product)
+	resp, err := s.cli.Complete(ctx, rendered, opts)
+	if err != nil {
+		return s.fallback(product), nil
+	}
+
+	return parseResponse(resp, product), nil
 }
 
 // fallback retorna copy formulaico quando o LLM falha.
-func fallback(p ProductInput) Suggestion {
+func (s *Service) fallback(p ProductInput) Suggestion {
 	drop := ""
 	if p.Drop > 0 {
 		drop = fmt.Sprintf(" (-%.0f%%)", p.Drop)
@@ -83,55 +111,18 @@ func fallback(p ProductInput) Suggestion {
 }
 
 // parseResponse tenta parsear a resposta JSON do LLM; faz fallback para texto raw.
-func parseResponse(raw string, p ProductInput) (Suggestion, error) {
+func parseResponse(raw string, _ ProductInput) Suggestion {
 	raw = strings.TrimSpace(raw)
 	// Remover possível bloco markdown ```json ... ```
-	if strings.HasPrefix(raw, "```") {
-		lines := strings.Split(raw, "\n")
-		if len(lines) >= 3 {
-			raw = strings.Join(lines[1:len(lines)-1], "\n")
-		}
-	}
+	raw = strings.TrimPrefix(raw, "```json")
+	raw = strings.TrimPrefix(raw, "```")
+	raw = strings.TrimSuffix(raw, "```")
+	raw = strings.TrimSpace(raw)
+
 	var s Suggestion
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
 		// Resposta textual não-JSON: usar como texto da sugestão
-		return Suggestion{Text: raw}, nil
+		return Suggestion{Text: raw}
 	}
-	return s, nil
-}
-
-func buildChannelContext(ch *models.Channel) string {
-	if ch == nil {
-		return ""
-	}
-	parts := []string{fmt.Sprintf("\nAUDIÊNCIA: %s", ch.Name)}
-	if len(ch.Audience.Categories) > 0 {
-		parts = append(parts, fmt.Sprintf("Categorias de interesse: %s", strings.Join(ch.Audience.Categories, ", ")))
-	}
-	if len(ch.Audience.Brands) > 0 {
-		parts = append(parts, fmt.Sprintf("Marcas preferidas: %s", strings.Join(ch.Audience.Brands, ", ")))
-	}
-	if ch.Audience.Gender != "" {
-		parts = append(parts, fmt.Sprintf("Gênero: %s", ch.Audience.Gender))
-	}
-	return strings.Join(parts, "\n")
-}
-
-func buildPrompt(p ProductInput, channelCtx string) string {
-	return fmt.Sprintf(`Você é copywriter de promoções para grupos WhatsApp/Telegram brasileiros.
-
-PRODUTO:
-- Título: %s
-- Marketplace: %s
-- Preço atual: R$ %.2f
-- Preço original: R$ %.2f
-- Desconto: %.0f%%
-- Categoria: %s
-- Marca: %s%s
-
-Gere copy persuasivo (max 400 chars), hashtags (3-5), emojis (2-4) e sugira a imagem ideal.
-
-Responda APENAS em JSON com campos: text (string), hashtags (array), emoji_set (array), media_suggestion (string).`,
-		p.Title, p.Marketplace, p.Price, p.PriceOrig, p.Drop,
-		p.Category, p.Brand, channelCtx)
+	return s
 }

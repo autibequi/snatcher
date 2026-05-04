@@ -159,3 +159,36 @@ func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// GET /api/groups/:id/members
+func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	group, err := h.store.GetRedesignGroup(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
+		return
+	}
+
+	type Member struct {
+		JID  string `json:"jid"`
+		Name string `json:"name"`
+	}
+
+	var members []Member
+	if group.JID.Valid && group.JID.String != "" {
+		members = []Member{{JID: group.JID.String, Name: group.Name}}
+	} else {
+		members = []Member{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": members,
+		"total": len(members),
+		"note":  "membros reais requerem sidecar WA/TG (v2)",
+	})
+}

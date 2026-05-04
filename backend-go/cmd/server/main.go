@@ -114,7 +114,7 @@ func main() {
 	runner := pipeline.NewRunner(st, scraperMap, adapterMap)
 
 	// Scheduler
-	sched, err := scheduler.New(cfg.ScanInterval, runner, nil)
+	sched, err := scheduler.New(cfg.ScanInterval, runner, nil, st, nil)
 	if err != nil {
 		slog.Error("scheduler init", "err", err)
 		os.Exit(1)

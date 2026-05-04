@@ -2,23 +2,23 @@
 # Uso: docker compose -f docker-compose.yml -f docker-compose.snatcher.yml up --build
 services:
   backend:
-    image: promosnatcher-backend-go-local
+    image: snatcher-backend-go-local
     build:
       context: ./backend-go
       dockerfile: Dockerfile
     volumes:
       - ./backend-go/data:/app/data
     environment:
-      - DATABASE_URL=/app/data/app.db
+      - DATABASE_URL=postgres://snatcher:${SNATCHER_DB_PASS:-devpass}@snatcher-app-postgres:5432/snatcher?sslmode=disable
       - PORT=8000
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
-      - ADMIN_USER=${AUTH_USERNAME:-admin}
-      - ADMIN_PASS=${AUTH_PASSWORD}
       - JWT_SECRET=${AUTH_SECRET}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - GOMAXPROCS=2
-      - EVOLUTION_URL=http://promo-snatcher-evolution:8080
+      - EVOLUTION_URL=http://snatcher-evolution:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
-      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-promo-hunter}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
+      - PUBLIC_BASE_URL=${PUBLIC_URL:-http://localhost:8000}
     deploy:
       resources:
         limits:
@@ -33,7 +33,7 @@ services:
     profiles: ["watchtower-disabled"]
 
   frontend:
-    image: promosnatcher-frontend-local
+    image: snatcher-frontend-local
     build:
       context: ./frontend
       dockerfile: Dockerfile

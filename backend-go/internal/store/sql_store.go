@@ -1353,3 +1353,85 @@ func (s *SQLStore) CancelDispatch(id int64) error {
 		WHERE id = $1 AND status IN ('draft', 'queued')`, id)
 	return err
 }
+
+// ---------------------------------------------------------------------------
+// Clusters
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListClusters() ([]models.Cluster, error) {
+	var out []models.Cluster
+	return out, s.db.Select(&out,
+		`SELECT id, label, COALESCE(description,'') as description,
+		        member_channels, metrics, top_categories, top_brands, computed_at
+		 FROM clusters ORDER BY computed_at DESC`)
+}
+
+func (s *SQLStore) GetCluster(id int64) (models.Cluster, error) {
+	var c models.Cluster
+	return c, s.db.Get(&c,
+		`SELECT id, label, COALESCE(description,'') as description,
+		        member_channels, metrics, top_categories, top_brands, computed_at
+		 FROM clusters WHERE id = $1`, id)
+}
+
+func (s *SQLStore) UpsertClusters(clusters []models.Cluster) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM clusters`); err != nil {
+		return err
+	}
+	for _, c := range clusters {
+		if _, err := tx.Exec(`
+			INSERT INTO clusters (label, description, member_channels, metrics, top_categories, top_brands)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			c.Label, c.Description, c.MemberChannels, c.Metrics, c.TopCategories, c.TopBrands); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ---------------------------------------------------------------------------
+// GroupSpies
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error) {
+	q := `SELECT id, short_id, group_name, platform, invite_link, reader_wa_id, reader_tg_id,
+	             remote_group_id, active, joined_at, stats
+	      FROM group_spies
+	      WHERE deleted_at IS NULL
+	        AND ($1 = '' OR platform = $1)
+	        AND ($2 = false OR active = true)
+	      ORDER BY joined_at DESC`
+	var out []models.GroupSpy
+	return out, s.db.Select(&out, q, platform, activeOnly)
+}
+
+func (s *SQLStore) GetGroupSpy(id int64) (models.GroupSpy, error) {
+	var g models.GroupSpy
+	return g, s.db.Get(&g,
+		`SELECT id, short_id, group_name, platform, invite_link, reader_wa_id, reader_tg_id,
+		        remote_group_id, active, joined_at, stats
+		 FROM group_spies WHERE id = $1 AND deleted_at IS NULL`, id)
+}
+
+func (s *SQLStore) CreateGroupSpy(g models.GroupSpy) (int64, error) {
+	if g.Stats == nil {
+		g.Stats = []byte("{}")
+	}
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO group_spies (group_name, platform, invite_link, reader_wa_id, reader_tg_id, active, stats)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		g.GroupName, g.Platform, g.InviteLink, g.ReaderWAID, g.ReaderTGID, true, g.Stats,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) SoftDeleteGroupSpy(id int64) error {
+	_, err := s.db.Exec(`UPDATE group_spies SET active = false, deleted_at = now() WHERE id = $1`, id)
+	return err
+}

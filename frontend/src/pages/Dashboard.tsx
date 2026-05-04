@@ -1,235 +1,173 @@
-import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-         PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
-import { getGroups, getScanStatus, getAnalyticsSummary, getAnalyticsByGroup } from '../api'
+import { useNavigate } from 'react-router-dom'
+import { KpiCard, Badge, Skeleton, EmptyState } from '../components/ui'
+import { apiClient } from '../lib/apiClient'
+import { useWSEvent } from '../lib/useWS'
 
-const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6']
-
-interface DailyAnalytics {
-  date: string
-  clicks: number
-}
-
-interface SourceAnalytics {
-  source: string
-  clicks: number
-}
-
-interface TopProduct {
-  id: string
+interface Product {
+  id: number
   title: string
-  clicks: number
+  marketplace: string
+  priceCurrent: number
+  priceOriginal: number
+  drop: number
+  imageUrl?: string
+  collectedAt: string
 }
 
-interface SummaryData {
-  total?: number
-  unique?: number
-  daily?: DailyAnalytics[]
-  by_source?: SourceAnalytics[]
-  top_products?: TopProduct[]
+interface KPIs {
+  dispatches_24h?: number
+  clicks_24h?: number
+  revenue_24h?: number
+  conversion_pct?: number
 }
 
-interface GroupAnalytics {
-  name: string
-  clicks: number
-}
-
-interface ScanStatus {
-  running: boolean
-  next_run?: string
-  interval_minutes?: number
-}
-
-interface Group {
-  id: string
-  name: string
-  active: boolean
-}
-
-interface SearchTerm {
-  id: string
-  active: boolean
-}
-
-interface Channel {
-  id: string
-  name: string
-  active: boolean
-}
-
-interface CatalogProductData {
-  total: number
-}
-
-const safeFetch = <T,>(fn: () => Promise<T>): (() => Promise<T | null>) => async () => {
-  try { return await fn() } catch { return null }
-}
-
-interface StatCardProps {
-  label: string
-  value: number | string | null | undefined
-  icon: string
-  link?: string
-  color?: string
-  desc?: string
-}
-
-function StatCard({ label, value, icon, link, color = 'text-white', desc }: StatCardProps): React.ReactElement {
-  const inner = (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors h-full">
-      <p className="text-gray-400 text-xs uppercase tracking-wider">{label}</p>
-      <div className="flex items-center gap-3 mt-2">
-        <span className="text-3xl">{icon}</span>
-        <span className={`text-2xl font-bold ${color}`}>{value ?? '-'}</span>
+function ProductFeedCard({ product, onCompose }: { product: Product; onCompose: (id: number) => void }) {
+  return (
+    <div className="flex gap-3 p-3 bg-surface border border-border rounded-md hover:border-border-strong transition-colors">
+      {product.imageUrl && (
+        <img
+          src={product.imageUrl}
+          alt=""
+          className="w-16 h-16 object-cover rounded-sm flex-shrink-0 bg-surface-2"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-fg truncate">{product.title}</p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <Badge variant="default">{product.marketplace}</Badge>
+          {product.drop > 0 && (
+            <Badge variant="success">-{product.drop.toFixed(0)}%</Badge>
+          )}
+          {product.priceCurrent != null && (
+            <span className="text-sm font-semibold text-fg">
+              R$ {product.priceCurrent.toFixed(2)}
+            </span>
+          )}
+        </div>
       </div>
-      {desc && <p className="text-xs text-gray-600 mt-2">{desc}</p>}
+      <button
+        type="button"
+        onClick={() => onCompose(product.id)}
+        className="flex-shrink-0 text-xs text-accent hover:underline self-center"
+      >
+        Compor
+      </button>
     </div>
   )
-  return link ? <Link to={link} className="block h-full">{inner}</Link> : inner
 }
 
-export default function Dashboard(): React.ReactElement {
-  const [days, setDays] = useState(30)
+export default function Dashboard() {
+  const navigate = useNavigate()
+  const [feed, setFeed] = React.useState<Product[]>([])
 
-  const { data: groups = [] } = useQuery({ queryKey: ['groups'], queryFn: getGroups, retry: false }) as { data: Group[] }
-  const { data: scanStatus } = useQuery({ queryKey: ['scanStatus'], queryFn: getScanStatus, refetchInterval: 10_000, retry: false }) as { data?: ScanStatus }
-  const { data: summary } = useQuery({ queryKey: ['analytics', 'summary', days], queryFn: () => getAnalyticsSummary(days), retry: false }) as { data?: SummaryData }
-  const { data: byGroup = [] } = useQuery({ queryKey: ['analytics', 'byGroup', days], queryFn: () => getAnalyticsByGroup(days), retry: false }) as { data: GroupAnalytics[] }
+  // KPIs — endpoint novo (pode nao existir ainda, fallback gracioso)
+  const { data: kpis } = useQuery<KPIs>({
+    queryKey: ['dashboard', 'kpis'],
+    queryFn: () =>
+      apiClient
+        .get('/api/dashboard/kpis?period=24h')
+        .then((r) => r.data)
+        .catch(() => ({})),
+    refetchInterval: 60_000,
+  })
 
-  const { data: v2Terms } = useQuery({
-    queryKey: ['v2terms'],
-    queryFn: safeFetch<SearchTerm[]>(async () => { const { getSearchTerms } = await import('../api'); return getSearchTerms() as Promise<any> }),
-    retry: false, staleTime: 30_000,
-  }) as { data: SearchTerm[] | null }
-  const { data: v2Catalog } = useQuery({
-    queryKey: ['v2catalog'],
-    queryFn: safeFetch<CatalogProductData>(async () => { const { getCatalogProducts } = await import('../api'); return getCatalogProducts({ limit: 1 }) as Promise<any> }),
-    retry: false, staleTime: 30_000,
-  }) as { data?: CatalogProductData | null }
-  const { data: v2Channels } = useQuery({
-    queryKey: ['v2channels'],
-    queryFn: safeFetch<Channel[]>(async () => { const { getChannels } = await import('../api'); return getChannels() as Promise<any> }),
-    retry: false, staleTime: 30_000,
-  }) as { data: Channel[] | null }
+  // Feed de produtos — endpoint dedicado com fallback para catalog
+  const { data: catalogData, isLoading } = useQuery({
+    queryKey: ['catalog', { limit: 20 }],
+    queryFn: () =>
+      apiClient
+        .get('/api/catalog?limit=20')
+        .then((r) => r.data)
+        .catch(() => ({ items: [] })),
+  })
 
-  const hasV2 = v2Terms !== null && v2Terms !== undefined
-  const termCount = hasV2 ? (v2Terms?.filter?.(t => t.active)?.length ?? 0) : groups.filter(g => g.active).length
-  const catalogCount = v2Catalog?.total ?? 0
-  const channelCount = hasV2 ? (v2Channels?.filter?.(c => c.active)?.length ?? 0) : groups.length
+  // WS: novos produtos em real-time — prepend ao feed local
+  useWSEvent('product.new', (data) => {
+    setFeed((prev) => [data.product as unknown as Product, ...prev].slice(0, 50))
+  })
+
+  // Produtos: feed WS tem prioridade; fallback catalog
+  const products: Product[] = feed.length > 0 ? feed : (catalogData?.items ?? catalogData ?? [])
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">Dashboard</h1>
-          <p className="text-gray-400 mt-1 text-sm">Pipeline: Crawl → Catalogo → Canais</p>
-        </div>
-        <select value={days} onChange={e => setDays(Number(e.target.value))}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-green-500">
-          <option value={7}>7 dias</option>
-          <option value={30}>30 dias</option>
-          <option value={90}>90 dias</option>
-        </select>
+    <div className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-lg font-semibold text-fg mb-6">Dashboard</h1>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <button
+          type="button"
+          className="text-left"
+          onClick={() => navigate('/logs?type=dispatch&period=24h')}
+        >
+          <KpiCard label="Disparos 24h" value={kpis?.dispatches_24h ?? '—'} />
+        </button>
+        <button
+          type="button"
+          className="text-left"
+          onClick={() => navigate('/logs?type=click&period=24h')}
+        >
+          <KpiCard label="Cliques 24h" value={kpis?.clicks_24h ?? '—'} />
+        </button>
+        <KpiCard
+          label="Receita 24h"
+          value={
+            kpis?.revenue_24h
+              ? `R$ ${Number(kpis.revenue_24h).toFixed(2)}`
+              : '—'
+          }
+        />
+        <KpiCard
+          label="Conversao"
+          value={
+            kpis?.conversion_pct
+              ? `${Number(kpis.conversion_pct).toFixed(1)}%`
+              : '—'
+          }
+        />
       </div>
 
-      {/* Pipeline stats + Analytics stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <StatCard label="Crawlers" value={termCount} icon="🔍" link="/admin/crawlers" color="text-blue-400" desc="Termos de busca e resultados brutos" />
-        <StatCard label="Catalogo" value={catalogCount} icon="📦" link="/admin/catalog" color="text-green-400" desc="Produtos agrupados e variantes" />
-        <StatCard label="Canais" value={channelCount} icon="📢" link="/admin/channels" color="text-purple-400" desc="Targets WA/TG e regras de envio" />
-        <StatCard label="Cliques" value={summary?.total?.toLocaleString() || 0} icon="👆" color="text-yellow-400" />
-        <StatCard label="Unicos" value={summary?.unique?.toLocaleString() || 0} icon="👤" color="text-cyan-400" />
-        <StatCard label="Scheduler" value={scanStatus?.running ? 'On' : 'Off'} icon="⏰"
-          color={scanStatus?.running ? 'text-green-400' : 'text-gray-500'} />
-      </div>
-
-      {/* Scheduler bar */}
-      {scanStatus && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-300">
-              {scanStatus.running
-                ? `Proximo pipeline: ${scanStatus.next_run ? new Date(scanStatus.next_run).toLocaleTimeString('pt-BR') : '...'}`
-                : 'Scheduler parado'}
-            </p>
-            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${scanStatus.running ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
-              {scanStatus.running ? `cada ${scanStatus.interval_minutes}min` : 'offline'}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Daily clicks */}
-        {(summary?.daily?.length ?? 0) > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-4">Cliques por dia</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={summary?.daily || []}>
-                <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(d: any) => (d || '').slice(5)} />
-                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
-                <Line type="monotone" dataKey="clicks" stroke="#22c55e" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* By source pie */}
-        {(summary?.by_source?.length ?? 0) > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-4">Por fonte</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={summary?.by_source || []} dataKey="clicks" nameKey="source" cx="50%" cy="50%"
-                     outerRadius={70} label={({ source, clicks }: any) => `${source}: ${clicks}`}>
-                  {(summary?.by_source || []).map((_, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* By group bar + Top products */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {byGroup.length > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-4">Por grupo</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={byGroup.slice(0, 8)} layout="vertical">
-                <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} width={100} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
-                <Bar dataKey="clicks" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {(summary?.top_products?.length ?? 0) > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-4">Top produtos</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Feed principal */}
+        <div className="lg:col-span-2">
+          <h2 className="text-sm font-medium text-fg-2 mb-3">Produtos novos</h2>
+          {isLoading ? (
             <div className="space-y-2">
-              {(summary?.top_products || []).slice(0, 6).map((p: TopProduct, i: number) => (
-                <div key={p.id} className="flex items-center justify-between bg-gray-800 px-3 py-2 rounded-lg">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-gray-500 text-xs font-mono w-4">{i + 1}</span>
-                    <p className="text-xs text-white truncate">{p.title}</p>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium ml-2 flex-shrink-0">{p.clicks}</span>
-                </div>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="card" className="h-20" />
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          ) : products.length === 0 ? (
+            <EmptyState
+              title="Nenhum produto ainda"
+              description="Configure um crawler para comecar a coletar."
+              cta={{ label: 'Ir para Crawlers', onClick: () => navigate('/crawlers') }}
+            />
+          ) : (
+            <div className="space-y-2">
+              {(Array.isArray(products) ? products : []).slice(0, 20).map((p: any, i: number) => (
+                <ProductFeedCard
+                  key={p.id ?? i}
+                  product={p}
+                  onCompose={(id) => navigate(`/match?productId=${id}`)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
+        {/* Coluna lateral insights */}
+        <div>
+          <h2 className="text-sm font-medium text-fg-2 mb-3">Insights</h2>
+          <div className="bg-surface border border-border rounded-md p-4">
+            <p className="text-sm text-fg-3 italic">
+              Insights de IA serao exibidos aqui apos configurar o OpenRouter.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

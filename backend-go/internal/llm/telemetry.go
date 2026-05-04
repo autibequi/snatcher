@@ -7,24 +7,35 @@ import (
 
 var (
 	llmRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "llm_requests_total",
-		Help: "Total LLM requests",
+		Name: "llm_op_requests_total",
+		Help: "Total LLM requests per operation",
 	}, []string{"operation", "model", "status"})
 
 	llmTokensUsed = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "llm_tokens_used",
-		Help: "LLM tokens consumed",
+		Name: "llm_op_tokens",
+		Help: "LLM tokens consumed per operation",
 	}, []string{"operation", "model", "kind"})
 
 	llmCostUSD = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "llm_cost_usd",
-		Help: "Estimated LLM cost in USD",
+		Name: "llm_op_cost_usd",
+		Help: "Estimated LLM cost in USD per operation",
 	}, []string{"operation", "model"})
 
 	llmCacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "llm_cache_hits_total",
 		Help: "LLM cache hit/miss count",
 	}, []string{"operation", "result"})
+
+	llmLatencySeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "llm_op_latency_seconds",
+		Help: "LLM operation latency in seconds",
+		Buckets: []float64{0.1, 0.5, 1.0, 2.0, 5.0, 10.0},
+	}, []string{"operation"})
+
+	llmBudgetRemaining = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_op_budget_remaining_usd",
+		Help: "Remaining budget per LLM operation in USD",
+	}, []string{"operation"})
 )
 
 // custo estimado por token (USD)
@@ -48,4 +59,14 @@ func recordUsage(operation, model string, tokIn, tokOut int) {
 
 func recordCacheHit(operation, result string) {
 	llmCacheHitsTotal.WithLabelValues(operation, result).Inc()
+}
+
+// RecordLatency registra latência de uma operação LLM em segundos
+func RecordLatency(operation string, durationSeconds float64) {
+	llmLatencySeconds.WithLabelValues(operation).Observe(durationSeconds)
+}
+
+// RecordBudgetRemaining atualiza a métrica de budget restante para uma operação
+func RecordBudgetRemaining(operation string, remaining float64) {
+	llmBudgetRemaining.WithLabelValues(operation).Set(remaining)
 }

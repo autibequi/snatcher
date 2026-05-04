@@ -40,7 +40,7 @@ func NewTestServer(t *testing.T, db *sqlx.DB) *TestServer {
 	adapters := pipeline.AdapterRegistry{}
 
 	runner := pipeline.NewRunner(st, scrapers, adapters)
-	sched, err := scheduler.New(60, runner, nil)
+	sched, err := scheduler.New(60, runner, nil, st, nil)
 	if err != nil {
 		t.Fatalf("scheduler.New: %v", err)
 	}
