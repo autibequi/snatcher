@@ -351,6 +351,8 @@ func Build(
 		// Dashboard
 		r.Get("/api/dashboard/kpis", dash.KPIs)
 		r.Get("/api/dashboard/feed", dash.Feed)
+		r.Get("/api/dashboard/inbox", dash.Inbox)
+		r.Get("/api/dashboard/performance", dash.Performance)
 
 		// Team (operadores)
 		r.Get("/api/team", team.List)

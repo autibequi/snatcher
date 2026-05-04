@@ -118,19 +118,33 @@ export default function Logs() {
   const [params] = useSearchParams()
   const statusFilter = params.get('status') ?? ''
   const [status, setStatus] = React.useState(statusFilter)
+  const [dateFrom, setDateFrom] = React.useState('')
+  const [dateTo, setDateTo] = React.useState('')
+  const [accountId, setAccountId] = React.useState('')
   const [items, setItems] = React.useState<Dispatch[]>([])
   const [selected, setSelected] = React.useState<Dispatch | null>(null)
 
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts-filter'],
+    queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+  })
+
   const { isLoading } = useQuery<Dispatch[]>({
-    queryKey: ['dispatches', status],
-    queryFn: () =>
-      apiClient
-        .get(`/api/dispatches${status ? `?status=${status}` : ''}`)
+    queryKey: ['dispatches', status, dateFrom, dateTo, accountId],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (status) params.set('status', status)
+      if (dateFrom) params.set('date_from', dateFrom)
+      if (dateTo) params.set('date_to', dateTo)
+      if (accountId) params.set('account_id', accountId)
+      return apiClient
+        .get(`/api/dispatches${params.toString() ? '?' + params : ''}`)
         .then((r) => {
           const data = Array.isArray(r.data) ? r.data : []
           setItems(data)
           return data
-        }),
+        })
+    },
     refetchInterval: 30_000,
   })
 
@@ -162,19 +176,44 @@ export default function Logs() {
       <h1 className="text-lg font-semibold text-fg mb-6">Logs de disparo</h1>
 
       {/* Filtros */}
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="bg-surface border border-border text-fg text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-accent"
-        >
-          <option value="">Todos os status</option>
-          <option value="draft">Draft</option>
-          <option value="queued">Aguardando</option>
-          <option value="sending">Enviando</option>
-          <option value="completed">Concluido</option>
-          <option value="failed">Falha</option>
-        </select>
+      <div className="flex gap-3 mb-4 flex-wrap items-end">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-fg-2">Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
+          >
+            <option value="">Todos</option>
+            <option value="queued">Agendado</option>
+            <option value="sending">Enviando</option>
+            <option value="completed">Concluído</option>
+            <option value="failed">Falhou</option>
+            <option value="draft">Rascunho</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-fg-2">De</label>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-fg-2">Até</label>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
+        </div>
+        {accounts.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-fg-2">Conta</label>
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
+              className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg">
+              <option value="">Todas</option>
+              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+        <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); setAccountId(''); setStatus('') }}
+          className="text-xs text-fg-3 hover:text-fg self-end pb-1.5">Limpar</button>
       </div>
 
       {isLoading ? (

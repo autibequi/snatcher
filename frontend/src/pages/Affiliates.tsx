@@ -13,11 +13,99 @@ interface AffiliateProgram {
   postback: unknown
 }
 
+const MARKETPLACES = ['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas']
+
+function CreateProgramModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
+  const [form, setForm] = React.useState({
+    name: '',
+    marketplace: 'amazon',
+    active: true,
+    tag: '',
+    affiliate_id: '',
+  })
+  const [saving, setSaving] = React.useState(false)
+
+  const handleSubmit = async (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    if (!form.name.trim()) return
+    setSaving(true)
+    const credentials: Record<string, string> = {}
+    if (form.tag) credentials.tag = form.tag
+    if (form.affiliate_id) credentials.affiliate_id = form.affiliate_id
+    try {
+      await apiClient.post('/api/affiliates/programs', {
+        name: form.name.trim(),
+        marketplace: form.marketplace,
+        active: form.active,
+        credentials: JSON.stringify(credentials),
+        rules: JSON.stringify({ priority: 10 }),
+        postback: JSON.stringify({ enabled: false }),
+      })
+      qc.invalidateQueries({ queryKey: ['affiliates', 'programs'] })
+      onClose()
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Erro ao criar programa')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-fg mb-4">Novo programa de afiliado</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Nome do programa *</label>
+            <input required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              placeholder="Amazon Associates BR" />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Marketplace *</label>
+            <select value={form.marketplace} onChange={e => setForm(f => ({...f, marketplace: e.target.value}))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg">
+              {MARKETPLACES.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          {form.marketplace === 'amazon' && (
+            <div>
+              <label className="text-xs text-fg-2 block mb-1">Amazon Tag (tracking ID)</label>
+              <input value={form.tag} onChange={e => setForm(f => ({...f, tag: e.target.value}))}
+                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                placeholder="snatcher-20" />
+            </div>
+          )}
+          {form.marketplace !== 'amazon' && (
+            <div>
+              <label className="text-xs text-fg-2 block mb-1">ID de afiliado</label>
+              <input value={form.affiliate_id} onChange={e => setForm(f => ({...f, affiliate_id: e.target.value}))}
+                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+            </div>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({...f, active: e.target.checked}))} className="accent-accent" />
+            <span className="text-sm text-fg">Ativo</span>
+          </label>
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={onClose} className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2">Cancelar</button>
+            <button type="submit" disabled={saving} className="text-sm px-4 py-2 rounded-md bg-accent text-white disabled:opacity-50">
+              {saving ? 'Salvando...' : 'Criar programa'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Affiliates() {
   const qc = useQueryClient()
   const [buildLinkProductUrl, setBuildLinkProductUrl] = React.useState('')
   const [buildLinkMarketplace, setBuildLinkMarketplace] = React.useState('')
   const [builtLink, setBuiltLink] = React.useState<string | null>(null)
+  const [showCreateModal, setShowCreateModal] = React.useState(false)
 
   const { data: programs = [], isLoading } = useQuery<AffiliateProgram[]>({
     queryKey: ['affiliates', 'programs'],
@@ -50,13 +138,13 @@ export default function Affiliates() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-medium text-fg-2">Programas</h2>
-          <Button variant="primary" size="sm">+ Novo programa</Button>
+          <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>+ Novo programa</Button>
         </div>
 
         {isLoading ? (
           <div className="space-y-2">{Array.from({length:3}).map((_,i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : !programs.length ? (
-          <EmptyState title="Nenhum programa" description="Configure programas de afiliados para monetizar os links." cta={{ label: 'Criar programa', onClick: () => {} }} />
+          <EmptyState title="Nenhum programa" description="Configure programas de afiliados para monetizar os links." cta={{ label: 'Criar programa', onClick: () => setShowCreateModal(true) }} />
         ) : (
           <div className="bg-surface border border-border rounded-md overflow-hidden">
             <table className="w-full text-sm">
@@ -127,6 +215,8 @@ export default function Affiliates() {
           )}
         </div>
       </div>
+
+      {showCreateModal && <CreateProgramModal onClose={() => setShowCreateModal(false)} />}
     </div>
   )
 }

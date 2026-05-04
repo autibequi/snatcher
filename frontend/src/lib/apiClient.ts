@@ -25,6 +25,21 @@ function processQueue(token: string) {
   refreshQueue = []
 }
 
+// Catch-all de erros: emite evento global pra UI mostrar toast
+function emitApiError(error: AxiosError) {
+  const status = error.response?.status
+  const data = error.response?.data as { error?: string; message?: string } | undefined
+  const url = error.config?.url ?? ''
+  const method = error.config?.method?.toUpperCase() ?? 'GET'
+  const msg = data?.error || data?.message || error.message || 'Erro desconhecido'
+  // Não emitir 401 (interceptor de refresh trata)
+  if (status === 401) return
+  console.error(`[API ${status}] ${method} ${url}: ${msg}`, error.response?.data)
+  window.dispatchEvent(new CustomEvent('api:error', {
+    detail: { status, method, url, message: msg, data: error.response?.data },
+  }))
+}
+
 // Renovar token em 401
 apiClient.interceptors.response.use(
   res => res,
@@ -32,6 +47,7 @@ apiClient.interceptors.response.use(
     const original = error.config as typeof error.config & { _isRetry?: boolean }
 
     if (error.response?.status !== 401 || original?._isRetry) {
+      emitApiError(error)
       return Promise.reject(error)
     }
 

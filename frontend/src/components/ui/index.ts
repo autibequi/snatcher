@@ -1,6 +1,7 @@
 export { Badge } from './Badge'
 export { Button } from './Button'
 export { Input } from './Input'
+export { Modal } from './Modal'
 export { Skeleton, SkeletonTable } from './Skeleton'
 export { EmptyState } from './EmptyState'
 export { KpiCard } from './KpiCard'

@@ -2,6 +2,7 @@ import React from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { ApiErrorToast } from '../components/ApiErrorToast'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
@@ -36,6 +37,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <ApiErrorToast />
     </div>
   )
 }
