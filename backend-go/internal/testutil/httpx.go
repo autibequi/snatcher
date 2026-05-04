@@ -26,8 +26,10 @@ type Client struct {
 func (s *TestServer) NewClient(t *testing.T) *Client {
 	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": s.AdminUser,
-		"exp": time.Now().Add(time.Hour).Unix(),
+		"sub":   float64(s.AdminUserID), // sub deve ser float64 para jwt.MapClaims
+		"email": s.AdminUser,
+		"role":  "admin",
+		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
 	signed, err := tok.SignedString([]byte(s.JWTSecret))
 	if err != nil {

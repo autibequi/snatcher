@@ -581,30 +581,51 @@ func (s *SQLStore) GetRecentlyUpdatedProducts(since time.Time) ([]models.Catalog
 // Channels
 // ---------------------------------------------------------------------------
 
+func (s *SQLStore) listChannelsUnmarshal(out []models.Channel) []models.Channel {
+	for i := range out {
+		_ = out[i].UnmarshalAudience()
+	}
+	return out
+}
+
 func (s *SQLStore) ListChannels() ([]models.Channel, error) {
 	var out []models.Channel
 	err := s.db.Select(&out, `SELECT * FROM channel ORDER BY id`)
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return s.listChannelsUnmarshal(out), nil
 }
 
 func (s *SQLStore) GetChannel(id int64) (models.Channel, error) {
 	var c models.Channel
 	err := s.db.Get(&c, `SELECT * FROM channel WHERE id = ?`, id)
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	_ = c.UnmarshalAudience()
+	return c, nil
 }
 
 func (s *SQLStore) GetChannelBySlug(slug string) (models.Channel, error) {
 	var c models.Channel
 	err := s.db.Get(&c, `SELECT * FROM channel WHERE slug = ?`, slug)
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	_ = c.UnmarshalAudience()
+	return c, nil
 }
 
 func (s *SQLStore) CreateChannel(c models.Channel) (int64, error) {
+	if err := c.MarshalAudience(); err != nil {
+		return 0, err
+	}
 	res, err := s.db.NamedExec(`
 		INSERT INTO channel (name, description, slug, message_template, send_start_hour, send_end_hour,
-			digest_mode, digest_max_items, active)
+			digest_mode, digest_max_items, active, audience, member_count, ctr_30d, cvr_30d, revenue_30d)
 		VALUES (:name, :description, :slug, :message_template, :send_start_hour, :send_end_hour,
-			:digest_mode, :digest_max_items, :active)`, c)
+			:digest_mode, :digest_max_items, :active, :audience, :member_count, :ctr_30d, :cvr_30d, :revenue_30d)`, c)
 	if err != nil {
 		return 0, err
 	}
@@ -612,11 +633,16 @@ func (s *SQLStore) CreateChannel(c models.Channel) (int64, error) {
 }
 
 func (s *SQLStore) UpdateChannel(c models.Channel) error {
+	if err := c.MarshalAudience(); err != nil {
+		return err
+	}
 	_, err := s.db.NamedExec(`
 		UPDATE channel SET name=:name, description=:description, slug=:slug,
 			message_template=:message_template, send_start_hour=:send_start_hour,
 			send_end_hour=:send_end_hour, digest_mode=:digest_mode,
-			digest_max_items=:digest_max_items, active=:active
+			digest_max_items=:digest_max_items, active=:active,
+			audience=:audience, member_count=:member_count,
+			ctr_30d=:ctr_30d, cvr_30d=:cvr_30d, revenue_30d=:revenue_30d
 		WHERE id = :id`, c)
 	return err
 }
@@ -624,6 +650,52 @@ func (s *SQLStore) UpdateChannel(c models.Channel) error {
 func (s *SQLStore) DeleteChannel(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM channel WHERE id = ?`, id)
 	return err
+}
+
+// ListChannelsByCategory retorna canais ativos cuja audience contém a categoria via índice GIN.
+func (s *SQLStore) ListChannelsByCategory(category string) ([]models.Channel, error) {
+	rows := []models.Channel{}
+	err := s.db.Select(&rows, `
+		SELECT id, name, description, slug, message_template, send_start_hour, send_end_hour,
+			digest_mode, digest_max_items, active, created_at,
+			audience, member_count, ctr_30d, cvr_30d, revenue_30d
+		FROM channel
+		WHERE active = true
+		  AND ($1 = '' OR audience->'categories' ? $1)
+		ORDER BY id
+	`, category)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		_ = rows[i].UnmarshalAudience()
+	}
+	return rows, nil
+}
+
+// ListChannelsForProduct retorna canais compatíveis com o produto via filtros de audience.
+// Filtra channels cujo audience.categories contém category, price está no range e drop >= min_drop.
+func (s *SQLStore) ListChannelsForProduct(category, brand string, price, drop float64) ([]models.Channel, error) {
+	rows := []models.Channel{}
+	err := s.db.Select(&rows, `
+		SELECT id, name, description, slug, message_template, send_start_hour, send_end_hour,
+			digest_mode, digest_max_items, active, created_at,
+			audience, member_count, ctr_30d, cvr_30d, revenue_30d
+		FROM channel
+		WHERE active = true
+		  AND ($1 = '' OR audience->'categories' ? $1)
+		  AND ($3 = 0 OR (audience->>'min_price')::numeric <= $3)
+		  AND ($3 = 0 OR (audience->>'max_price')::numeric = 0 OR (audience->>'max_price')::numeric >= $3)
+		  AND ($4 = 0 OR (audience->>'min_drop')::numeric <= $4)
+		ORDER BY id
+	`, category, brand, price, drop)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		_ = rows[i].UnmarshalAudience()
+	}
+	return rows, nil
 }
 
 func (s *SQLStore) ListChannelTargets(channelID int64) ([]models.ChannelTarget, error) {
@@ -1026,4 +1098,258 @@ func (s *SQLStore) GetAccountsByTargetWithRole(targetID int64, role string) ([]m
 		accounts = append(accounts, cta)
 	}
 	return accounts, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// RedesignGroups
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error) {
+	q := `SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
+	             jid, invite_link, status, member_count, overrides, created_at, last_message_at
+	      FROM groups WHERE ($1 = 0 OR channel_id = $1)
+	        AND ($2 = '' OR platform = $2)
+	        AND ($3 = '' OR status = $3)
+	      ORDER BY created_at DESC`
+	var out []models.RedesignGroup
+	return out, s.db.Select(&out, q, channelID, platform, status)
+}
+
+func (s *SQLStore) GetRedesignGroup(id int64) (models.RedesignGroup, error) {
+	var g models.RedesignGroup
+	return g, s.db.Get(&g,
+		`SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
+		        jid, invite_link, status, member_count, overrides, created_at, last_message_at
+		 FROM groups WHERE id = $1`, id)
+}
+
+func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO groups (channel_id, wa_account_id, tg_account_id, name, platform, jid, invite_link, status, overrides)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		g.ChannelID, g.WAAccountID, g.TGAccountID, g.Name, g.Platform,
+		g.JID, g.InviteLink, g.Status, g.Overrides,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
+	_, err := s.db.NamedExec(`
+		UPDATE groups SET name=:name, platform=:platform, jid=:jid,
+			invite_link=:invite_link, status=:status, member_count=:member_count,
+			overrides=:overrides, wa_account_id=:wa_account_id, tg_account_id=:tg_account_id
+		WHERE id=:id`, g)
+	return err
+}
+
+func (s *SQLStore) DeleteRedesignGroup(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM groups WHERE id = $1`, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// AffiliatePrograms (ReDesign)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error) {
+	var out []models.AffiliateProgram
+	if active == nil {
+		return out, s.db.Select(&out,
+			`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+			 FROM affiliate_programs ORDER BY name`)
+	}
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE active = $1 ORDER BY name`, *active)
+}
+
+func (s *SQLStore) GetAffiliateProgram(id int64) (models.AffiliateProgram, error) {
+	var p models.AffiliateProgram
+	return p, s.db.Get(&p,
+		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE id = $1`, id)
+}
+
+func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, error) {
+	if p.Credentials == nil {
+		p.Credentials = []byte("{}")
+	}
+	if p.Rules == nil {
+		p.Rules = []byte("{}")
+	}
+	if p.Postback == nil {
+		p.Postback = []byte("{}")
+	}
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliate_programs (name, marketplace, credentials, active, rules, postback)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		p.Name, p.Marketplace, p.Credentials, p.Active, p.Rules, p.Postback,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) UpdateAffiliateProgram(p models.AffiliateProgram) error {
+	_, err := s.db.Exec(
+		`UPDATE affiliate_programs SET name=$1, active=$2, rules=$3, postback=$4 WHERE id=$5`,
+		p.Name, p.Active, p.Rules, p.Postback, p.ID)
+	return err
+}
+
+func (s *SQLStore) DeleteAffiliateProgram(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM affiliate_programs WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error) {
+	var out []models.AffiliateProgram
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, name, marketplace, credentials, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE marketplace = $1 AND active = true ORDER BY id`, marketplace)
+}
+
+// ---------------------------------------------------------------------------
+// PublicLinks
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) CreatePublicLink(l models.PublicLink) (int64, error) {
+	if l.FallbackChain == nil {
+		l.FallbackChain = []byte("[]")
+	}
+	if l.RedirectStrategy == "" {
+		l.RedirectStrategy = "first_active"
+	}
+	var id int64
+	return id, s.db.QueryRow(`
+		INSERT INTO public_links (slug, channel_id, fallback_chain, redirect_strategy)
+		VALUES ($1, $2, $3, $4) RETURNING id`,
+		l.Slug, l.ChannelID, l.FallbackChain, l.RedirectStrategy,
+	).Scan(&id)
+}
+
+func (s *SQLStore) GetPublicLink(id int64) (models.PublicLink, error) {
+	var l models.PublicLink
+	return l, s.db.Get(&l,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links WHERE id = $1`, id)
+}
+
+func (s *SQLStore) GetPublicLinkBySlug(slug string) (models.PublicLink, error) {
+	var l models.PublicLink
+	return l, s.db.Get(&l,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links WHERE slug = $1 AND active = true`, slug)
+}
+
+func (s *SQLStore) ListPublicLinks() ([]models.PublicLink, error) {
+	var out []models.PublicLink
+	return out, s.db.Select(&out,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links ORDER BY created_at DESC`)
+}
+
+func (s *SQLStore) UpdatePublicLink(l models.PublicLink) error {
+	_, err := s.db.Exec(`
+		UPDATE public_links SET slug=$1, fallback_chain=$2, redirect_strategy=$3, active=$4 WHERE id=$5`,
+		l.Slug, l.FallbackChain, l.RedirectStrategy, l.Active, l.ID)
+	return err
+}
+
+func (s *SQLStore) DeletePublicLink(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM public_links WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) IncrementRoundRobinIdx(id int64, newIdx int) error {
+	_, err := s.db.Exec(`UPDATE public_links SET round_robin_idx = $1 WHERE id = $2`, newIdx, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Dispatches
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error) {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if d.Message == nil {
+		d.Message = []byte("{}")
+	}
+
+	var id int64
+	err = tx.QueryRow(`
+		INSERT INTO dispatches (product_id, composed_by, message, affiliate_link, status)
+		VALUES ($1, $2, $3, $4, 'queued') RETURNING id`,
+		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, t := range targets {
+		_, err = tx.Exec(`
+			INSERT INTO dispatch_targets (dispatch_id, group_id, wa_account_id, tg_account_id, status)
+			VALUES ($1, $2, $3, $4, 'pending')`,
+			id, t.GroupID, t.WAAccountID, t.TGAccountID)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return id, tx.Commit()
+}
+
+func (s *SQLStore) GetDispatch(id int64) (models.Dispatch, error) {
+	var d models.Dispatch
+	return d, s.db.Get(&d,
+		`SELECT id, short_id, product_id, composed_by, message, affiliate_link,
+		        scheduled_for, created_by, status, created_at
+		 FROM dispatches WHERE id = $1`, id)
+}
+
+func (s *SQLStore) ListDispatches(status string, limit, offset int) ([]models.Dispatch, error) {
+	if limit == 0 {
+		limit = 50
+	}
+	var out []models.Dispatch
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, product_id, composed_by, message, affiliate_link,
+		        scheduled_for, created_by, status, created_at
+		 FROM dispatches WHERE ($1 = '' OR status = $1)
+		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, status, limit, offset)
+}
+
+func (s *SQLStore) ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error) {
+	var out []models.DispatchTarget
+	return out, s.db.Select(&out,
+		`SELECT id, dispatch_id, group_id, wa_account_id, tg_account_id, status,
+		        attempted_at, delivered_at, error_reason, click_count, conversions, revenue
+		 FROM dispatch_targets WHERE dispatch_id = $1`, dispatchID)
+}
+
+func (s *SQLStore) UpdateDispatchTargetStatus(id int64, status, errorReason string) error {
+	_, err := s.db.Exec(`
+		UPDATE dispatch_targets
+		SET status = $1,
+		    error_reason = NULLIF($2, ''),
+		    attempted_at = CASE WHEN $1 = 'sending' THEN now() ELSE attempted_at END,
+		    delivered_at = CASE WHEN $1 = 'delivered' THEN now() ELSE delivered_at END
+		WHERE id = $3`, status, errorReason, id)
+	return err
+}
+
+func (s *SQLStore) UpdateDispatchStatus(id int64, status string) error {
+	_, err := s.db.Exec(`UPDATE dispatches SET status = $1 WHERE id = $2`, status, id)
+	return err
+}
+
+func (s *SQLStore) CancelDispatch(id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE dispatches SET status = 'failed'
+		WHERE id = $1 AND status IN ('draft', 'queued')`, id)
+	return err
 }

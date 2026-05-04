@@ -1,44 +1,56 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"snatcher/backendv2/internal/handlers"
 )
 
-type contextKey string
-
-const claimsKey contextKey = "jwt_claims"
-
-func JWTMiddleware(secret string) func(http.Handler) http.Handler {
+// RequireAuth valida o Bearer JWT e injeta user_id no context via handlers.CtxWithUserID.
+// Retorna 401 se o token for ausente, inválido ou expirado.
+func RequireAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			auth := r.Header.Get("Authorization")
 			if !strings.HasPrefix(auth, "Bearer ") {
+				w.Header().Set("WWW-Authenticate", "Bearer")
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
 			tokenStr := strings.TrimPrefix(auth, "Bearer ")
-
-			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+			tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, jwt.ErrSignatureInvalid
 				}
 				return []byte(secret), nil
 			})
-			if err != nil || !token.Valid {
+			if err != nil || !tok.Valid {
+				w.Header().Set("WWW-Authenticate", "Bearer")
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-
-			ctx := context.WithValue(r.Context(), claimsKey, token.Claims)
+			claims, ok := tok.Claims.(jwt.MapClaims)
+			if !ok {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			sub, _ := claims["sub"].(float64)
+			ctx := handlers.CtxWithUserID(r.Context(), int64(sub))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
+// JWTMiddleware é o middleware legado — mantido para compatibilidade durante migração.
+// Novos handlers devem usar RequireAuth que injeta user_id via handlers.CtxWithUserID.
+func JWTMiddleware(secret string) func(http.Handler) http.Handler {
+	return RequireAuth(secret)
+}
+
+// CORS adiciona headers de controle de acesso.
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

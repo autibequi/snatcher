@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -16,6 +17,12 @@ type Config struct {
 	PublicBaseURL string // ex: https://snatcher.com (para links curtos)
 	GOMAXPROCS    int
 	ENV           string // "dev" (default) | "prod" | "staging" etc.
+
+	// LLM
+	OpenRouterAPIKey  string
+	LLMDefaultModel   string
+	LLMModelOverrides string
+	LLMBudgetUSDDaily float64
 }
 
 // Load reads configuration from environment variables and performs fail-fast
@@ -35,6 +42,12 @@ func Load() (Config, error) {
 		PublicBaseURL: env("PUBLIC_BASE_URL", "http://localhost:8000"),
 		GOMAXPROCS:    envInt("GOMAXPROCS", 2),
 		ENV:           env("ENV", "dev"),
+
+		// LLM
+		OpenRouterAPIKey:  env("OPENROUTER_API_KEY", ""),
+		LLMDefaultModel:   env("LLM_DEFAULT_MODEL", "openai/gpt-4o-mini"),
+		LLMModelOverrides: env("LLM_MODEL_OVERRIDES", "{}"),
+		LLMBudgetUSDDaily: envFloat("LLM_BUDGET_USD_DAILY", 5.0),
 	}
 
 	if c.ENV != "dev" {
@@ -60,6 +73,16 @@ func envInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func envFloat(key string, fallback float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		v = strings.TrimSpace(v)
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return fallback

@@ -80,6 +80,8 @@ type Store interface {
 	CreateChannel(c models.Channel) (int64, error)
 	UpdateChannel(c models.Channel) error
 	DeleteChannel(id int64) error
+	ListChannelsByCategory(category string) ([]models.Channel, error)
+	ListChannelsForProduct(category, brand string, price, drop float64) ([]models.Channel, error)
 	ListChannelTargets(channelID int64) ([]models.ChannelTarget, error)
 	GetChannelTarget(id int64) (models.ChannelTarget, error)
 	ListAllChannelTargets() ([]models.ChannelTarget, error)
@@ -118,4 +120,37 @@ type Store interface {
 	// Coverage (multi-WA)
 	ListAccountsForTarget(targetID int64) ([]models.ChannelTargetAccount, error)
 	GetAccountsByTargetWithRole(targetID int64, role string) ([]models.ChannelTargetAccount, error)
+
+	// RedesignGroups
+	ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error)
+	GetRedesignGroup(id int64) (models.RedesignGroup, error)
+	CreateRedesignGroup(g models.RedesignGroup) (int64, error)
+	UpdateRedesignGroup(g models.RedesignGroup) error
+	DeleteRedesignGroup(id int64) error
+
+	// AffiliatePrograms (ReDesign)
+	ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error)
+	GetAffiliateProgram(id int64) (models.AffiliateProgram, error)
+	CreateAffiliateProgram(p models.AffiliateProgram) (int64, error)
+	UpdateAffiliateProgram(p models.AffiliateProgram) error
+	DeleteAffiliateProgram(id int64) error
+	ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error)
+
+	// PublicLinks
+	CreatePublicLink(l models.PublicLink) (int64, error)
+	GetPublicLink(id int64) (models.PublicLink, error)
+	GetPublicLinkBySlug(slug string) (models.PublicLink, error)
+	ListPublicLinks() ([]models.PublicLink, error)
+	UpdatePublicLink(l models.PublicLink) error
+	DeletePublicLink(id int64) error
+	IncrementRoundRobinIdx(id int64, newIdx int) error
+
+	// Dispatches
+	CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error)
+	GetDispatch(id int64) (models.Dispatch, error)
+	ListDispatches(status string, limit, offset int) ([]models.Dispatch, error)
+	ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error)
+	UpdateDispatchTargetStatus(id int64, status, errorReason string) error
+	UpdateDispatchStatus(id int64, status string) error
+	CancelDispatch(id int64) error
 }

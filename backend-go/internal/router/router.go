@@ -3,25 +3,32 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"snatcher/backendv2/internal/handlers"
+	"strings"
+	"time"
+
 	_ "snatcher/backendv2/internal/docs" // swagger docs
+	"snatcher/backendv2/internal/compose"
+	"snatcher/backendv2/internal/handlers"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
-	"strings"
-	"time"
+	wsmod "snatcher/backendv2/internal/ws"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func Build(
+	db *sqlx.DB,
 	st store.Store,
 	rd *redirect.Redirector,
 	runner *pipeline.Runner,
@@ -29,7 +36,6 @@ func Build(
 	scrapers map[string]pipeline.Scraper,
 	adapters pipeline.AdapterRegistry,
 	jwtSecret string,
-	adminUser, adminPass string,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
@@ -42,7 +48,7 @@ func Build(
 	r.Use(middleware.BodyLimit(1 << 20))                // global 1 MB body limit
 	r.Use(middleware.MetricsMiddleware)
 
-	auth := handlers.NewAuth(adminUser, adminPass, jwtSecret)
+	auth := handlers.NewAuthHandler(db, jwtSecret)
 	scan := handlers.NewScan(st, runner, sched)
 	terms := handlers.NewSearchTerms(st, scrapers)
 	sources := handlers.NewSources(st)
@@ -56,6 +62,26 @@ func Build(
 	broadcast := handlers.NewBroadcast(st)
 	analytics := handlers.NewAnalytics(st)
 	coverage := handlers.NewCoverageHandler(st)
+	dispatches := handlers.NewDispatchHandler(st)
+
+	// ReDesign handlers
+	groups      := handlers.NewGroupsHandler(st)
+	matchH      := handlers.NewMatchHandler(st)
+	publLinks   := handlers.NewPublicLinksHandler(st)
+	affPrograms := handlers.NewAffiliateProgramsHandler(st)
+
+	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
+	var composeH *handlers.ComposeHandler
+	{
+		var llmCli llm.Client = &nopLLMClient{}
+		svc := compose.NewService(llmCli)
+		composeH = handlers.NewComposeHandler(st, svc)
+	}
+
+	// WebSocket hub + handler
+	hub := wsmod.NewHub()
+	wsHandler := wsmod.NewHandler(hub, jwtSecret)
+	go hub.StartListener(context.Background(), "") // DSN vazio = no-op silencioso
 
 	// ---------------------------------------------------------------------------
 	// Rota de métricas (pública — antes do grupo JWT)
@@ -80,7 +106,8 @@ func Build(
 
 	// /api/auth/login: 5 req/min per IP (burst 5) — brute-force protection
 	r.With(middleware.RateLimit(5.0/60.0, 5)).Post("/api/auth/login", auth.Login)
-	r.Get("/api/auth/me", auth.Me)
+	r.Post("/api/auth/refresh", auth.Refresh)
+	r.Post("/api/auth/logout", auth.Logout)
 
 	// Redirect routes: 60 req/min per IP (burst 60) — light DoS protection
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
@@ -118,6 +145,10 @@ func Build(
 	r.Get("/canal/{slug}/preview", canal.Preview)
 	r.Get("/join/{slug}", canal.JoinRedirect)
 
+	// ReDesign: public link resolve + WebSocket (auth via query param token)
+	r.Get("/g/{slug}", publLinks.Resolve)
+	r.Get("/ws", wsHandler.ServeHTTP)
+
 	r.Get("/api/public/channels", func(w http.ResponseWriter, r *http.Request) {
 		chs, _ := st.ListChannels()
 		type channelSummary struct {
@@ -152,7 +183,10 @@ func Build(
 	// Rotas protegidas
 	// ---------------------------------------------------------------------------
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.JWTMiddleware(jwtSecret))
+		r.Use(middleware.RequireAuth(jwtSecret))
+
+		// Auth
+		r.Get("/api/auth/me", auth.Me)
 
 		// Scan
 		r.Get("/api/scan/status", scan.Status)
@@ -256,9 +290,45 @@ func Build(
 		r.Get("/api/telegram/chats", accounts.ListTGChats)
 		r.Get("/api/config/tg/chats", accounts.ListTGChats)
 
-		// Legacy v1 groups
-		r.Get("/api/groups", accounts.ListGroups)
-		r.Get("/api/groups/", accounts.ListGroups)
+		// Legacy v1 groups (alias mantido para compatibilidade)
+		r.Get("/api/groups/legacy", accounts.ListGroups)
+
+		// ReDesign: Groups
+		r.Get("/api/groups", groups.List)
+		r.Post("/api/groups", groups.Create)
+		r.Get("/api/groups/{id}", groups.Get)
+		r.Patch("/api/groups/{id}", groups.Update)
+		r.Delete("/api/groups/{id}", groups.Delete)
+
+		// ReDesign: Match
+		r.Post("/api/match", matchH.Match)
+
+		// ReDesign: Compose
+		r.Post("/api/compose/preview", composeH.Preview)
+
+		// ReDesign: Dispatches
+		r.Get("/api/dispatches", dispatches.List)
+		r.Post("/api/dispatches", dispatches.Create)
+		r.Get("/api/dispatches/{id}", dispatches.Get)
+		r.Post("/api/dispatches/{id}/cancel", dispatches.Cancel)
+
+		// ReDesign: Public Links (autenticado — gestão)
+		r.Get("/api/public-links", publLinks.List)
+		r.Post("/api/public-links", publLinks.Create)
+		r.Get("/api/public-links/{id}", publLinks.Get)
+		r.Patch("/api/public-links/{id}", publLinks.Update)
+		r.Delete("/api/public-links/{id}", publLinks.Delete)
+
+		// ReDesign: Affiliate Programs
+		r.Get("/api/affiliates/programs", affPrograms.List)
+		r.Post("/api/affiliates/programs", affPrograms.Create)
+		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
+		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
+		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)
+
+		// ReDesign: Channels extras (audience + metrics)
+		r.Get("/api/channels/{id}/audience", channels.GetAudience)
+		r.Get("/api/channels/{id}/metrics", channels.GetMetrics)
 	})
 
 	return r
@@ -311,4 +381,12 @@ func LoggerFromContext(ctx context.Context) *slog.Logger {
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// nopLLMClient é um cliente LLM nulo usado quando OPENROUTER_API_KEY não está configurado.
+// Compose handlers retornam fallback em vez de erro fatal.
+type nopLLMClient struct{}
+
+func (n *nopLLMClient) Complete(_ context.Context, _ string, _ llm.Options) (string, error) {
+	return "", fmt.Errorf("LLM not configured: set OPENROUTER_API_KEY to enable compose")
 }

@@ -103,6 +103,8 @@ type waAccountRequest struct {
 	APIKey      string `json:"api_key"`
 	Instance    string `json:"instance"`
 	GroupPrefix string `json:"group_prefix"`
+	Role        string `json:"role"`
+	DailyLimit  int    `json:"daily_limit"`
 	Active      bool   `json:"active"`
 }
 
@@ -495,6 +497,8 @@ type tgAccountRequest struct {
 	BotToken    string `json:"bot_token"`
 	BotUsername string `json:"bot_username"`
 	GroupPrefix string `json:"group_prefix"`
+	Role        string `json:"role"`
+	DailyLimit  int    `json:"daily_limit"`
 	Active      bool   `json:"active"`
 }
 
@@ -741,10 +745,13 @@ func waAccountFromReq(req waAccountRequest) models.WAAccount {
 		active = true // default ativo — frontend não manda esse campo
 	}
 	a := models.WAAccount{
-		Name:     req.Name,
-		Provider: req.Provider,
-		Status:   "disconnected",
-		Active:   active,
+		Name:       req.Name,
+		Provider:   req.Provider,
+		Status:     "disconnected",
+		Active:     active,
+		Role:       req.Role,
+		DailyLimit: req.DailyLimit,
+		SentToday:  0, // reset on creation
 	}
 	if a.Provider == "" {
 		a.Provider = "evolution"
@@ -766,8 +773,11 @@ func waAccountFromReq(req waAccountRequest) models.WAAccount {
 
 func tgAccountFromReq(req tgAccountRequest) models.TGAccount {
 	a := models.TGAccount{
-		Name:   req.Name,
-		Active: req.Active,
+		Name:       req.Name,
+		Active:     req.Active,
+		Role:       req.Role,
+		DailyLimit: req.DailyLimit,
+		SentToday:  0, // reset on creation
 	}
 	if req.BotToken != "" {
 		a.BotToken = models.NullString{NullString: sql.NullString{String: req.BotToken, Valid: true}}

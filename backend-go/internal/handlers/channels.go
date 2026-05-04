@@ -114,15 +114,16 @@ func (h *ChannelsHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 type channelRequest struct {
-	Name            string  `json:"name"             validate:"required"`
-	Description     string  `json:"description"`
-	Slug            *string `json:"slug"`
-	MessageTemplate *string `json:"message_template"`
-	SendStartHour   int     `json:"send_start_hour"`
-	SendEndHour     int     `json:"send_end_hour"`
-	DigestMode      bool    `json:"digest_mode"`
-	DigestMaxItems  int     `json:"digest_max_items"`
-	Active          bool    `json:"active"`
+	Name            string           `json:"name"             validate:"required"`
+	Description     string           `json:"description"`
+	Slug            *string          `json:"slug"`
+	MessageTemplate *string          `json:"message_template"`
+	SendStartHour   int              `json:"send_start_hour"`
+	SendEndHour     int              `json:"send_end_hour"`
+	DigestMode      bool             `json:"digest_mode"`
+	DigestMaxItems  int              `json:"digest_max_items"`
+	Active          bool             `json:"active"`
+	Audience        *models.Audience `json:"audience"`
 }
 
 func (req channelRequest) toModel() models.Channel {
@@ -140,6 +141,9 @@ func (req channelRequest) toModel() models.Channel {
 	}
 	if req.MessageTemplate != nil {
 		c.MessageTemplate = models.NullString{NullString: sql.NullString{String: *req.MessageTemplate, Valid: true}}
+	}
+	if req.Audience != nil {
+		c.Audience = *req.Audience
 	}
 	if c.SendStartHour == 0 && c.SendEndHour == 0 {
 		c.SendStartHour = 8
@@ -237,6 +241,26 @@ func (h *ChannelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["message_template"].(string); ok {
 		current.MessageTemplate = models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
+	}
+	if v, ok := patch["audience"]; ok {
+		// Re-marshal the audience sub-object from the raw patch
+		b, _ := json.Marshal(v)
+		var aud models.Audience
+		if err := json.Unmarshal(b, &aud); err == nil {
+			current.Audience = aud
+		}
+	}
+	if v, ok := patch["member_count"].(float64); ok {
+		current.MemberCount = int64(v)
+	}
+	if v, ok := patch["ctr_30d"].(float64); ok {
+		current.CTR30d = v
+	}
+	if v, ok := patch["cvr_30d"].(float64); ok {
+		current.CVR30d = v
+	}
+	if v, ok := patch["revenue_30d"].(float64); ok {
+		current.Revenue30d = v
 	}
 
 	if err := h.store.UpdateChannel(current); err != nil {
@@ -410,6 +434,68 @@ func (h *ChannelsHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetAudience retorna o perfil de audiência de um canal.
+//
+//	@Summary      Perfil de audiência
+//	@Description  Retorna o perfil de audiência (audience JSONB) de um canal.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id   path      int  true  "Channel ID"
+//	@Success      200  {object}  models.Audience
+//	@Failure      404  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/audience [get]
+func (h *ChannelsHandler) GetAudience(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.store.GetChannel(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "canal nao encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, c.Audience)
+}
+
+// GetMetrics retorna métricas de desempenho de um canal nos últimos 30 dias.
+//
+//	@Summary      Métricas do canal
+//	@Description  Retorna CTR, CVR, receita e contagem de membros do canal.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id      path      int     true   "Channel ID"
+//	@Param        period  query     string  false  "Período (ex: 30d)"
+//	@Success      200     {object}  object{ctr=number,cvr=number,revenue=number,member_count=integer}
+//	@Failure      404     {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/metrics [get]
+func (h *ChannelsHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.store.GetChannel(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "canal nao encontrado")
+		return
+	}
+	metrics := struct {
+		CTR     float64 `json:"ctr"`
+		CVR     float64 `json:"cvr"`
+		Revenue float64 `json:"revenue"`
+		Members int64   `json:"member_count"`
+	}{
+		CTR:     c.CTR30d,
+		CVR:     c.CVR30d,
+		Revenue: c.Revenue30d,
+		Members: c.MemberCount,
+	}
+	writeJSON(w, http.StatusOK, metrics)
 }
 
 // SendDigest envia o digest consolidado do canal manualmente.

@@ -19,7 +19,7 @@ func TestAuthLogin(t *testing.T) {
 
 	t.Run("credenciais corretas retorna 200 e JWT valido", func(t *testing.T) {
 		body := map[string]string{
-			"username": srv.AdminUser,
+			"email":    srv.AdminUser,
 			"password": srv.AdminPass,
 		}
 		resp, data := anon.Post("/api/auth/login", body)
@@ -28,8 +28,14 @@ func TestAuthLogin(t *testing.T) {
 		}
 
 		var payload struct {
-			AccessToken string `json:"access_token"`
-			TokenType   string `json:"token_type"`
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			TokenType    string `json:"token_type"`
+			User         struct {
+				ID    int64  `json:"id"`
+				Email string `json:"email"`
+				Role  string `json:"role"`
+			} `json:"user"`
 		}
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("resposta não é JSON válido: %v — body: %s", err, data)
@@ -37,8 +43,14 @@ func TestAuthLogin(t *testing.T) {
 		if payload.AccessToken == "" {
 			t.Fatal("access_token vazio na resposta")
 		}
+		if payload.RefreshToken == "" {
+			t.Fatal("refresh_token vazio na resposta")
+		}
 		if payload.TokenType != "bearer" {
 			t.Errorf("token_type esperado 'bearer', got %q", payload.TokenType)
+		}
+		if payload.User.Email != srv.AdminUser {
+			t.Errorf("user.email esperado %q, got %q", srv.AdminUser, payload.User.Email)
 		}
 
 		// Verificar assinatura do JWT.
@@ -58,14 +70,18 @@ func TestAuthLogin(t *testing.T) {
 		if !ok {
 			t.Fatal("claims não são MapClaims")
 		}
-		if sub, _ := claims["sub"].(string); sub != srv.AdminUser {
-			t.Errorf("claim 'sub' esperado %q, got %q", srv.AdminUser, sub)
+		if sub, _ := claims["sub"].(float64); int64(sub) != payload.User.ID {
+			t.Errorf("claim 'sub' esperado %d, got %v", payload.User.ID, sub)
+		}
+		email, _ := claims["email"].(string)
+		if email != srv.AdminUser {
+			t.Errorf("claim 'email' esperado %q, got %q", srv.AdminUser, email)
 		}
 	})
 
 	t.Run("senha errada retorna 401", func(t *testing.T) {
 		body := map[string]string{
-			"username": srv.AdminUser,
+			"email":    srv.AdminUser,
 			"password": "senha-errada",
 		}
 		resp, data := anon.Post("/api/auth/login", body)
@@ -74,19 +90,21 @@ func TestAuthLogin(t *testing.T) {
 		}
 	})
 
-	t.Run("payload invalido retorna 400 com JSON estruturado", func(t *testing.T) {
-		// Envia JSON sem os campos obrigatórios (foo não mapeia para username/password).
-		body := map[string]string{"foo": "bar"}
+	t.Run("email desconhecido retorna 401", func(t *testing.T) {
+		body := map[string]string{
+			"email":    "noexist@test.local",
+			"password": "qualquercoisa",
+		}
 		resp, data := anon.Post("/api/auth/login", body)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("esperado 401, got %d — body: %s", resp.StatusCode, data)
+		}
+	})
 
-		// Com campos ausentes, username e password ficam "" → invalid credentials (401).
-		// O caso 400 ocorre apenas quando o body não é JSON válido de forma alguma.
-		// Testamos ambos: campo ausente (credentials inválidas → 401) e body malformado (→ 400).
-		//
-		// Nota: o handler retorna 401 para campos ausentes pois username="" != adminUser.
-		// Para testar 400 genuíno, enviamos string raw não-JSON.
-		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusBadRequest {
-			t.Fatalf("esperado 400 ou 401, got %d — body: %s", resp.StatusCode, data)
+	t.Run("payload sem email/password retorna 400", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/login", map[string]string{"foo": "bar"})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("esperado 400, got %d — body: %s", resp.StatusCode, data)
 		}
 
 		// Body malformado deve retornar 400 com campo "error".
@@ -106,22 +124,117 @@ func TestAuthLogin(t *testing.T) {
 	})
 }
 
+// TestAuthRefresh cobre os cenários de POST /api/auth/refresh.
+func TestAuthRefresh(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	srv := testutil.NewTestServer(t, db)
+	anon := srv.NewAnonClient(t)
+
+	// Obter par inicial via login
+	loginBody := map[string]string{"email": srv.AdminUser, "password": srv.AdminPass}
+	resp, data := anon.Post("/api/auth/login", loginBody)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login: esperado 200, got %d — body: %s", resp.StatusCode, data)
+	}
+	var loginPayload struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(data, &loginPayload); err != nil {
+		t.Fatalf("unmarshal login: %v", err)
+	}
+
+	t.Run("refresh valido retorna novo par", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/refresh", map[string]string{
+			"refresh_token": loginPayload.RefreshToken,
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("esperado 200, got %d — body: %s", resp.StatusCode, data)
+		}
+		var payload struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatalf("unmarshal refresh: %v", err)
+		}
+		if payload.AccessToken == "" {
+			t.Error("access_token vazio")
+		}
+		if payload.RefreshToken == "" {
+			t.Error("refresh_token vazio")
+		}
+		// Token rotacionado — o antigo deve ser inválido agora
+		resp2, data2 := anon.Post("/api/auth/refresh", map[string]string{
+			"refresh_token": loginPayload.RefreshToken, // token antigo
+		})
+		if resp2.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("token antigo deveria ser revogado, got %d — body: %s", resp2.StatusCode, data2)
+		}
+	})
+
+	t.Run("refresh token invalido retorna 401", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/refresh", map[string]string{
+			"refresh_token": "token-inexistente-abc123",
+		})
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("esperado 401, got %d — body: %s", resp.StatusCode, data)
+		}
+	})
+
+	t.Run("body sem refresh_token retorna 400", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/refresh", map[string]string{"foo": "bar"})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("esperado 400, got %d — body: %s", resp.StatusCode, data)
+		}
+	})
+}
+
+// TestAuthLogout cobre os cenários de POST /api/auth/logout.
+func TestAuthLogout(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	srv := testutil.NewTestServer(t, db)
+	anon := srv.NewAnonClient(t)
+
+	// Login para obter refresh token
+	loginBody := map[string]string{"email": srv.AdminUser, "password": srv.AdminPass}
+	_, data := anon.Post("/api/auth/login", loginBody)
+	var loginPayload struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	_ = json.Unmarshal(data, &loginPayload)
+
+	t.Run("logout revoga refresh_token", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/logout", map[string]string{
+			"refresh_token": loginPayload.RefreshToken,
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("esperado 200, got %d — body: %s", resp.StatusCode, data)
+		}
+
+		// Tentar usar o refresh token revogado
+		resp2, data2 := anon.Post("/api/auth/refresh", map[string]string{
+			"refresh_token": loginPayload.RefreshToken,
+		})
+		if resp2.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("token revogado deveria retornar 401, got %d — body: %s", resp2.StatusCode, data2)
+		}
+	})
+
+	t.Run("logout sem body retorna 200", func(t *testing.T) {
+		resp, data := anon.Post("/api/auth/logout", map[string]string{})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("esperado 200, got %d — body: %s", resp.StatusCode, data)
+		}
+	})
+}
+
 // TestAuthMe cobre os cenários de GET /api/auth/me.
-//
-// NOTA DE IMPLEMENTAÇÃO: atualmente /api/auth/me é uma rota pública (fora do
-// grupo JWT no router.go). Os casos de 401 estão documentados abaixo como
-// t.Skip até que a rota seja movida para dentro do grupo protegido.
-// Tarefa de seguimento: mover `r.Get("/api/auth/me", auth.Me)` para dentro do
-// `r.Group(func(r chi.Router) { r.Use(middleware.JWTMiddleware(jwtSecret)) ... })`.
 func TestAuthMe(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	srv := testutil.NewTestServer(t, db)
 
 	t.Run("sem Authorization retorna 401", func(t *testing.T) {
-		// TODO: mover /api/auth/me para grupo protegido (router.go).
-		// Enquanto a rota for pública, este caso retorna 200 — skip honesto.
-		t.Skip("rota /api/auth/me ainda não está sob JWTMiddleware; mover para grupo protegido")
-
 		anon := srv.NewAnonClient(t)
 		resp, data := anon.Get("/api/auth/me")
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -136,24 +249,27 @@ func TestAuthMe(t *testing.T) {
 			t.Fatalf("esperado 200, got %d — body: %s", resp.StatusCode, data)
 		}
 		var payload struct {
-			Username string `json:"username"`
+			ID    int64  `json:"id"`
+			Email string `json:"email"`
+			Name  string `json:"name"`
+			Role  string `json:"role"`
 		}
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("resposta não é JSON válido: %v — body: %s", err, data)
 		}
-		if payload.Username == "" {
-			t.Error("campo 'username' vazio na resposta")
+		if payload.Email == "" {
+			t.Error("campo 'email' vazio na resposta")
+		}
+		if payload.ID == 0 {
+			t.Error("campo 'id' zero na resposta")
 		}
 	})
 
 	t.Run("JWT expirado retorna 401", func(t *testing.T) {
-		// TODO: mover /api/auth/me para grupo protegido (router.go).
-		// Enquanto a rota for pública, token expirado é ignorado — skip honesto.
-		t.Skip("rota /api/auth/me ainda não está sob JWTMiddleware; mover para grupo protegido")
-
 		expiredTok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"sub": srv.AdminUser,
-			"exp": time.Now().Add(-1 * time.Hour).Unix(), // expirado há 1h
+			"sub":   float64(srv.AdminUserID),
+			"email": srv.AdminUser,
+			"exp":   time.Now().Add(-1 * time.Hour).Unix(), // expirado há 1h
 		})
 		signed, err := expiredTok.SignedString([]byte(srv.JWTSecret))
 		if err != nil {

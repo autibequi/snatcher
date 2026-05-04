@@ -107,6 +107,9 @@ type WAAccount struct {
 	GroupPrefix NullString `db:"group_prefix" json:"group_prefix,omitempty"`
 	Status      string         `db:"status" json:"status"`
 	Active      bool           `db:"active" json:"active"`
+	Role        string         `db:"role" json:"role"`
+	DailyLimit  int            `db:"daily_limit" json:"daily_limit"`
+	SentToday   int            `db:"sent_today" json:"sent_today"`
 	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
 }
 
@@ -118,6 +121,9 @@ type TGAccount struct {
 	GroupPrefix  NullString `db:"group_prefix" json:"group_prefix,omitempty"`
 	LastUpdateID NullInt64  `db:"last_update_id" json:"last_update_id,omitempty"`
 	Active       bool           `db:"active" json:"active"`
+	Role         string         `db:"role" json:"role"`
+	DailyLimit   int            `db:"daily_limit" json:"daily_limit"`
+	SentToday    int            `db:"sent_today" json:"sent_today"`
 	CreatedAt    time.Time      `db:"created_at" json:"created_at"`
 }
 
@@ -264,18 +270,55 @@ type GroupingKeyword struct {
 	Active  bool   `db:"active" json:"active"`
 }
 
+// Audience define o perfil de audiência de um canal.
+type Audience struct {
+	Categories []string `json:"categories"`
+	Brands     []string `json:"brands"`
+	AgeRange   [2]int   `json:"age_range"`
+	Gender     string   `json:"gender"` // "m"|"f"|"mix"
+	MinDrop    float64  `json:"min_drop"`
+	MinPrice   float64  `json:"min_price"`
+	MaxPrice   float64  `json:"max_price"`
+	Locales    []string `json:"locales"`
+}
+
 type Channel struct {
-	ID              int64          `db:"id" json:"id"`
-	Name            string         `db:"name" json:"name"`
-	Description     string         `db:"description" json:"description"`
+	ID              int64      `db:"id" json:"id"`
+	Name            string     `db:"name" json:"name"`
+	Description     string     `db:"description" json:"description"`
 	Slug            NullString `db:"slug" json:"slug,omitempty"`
 	MessageTemplate NullString `db:"message_template" json:"message_template,omitempty"`
-	SendStartHour   int            `db:"send_start_hour" json:"send_start_hour"`
-	SendEndHour     int            `db:"send_end_hour" json:"send_end_hour"`
-	DigestMode      bool           `db:"digest_mode" json:"digest_mode"`
-	DigestMaxItems  int            `db:"digest_max_items" json:"digest_max_items"`
-	Active          bool           `db:"active" json:"active"`
-	CreatedAt       time.Time      `db:"created_at" json:"created_at"`
+	SendStartHour   int        `db:"send_start_hour" json:"send_start_hour"`
+	SendEndHour     int        `db:"send_end_hour" json:"send_end_hour"`
+	DigestMode      bool       `db:"digest_mode" json:"digest_mode"`
+	DigestMaxItems  int        `db:"digest_max_items" json:"digest_max_items"`
+	Active          bool       `db:"active" json:"active"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	// Audience fields (migration 0050)
+	Audience    Audience `db:"-" json:"audience"`
+	AudienceRaw []byte   `db:"audience" json:"-"` // JSONB raw para sqlx
+	MemberCount int64    `db:"member_count" json:"member_count"`
+	CTR30d      float64  `db:"ctr_30d" json:"ctr_30d"`
+	CVR30d      float64  `db:"cvr_30d" json:"cvr_30d"`
+	Revenue30d  float64  `db:"revenue_30d" json:"revenue_30d"`
+}
+
+// UnmarshalAudience desserializa AudienceRaw para Audience.
+func (c *Channel) UnmarshalAudience() error {
+	if len(c.AudienceRaw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(c.AudienceRaw, &c.Audience)
+}
+
+// MarshalAudience serializa Audience para AudienceRaw.
+func (c *Channel) MarshalAudience() error {
+	b, err := json.Marshal(c.Audience)
+	if err != nil {
+		return err
+	}
+	c.AudienceRaw = b
+	return nil
 }
 
 type ChannelTarget struct {
@@ -379,6 +422,81 @@ type BroadcastMessage struct {
 	SentAt     NullTime   `db:"sent_at" json:"sent_at,omitempty"`
 	ErrorMsg   NullString `db:"error_msg" json:"error_msg,omitempty"`
 	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+}
+
+// RedesignGroup é o destino físico (WA/TG) do ReDesign — tabela groups.
+// Não confundir com Group legado (tabela "group").
+type RedesignGroup struct {
+	ID            int64      `db:"id" json:"id"`
+	ShortID       string     `db:"short_id" json:"short_id"`
+	ChannelID     int64      `db:"channel_id" json:"channel_id"`
+	WAAccountID   NullInt64  `db:"wa_account_id" json:"wa_account_id,omitempty"`
+	TGAccountID   NullInt64  `db:"tg_account_id" json:"tg_account_id,omitempty"`
+	Name          string     `db:"name" json:"name"`
+	Platform      string     `db:"platform" json:"platform"` // whatsapp|telegram
+	JID           NullString `db:"jid" json:"jid,omitempty"`
+	InviteLink    NullString `db:"invite_link" json:"invite_link,omitempty"`
+	Status        string     `db:"status" json:"status"` // active|paused|banned|full
+	MemberCount   int64      `db:"member_count" json:"member_count"`
+	Overrides     []byte     `db:"overrides" json:"-"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	LastMessageAt NullTime   `db:"last_message_at" json:"last_message_at,omitempty"`
+}
+
+// AffiliateProgram é o programa de afiliado do ReDesign (tabela affiliate_programs).
+type AffiliateProgram struct {
+	ID          int64     `db:"id" json:"id"`
+	ShortID     string    `db:"short_id" json:"short_id"`
+	Name        string    `db:"name" json:"name"`
+	Marketplace string    `db:"marketplace" json:"marketplace"`
+	Credentials []byte    `db:"credentials" json:"-"` // JSONB, nunca expor raw
+	Active      bool      `db:"active" json:"active"`
+	Rules       []byte    `db:"rules" json:"rules"`
+	Postback    []byte    `db:"postback" json:"postback"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+}
+
+// Dispatch representa um disparo de mensagem para múltiplos grupos.
+type Dispatch struct {
+	ID            int64     `db:"id" json:"id"`
+	ShortID       string    `db:"short_id" json:"short_id"`
+	ProductID     NullInt64 `db:"product_id" json:"product_id,omitempty"`
+	ComposedBy    string    `db:"composed_by" json:"composed_by"`
+	Message       []byte    `db:"message" json:"message"`
+	AffiliateLink string    `db:"affiliate_link" json:"affiliate_link"`
+	ScheduledFor  NullTime  `db:"scheduled_for" json:"scheduled_for,omitempty"`
+	CreatedBy     NullInt64 `db:"created_by" json:"created_by,omitempty"`
+	Status        string    `db:"status" json:"status"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+}
+
+// DispatchTarget representa um destino individual de um disparo.
+type DispatchTarget struct {
+	ID          int64      `db:"id" json:"id"`
+	DispatchID  int64      `db:"dispatch_id" json:"dispatch_id"`
+	GroupID     int64      `db:"group_id" json:"group_id"`
+	WAAccountID NullInt64  `db:"wa_account_id" json:"wa_account_id,omitempty"`
+	TGAccountID NullInt64  `db:"tg_account_id" json:"tg_account_id,omitempty"`
+	Status      string     `db:"status" json:"status"`
+	AttemptedAt NullTime   `db:"attempted_at" json:"attempted_at,omitempty"`
+	DeliveredAt NullTime   `db:"delivered_at" json:"delivered_at,omitempty"`
+	ErrorReason NullString `db:"error_reason" json:"error_reason,omitempty"`
+	ClickCount  int        `db:"click_count" json:"click_count"`
+	Conversions int        `db:"conversions" json:"conversions"`
+	Revenue     float64    `db:"revenue" json:"revenue"`
+}
+
+// PublicLink é uma URL estável com fallback automático entre grupos.
+type PublicLink struct {
+	ID               int64     `db:"id" json:"id"`
+	Slug             string    `db:"slug" json:"slug"`
+	ChannelID        int64     `db:"channel_id" json:"channel_id"`
+	FallbackChain    []byte    `db:"fallback_chain" json:"fallback_chain"`
+	RedirectStrategy string    `db:"redirect_strategy" json:"redirect_strategy"`
+	RoundRobinIdx    int       `db:"round_robin_idx" json:"-"`
+	Active           bool      `db:"active" json:"active"`
+	Clicks30d        int       `db:"clicks_30d" json:"clicks_30d"`
+	CreatedAt        time.Time `db:"created_at" json:"created_at"`
 }
 
 type TelegramChat struct {
