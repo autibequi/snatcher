@@ -54,13 +54,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    const res = await axios.post<{ accessToken: string; refreshToken: string; user: User }>(
+    const res = await axios.post<{ access_token: string; refresh_token: string; user: User }>(
       '/api/auth/login',
       { email, password }
     )
-    sessionStorage.setItem(ACCESS_KEY, res.data.accessToken)
-    localStorage.setItem(REFRESH_KEY, res.data.refreshToken)
-    setState({ user: res.data.user, accessToken: res.data.accessToken })
+    const accessToken = res.data.access_token
+    const refreshToken = res.data.refresh_token
+    sessionStorage.setItem(ACCESS_KEY, accessToken)
+    localStorage.setItem(REFRESH_KEY, refreshToken)
+    setState({ user: res.data.user, accessToken })
   }
 
   const logout = () => {

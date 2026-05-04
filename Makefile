@@ -15,7 +15,7 @@ FRONTEND_URL ?= http://localhost:6060
 
 .PHONY: help setup start start-tunnel deploy deploy-tunnel update pi-setup snatcher snatcher-down snatcher-logs beta up down dev dev-down dev-logs logs logs-backend logs-frontend \
         shell ps clean test health smoke scan status fix-network build-base \
-        backend-test-up backend-test backend-test-down backend-build backend-vet
+        backend-test-up backend-test backend-test-down backend-build backend-vet admin
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"}{printf "\033[36m%-18s\033[0m %s\n",$$1,$$2}'
@@ -215,6 +215,12 @@ dev-down: ## Para o ambiente dev
 
 dev-logs: ## Logs do ambiente dev (follow)
 	$(COMPOSE) -f docker-compose.dev.yml logs -f
+
+admin: ## Cria ou atualiza usuario admin (pergunta email e senha)
+	@read -p "Email do admin: " EMAIL; \
+	read -s -p "Senha: " PASS; echo; \
+	$(COMPOSE) exec backend sh -c \
+	  "DATABASE_URL=\"$$DATABASE_URL\" SEED_ADMIN_EMAIL=\"$$EMAIL\" SEED_ADMIN_PASSWORD=\"$$PASS\" ./seed"
 
 shell: ## Abre shell no container do backend
 	$(COMPOSE) exec backend bash

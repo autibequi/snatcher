@@ -67,11 +67,12 @@ apiClient.interceptors.response.use(
     }
 
     try {
-      const res = await axios.post<{ accessToken: string; refreshToken: string }>(
+      const res = await axios.post<{ access_token: string; refresh_token: string }>(
         '/api/auth/refresh',
-        { refreshToken }
+        { refresh_token: refreshToken }
       )
-      const { accessToken, refreshToken: newRefresh } = res.data
+      const accessToken = res.data.access_token
+      const newRefresh = res.data.refresh_token
       sessionStorage.setItem(ACCESS_KEY, accessToken)
       localStorage.setItem(REFRESH_KEY, newRefresh)
 
