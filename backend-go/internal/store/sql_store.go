@@ -18,6 +18,24 @@ func New(db *sqlx.DB) Store {
 	return &SQLStore{db: db}
 }
 
+// insertReturningID executa um NamedExec com RETURNING id para compatibilidade Postgres.
+// Substitui o padrão res.LastInsertId() que não funciona no driver pq.
+func insertReturningID(db *sqlx.DB, query string, arg interface{}) (int64, error) {
+	query = query + " RETURNING id"
+	rows, err := sqlx.NamedQuery(db, query, arg)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var id int64
+	if rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -57,13 +75,9 @@ func (s *SQLStore) GetWAAccount(id int64) (models.WAAccount, error) {
 }
 
 func (s *SQLStore) CreateWAAccount(a models.WAAccount) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO waaccount (name, provider, base_url, api_key, instance, group_prefix, status, active)
 		VALUES (:name, :provider, :base_url, :api_key, :instance, :group_prefix, :status, :active)`, a)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateWAAccount(a models.WAAccount) error {
@@ -93,13 +107,9 @@ func (s *SQLStore) GetTGAccount(id int64) (models.TGAccount, error) {
 }
 
 func (s *SQLStore) CreateTGAccount(a models.TGAccount) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO tgaccount (name, bot_token, bot_username, group_prefix, active)
 		VALUES (:name, :bot_token, :bot_username, :group_prefix, :active)`, a)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateTGAccount(a models.TGAccount) error {
@@ -168,13 +178,9 @@ func (s *SQLStore) TouchSearchTerm(id int64, count int) error {
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) InsertCrawlResult(r models.CrawlResult) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO crawlresult (search_term_id, title, price, url, image_url, source, source_subid)
 		VALUES (:search_term_id, :title, :price, :url, :image_url, :source, :source_subid)`, r)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) ListCrawlResultsByTerm(termID int64, limit, offset int) ([]models.CrawlResult, error) {
@@ -214,13 +220,9 @@ func (s *SQLStore) URLAlreadyCrawled(searchTermID int64, url string) (bool, erro
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) InsertCrawlLog(l models.CrawlLog) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO crawllog (search_term_id, status, ml_count, amz_count)
 		VALUES (:search_term_id, :status, :ml_count, :amz_count)`, l)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateCrawlLog(l models.CrawlLog) error {
@@ -268,15 +270,11 @@ func (s *SQLStore) GetCatalogProduct(id int64) (models.CatalogProduct, error) {
 }
 
 func (s *SQLStore) CreateCatalogProduct(p models.CatalogProduct) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO catalogproduct (canonical_name, brand, weight, image_url, lowest_price,
 			lowest_price_url, lowest_price_source, tags)
 		VALUES (:canonical_name, :brand, :weight, :image_url, :lowest_price,
 			:lowest_price_url, :lowest_price_source, :tags)`, p)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
@@ -308,13 +306,9 @@ func (s *SQLStore) CreateCatalogVariant(v models.CatalogVariant) (int64, error) 
 	if !v.ShortID.Valid || v.ShortID.String == "" {
 		v.ShortID = models.NullString{NullString: sql.NullString{String: genShortID(), Valid: true}}
 	}
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO catalogvariant (catalog_product_id, title, variant_label, price, url, short_id, image_url, source)
 		VALUES (:catalog_product_id, :title, :variant_label, :price, :url, :short_id, :image_url, :source)`, v)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) GetShortIDByURL(url string) string {
@@ -552,12 +546,8 @@ func (s *SQLStore) ListGroupingKeywords() ([]models.GroupingKeyword, error) {
 }
 
 func (s *SQLStore) CreateGroupingKeyword(k models.GroupingKeyword) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO groupingkeyword (keyword, tag, active) VALUES (:keyword, :tag, :active)`, k)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateGroupingKeyword(k models.GroupingKeyword) error {
@@ -622,15 +612,11 @@ func (s *SQLStore) CreateChannel(c models.Channel) (int64, error) {
 	if err := c.MarshalAudience(); err != nil {
 		return 0, err
 	}
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO channel (name, description, slug, message_template, send_start_hour, send_end_hour,
 			digest_mode, digest_max_items, active, audience, member_count, ctr_30d, cvr_30d, revenue_30d)
 		VALUES (:name, :description, :slug, :message_template, :send_start_hour, :send_end_hour,
 			:digest_mode, :digest_max_items, :active, :audience, :member_count, :ctr_30d, :cvr_30d, :revenue_30d)`, c)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateChannel(c models.Channel) error {
@@ -706,13 +692,9 @@ func (s *SQLStore) ListChannelTargets(channelID int64) ([]models.ChannelTarget, 
 }
 
 func (s *SQLStore) CreateChannelTarget(t models.ChannelTarget) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO channeltarget (channel_id, provider, chat_id, name, invite_url, status)
 		VALUES (:channel_id, :provider, :chat_id, :name, :invite_url, :status)`, t)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateChannelTarget(t models.ChannelTarget) error {
@@ -749,15 +731,11 @@ func (s *SQLStore) ListChannelRules(channelID int64) ([]models.ChannelRule, erro
 }
 
 func (s *SQLStore) CreateChannelRule(r models.ChannelRule) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO channelrule (channel_id, match_type, match_value, max_price,
 			notify_new, notify_drop, notify_lowest, drop_threshold, active)
 		VALUES (:channel_id, :match_type, :match_value, :max_price,
 			:notify_new, :notify_drop, :notify_lowest, :drop_threshold, :active)`, r)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateChannelRule(r models.ChannelRule) error {
@@ -794,13 +772,9 @@ func (s *SQLStore) RecordSent(sv models.SentMessageV2) error {
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) CreateBroadcast(b models.BroadcastMessage) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO broadcastmessage (text, image_url, channel_ids, status)
 		VALUES (:text, :image_url, :channel_ids, :status)`, b)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateBroadcast(b models.BroadcastMessage) error {
@@ -1015,14 +989,12 @@ func (s *SQLStore) CreateAffiliate(a models.Affiliate) (int64, error) {
 	if a.Active {
 		active = 1
 	}
-	result, err := s.db.Exec(
-		`INSERT INTO affiliates (source_id, name, tracking_id, active) VALUES ($1, $2, $3, $4)`,
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliates (source_id, name, tracking_id, active) VALUES ($1, $2, $3, $4) RETURNING id`,
 		a.SourceID, a.Name, a.TrackingID, active,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
+	).Scan(&id)
+	return id, err
 }
 
 // UpdateAffiliate atualiza um afiliado existente.

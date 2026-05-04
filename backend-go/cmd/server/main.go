@@ -169,7 +169,7 @@ func bootstrapConfig(st store.Store) {
 
 	evoURL := os.Getenv("EVOLUTION_URL")
 	if evoURL == "" {
-		evoURL = "http://promo-snatcher-evolution:8080"
+		evoURL = "http://snatcher-evolution:8080"
 	}
 	if !cfg.WABaseURL.Valid || cfg.WABaseURL.String == "" {
 		cfg.WABaseURL = models.NullString{NullString: sql.NullString{String: evoURL, Valid: true}}
