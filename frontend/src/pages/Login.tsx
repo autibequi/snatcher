@@ -1,32 +1,29 @@
-import { useState, FC, FormEvent, ChangeEvent } from 'react'
-import axios from 'axios'
-
-interface LoginResponse {
-  access_token: string
-}
-
-interface LoginProps {
-  onLogin: () => void
-}
+import React, { useState, FC, ChangeEvent } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
 
 interface LoginForm {
-  username: string
+  email: string
   password: string
 }
 
-const Login: FC<LoginProps> = ({ onLogin }) => {
-  const [form, setForm] = useState<LoginForm>({ username: '', password: '' })
+const Login: FC = () => {
+  const { login } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/'
+
+  const [form, setForm] = useState<LoginForm>({ email: '', password: '' })
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
 
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
+  const submit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const r = await axios.post<LoginResponse>('/api/auth/login', form)
-      localStorage.setItem('ph_token', r.data.access_token)
-      onLogin()
+      await login(form.email, form.password)
+      navigate(from, { replace: true })
     } catch {
       setError('Usuário ou senha incorretos')
     } finally {
@@ -34,29 +31,29 @@ const Login: FC<LoginProps> = ({ onLogin }) => {
     }
   }
 
-  const field = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-green-500 transition-colors'
+  const field = 'w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-fg placeholder-fg-3 focus:outline-none focus:border-accent transition-colors'
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <span className="text-4xl">🔥</span>
-          <h1 className="text-2xl font-bold text-white mt-2">Promo Snatcher</h1>
-          <p className="text-gray-500 text-sm mt-1">Entre para continuar</p>
+          <h1 className="text-2xl font-bold text-fg mt-2">Promo Snatcher</h1>
+          <p className="text-fg-3 text-sm mt-1">Entre para continuar</p>
         </div>
-        <form onSubmit={submit} className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+        <form onSubmit={submit} className="bg-surface border border-border rounded-2xl p-6 space-y-4">
           <div>
-            <label className="block text-sm text-gray-300 mb-1.5">Usuário</label>
+            <label className="block text-sm text-fg-2 mb-1.5">E-mail</label>
             <input
               className={field}
-              value={form.username}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, username: e.target.value }))}
-              placeholder="admin"
+              type="email"
+              value={form.email}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="admin@exemplo.com"
               required
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-300 mb-1.5">Senha</label>
+            <label className="block text-sm text-fg-2 mb-1.5">Senha</label>
             <input
               className={field}
               type="password"
@@ -66,11 +63,11 @@ const Login: FC<LoginProps> = ({ onLogin }) => {
               required
             />
           </div>
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-danger text-sm">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
+            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 text-fg font-medium py-3 rounded-xl transition-colors"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

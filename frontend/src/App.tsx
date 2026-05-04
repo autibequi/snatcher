@@ -1,5 +1,9 @@
-import React, { useState, Component, Suspense, lazy, ErrorInfo, ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import React, { Suspense, lazy, Component, ErrorInfo, ReactNode } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AppShell } from './shell'
+import { RequireAuth } from './components/RequireAuth'
+
+// --- Error Boundary ---
 
 interface ErrorBoundaryState {
   error: Error | null
@@ -27,8 +31,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <h2>React Error</h2>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{this.state.error.message}</pre>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#888', marginTop: 10 }}>{this.state.error.stack}</pre>
-          <button onClick={() => { this.setState({ error: null }); window.location.reload() }}
-            style={{ marginTop: 20, padding: '8px 16px', background: '#333', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+          <button
+            onClick={() => { this.setState({ error: null }); window.location.reload() }}
+            style={{ marginTop: 20, padding: '8px 16px', background: '#333', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+          >
             Recarregar
           </button>
         </div>
@@ -37,205 +43,119 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children
   }
 }
-import Frontpage from './pages/Frontpage'
-import Dashboard from './pages/Dashboard'
-import Settings from './pages/Settings'
-import Login from './pages/Login'
 
-// v2 pages — lazy load para nao crashar o app se api.js nao tiver os exports
-const Crawlers = lazy(() => import('./pages/Crawlers'))
-const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
+// --- Placeholders ---
+
+function PagePlaceholder({ title }: { title: string }) {
+  return (
+    <div className="flex items-center justify-center h-full min-h-64">
+      <div className="text-center">
+        <p className="text-lg font-medium text-fg">{title}</p>
+        <p className="text-sm text-fg-3 mt-1">Em construção</p>
+      </div>
+    </div>
+  )
+}
+
+function NotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full min-h-64 gap-3">
+      <p className="text-2xl font-semibold text-fg">404</p>
+      <p className="text-sm text-fg-2">Página não encontrada</p>
+      <a href="/" className="text-sm text-accent hover:underline">Voltar ao início</a>
+    </div>
+  )
+}
+
+const Fallback = () => (
+  <div className="flex items-center justify-center h-full min-h-64">
+    <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+  </div>
+)
+
+// --- Páginas existentes (lazy) ---
+
+const Login = lazy(() => import('./pages/Login'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Catalog = lazy(() => import('./pages/Catalog'))
 const Channels = lazy(() => import('./pages/Channels'))
 const ChannelDetail = lazy(() => import('./pages/ChannelDetail'))
 const Groups = lazy(() => import('./pages/Groups'))
+const Crawlers = lazy(() => import('./pages/Crawlers'))
+const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
 const Logs = lazy(() => import('./pages/Logs'))
-const Broadcast = lazy(() => import('./pages/Broadcast'))
-const VariantDetail = lazy(() => import('./pages/VariantDetail'))
+const Settings = lazy(() => import('./pages/Settings'))
 
-interface AdminNavProps {
-  onLogout: () => void
+// --- Páginas novas (placeholders — serão implementadas na Fase 16) ---
+
+// Lazy import com fallback para módulos ainda não criados
+function lazyPage(importer: () => Promise<{ default: React.ComponentType }>, title: string) {
+  return lazy(() => importer().catch(() => ({ default: () => <PagePlaceholder title={title} /> })))
 }
 
-interface RequireAuthProps {
-  children: ReactNode
-}
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — páginas serão criadas na Fase 16
+const Match = lazyPage(() => import('./pages/Match'), 'Match')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const Composer = lazyPage(() => import('./pages/Composer'), 'Compor disparo')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const Accounts = lazyPage(() => import('./pages/Accounts'), 'Contas conectadas')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const Affiliates = lazyPage(() => import('./pages/Affiliates'), 'Afiliados')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const PublicLinks = lazyPage(() => import('./pages/PublicLinks'), 'Links públicos')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const Clusters = lazyPage(() => import('./pages/Clusters'), 'Clusters')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const GroupDetail = lazyPage(() => import('./pages/GroupDetail'), 'Detalhe do grupo')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const DevAtoms = lazyPage(() => import('./pages/DevAtoms'), 'Dev — Atoms')
 
-function AdminNav({ onLogout }: AdminNavProps): React.ReactElement {
-  const link = ({ isActive }: { isActive: boolean }): string =>
-    `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-      isActive ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
-    }`
-
-  return (
-    <nav className="border-b border-gray-800 bg-gray-900">
-      <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-4 overflow-x-auto">
-        <NavLink to="/admin" end className="text-green-400 font-bold text-lg mr-1 sm:mr-3 flex-shrink-0">🔥</NavLink>
-
-        {/* Operacao group */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-600 font-medium">Operacao</span>
-          <NavLink to="/admin" end className={link}>Dashboard</NavLink>
-          <NavLink to="/admin/crawlers" className={link}>Crawlers</NavLink>
-          <NavLink to="/admin/catalog" className={link}>Catalogo</NavLink>
-          <NavLink to="/admin/channels" className={link}>Canais</NavLink>
-          <NavLink to="/admin/broadcast" className={link}>Broadcast</NavLink>
-        </div>
-
-        {/* Separator */}
-        <div className="h-6 w-px bg-gray-700"></div>
-
-        {/* Admin group */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-600 font-medium">Admin</span>
-          <NavLink to="/admin/settings" className={link}>Config</NavLink>
-          <NavLink to="/admin/groups" className={link}>Grupos</NavLink>
-          <NavLink to="/admin/logs" className={link}>Logs</NavLink>
-        </div>
-
-        <button onClick={onLogout}
-          className="ml-auto text-gray-500 hover:text-gray-300 text-sm px-2 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex-shrink-0">
-          Sair
-        </button>
-      </div>
-    </nav>
-  )
-}
-
-function RequireAuth({ children }: RequireAuthProps): React.ReactElement {
-  const token = localStorage.getItem('ph_token')
-  const location = useLocation()
-  if (!token) return <Navigate to="/login" state={{ from: location }} replace />
-  return <>{children}</>
-}
+// --- App ---
 
 export default function App() {
-  const [, setTick] = useState(0)
-
-  const logout = () => {
-    localStorage.removeItem('ph_token')
-    setTick(t => t + 1)
-  }
-
-  const isAuthed = !!localStorage.getItem('ph_token')
-
   return (
     <ErrorBoundary>
-    <BrowserRouter>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/" element={<Frontpage />} />
-        <Route path="/login" element={
-          isAuthed ? <Navigate to="/admin" replace /> : <Login onLogin={() => setTick(t => t + 1)} />
-        } />
-
-        {/* Admin routes */}
-        <Route path="/admin" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8"><Dashboard /></main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/groups" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Groups />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/settings" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8"><Settings /></main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/crawlers" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Crawlers />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/crawlers/:id" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <CrawlerDetail />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/catalog" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Catalog />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/catalog/variants/:id" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <VariantDetail />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/channels" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Channels />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/channels/:id" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <ChannelDetail />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/logs" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Logs />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        <Route path="/admin/broadcast" element={
-          <RequireAuth>
-            <AdminNav onLogout={logout} />
-            <main className="max-w-6xl mx-auto px-4 py-8">
-              <Suspense fallback={<div className="text-gray-500 text-center py-16">Carregando...</div>}>
-                <Broadcast />
-              </Suspense>
-            </main>
-          </RequireAuth>
-        } />
-        {/* Catch-all → frontpage */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+      <BrowserRouter>
+        <Suspense fallback={<Fallback />}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              element={
+                <RequireAuth>
+                  <AppShell />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route path="match" element={<Match />} />
+              <Route path="compose" element={<Composer />} />
+              <Route path="logs" element={<Logs />} />
+              <Route path="catalog" element={<Catalog />} />
+              <Route path="crawlers" element={<Crawlers />} />
+              <Route path="crawlers/:id" element={<CrawlerDetail />} />
+              <Route path="channels" element={<Channels />} />
+              <Route path="channels/:id" element={<ChannelDetail />} />
+              <Route path="links" element={<PublicLinks />} />
+              <Route path="groups" element={<Groups />} />
+              <Route path="groups/:id" element={<GroupDetail />} />
+              <Route path="accounts" element={<Accounts />} />
+              <Route path="affiliates" element={<Affiliates />} />
+              <Route path="clusters" element={<Clusters />} />
+              <Route path="settings/*" element={<Settings />} />
+              <Route path="_dev/atoms" element={<DevAtoms />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
     </ErrorBoundary>
   )
 }

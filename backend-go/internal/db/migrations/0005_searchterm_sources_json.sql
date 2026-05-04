@@ -1,3 +1,4 @@
+-- migrate:up
 -- Convert SearchTerm.sources from ad-hoc string to JSON array
 -- This migration handles three legacy values:
 -- "all" -> ["ml","amz"]
@@ -12,3 +13,6 @@ UPDATE searchterm SET sources =
         WHEN sources = 'amazon' THEN '["amz"]'
         ELSE sources
     END;
+
+-- migrate:down
+-- noop

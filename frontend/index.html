@@ -26,6 +26,17 @@
         });
       }
     </script>
+    <script>
+      (function(){
+        var s=localStorage;
+        var t=s.getItem('snatcher.theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+        var d=s.getItem('snatcher.density')||'comfy';
+        var a=s.getItem('snatcher.accent')||'indigo';
+        document.documentElement.dataset.theme=t;
+        document.documentElement.dataset.density=d;
+        document.documentElement.dataset.accent=a;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

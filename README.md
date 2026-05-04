@@ -12,13 +12,33 @@ nano .env        # preencher: AUTH_PASSWORD, EVOLUTION_API_KEY, PUBLIC_URL
 make start       # sobe a stack
 ```
 
-Acesse: `http://localhost:6060`
+Acesso: `http://localhost:6060`
 
 Com Cloudflare Tunnel (acesso externo):
 ```bash
 # Adicionar CLOUDFLARE_TOKEN no .env
 make start-tunnel
 ```
+
+## Database
+
+O backend Go usa **PostgreSQL 16**. Para dev local:
+
+```bash
+# 1. Subir postgres
+docker compose -f docker-compose.dev.yml up -d snatcher-postgres
+
+# 2. Configurar
+cp .env.example .env
+
+# 3. Rodar migrations
+cd backend-go && make migrate
+
+# 4. Subir servidor
+make dev
+```
+
+Ver [docs/postgres-setup.md](docs/postgres-setup.md) para detalhes.
 
 ## Variáveis obrigatórias no .env
 

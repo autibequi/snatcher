@@ -1,4 +1,9 @@
+-- migrate:up
 -- Seed Humble Bundle and Kinguin sources in sources table
-INSERT OR IGNORE INTO sources (id, name, category, enabled) VALUES
-    ('humble',  'Humble Bundle', 'cdkey', 1),
-    ('kinguin', 'Kinguin',       'cdkey', 1);
+INSERT INTO sources (id, name, category, enabled) VALUES
+    ('humble',  'Humble Bundle', 'cdkey', true),
+    ('kinguin', 'Kinguin',       'cdkey', true)
+ON CONFLICT DO NOTHING;
+
+-- migrate:down
+-- noop

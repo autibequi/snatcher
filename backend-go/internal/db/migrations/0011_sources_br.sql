@@ -1,4 +1,9 @@
+-- migrate:up
 -- Seed Shopee and Magazine Luiza sources in sources table
-INSERT OR IGNORE INTO sources (id, name, category, enabled) VALUES
-    ('shopee', 'Shopee BR',     'ecommerce', 1),
-    ('magalu', 'Magazine Luiza', 'ecommerce', 1);
+INSERT INTO sources (id, name, category, enabled) VALUES
+    ('shopee', 'Shopee BR',      'ecommerce', true),
+    ('magalu', 'Magazine Luiza', 'ecommerce', true)
+ON CONFLICT DO NOTHING;
+
+-- migrate:down
+-- noop

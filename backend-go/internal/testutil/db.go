@@ -69,6 +69,13 @@ func NewTestDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
+// MustPG é um alias para NewTestDB que documenta explicitamente que o teste
+// requer Postgres. Faz skip automático se o banco não estiver disponível.
+func MustPG(t *testing.T) *sqlx.DB {
+	t.Helper()
+	return NewTestDB(t)
+}
+
 // withSearchPath adiciona search_path={schema} aos parâmetros do DSN para que
 // queries sejam isoladas no schema do teste.
 func withSearchPath(dsn, schema string) string {

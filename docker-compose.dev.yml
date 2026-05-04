@@ -137,8 +137,29 @@ services:
     networks:
       - promosnatcher_internal
 
+  snatcher-postgres:
+    image: postgres:16-alpine
+    container_name: promo-snatcher-app-postgres
+    environment:
+      - POSTGRES_DB=snatcher
+      - POSTGRES_USER=snatcher
+      - POSTGRES_PASSWORD=${SNATCHER_DB_PASS:-devpass}
+    ports:
+      - "5433:5432"
+    volumes:
+      - snatcher_pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - promosnatcher_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatcher -d snatcher"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   evo_instances:
   evo_pg_data:
   evo_redis_data:
   frontend_node_modules:
+  snatcher_pg_data:

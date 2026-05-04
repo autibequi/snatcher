@@ -2,6 +2,139 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────── Design tokens OKLCH (ReDesign) ──────────────── */
+:root,
+[data-theme="light"] {
+  --bg:             0.985 0.003 90;
+  --surface:        1 0 0;
+  --surface-2:      0.97 0.004 250;
+  --surface-3:      0.94 0.005 250;
+  --border:         0.9 0.005 250;
+  --border-strong:  0.82 0.008 250;
+  --fg:             0.22 0.015 270;
+  --fg-2:           0.42 0.01 270;
+  --fg-3:           0.58 0.008 270;
+  --fg-4:           0.72 0.005 270;
+  --accent:         0.52 0.16 265;
+  --accent-hover:   0.46 0.16 265;
+  --accent-soft:    0.95 0.03 265;
+  --success:        0.55 0.13 150;
+  --success-soft:   0.95 0.05 150;
+  --warning:        0.7 0.14 75;
+  --warning-soft:   0.96 0.06 80;
+  --danger:         0.58 0.17 25;
+  --danger-soft:    0.95 0.04 25;
+  --whatsapp:       0.62 0.14 150;
+  --shadow-sm:      0 1px 2px oklch(0.2 0.02 270 / 0.06);
+  --shadow:         0 1px 3px oklch(0.2 0.02 270 / 0.08), 0 1px 2px oklch(0.2 0.02 270 / 0.04);
+  --shadow-lg:      0 8px 24px oklch(0.2 0.02 270 / 0.1);
+  --r-xs:           4px;
+  --r-sm:           6px;
+  --r:              8px;
+  --r-md:           10px;
+  --r-lg:           14px;
+  --r-xl:           20px;
+  --gap-1:          4px;
+  --gap-2:          8px;
+  --gap-3:          12px;
+  --gap-4:          16px;
+  --gap-5:          20px;
+  --gap-6:          24px;
+  --gap-8:          32px;
+  --pad-y:          14px;
+}
+
+[data-theme="dark"] {
+  --bg:             0.18 0.01 270;
+  --surface:        0.22 0.012 270;
+  --surface-2:      0.25 0.013 270;
+  --surface-3:      0.28 0.014 270;
+  --border:         0.3 0.012 270;
+  --border-strong:  0.4 0.013 270;
+  --fg:             0.96 0.005 270;
+  --fg-2:           0.78 0.01 270;
+  --fg-3:           0.62 0.012 270;
+  --fg-4:           0.5 0.012 270;
+  --accent:         0.52 0.16 265;
+  --accent-hover:   0.46 0.16 265;
+  --accent-soft:    0.32 0.08 265;
+  --success:        0.55 0.13 150;
+  --success-soft:   0.3 0.06 150;
+  --warning:        0.7 0.14 75;
+  --warning-soft:   0.32 0.07 75;
+  --danger:         0.58 0.17 25;
+  --danger-soft:    0.32 0.08 25;
+}
+
+/* Accent alternatives via data-accent attribute */
+[data-accent="green"] {
+  --accent:         0.60 0.18 145;
+  --accent-hover:   0.54 0.18 145;
+  --accent-soft:    0.94 0.04 145;
+}
+
+[data-accent="orange"] {
+  --accent:         0.65 0.19 55;
+  --accent-hover:   0.59 0.19 55;
+  --accent-soft:    0.95 0.04 55;
+}
+
+[data-accent="pink"] {
+  --accent:         0.58 0.20 330;
+  --accent-hover:   0.52 0.20 330;
+  --accent-soft:    0.95 0.04 330;
+}
+
+/* Compact density */
+[data-density="compact"] {
+  --pad-y:          9px;
+  --gap-3:          10px;
+  --gap-4:          12px;
+  --gap-5:          14px;
+  --gap-6:          18px;
+}
+
+/* ──────────────── Body base ──────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
-  @apply bg-gray-950 text-gray-100 min-h-screen;
+  margin: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  background-color: oklch(var(--bg));
+  color: oklch(var(--fg));
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ──────────────── Scrollbar (WebKit) ──────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--border-strong));
+  border-radius: 10px;
+  border: 2px solid oklch(var(--bg));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--fg-3));
+}
+
+/* ──────────────── Monospace ──────────────── */
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }

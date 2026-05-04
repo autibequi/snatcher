@@ -1,2 +1,6 @@
+-- migrate:up
 CREATE INDEX IF NOT EXISTS ix_price_history_variant_recorded
-  ON price_history_v2(variant_id, recorded_at DESC);
+  ON pricehistoryv2(variant_id, recorded_at DESC);
+
+-- migrate:down
+-- noop

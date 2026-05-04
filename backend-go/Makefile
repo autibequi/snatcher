@@ -1,7 +1,7 @@
 BINARY = backendv2
 CMD    = ./cmd/server
 
-.PHONY: build run tidy test test-up test-down test-logs lint vet swag docs
+.PHONY: build run tidy migrate test test-up test-down test-logs lint vet swag docs
 
 build:
 	go build -buildvcs=false -o $(BINARY) $(CMD)
@@ -29,6 +29,11 @@ test-down:
 
 test-logs:
 	docker compose -f docker-compose.test.yml logs -f postgres-test
+
+# Aplica migrations contra DATABASE_URL (ou default).
+migrate:
+	@echo "Running migrations against DATABASE_URL..."
+	@go run -buildvcs=false ./cmd/migrate
 
 # Roda testes assumindo Postgres já no ar (CI seta service container).
 test:
