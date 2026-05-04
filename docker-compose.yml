@@ -187,7 +187,28 @@ services:
         limits:
           memory: 32m
 
+  app-postgres:
+    image: postgres:16-alpine
+    container_name: snatcher-app-postgres
+    environment:
+      - POSTGRES_DB=snatcher
+      - POSTGRES_USER=snatcher
+      - POSTGRES_PASSWORD=${SNATCHER_DB_PASS:-devpass}
+    volumes:
+      - app_pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatcher -d snatcher"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
 volumes:
   evo_instances:
   evo_pg_data:
   evo_redis_data:
+  app_pg_data:
