@@ -239,17 +239,14 @@ function CreateAccountModal({
   const [errors, setErrors] = useState<Partial<Record<keyof CreateForm, string>>>({})
   const qc = useQueryClient()
 
+
   const set = (field: keyof CreateForm, value: string | number) =>
     setForm(f => ({ ...f, [field]: value }))
 
   const validate = (): boolean => {
     const errs: Partial<Record<keyof CreateForm, string>> = {}
     if (!form.name.trim()) errs.name = 'Campo obrigatório'
-    if (tab === 'wa') {
-      if (!form.base_url.trim()) errs.base_url = 'Campo obrigatório'
-      if (!form.api_key.trim()) errs.api_key = 'Campo obrigatório'
-      if (!form.instance.trim()) errs.instance = 'Campo obrigatório'
-    } else {
+    if (tab === 'tg') {
       if (!form.bot_token.trim()) errs.bot_token = 'Campo obrigatório'
     }
     setErrors(errs)
@@ -331,34 +328,9 @@ function CreateAccountModal({
 
           {tab === 'wa' ? (
             <>
-              <Input
-                label="Provider"
-                placeholder="evolution"
-                value={form.provider}
-                onChange={e => set('provider', e.target.value)}
-              />
-              <Input
-                label="Base URL"
-                placeholder="https://api.evolution.io"
-                value={form.base_url}
-                onChange={e => set('base_url', e.target.value)}
-                error={errors.base_url}
-              />
-              <Input
-                label="API Key"
-                placeholder="sk-..."
-                type="password"
-                value={form.api_key}
-                onChange={e => set('api_key', e.target.value)}
-                error={errors.api_key}
-              />
-              <Input
-                label="Instance"
-                placeholder="nome-da-instancia"
-                value={form.instance}
-                onChange={e => set('instance', e.target.value)}
-                error={errors.instance}
-              />
+              <p className="text-xs text-fg-3 bg-surface-2 rounded-md px-3 py-2">
+                A conexão com o WhatsApp usa a Evolution API configurada no servidor. Preencha apenas o nome e clique em "Criar conta" — o QR Code aparecerá a seguir.
+              </p>
             </>
           ) : (
             <>

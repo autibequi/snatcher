@@ -113,6 +113,7 @@ export default function Match() {
     data: scores,
     isPending: isLoading,
     mutate: runMatch,
+    error: matchError,
   } = useMutation<MatchScore[]>({
     mutationFn: () =>
       apiClient
@@ -207,6 +208,11 @@ export default function Match() {
         </div>
 
         {/* Lista de scores */}
+        {matchError && (
+          <div className="p-4 bg-danger/5 border border-danger/30 rounded-md text-sm text-danger mb-4">
+            {(matchError as any)?.response?.data?.error ?? 'Erro ao calcular match'}
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -215,8 +221,10 @@ export default function Match() {
           </div>
         ) : !filteredScores.length ? (
           <EmptyState
-            title="Nenhum canal compativel"
-            description="Configure canais com perfil de audiencia para ver sugestoes de match."
+            title={matchError ? 'Erro ao calcular match' : 'Nenhum canal compativel'}
+            description={matchError
+              ? ((matchError as any)?.response?.data?.error ?? 'Tente novamente')
+              : 'Configure canais com perfil de audiencia para ver sugestoes de match.'}
           />
         ) : (
           <div className="space-y-2">
