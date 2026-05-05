@@ -5,6 +5,20 @@ import (
 	"time"
 )
 
+// ChannelStats agrega métricas reais de um canal.
+type ChannelStats struct {
+	TotalClicks  int64              `json:"total_clicks"`
+	Dispatches7d int64              `json:"dispatches_7d"`
+	ProductCount int64              `json:"product_count"`
+	Series       []ChannelDayStat   `json:"dispatches_7d_series"`
+}
+
+// ChannelDayStat representa disparos por dia para o gráfico.
+type ChannelDayStat struct {
+	Day   string `db:"day"   json:"day"`
+	Value int    `db:"value" json:"value"`
+}
+
 // Store é a interface central de persistência.
 type Store interface {
 	// Config
@@ -193,6 +207,9 @@ type Store interface {
 	// Short Links
 	GetOrCreateShortLink(destURL, source string) (string, error)
 	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
+
+	// Channel stats (cliques reais, disparos, série diária)
+	GetChannelStats(channelID int64) (ChannelStats, error)
 
 	// AffiliateConversions
 	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)

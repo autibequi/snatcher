@@ -513,16 +513,18 @@ func (h *ChannelsHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "canal nao encontrado")
 		return
 	}
-	metrics := struct {
-		CTR     float64 `json:"ctr"`
-		CVR     float64 `json:"cvr"`
-		Revenue float64 `json:"revenue"`
-		Members int64   `json:"member_count"`
-	}{
-		CTR:     c.CTR30d,
-		CVR:     c.CVR30d,
-		Revenue: c.Revenue30d,
-		Members: c.MemberCount,
+	// Calcular métricas reais via store
+	stats, _ := h.store.GetChannelStats(id)
+
+	metrics := map[string]any{
+		"ctr":                  c.CTR30d,
+		"cvr":                  c.CVR30d,
+		"revenue":              c.Revenue30d,
+		"member_count":         c.MemberCount,
+		"estimated_clicks":     stats.TotalClicks,
+		"dispatches_7d":        stats.Dispatches7d,
+		"product_count":        stats.ProductCount,
+		"dispatches_7d_series": stats.Series,
 	}
 	writeJSON(w, http.StatusOK, metrics)
 }

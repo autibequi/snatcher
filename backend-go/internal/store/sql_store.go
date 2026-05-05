@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type SQLStore struct {
@@ -73,6 +74,53 @@ func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) error {
 		VALUES ($1, $2, $3, $4)`,
 		log.ProductID, log.ChannelID, log.DispatchID, log.Score)
 	return err
+}
+
+func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
+	var stats ChannelStats
+
+	// Grupos do canal
+	var groupIDs []int64
+	if err := s.db.Select(&groupIDs, `SELECT id FROM redesign_groups WHERE channel_id = $1 AND status != 'deleted'`, channelID); err != nil || len(groupIDs) == 0 {
+		return stats, nil
+	}
+
+	arr := pq.Array(groupIDs)
+
+	// Cliques totais
+	_ = s.db.Get(&stats.TotalClicks, `
+		SELECT COALESCE(SUM(dt.click_count), 0)
+		FROM dispatch_targets dt
+		WHERE dt.group_id = ANY($1)`, arr)
+
+	// Disparos últimos 7 dias
+	_ = s.db.Get(&stats.Dispatches7d, `
+		SELECT COUNT(DISTINCT d.id)
+		FROM dispatches d
+		JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+		WHERE dt.group_id = ANY($1)
+		  AND d.created_at >= now() - interval '7 days'`, arr)
+
+	// Produtos únicos disparados
+	_ = s.db.Get(&stats.ProductCount, `
+		SELECT COUNT(DISTINCT d.product_id)
+		FROM dispatches d
+		JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+		WHERE dt.group_id = ANY($1)
+		  AND d.product_id IS NOT NULL`, arr)
+
+	// Série diária
+	_ = s.db.Select(&stats.Series, `
+		SELECT to_char(d.created_at::date, 'Dy') AS day,
+		       COUNT(DISTINCT d.id)::int AS value
+		FROM dispatches d
+		JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+		WHERE dt.group_id = ANY($1)
+		  AND d.created_at >= now() - interval '7 days'
+		GROUP BY d.created_at::date
+		ORDER BY d.created_at::date`, arr)
+
+	return stats, nil
 }
 
 func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
