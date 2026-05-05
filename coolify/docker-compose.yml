@@ -98,7 +98,9 @@ services:
         condition: service_started
     networks:
       default: {}
-      nuvem: {}
+      nuvem:
+        aliases:
+          - snatcher-backend
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
       interval: 15s
