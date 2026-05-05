@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Skeleton, EmptyState, Spinner, Tabs } from '../components/ui'
+import { Badge, Button, Input, Skeleton, EmptyState, Tabs } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
@@ -134,13 +134,7 @@ function QRModal({
   accountId: number | null
   onClose: () => void
 }) {
-  const { data: qrData } = useQuery<QRData>({
-    queryKey: ['accounts', accountId, 'qr'],
-    queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/qr`).then(r => r.data),
-    refetchInterval: 3000,
-    enabled: !!accountId,
-  })
-
+  // qrData não usado — iframe carrega diretamente o HTML do QR
   const { data: statusData } = useQuery<StatusData>({
     queryKey: ['accounts', accountId, 'status'],
     queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/status`).then(r => r.data),
@@ -157,7 +151,6 @@ function QRModal({
   }, [statusData?.status, onClose])
 
   const connected = statusData?.status === 'connected'
-  const qrBase64 = qrData?.qr_code ?? qrData?.base64
 
   return (
     <Modal open={!!accountId} onClose={onClose} title="Conectar via QR Code" maxWidth="max-w-sm">
@@ -173,17 +166,13 @@ function QRModal({
               Escaneie o QR Code com o WhatsApp para conectar a conta.
               Atualizando automaticamente…
             </p>
-            {qrBase64 ? (
-              <img
-                src={`data:image/png;base64,${qrBase64}`}
-                alt="QR Code WhatsApp"
-                className="w-56 h-56 rounded-md border border-border"
-              />
-            ) : (
-              <div className="w-56 h-56 flex items-center justify-center bg-surface-2 rounded-md border border-border">
-                <Spinner size="lg" />
-              </div>
-            )}
+            {/* Backend retorna HTML com <img> do QR — usar iframe diretamente */}
+            <iframe
+              src={`/api/accounts/wa/${accountId}/qr`}
+              className="w-72 h-80 rounded-md border border-border bg-white"
+              title="QR Code WhatsApp"
+              style={{ colorScheme: 'light' }}
+            />
             <p className="text-xs text-fg-3">
               Status atual:{' '}
               <Badge variant={statusVariant[statusData?.status ?? ''] ?? 'default'} size="sm">
