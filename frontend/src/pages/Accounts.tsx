@@ -39,7 +39,9 @@ interface StatusData {
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
   connected: 'success',
   qr_pending: 'warning',
+  scanning: 'warning',   // SCAN_QR_CODE → aguardando scan
   disconnected: 'default',
+  stopped: 'default',
   banned: 'danger',
 }
 
@@ -426,6 +428,26 @@ function AccountCard({
 }) {
   const navigate = useNavigate()
   const wa = account as WAAccount
+  const isWA = platform === 'WhatsApp'
+
+  // Polling de status em tempo real via Evolution API (apenas WA)
+  const { data: liveStatus } = useQuery<{ status: string }>({
+    queryKey: ['wa-live-status', account.id],
+    queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/status`).then(r => r.data),
+    refetchInterval: 8_000,
+    enabled: isWA,
+    staleTime: 5_000,
+  })
+
+  const evoStatusMap: Record<string, string> = {
+    WORKING: 'connected',
+    SCAN_QR_CODE: 'scanning',
+    STOPPED: 'disconnected',
+  }
+  const displayStatus = isWA && liveStatus?.status
+    ? (evoStatusMap[liveStatus.status] ?? liveStatus.status.toLowerCase())
+    : (wa.status ?? 'ativo')
+
   const throughputPct =
     account.daily_limit > 0 ? account.sent_today / account.daily_limit : 0
   const throughputColor =
@@ -444,8 +466,8 @@ function AccountCard({
             {platform} &middot; {account.role}
           </p>
         </div>
-        <Badge variant={statusVariant[wa.status ?? ''] ?? 'default'} size="sm">
-          {wa.status ?? 'ativo'}
+        <Badge variant={statusVariant[displayStatus] ?? 'default'} size="sm">
+          {displayStatus}
         </Badge>
       </div>
 
