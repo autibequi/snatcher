@@ -134,6 +134,18 @@ function QRModal({
   accountId: number | null
   onClose: () => void
 }) {
+  const { data: qrData, refetch: refetchQR } = useQuery({
+    queryKey: ['accounts', accountId, 'qr'],
+    queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/qr`).then(r => r.data),
+    refetchInterval: (data: any) => {
+      if (!data) return 3000
+      if (data?.state === 'qr') return 22000     // QR expira em ~25s
+      if (data?.state === 'creating') return 2500 // aguardar criação
+      return 4000                                 // waiting / error
+    },
+    enabled: !!accountId,
+  })
+
   const { data: statusData } = useQuery<StatusData>({
     queryKey: ['accounts', accountId, 'status'],
     queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/status`).then(r => r.data),
@@ -164,13 +176,32 @@ function QRModal({
               Escaneie o QR Code com o WhatsApp para conectar a conta.
               Atualizando automaticamente…
             </p>
-            <iframe
-              src={`/api/accounts/wa/${accountId}/qr`}
-              className="w-72 rounded-md border border-border bg-white"
-              style={{ colorScheme: 'light', height: '340px' }}
-              title="QR Code WhatsApp"
-              scrolling="no"
-            />
+
+            <div className="w-72 h-72 rounded-md border border-border bg-surface flex items-center justify-center overflow-hidden">
+              {qrData?.state === 'qr' && qrData.base64 ? (
+                <img src={qrData.base64} alt="QR Code WhatsApp" className="w-full h-full object-contain" />
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-center px-4">
+                  <p className="text-sm text-fg-2">
+                    {qrData?.state === 'creating' ? '⏳ Criando instância...' :
+                     qrData?.state === 'error'    ? '❌ Erro na Evolution API' :
+                     qrData?.state === 'not_configured' ? '⚙️ Evolution não configurada' :
+                     '⏳ Aguardando QR code...'}
+                  </p>
+                  {qrData?.message && (
+                    <p className="text-xs text-fg-3 break-all">{qrData.message}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => refetchQR()}
+                    className="text-xs text-accent hover:underline mt-1"
+                  >
+                    atualizar agora
+                  </button>
+                </div>
+              )}
+            </div>
+
             <p className="text-xs text-fg-3">
               Status atual:{' '}
               <Badge variant={statusVariant[statusData?.status ?? ''] ?? 'default'} size="sm">
