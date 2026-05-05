@@ -59,9 +59,33 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			tg_group_prefix=:tg_group_prefix, tg_last_update_id=:tg_last_update_id,
 			llm_provider=:llm_provider, llm_api_key=:llm_api_key,
 			llm_base_url=:llm_base_url, llm_model=:llm_model,
-			app_name=:app_name, app_domain=:app_domain
+			app_name=:app_name, app_domain=:app_domain,
+			auto_match_enabled=:auto_match_enabled,
+			auto_match_threshold=:auto_match_threshold,
+			auto_match_max_per_run=:auto_match_max_per_run
 		WHERE id = 1`, cfg)
 	return err
+}
+
+func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) error {
+	_, err := s.db.Exec(`
+		INSERT INTO auto_match_logs (product_id, channel_id, dispatch_id, score)
+		VALUES ($1, $2, $3, $4)`,
+		log.ProductID, log.ChannelID, log.DispatchID, log.Score)
+	return err
+}
+
+func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
+	if limit <= 0 { limit = 50 }
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+		       p.canonical_name as product_name, c.name as channel_name
+		FROM auto_match_logs l
+		LEFT JOIN catalogproduct p ON p.id = l.product_id
+		LEFT JOIN channels c ON c.id = l.channel_id
+		ORDER BY l.created_at DESC LIMIT $1`, limit)
+	return out, err
 }
 
 func (s *SQLStore) ListWAAccounts() ([]models.WAAccount, error) {

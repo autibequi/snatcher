@@ -117,6 +117,9 @@ const GroupDetail = lazyPage(() => import('./pages/GroupDetail'), 'Detalhe do gr
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 const DevAtoms = lazyPage(() => import('./pages/DevAtoms'), 'Dev — Atoms')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const AutoMatch = lazyPage(() => import('./pages/AutoMatch'), 'Auto Match')
 
 // --- App ---
 
@@ -136,6 +139,7 @@ export default function App() {
             >
               <Route index element={<Dashboard />} />
               <Route path="match" element={<Match />} />
+              <Route path="auto-match" element={<AutoMatch />} />
               <Route path="compose" element={<Composer />} />
               <Route path="logs" element={<Logs />} />
               <Route path="catalog" element={<Catalog />} />

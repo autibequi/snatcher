@@ -105,6 +105,24 @@ type AppConfig struct {
 	// White-label
 	AppName   NullString `db:"app_name" json:"app_name,omitempty"`
 	AppDomain NullString `db:"app_domain" json:"app_domain,omitempty"`
+
+	// Auto match
+	AutoMatchEnabled    bool    `db:"auto_match_enabled" json:"auto_match_enabled"`
+	AutoMatchThreshold  float64 `db:"auto_match_threshold" json:"auto_match_threshold"`
+	AutoMatchMaxPerRun  int     `db:"auto_match_max_per_run" json:"auto_match_max_per_run"`
+}
+
+type AutoMatchLog struct {
+	ID         int64     `db:"id" json:"id"`
+	ProductID  int64     `db:"product_id" json:"product_id"`
+	ChannelID  int64     `db:"channel_id" json:"channel_id"`
+	DispatchID int64     `db:"dispatch_id" json:"dispatch_id"`
+	Score      float64   `db:"score" json:"score"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+
+	// Joinados para exibição
+	ProductName string `db:"product_name" json:"product_name,omitempty"`
+	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
 }
 
 type WAAccount struct {

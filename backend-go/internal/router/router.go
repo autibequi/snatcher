@@ -74,6 +74,7 @@ func Build(
 	dash        := handlers.NewDashboardHandler(st, db)
 	team        := handlers.NewTeamHandler(db)
 	brand       := handlers.NewBrandHandler(st)
+	autoMatch   := handlers.NewAutoMatchHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *handlers.ComposeHandler
@@ -312,6 +313,10 @@ func Build(
 
 		// ReDesign: Match
 		r.Post("/api/match", matchH.Match)
+
+		// Auto Match
+		r.Get("/api/auto-match", autoMatch.Status)
+		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
 
 		// ReDesign: Compose
 		r.Post("/api/compose/preview", composeH.Preview)

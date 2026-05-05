@@ -268,13 +268,16 @@ function ScheduledDispatches() {
           </thead>
           <tbody>
             {items.map((d: any) => {
-              const text = d.message?.text ?? ''
+              // message pode ser objeto ou string JSON
+              const msg = typeof d.message === 'string' ? (() => { try { return JSON.parse(d.message) } catch { return {} } })() : (d.message ?? {})
+              const text = msg?.text ?? ''
+              const displayText = text.slice(0, 60) || `Disparo agendado #${d.id}`
               const scheduledAt = d.scheduled_for ? new Date(d.scheduled_for) : null
               const isPast = scheduledAt && scheduledAt < new Date()
               return (
                 <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-3 cursor-pointer" onClick={() => setPreviewText(text)}>
-                    <p className="text-sm text-fg truncate max-w-xs">{text.slice(0, 60) || `#${d.short_id ?? d.id}`}</p>
+                  <td className="px-4 py-3 cursor-pointer" onClick={() => setPreviewText(text || displayText)}>
+                    <p className="text-sm text-fg truncate max-w-xs">{displayText}</p>
                     <p className="text-xs text-accent hover:underline mt-0.5">ver preview →</p>
                   </td>
                   <td className="px-4 py-3">

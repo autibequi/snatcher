@@ -101,7 +101,7 @@ func (s *Service) fallback(p ProductInput) Suggestion {
 	if p.PriceOrig > 0 {
 		orig = fmt.Sprintf("De R$ %.2f por apenas ", p.PriceOrig)
 	}
-	text := fmt.Sprintf("🔥 %s\n\n%sR$ %.2f%s\n\n👆 Link no perfil",
+	text := fmt.Sprintf("🔥 %s\n\n%sR$ %.2f%s\n\n👆 {link}",
 		p.Title, orig, p.Price, drop)
 	return Suggestion{
 		Text:     text,

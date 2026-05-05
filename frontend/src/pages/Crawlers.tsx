@@ -389,80 +389,113 @@ const SOURCES_OPTIONS = ['ml', 'amz', 'magalu', 'shopee', 'aliexpress', 'casasba
 
 function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: () => void }) {
   const qc = useQueryClient()
-  const [form, setForm] = React.useState({ query: '', min_val: '', max_val: '', crawl_interval: 30, sources: [] as string[] })
+  const [form, setForm] = React.useState<MarketplaceFormData>(defaultMarketplaceForm)
 
   React.useEffect(() => {
     if (!term) return
     let srcs: string[] = []
-    try { srcs = JSON.parse(term.sources ?? '[]') } catch { srcs = (term.sources ?? 'all').split(',').map((s: string) => s.trim()) }
-    setForm({ query: term.query, min_val: String(term.min_val ?? ''), max_val: String(term.max_val ?? ''), crawl_interval: term.crawl_interval ?? 30, sources: srcs })
+    try { srcs = JSON.parse(term.sources ?? '[]') } catch { srcs = (term.sources ?? 'all') === 'all' ? [] : (term.sources ?? '').split(',').map((s: string) => s.trim()).filter(Boolean) }
+    // Termos adicionais: queries do term (campo queries) excluindo o query principal
+    let parsedQueries: string[] = []
+    try { parsedQueries = JSON.parse(term.queries ?? '[]') } catch { parsedQueries = [] }
+    const additionalQueries = parsedQueries.filter((q: string) => q !== term.query)
+    setForm({
+      query: term.query,
+      queries: additionalQueries.join('\n'),
+      min_val: String(term.min_val ?? ''),
+      max_val: String(term.max_val ?? ''),
+      crawl_interval: term.crawl_interval ?? 60,
+      sources: srcs,
+      active: term.active ?? true,
+    })
   }, [term])
 
   const saveMut = useMutation({
-    mutationFn: () => apiClient.put(`/api/search-terms/${term!.id}`, {
-      query: form.query,
-      queries: [],
-      min_val: Number(form.min_val) || 0,
-      max_val: Number(form.max_val) || 9999,
-      crawl_interval: Number(form.crawl_interval),
-      sources: form.sources.length > 0 ? form.sources.join(',') : 'all',
-      category: term!.category ?? 'ecommerce',
-      active: term!.active,
-    }).then(r => r.data),
+    mutationFn: () => {
+      const queriesArray = form.queries.split('\n').map(s => s.trim()).filter(Boolean)
+      return apiClient.put(`/api/search-terms/${term!.id}`, {
+        query: form.query,
+        queries: queriesArray,
+        min_val: Number(form.min_val) || 0,
+        max_val: Number(form.max_val) || 9999,
+        crawl_interval: Number(form.crawl_interval),
+        sources: form.sources.length > 0 ? form.sources.join(',') : 'all',
+        category: term!.category ?? 'ecommerce',
+        active: form.active,
+      }).then(r => r.data)
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['search-terms'] }); onClose() },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
   if (!term) return null
+
+  function toggleSrc(s: string) {
+    setForm(f => ({ ...f, sources: f.sources.includes(s) ? f.sources.filter(x => x !== s) : [...f.sources, s] }))
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-5 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
-        <h3 className="font-medium text-fg mb-4">Editar crawler</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Termo de busca *</label>
-            <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              value={form.query} onChange={e => setForm(f => ({...f, query: e.target.value}))} />
+    <Modal open onClose={onClose} title="Editar crawler" footer={
+      <>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="primary" size="sm" loading={saveMut.isPending} disabled={!form.query.trim()} onClick={() => saveMut.mutate()}>Salvar</Button>
+      </>
+    }>
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Termo principal *</label>
+          <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+            placeholder="Ex: iPhone 15 Pro"
+            value={form.query} onChange={e => setForm(f => ({...f, query: e.target.value}))} />
+        </div>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Termos adicionais (um por linha)</label>
+          <textarea rows={3} className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
+            placeholder={"iphone 15 pro\niphone 15 pro max"}
+            value={form.queries} onChange={e => setForm(f => ({...f, queries: e.target.value}))} />
+        </div>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Fontes</label>
+          <div className="flex flex-wrap gap-2">
+            {SOURCES_OPTIONS.map(s => (
+              <button key={s} type="button"
+                onClick={() => toggleSrc(s)}
+                className={`px-3 py-1 rounded-full text-sm border transition-colors ${form.sources.includes(s) ? 'bg-accent text-white border-accent' : 'border-border text-fg-2 hover:border-accent'}`}>
+                {s}
+              </button>
+            ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">Preço mín (R$)</label>
-              <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                value={form.min_val} onChange={e => setForm(f => ({...f, min_val: e.target.value}))} />
-            </div>
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">Preço máx (R$)</label>
-              <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                value={form.max_val} onChange={e => setForm(f => ({...f, max_val: e.target.value}))} />
-            </div>
+          <p className="text-xs text-fg-3 mt-1">Nenhuma selecionada = todas as fontes</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Valor mínimo (R$)</label>
+            <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              placeholder="0" value={form.min_val} onChange={e => setForm(f => ({...f, min_val: e.target.value}))} />
           </div>
           <div>
-            <label className="text-xs text-fg-2 block mb-1">Intervalo (minutos)</label>
-            <select className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-              value={form.crawl_interval} onChange={e => setForm(f => ({...f, crawl_interval: Number(e.target.value)}))}>
-              {[15,30,60,120,240,480,1440].map(v => <option key={v} value={v}>{v < 60 ? `${v}min` : `${v/60}h`}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Fontes</label>
-            <div className="flex flex-wrap gap-2">
-              {SOURCES_OPTIONS.map(s => (
-                <label key={s} className="flex items-center gap-1 cursor-pointer text-sm">
-                  <input type="checkbox" className="accent-accent"
-                    checked={form.sources.includes(s)}
-                    onChange={e => setForm(f => ({...f, sources: e.target.checked ? [...f.sources, s] : f.sources.filter(x => x !== s)}))} />
-                  {s}
-                </label>
-              ))}
-            </div>
+            <label className="text-xs text-fg-2 block mb-1">Valor máximo (R$)</label>
+            <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              placeholder="9999" value={form.max_val} onChange={e => setForm(f => ({...f, max_val: e.target.value}))} />
           </div>
         </div>
-        <div className="flex gap-2 justify-end mt-4">
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" loading={saveMut.isPending} disabled={!form.query.trim()} onClick={() => saveMut.mutate()}>Salvar</Button>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Intervalo de crawl</label>
+          <select className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            value={form.crawl_interval} onChange={e => setForm(f => ({...f, crawl_interval: Number(e.target.value)}))}>
+            {[15,30,60,120,240,480,1440].map(v => <option key={v} value={v}>{v < 60 ? `${v}min` : `${v/60}h`}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="button"
+            onClick={() => setForm(f => ({...f, active: !f.active}))}
+            className={`relative w-10 h-5 rounded-full transition-colors overflow-hidden ${form.active ? 'bg-accent' : 'bg-border'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.active ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+          <span className="text-sm text-fg">Crawler ativo</span>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

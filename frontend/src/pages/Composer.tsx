@@ -77,7 +77,7 @@ export default function Composer() {
     queryKey: ['catalog-multi', productIds],
     queryFn: async () => {
       const results = await Promise.all(
-        productIds.map(id => apiClient.get(`/api/catalog/${id}`).then(r => r.data).catch(() => null))
+        productIds.map(id => apiClient.get(`/api/catalog/${id}`).then(r => r.data?.product ?? r.data).catch(() => null))
       )
       return results.filter(Boolean)
     },
@@ -102,9 +102,10 @@ export default function Composer() {
 
   // Dados reais do produto para substituição de variáveis
   const realProductName = nullStr(productData?.canonical_name) || productData?.canonical_name || ''
-  const realPrice = productData?.lowest_price?.Valid !== undefined
-    ? productData?.lowest_price?.Float64 ?? 0
-    : (productData?.lowest_price ?? 0)
+  // lowest_price vem como número direto (NullFloat64 marshala como float ou omitido)
+  const realPrice = typeof productData?.lowest_price === 'number'
+    ? productData.lowest_price
+    : (productData?.lowest_price?.Float64 ?? 0)
   const realPriceStr = realPrice > 0 ? `R$ ${Number(realPrice).toFixed(2)}` : 'R$ --'
   const realUrl = nullStr(productData?.lowest_price_url) || ''
   const realSource = nullStr(productData?.lowest_price_source) || ''
@@ -146,8 +147,10 @@ export default function Composer() {
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
-      // Substituir {link} com URL afiliada antes de enviar
-      const finalText = text.replace(/{link}/g, affiliateUrl || realUrl || '')
+      const link = affiliateUrl || realUrl || ''
+      // Substituir {link} com URL afiliada; se não tiver {link} e tiver URL, anexar
+      let finalText = link ? text.replace(/{link}/g, link) : text
+      if (link && !finalText.includes(link)) finalText = finalText + '\n\n' + link
       return apiClient
         .post<DispatchResponse>('/api/dispatches', {
           product_id: productId ? Number(productId) : undefined,

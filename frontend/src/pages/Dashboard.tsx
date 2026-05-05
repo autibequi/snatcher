@@ -268,7 +268,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="bg-surface border border-border rounded-md p-4">
             <p className="text-sm font-medium text-fg mb-3">Insights IA</p>
-            <p className="text-sm text-fg-3 italic">Configure o OpenRouter em Configurações para ver insights automáticos.</p>
+            <p className="text-sm text-fg-3 italic">Configure o LLM em <a href="/settings" className="text-accent hover:underline">Configurações → LLM / IA</a> para ver insights automáticos.</p>
           </div>
         </div>
       </div>
