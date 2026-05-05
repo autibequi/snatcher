@@ -20,45 +20,45 @@ const navGroups: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/', label: 'Dashboard', icon: '◉' },
-      { to: '/match', label: 'Match', icon: '⟶' },
+      { to: '/', label: 'Dashboard', icon: '🏠' },
+      { to: '/match', label: 'Match', icon: '🎯' },
       { to: '/auto-match', label: 'Auto Match', icon: '⚡' },
-      { to: '/compose', label: 'Compor disparo', icon: '✉' },
-      { to: '/logs', label: 'Logs', icon: '≡' },
+      { to: '/compose', label: 'Compor disparo', icon: '📤' },
+      { to: '/logs', label: 'Logs', icon: '📋' },
     ],
   },
   {
     label: 'Fontes & Produtos',
     items: [
-      { to: '/crawlers', label: 'Crawlers', icon: '↺' },
-      { to: '/catalog', label: 'Catálogo', icon: '□' },
+      { to: '/crawlers', label: 'Crawlers', icon: '🔄' },
+      { to: '/catalog', label: 'Catálogo', icon: '📦' },
     ],
   },
   {
     label: 'Destinos',
     items: [
-      { to: '/channels', label: 'Canais', icon: '◈' },
-      { to: '/links', label: 'Links públicos', icon: '⊕' },
+      { to: '/channels', label: 'Canais', icon: '📢' },
+      { to: '/links', label: 'Links públicos', icon: '🔗' },
     ],
   },
   {
     label: 'Provedores',
     items: [
-      { to: '/groups', label: 'Grupos', icon: '⊞' },
-      { to: '/accounts', label: 'Contas conectadas', icon: '◎' },
-      { to: '/affiliates', label: 'Afiliados', icon: '$' },
+      { to: '/groups', label: 'Grupos', icon: '👥' },
+      { to: '/accounts', label: 'Contas conectadas', icon: '📱' },
+      { to: '/affiliates', label: 'Afiliados', icon: '💰' },
     ],
   },
   {
     label: 'Análise',
     items: [
-      { to: '/clusters', label: 'Clusters', icon: '⬡' },
+      { to: '/clusters', label: 'Clusters', icon: '🧩' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { to: '/settings', label: 'Configurações', icon: '⚙' },
+      { to: '/settings', label: 'Configurações', icon: '⚙️' },
     ],
   },
 ]
@@ -121,7 +121,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                   }`
                 }
               >
-                <span className="w-4 text-center text-xs opacity-70">{item.icon}</span>
+                <span className="w-5 text-center text-base leading-none">{item.icon}</span>
                 {item.label}
               </NavLink>
             ))}

@@ -71,8 +71,8 @@ function PlatformBadge({ platform }: { platform: string }) {
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border ${
       isWA
-        ? 'border-green-700/40 text-green-400 bg-green-900/20'
-        : 'border-blue-700/40 text-blue-400 bg-blue-900/20'
+        ? 'border-success/30 text-success bg-success/10'
+        : 'border-accent/30 text-accent bg-accent/10'
     }`}>
       {isWA ? '📱' : '✈️'} {isWA ? 'WA' : 'TG'}
     </span>
@@ -108,10 +108,10 @@ function AdminAvatars({
           : null}
       </div>
       {count > 0 ? (
-        <span className={`text-xs font-medium ${isRisky ? 'text-amber-400' : 'text-fg-2'}`}>
+        <span className={`text-xs font-medium ${isRisky ? 'text-warning' : 'text-fg-2'}`}>
           {count > 0 ? `${Math.min(show.length || 1, count)} / ${count}` : '—'}
           {isRisky && (
-            <span className="ml-1 text-amber-400 text-[10px] font-bold">risco</span>
+            <span className="ml-1 text-warning text-[10px] font-bold">risco</span>
           )}
         </span>
       ) : (
@@ -124,8 +124,8 @@ function AdminAvatars({
 function StatusDot({ status }: { status?: string }) {
   const active = !status || status === 'active'
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium ${active ? 'text-green-400' : 'text-fg-3'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-400' : 'bg-fg-3'}`} />
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${active ? 'text-success' : 'text-fg-3'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-success' : 'bg-fg-3'}`} />
       {active ? 'ativo' : (status ?? '—')}
     </span>
   )
@@ -137,8 +137,8 @@ function AudienceBadge({ audienceStatus }: { audienceStatus?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border ${
       hasProfile
-        ? 'border-green-700/40 text-green-400 bg-green-900/20'
-        : 'border-amber-700/40 text-amber-400 bg-amber-900/20'
+        ? 'border-success/30 text-success bg-success/10'
+        : 'border-warning/30 text-warning bg-warning/10'
     }`}>
       {hasProfile ? '✓ perfil' : '⚠ sem perfil'}
     </span>
@@ -154,7 +154,7 @@ function AdminRiskBanner({ groups }: { groups: GroupRow[] }) {
   })
   if (risky.length === 0) return null
   return (
-    <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-amber-900/20 border border-amber-700/40 rounded-md text-sm text-amber-300">
+    <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-warning/10 border border-warning/30 rounded-md text-sm text-warning">
       <span className="mt-0.5 shrink-0">⚠</span>
       <span>
         <strong>{risky.length} grupo{risky.length !== 1 ? 's' : ''}</strong> com menos de 2 contas admin — risco de
