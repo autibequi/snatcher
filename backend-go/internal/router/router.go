@@ -211,6 +211,7 @@ func Build(
 		// Catalog
 		r.Get("/api/catalog", catalog.List)
 		r.Get("/api/catalog/", catalog.List)
+		r.Get("/api/catalog/search", catalog.Search)
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)

@@ -82,10 +82,21 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 }
 
 function SearchBar() {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Capturar Cmd+K / Ctrl+K para focar o input
+  const { data: results = [] } = useQuery<any[]>({
+    queryKey: ['catalog-search', query],
+    queryFn: () => query.trim().length >= 2
+      ? apiClient.get(`/api/catalog/search?q=${encodeURIComponent(query)}&limit=8`).then(r => r.data ?? [])
+      : Promise.resolve([]),
+    enabled: query.trim().length >= 2,
+    staleTime: 10_000,
+  })
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -93,29 +104,80 @@ function SearchBar() {
         inputRef.current?.focus()
         inputRef.current?.select()
       }
+      if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur() }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Fechar ao clicar fora
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const showDropdown = open && query.trim().length >= 2
+
   return (
-    <div className="flex-1 max-w-md relative flex items-center">
-      {/* Ícone lupa */}
-      <span className="absolute left-2.5 text-fg-2 pointer-events-none text-sm leading-none">
-        🔍
-      </span>
+    <div ref={containerRef} className="flex-1 max-w-md relative flex items-center">
+      <span className="absolute left-2.5 text-fg-2 pointer-events-none text-sm leading-none">🔍</span>
       <input
         ref={inputRef}
         type="text"
         value={query}
-        onChange={e => setQuery(e.target.value)}
+        onChange={e => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
         placeholder="Buscar produtos, grupos, canais…"
         className="w-full h-8 pl-8 pr-14 rounded-md bg-surface-2 border border-border text-sm text-fg placeholder:text-fg-3 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
       />
-      {/* Hint ⌘K */}
       <kbd className="absolute right-2 flex items-center gap-0.5 text-[10px] text-fg-3 bg-surface border border-border rounded px-1 py-0.5 pointer-events-none font-mono leading-none">
         ⌘K
       </kbd>
+
+      {showDropdown && results.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-modal z-50 overflow-hidden">
+          <p className="px-3 py-1.5 text-xs text-fg-3 border-b border-border">Produtos do catálogo</p>
+          {results.map((p: any) => {
+            const name = p.canonical_name ?? ''
+            const price = p.lowest_price ?? p.lowest_price?.Float64 ?? 0
+            const img = typeof p.image_url === 'string' ? p.image_url : p.image_url?.String ?? ''
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-2 text-left"
+                onClick={() => {
+                  navigate(`/compose?productIds=${p.id}`)
+                  setQuery('')
+                  setOpen(false)
+                }}
+              >
+                {img ? (
+                  <img src={img} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                ) : (
+                  <div className="w-8 h-8 rounded bg-surface-2 flex items-center justify-center flex-shrink-0 text-sm">📦</div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-fg truncate">{name}</p>
+                  {price > 0 && <p className="text-xs text-success">R$ {Number(price).toFixed(2)}</p>}
+                </div>
+                <span className="text-xs text-accent flex-shrink-0">compor →</span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-xs text-fg-3 hover:bg-surface-2 border-t border-border text-center"
+            onClick={() => { navigate(`/catalog?q=${encodeURIComponent(query)}`); setOpen(false) }}
+          >
+            Ver todos os resultados no catálogo →
+          </button>
+        </div>
+      )}
     </div>
   )
 }

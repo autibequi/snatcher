@@ -317,6 +317,17 @@ func (s *SQLStore) ListCatalogProducts(limit, offset int) ([]models.CatalogProdu
 	return out, err
 }
 
+func (s *SQLStore) SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error) {
+	if limit <= 0 { limit = 10 }
+	var out []models.CatalogProduct
+	pattern := "%" + q + "%"
+	err := s.db.Select(&out,
+		`SELECT * FROM catalogproduct
+		 WHERE canonical_name ILIKE $1 OR tags::text ILIKE $1 OR brand ILIKE $1
+		 ORDER BY updated_at DESC LIMIT $2`, pattern, limit)
+	return out, err
+}
+
 func (s *SQLStore) CountCatalogProducts() (int64, error) {
 	var count int64
 	err := s.db.Get(&count, `SELECT COUNT(*) FROM catalogproduct`)

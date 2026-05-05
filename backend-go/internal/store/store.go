@@ -52,6 +52,7 @@ type Store interface {
 
 	// Catalog
 	ListCatalogProducts(limit, offset int) ([]models.CatalogProduct, error)
+	SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error)
 	CountCatalogProducts() (int64, error)
 	GetCatalogProduct(id int64) (models.CatalogProduct, error)
 	CreateCatalogProduct(p models.CatalogProduct) (int64, error)

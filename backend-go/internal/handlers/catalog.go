@@ -36,6 +36,26 @@ func NewCatalogDB(st store.Store, db *sqlx.DB) *CatalogHandler {
 //	@Failure      500     {object}  object{error=string}
 //	@Security     BearerAuth
 //	@Router       /api/catalog [get]
+// Search godoc
+// GET /api/catalog/search?q=whey&limit=10
+func (h *CatalogHandler) Search(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	products, err := h.store.SearchCatalogProducts(q, limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if products == nil {
+		products = []models.CatalogProduct{}
+	}
+	writeJSON(w, http.StatusOK, products)
+}
+
 func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
