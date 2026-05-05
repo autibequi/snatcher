@@ -119,7 +119,7 @@ func Build(
 	// Setup (first-run): cria o primeiro admin se nenhum usuário existir
 	setup := handlers.NewSetupHandler(db)
 	r.Get("/api/setup/status", setup.Status)
-	r.With(middleware.RateLimit(3.0/60.0, 3)).Post("/api/setup/create-admin", setup.CreateAdmin)
+	r.Post("/api/setup/create-admin", setup.CreateAdmin)
 
 	// /api/auth/login: 5 req/min per IP (burst 5) — brute-force protection
 	r.With(middleware.RateLimit(5.0/60.0, 5)).Post("/api/auth/login", auth.Login)
