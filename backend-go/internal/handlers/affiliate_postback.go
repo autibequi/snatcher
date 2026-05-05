@@ -74,11 +74,35 @@ func (h *AffiliatePostbackHandler) Handle(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Persistir postback
+	// Persistir postback na tabela legacy affiliate_postbacks
 	var payload json.RawMessage = body
 	_, _ = h.db.ExecContext(r.Context(),
 		`INSERT INTO affiliate_postbacks (program_id, payload, signature) VALUES ($1, $2, $3)`,
 		prog.ID, payload, r.Header.Get("X-Signature"))
+
+	// Inserir conversão na tabela affiliate_conversions (migration 0086)
+	if h.store != nil {
+		var convPayload struct {
+			ExternalOrderID string  `json:"external_order_id"`
+			Revenue         float64 `json:"revenue"`
+			Status          string  `json:"status"`
+		}
+		_ = json.Unmarshal(body, &convPayload)
+		if convPayload.Status == "" {
+			convPayload.Status = "pending"
+		}
+		conv := models.AffiliateConversion{
+			ProgramID: prog.ID,
+			Status:    convPayload.Status,
+		}
+		if convPayload.ExternalOrderID != "" {
+			conv.ExternalOrderID = models.NullString{NullString: sqlNullStr(convPayload.ExternalOrderID)}
+		}
+		if convPayload.Revenue != 0 {
+			conv.Revenue = models.NullFloat64{NullFloat64: sqlNullF64(convPayload.Revenue)}
+		}
+		_, _ = h.store.InsertAffiliateConversion(conv)
+	}
 
 	w.WriteHeader(http.StatusOK)
 }
