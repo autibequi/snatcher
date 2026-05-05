@@ -79,12 +79,14 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 	// Injetar instrução de tom no prompt
 	rendered = injectToneInstruction(rendered, product.Tone, product.CustomContext)
 
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
+	maxTokens := p.MaxTokens
+	if maxTokens == 0 { maxTokens = 512 } // garante mínimo para não truncar JSON
 	opts := llm.Options{
 		Operation:   "compose",
-		MaxTokens:   p.MaxTokens,
+		MaxTokens:   maxTokens,
 		Temperature: p.Temperature,
 	}
 	if p.Model != "" {
@@ -142,19 +144,52 @@ func (s *Service) fallback(p ProductInput) Suggestion {
 	}
 }
 
-// parseResponse tenta parsear a resposta JSON do LLM; faz fallback para texto raw.
+// parseResponse tenta parsear a resposta JSON do LLM.
+// Se o JSON vier truncado (max_tokens atingido), extrai o campo "text" via regex.
 func parseResponse(raw string, _ ProductInput) Suggestion {
 	raw = strings.TrimSpace(raw)
-	// Remover possível bloco markdown ```json ... ```
+	// Remover bloco markdown ```json ... ```
 	raw = strings.TrimPrefix(raw, "```json")
 	raw = strings.TrimPrefix(raw, "```")
 	raw = strings.TrimSuffix(raw, "```")
 	raw = strings.TrimSpace(raw)
 
+	// Tentativa 1: parse completo
 	var s Suggestion
-	if err := json.Unmarshal([]byte(raw), &s); err != nil {
-		// Resposta textual não-JSON: usar como texto da sugestão
-		return Suggestion{Text: raw}
+	if err := json.Unmarshal([]byte(raw), &s); err == nil && s.Text != "" {
+		return s
 	}
-	return s
+
+	// Tentativa 2: extrair campo "text" de JSON truncado via regex
+	if idx := strings.Index(raw, `"text"`); idx >= 0 {
+		after := raw[idx+7:] // depois de `"text"`
+		// pular : e espaços
+		for len(after) > 0 && (after[0] == ':' || after[0] == ' ') {
+			after = after[1:]
+		}
+		if len(after) > 0 && after[0] == '"' {
+			after = after[1:]
+			// ler até a próxima aspas não escapada
+			var textBuf strings.Builder
+			escaped := false
+			for _, c := range after {
+				if escaped {
+					if c == 'n' { textBuf.WriteRune('\n') } else { textBuf.WriteRune(c) }
+					escaped = false
+				} else if c == '\\' {
+					escaped = true
+				} else if c == '"' {
+					break
+				} else {
+					textBuf.WriteRune(c)
+				}
+			}
+			if extracted := strings.TrimSpace(textBuf.String()); extracted != "" {
+				return Suggestion{Text: extracted}
+			}
+		}
+	}
+
+	// Tentativa 3: usar o raw como texto (resposta não-JSON do LLM)
+	return Suggestion{Text: raw}
 }
