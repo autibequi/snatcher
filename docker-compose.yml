@@ -83,8 +83,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     # shm_size necessário para o Chromium (Amazon scraping) não crashar no Pi
     shm_size: '128mb'
-    volumes:
-      - ./backend-python/data:/app/data
+    volumes: []
     environment:
       - DATABASE_URL=sqlite:///./data/app.db
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
@@ -120,8 +119,7 @@ services:
     container_name: snatcher-redirect
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-    volumes:
-      - ./backend-python/data:/data:ro
+    volumes: []
     environment:
       - DB_PATH=/data/app.db
     restart: unless-stopped

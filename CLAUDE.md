@@ -1,19 +1,29 @@
 # Promo Snatcher — CLAUDE.md
 
-Varredor automático de preços (Mercado Livre + Amazon) com pipeline de 3 camadas e envio inteligente para **WhatsApp + Telegram**.
+Varredor automático de preços (Mercado Livre + Amazon) com pipeline de 3 camadas e entrega inteligente para **WhatsApp + Telegram**.
 
 ## Stack
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Backend | FastAPI + SQLModel + SQLite + APScheduler |
-| Scrapers | httpx + BeautifulSoup (ML), crawl4ai/Chromium (Amazon) |
-| Messaging | WhatsApp via Evolution API + Telegram via python-telegram-bot 21.6 |
-| Frontend | React 18 + Vite + TailwindCSS + Recharts |
+| Backend | Go (chi, sqlx) + PostgreSQL 16 |
+| Scrapers | `net/http` + `PuerkitoBio/goquery` (HTML parsing) — sem browser headless |
+| Sources | mercadolivre, amazon, magalu, shopee, shein, aliexpress, humblebundle, kinguin, awin |
+| Messaging | WhatsApp via Evolution API; Telegram via `go-telegram-bot-api/v5` |
+| Frontend | React 18 + Vite + TypeScript + TailwindCSS |
 | Infra | Docker Compose + Cloudflare Tunnel |
-| Auth | JWT via python-jose |
+| Auth | JWT (custom, `internal/auth`) |
+| Observability | Prometheus metrics + structured logs |
 
-## Arquitetura — Pipeline v2
+## Arquitetura
+
+### 2 Binários Backend
+
+- **`cmd/server`**: Admin API (porta 8000) — CRUD SearchTerm/ChannelRule/CatalogProduct com auth JWT
+- **`cmd/public`**: Shortlinks & public API (porta 8001) — sem auth; usada pelos bots de redirecionamento
+- Compartilham postgres + scheduler: pipeline executa a cada `SCAN_INTERVAL` minutos
+
+### Pipeline (3 Camadas)
 
 ```
 CRAWL  →  CATALOG  →  DELIVER
@@ -21,99 +31,95 @@ CRAWL  →  CATALOG  →  DELIVER
 SearchTerm → CrawlResult → CatalogProduct/Variant → Channel(Rules) → WA/TG
 ```
 
-### Layer 1: CRAWL
-- **SearchTerm**: query, price range, sources, interval
-- **CrawlResult**: resultado bruto (título, preço, URL, source)
+**CRAWL**: `SearchTerm` (query, price range, sources, interval) → scraper (ML/AMZ) → `CrawlResult` (título, preço, URL)
 
-### Layer 2: CATALOG
-- **CatalogProduct**: produto canônico (canonical_name, brand, weight, tags, lowest_price)
-- **CatalogVariant**: URL/sabor/cor individual (preço, source)
-- **GroupingKeyword**: auto-tag (keyword → tag)
-- **PriceHistoryV2**: histórico por variante
+**CATALOG**: CrawlResult → `CatalogProduct` (canonical) + `CatalogVariant` (URL/cor/sabor) + auto-tag (LLM or keyword) + `PriceHistoryV2`
 
-### Layer 3: DELIVER
-- **Channel**: nome, template, send window
-- **ChannelTarget**: WA group ou TG chat
-- **ChannelRule**: match (tag/brand/search_term/all) + triggers (new/drop/lowest)
-- **SentMessageV2**: dedup por (product, target)
+**DELIVER**: ChannelRule (match + trigger) → evento (new/drop/lowest) → send WA via Evolution API / TG via `go-telegram-bot-api`
 
-## Estrutura
+### Estrutura `backend-go/internal/`
 
 ```
-backend/app/
-├── models.py              # SQLModel: pipeline v2 + legacy v1
-├── schemas.py             # Pydantic: v2 schemas
-├── database.py            # engine, migrations
-├── main.py                # FastAPI app, lifespan
-├── routers/
-│   ├── search_terms.py    # CRUD + crawl manual + results
-│   ├── catalog.py         # products + variants + keywords
-│   ├── channels.py        # channels + targets + rules
-│   ├── scan.py            # scheduler status + pipeline trigger
-│   ├── config.py          # AppConfig + WA QR/status
-│   ├── telegram.py        # TG discovery + linking
-│   └── public.py          # frontpage channel listing
-└── services/
-    ├── pipeline.py        # crawl → process → evaluate
-    ├── normalize.py       # normalize_title, extract_brand/weight
-    ├── scheduler.py       # APScheduler: pipeline + tg_poll
-    ├── mercadolivre.py    # ML scraper
-    ├── amazon.py          # AMZ scraper (crawl4ai)
-    ├── telegram_poller.py # TG getUpdates discovery
-    ├── migrate_v2.py      # Group/Product → v2 migration
-    └── whatsapp/          # adapters (evolution, telegram)
-
-frontend/src/
-├── App.jsx                # ErrorBoundary + routes + nav
-├── api.js                 # all API functions
-└── pages/
-    ├── Dashboard.jsx      # stats + analytics charts
-    ├── Crawlers.jsx       # SearchTerm list
-    ├── CrawlerDetail.jsx  # detail + results + crawl manual
-    ├── Catalog.jsx        # products + variants + sparklines + keywords
-    ├── Channels.jsx       # channel list
-    ├── ChannelDetail.jsx  # targets + rules + catalog preview
-    └── Settings.jsx       # WA/TG config
+handlers/     HTTP handlers (admin CRUD + público shortlinks)
+store/        SQL repository (sqlx)
+pipeline/     crawl → process → evaluate
+scheduler/    goroutine-based scan ticker
+scrapers/     mercadolivre, amazon, magalu, shopee, shein, aliexpress, humblebundle, kinguin, awin
+messaging/    adapters: WA (Evolution) + TG (go-telegram-bot-api)
+adapters/     external service clients (telegram, evolution)
+llm/          OpenRouter integration (auto-tag, eval)
+router/       chi router setup (admin + public)
+models/       domain structs
+auth/         JWT
+middleware/   logging, auth, error handling
+db/           connection pool + embedded migrations
+redirect/     shortlink resolver (cache + Postgres)
+spy/          telegram observer
+match/        product matching
 ```
-
-## Pipeline
-
-```
-run_pipeline()
-  ├── crawl_all_terms()          # SearchTerm → CrawlResult
-  ├── process_crawl_results()    # CrawlResult → CatalogProduct/Variant + auto-tag
-  └── evaluate_channels()        # ChannelRule + _detect_events() → send WA/TG
-```
-
-### Detecção de eventos (evaluate)
-- **new**: variant.first_seen < 3h
-- **drop**: preço caiu ≥ threshold vs PriceHistoryV2 anterior
-- **lowest**: preço atual = min(todo histórico)
-
-### Normalização de títulos
-```
-"Nutri Whey Protein Chocolate Pote 900g Integralmédica"
-→ "nutri whey protein integralmedica"
-```
-Remove: acentos, parênteses, peso, embalagem, sabores/cores.
-Fuzzy: SequenceMatcher ≥ 0.80 entre canonical_names.
 
 ## Comandos
 
 ```bash
-make dev         # Dev mode (hot-reload)
-make start       # Produção
-make update      # git pull + rebuild
-make logs        # Logs follow
-make status      # Container status + scheduler
+make dev         # Dev: postgres + backend + frontend (hot-reload)
+make start       # Produção: compila local + sobe tudo
+make deploy      # Pi: pull imagens do ghcr.io + sobe
+make logs        # Follow logs
+make status      # Container status + scheduler next run
+make health      # Smoke test (health check, swagger, metrics)
+make shell       # bash no backend container
+make admin       # Criar/atualizar usuário admin (pergunta email+senha)
+
+# Backend Go (delegado ao backend-go/Makefile)
+make backend-test       # go test
+make backend-build      # go build
+make backend-vet        # go vet
 ```
 
-## Variáveis (.env)
+## Variáveis de Ambiente (.env)
 
 ```env
-AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET
-SCAN_INTERVAL=30, TZ_NAME=America/Sao_Paulo
-EVOLUTION_URL, EVOLUTION_INSTANCE, EVOLUTION_API_KEY
-TG_BOT_TOKEN
-CLOUDFLARE_TOKEN
+# Obrigatórias
+AUTH_PASSWORD=            # senha painel admin
+AUTH_SECRET=              # JWT secret (gerado por make setup)
+EVOLUTION_API_KEY=        # WhatsApp API key
+PUBLIC_URL=               # URL pública (shortlinks)
+
+# Banco de dados
+DATABASE_URL=postgres://snatcher:devpass@snatcher-app-postgres:5432/snatcher
+SNATCHER_DB_PASS=devpass
+
+# Infraestrutura
+EVOLUTION_INSTANCE=default
+EVOLUTION_DB_PASS=evolution
+SCAN_INTERVAL=30          # minutos
+TZ_NAME=America/Sao_Paulo
+
+# Opcionais
+CLOUDFLARE_TOKEN=         # acesso externo
+AMZ_TRACKING_ID=          # Amazon Associates
+ML_AFFILIATE_TOOL_ID=     # ML Afiliados
+TG_BOT_TOKEN=             # Telegram
+GA_MEASUREMENT_ID=        # Google Analytics
+OPENROUTER_API_KEY=       # LLM (OpenRouter)
+LLM_DEFAULT_MODEL=openai/gpt-4o-mini
+LLM_BUDGET_USD_DAILY=5.0
+
+# White-label (planejado para split)
+APP_DOMAIN=beta.autibequi.com
+APP_NAME=Snatcher
 ```
+
+## Arquivos Docker Compose
+
+- `docker-compose.yml`: Produção (ghcr.io images)
+- `docker-compose.dev.yml`: Dev com hot-reload
+- `docker-compose.snatcher.yml`: Build local (override)
+
+Serviços: evolution + evo-postgres + evo-redis + postgres + backend + frontend + cloudflared (tunnel) + watchtower (auto-update)
+
+## Planejado
+
+- Split: `admin.jon.promo` (painel CRUD) / `jon.promo` (public site + shortlinks)
+- Melhorias de LLM eval (compose normalizado, detecção fuzzy)
+- Scrapers adicionais (eBay, Shein, etc.)

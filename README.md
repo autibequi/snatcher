@@ -1,6 +1,6 @@
 # Promo Snatcher
 
-Varredor automático de preços (Mercado Livre + Amazon) com envio para grupos WhatsApp e Telegram.
+Varredor automático de preços (Mercado Livre + Amazon) com pipeline inteligente e envio para WhatsApp + Telegram.
 
 ## Início rápido
 
@@ -9,111 +9,131 @@ git clone git@github.com:usuario/promo-snatcher.git
 cd promo-snatcher
 make setup       # cria .env e gera segredos automáticos
 nano .env        # preencher: AUTH_PASSWORD, EVOLUTION_API_KEY, PUBLIC_URL
-make start       # sobe a stack
+make dev         # ou `make start` para produção
 ```
 
-Acesso: `http://localhost:6060`
-
-Com Cloudflare Tunnel (acesso externo):
-```bash
-# Adicionar CLOUDFLARE_TOKEN no .env
-make start-tunnel
-```
-
-## Database
-
-O backend Go usa **PostgreSQL 16**. Para dev local:
-
-```bash
-# 1. Subir postgres
-docker compose -f docker-compose.dev.yml up -d snatcher-postgres
-
-# 2. Configurar
-cp .env.example .env
-
-# 3. Rodar migrations
-cd backend-go && make migrate
-
-# 4. Subir servidor
-make dev
-```
-
-Ver [docs/postgres-setup.md](docs/postgres-setup.md) para detalhes.
+Acesso:
+- Admin: `http://localhost:8000` (painel de configuração)
+- Frontend: `http://localhost:6060` (SPA pública — em transição para split)
+- Evolution QR: `http://localhost:3200` (WhatsApp)
 
 ## Variáveis obrigatórias no .env
 
 | Variável | Descrição |
 |---|---|
 | `AUTH_PASSWORD` | Senha do painel admin |
-| `EVOLUTION_API_KEY` | Chave da API WhatsApp (escolha qualquer senha forte) |
-| `PUBLIC_URL` | URL pública desta instância (usada nos links das mensagens) |
+| `EVOLUTION_API_KEY` | Chave da API WhatsApp |
+| `PUBLIC_URL` | URL pública (usada nos shortlinks das mensagens) |
 | `AUTH_SECRET` | Gerado automaticamente pelo `make setup` |
+| `DATABASE_URL` | Postgres 16 (padrão em docker-compose) |
 
-## Comandos
+Ver `.env.example` para todas as variáveis opcionais (GA, afiliados, LLM, etc.).
+
+## Database
+
+O backend Go usa **PostgreSQL 16** com Postgres interno para Evolution API.
+
+```bash
+# Dev local com Docker Compose
+make dev                  # sobe postgres + backend + frontend
+
+# Migrations
+cd backend-go && make migrate
+
+# Seed admin
+make admin                # pergunta email e senha
+```
+
+## Comandos principais
 
 ```
-make setup          Cria .env e gera segredos automáticos
-make start          Sobe a stack (sem Cloudflare Tunnel)
-make start-tunnel   Sobe a stack + Cloudflare Tunnel
-make down           Para todos os containers
-make logs           Logs em tempo real
-make status         Status dos containers + próximo scan
-make scan           Dispara scan manual em todos os grupos
-make shell          Shell no container do backend
+make setup              Primeira execução: cria .env + gera AUTH_SECRET
+make dev                Dev com hot-reload (postgres + backend + frontend)
+make start              Produção: compila local + sobe tudo
+make start-tunnel       Produção + Cloudflare Tunnel (acesso externo)
+make deploy             Pi: pull imagens + sobe (sem compilar)
+make logs               Logs em tempo real
+make status             Status resumido + próximo scan
+make health             Smoke test HTTP (saúde da stack)
+make shell              Shell no container do backend
 ```
 
----
+Mais: `make help` lista todos os 40+ comandos.
+
+## Estrutura
+
+```
+backend-go/
+├── cmd/
+│   ├── server/         # admin API (porta 8000, com auth)
+│   ├── public/         # shortlinks & public API (porta 8001, sem auth)
+│   ├── migrate/        # rodar migrations
+│   ├── seed/           # seed de dados
+│   └── llm-eval/       # ferramentas de avaliação
+└── internal/
+    ├── handlers/       # handlers HTTP
+    ├── store/          # repository & SQL
+    ├── pipeline/       # crawl → process → evaluate
+    ├── scheduler/      # APScheduler-like (goroutines)
+    ├── scrapers/       # ML, Amazon, Magalu, Shopee, Shein, AliExpress, Humble, Kinguin, Awin
+    ├── messaging/      # WhatsApp (Evolution) + Telegram
+    ├── llm/            # integração OpenRouter
+    ├── models/         # structs do domínio
+    └── ... (redirect, auth, config, etc.)
+
+frontend/              # React 18 + Vite + TailwindCSS (SPA único hoje)
+docker-compose.yml     # stack: postgres, evolution, redis, backend, frontend
+```
+
+## Pipeline
+
+```
+SearchTerm → CrawlResult → CatalogProduct/Variant → ChannelRule → WA/TG
+```
+
+1. **SearchTerm**: query, intervalo, fontes (ML/Amazon)
+2. **CrawlResult**: resultado bruto (título, preço, URL)
+3. **CatalogProduct/Variant**: normalização + dedup + histórico de preço
+4. **ChannelRule**: match (tag/brand/search_term) + triggers (new/drop/lowest)
+5. **Envio**: WA via Evolution API ou Telegram bot
+
+## Cloudflare Tunnel (acesso externo)
+
+```bash
+# Gerar token em: dash.cloudflare.com > Zero Trust > Networks > Tunnels
+# Adicionar ao .env:
+CLOUDFLARE_TOKEN=<seu-token>
+
+make start-tunnel
+```
 
 ## Raspberry Pi
 
-### 1. Instalar Docker
-
 ```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-sudo systemctl enable docker
-newgrp docker
+# 1. Instalar Docker
+make pi-setup
+
+# 2. Configurar .env (PUBLIC_URL com IP ou domínio do Pi)
+nano .env
+
+# 3. Deploy (pull imagens pré-compiladas)
+make deploy          # ou `make deploy-tunnel` com Cloudflare
 ```
 
-### 2. Configurar swap (evita OOM kills)
+Consumo esperado: ~1.5 GB RAM. Recomendado: Pi 4 com 4 GB.
 
-```bash
-sudo dphys-swapfile swapoff
-echo "CONF_SWAPSIZE=2048" | sudo tee /etc/dphys-swapfile
-sudo dphys-swapfile setup
-sudo dphys-swapfile swapon
-```
-
-### 3. Subir a aplicação
-
-```bash
-git clone git@github.com:usuario/promo-snatcher.git
-cd promo-snatcher
-make setup
-nano .env   # AUTH_PASSWORD, EVOLUTION_API_KEY, PUBLIC_URL (ex: http://ip-do-pi:6060)
-make start
-```
-
-### Consumo de memória esperado
-
-| Container | Limite |
-|---|---|
-| backend (Python + Chromium) | 768 MB |
-| evolution (WhatsApp) | 512 MB |
-| postgres | 256 MB |
-| redis | 96 MB |
-| frontend (nginx) | 64 MB |
-| cloudflared | 64 MB |
-| **Total** | ~1.85 GB |
-
-Recomendado: Raspberry Pi 4 com 4 GB ou mais (64-bit OS).
-
-### Reinicialização automática
-
-Com `sudo systemctl enable docker` configurado, todos os containers sobem automaticamente quando o Pi reinicia — `restart: unless-stopped` está definido em todos os serviços.
-
----
+Watchtower atualiza containers automaticamente a cada 15 min.
 
 ## API
 
-Documentação interativa: `http://localhost:8000/docs`
+Docs interativa: `http://localhost:8000/api/swagger` (OpenAPI 3.0)
+
+Saúde: `GET /api/health`
+
+## Planejado
+
+- Split em hosts separados: `admin.jon.promo` (painel CRUD) / `jon.promo` (public site + shortlinks), compartilhando apenas o Postgres
+- Frontend em dois bundles Vite (admin + public) sem fork de código
+- Postgres role read-only dedicada para `cmd/public`
+- Reorg `internal/handlers/{admin,public}/` para reduzir surface de leak
+- Normalização de títulos com fuzzy matching mais forte
