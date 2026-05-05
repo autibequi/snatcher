@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jon.promo — Promoções 24/7</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+    <script>
+      window.GA_ID = '__GA_MEASUREMENT_ID__';
+      if (window.GA_ID && !window.GA_ID.startsWith('__')) {
+        var s = document.createElement('script');
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=' + window.GA_ID;
+        s.async = true;
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', window.GA_ID, { send_page_view: true });
+        var _pushState = history.pushState;
+        history.pushState = function() {
+          _pushState.apply(this, arguments);
+          gtag('event', 'page_view', { page_location: location.href, page_title: document.title });
+        };
+        window.addEventListener('popstate', function() {
+          gtag('event', 'page_view', { page_location: location.href, page_title: document.title });
+        });
+      }
+    </script>
+    <script>
+      (function(){
+        var t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.dataset.density = 'comfy';
+        document.documentElement.dataset.accent = 'indigo';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/public-main.tsx"></script>
+  </body>
+</html>

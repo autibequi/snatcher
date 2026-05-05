@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/db"
-	"snatcher/backendv2/internal/handlers"
+	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/store"
@@ -29,7 +29,12 @@ import (
 )
 
 func main() {
-	dsn := os.Getenv("DATABASE_URL")
+	// PUBLIC_DATABASE_URL takes precedence (read-only credential for snatcher_public_app).
+	// Falls back to DATABASE_URL for backwards compatibility.
+	dsn := os.Getenv("PUBLIC_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
 	if dsn == "" {
 		dsn = "postgres://snatcher:devpass@snatcher-app-postgres:5432/snatcher?sslmode=disable"
 	}
@@ -43,10 +48,7 @@ func main() {
 		slog.Error("open db", "err", err)
 		os.Exit(1)
 	}
-	if err := db.RunMigrations(database); err != nil {
-		slog.Error("migrations", "err", err)
-		os.Exit(1)
-	}
+	// migrations run by cmd/server only — public is read-only
 
 	st := store.New(database)
 	rd := redirect.New(database, st)
@@ -82,7 +84,7 @@ func main() {
 
 	// ── Redirects ─────────────────────────────────────────────────────────────
 	r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st))
+	r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st))
 	r.Get("/g/{slug}", publicLinkHandler(st))
 	r.Get("/canal/{slug}", canalHandler(st))
 	r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
