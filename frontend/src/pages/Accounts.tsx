@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Input, Skeleton, EmptyState, Tabs } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
@@ -423,6 +424,7 @@ function AccountCard({
   onReconnect?: () => void
   onDelete: () => void
 }) {
+  const navigate = useNavigate()
   const wa = account as WAAccount
   const throughputPct =
     account.daily_limit > 0 ? account.sent_today / account.daily_limit : 0
@@ -470,7 +472,7 @@ function AccountCard({
             Reconectar
           </Button>
         )}
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/logs')}>
           Logs
         </Button>
         <Button variant="ghost" size="sm" className="text-danger hover:text-danger ml-auto" onClick={onDelete}>
