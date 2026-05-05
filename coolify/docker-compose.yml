@@ -60,7 +60,9 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/autibequi/promosnatcher-backend:latest
+    build:
+      context: ../backend-go
+      dockerfile: Dockerfile
     shm_size: 128mb
     volumes:
       - snatcher-data:/app/data
