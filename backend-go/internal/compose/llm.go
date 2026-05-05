@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -19,6 +20,8 @@ type Suggestion struct {
 	EmojiSet        []string `json:"emoji_set"`
 	MediaSuggestion string   `json:"media_suggestion"`
 	Cached          bool     `json:"cached"`
+	Fallback        bool     `json:"fallback,omitempty"` // true quando LLM falhou e usou template estático
+	FallbackReason  string   `json:"fallback_reason,omitempty"`
 }
 
 // ProductInput agrega os dados necessários para gerar o prompt.
@@ -70,7 +73,7 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 	}
 	rendered, err := p.Render(renderData{Product: product, Channel: channel})
 	if err != nil {
-		return s.fallback(product), nil
+		return Suggestion{}, fmt.Errorf("prompt render error: %w", err)
 	}
 
 	// Injetar instrução de tom no prompt
@@ -90,7 +93,8 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 
 	resp, err := s.cli.Complete(ctx, rendered, opts)
 	if err != nil {
-		return s.fallback(product), nil
+		slog.Warn("compose LLM falhou", "err", err)
+		return Suggestion{}, fmt.Errorf("LLM error: %w", err)
 	}
 
 	return parseResponse(resp, product), nil

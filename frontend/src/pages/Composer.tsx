@@ -220,6 +220,10 @@ export default function Composer() {
     onSuccess: (data: { text?: string }) => {
       if (data?.text) setText(data.text)
     },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error ?? err?.message ?? 'Erro desconhecido na IA'
+      alert(`❌ IA falhou:\n\n${msg}`)
+    },
   })
 
   const handleDispatch = () => {

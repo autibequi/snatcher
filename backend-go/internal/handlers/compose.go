@@ -104,7 +104,8 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	suggestion, err := svc.Preview(r.Context(), prod, ch)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "erro ao gerar preview")
+		// Retornar o erro real para diagnóstico no frontend
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, suggestion)
