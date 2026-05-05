@@ -59,38 +59,49 @@ services:
       - evo_redis_data:/data
     restart: unless-stopped
 
+  snatcher-postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=snatcher
+      - POSTGRES_USER=snatcher
+      - POSTGRES_PASSWORD=${SNATCHER_DB_PASS:-snatcher}
+    volumes:
+      - snatcher-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatcher"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
-    image: ghcr.io/autibequi/promosnatcher-backend:latest
+    build:
+      context: ../backend-go
+      dockerfile: Dockerfile
     shm_size: 128mb
     volumes:
       - snatcher-data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///./data/app.db
+      - DATABASE_URL=postgres://snatcher:${SNATCHER_DB_PASS:-snatcher}@snatcher-postgres:5432/snatcher?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-please}
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
-      - TZ_NAME=${TZ_NAME:-America/Sao_Paulo}
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - EVOLUTION_URL=http://evolution:8080
-      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
-      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
-      - AUTH_PASSWORD=${AUTH_PASSWORD}
-      - AUTH_SECRET=${AUTH_SECRET}
-      - AMZ_TRACKING_ID=${AMZ_TRACKING_ID:-}
-      - PUBLIC_URL=${PUBLIC_URL:-https://snatcher.autibequi.com}
-      - BASE_DOMAIN=${BASE_DOMAIN:-snatcher.autibequi.com}
+      - APP_DOMAIN=${APP_DOMAIN:-jon.promo}
       - ML_CLIENT_ID=${ML_CLIENT_ID:-}
       - ML_CLIENT_SECRET=${ML_CLIENT_SECRET:-}
-      - GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}
       - TG_BOT_TOKEN=${TG_BOT_TOKEN:-}
     depends_on:
+      snatcher-postgres:
+        condition: service_healthy
       evolution:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/api/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     restart: unless-stopped
 
   frontend:
@@ -114,6 +125,7 @@ volumes:
   evo_pg_data:
   evo_redis_data:
   snatcher-data:
+  snatcher-pg-data:
 
 networks:
   nuvem:
