@@ -158,6 +158,8 @@ type Store interface {
 	GetGroupSpy(id int64) (models.GroupSpy, error)
 	CreateGroupSpy(g models.GroupSpy) (int64, error)
 	SoftDeleteGroupSpy(id int64) error
+	ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error)
+	CreateSpyMessage(m models.SpyMessage) error
 
 	// Dispatches
 	CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error)
@@ -173,6 +175,11 @@ type Store interface {
 	// Auto Match
 	CreateAutoMatchLog(log models.AutoMatchLog) error
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
+
+	// Match — CTR histórico
+	// GetHistoricalCTRForGroup calcula CTR = clicks/dispatches para o grupo no contexto
+	// da categoria do produto. Retorna nil se o número de dispatches for < minDispatches.
+	GetHistoricalCTRForGroup(groupID int64, category string, minDispatches int) (*float64, error)
 
 	// Short Links
 	GetOrCreateShortLink(destURL, source string) (string, error)

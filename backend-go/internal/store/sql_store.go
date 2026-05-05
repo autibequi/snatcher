@@ -88,6 +88,40 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	return out, err
 }
 
+// GetHistoricalCTRForGroup calcula CTR = SUM(click_count) / COUNT(dispatches) para o
+// grupo no contexto da categoria do produto (match via tags JSONB do catalog product).
+// Retorna nil se o número de dispatches qualificados for menor que minDispatches.
+//
+// Tabelas: dispatch_targets (group_id, click_count, dispatch_id),
+//          dispatches (id, product_id), catalogproduct (id, tags).
+// Nota: category é comparada contra tags JSONB de catalogproduct via operador @>.
+func (s *SQLStore) GetHistoricalCTRForGroup(groupID int64, category string, minDispatches int) (*float64, error) {
+	if minDispatches <= 0 {
+		minDispatches = 5
+	}
+	var result struct {
+		TotalDispatches int     `db:"total_dispatches"`
+		TotalClicks     int64   `db:"total_clicks"`
+	}
+	err := s.db.Get(&result, `
+		SELECT COUNT(dt.id)       AS total_dispatches,
+		       COALESCE(SUM(dt.click_count), 0) AS total_clicks
+		FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		JOIN catalogproduct cp ON cp.id = d.product_id
+		WHERE dt.group_id = $1
+		  AND ($2 = '' OR cp.tags::jsonb @> to_jsonb($2::text))
+	`, groupID, category)
+	if err != nil {
+		return nil, err
+	}
+	if result.TotalDispatches < minDispatches {
+		return nil, nil //nolint:nilnil
+	}
+	ctr := float64(result.TotalClicks) / float64(result.TotalDispatches)
+	return &ctr, nil
+}
+
 func (s *SQLStore) ListWAAccounts() ([]models.WAAccount, error) {
 	var out []models.WAAccount
 	err := s.db.Select(&out, `SELECT * FROM waaccount ORDER BY id`)
@@ -1507,5 +1541,23 @@ func (s *SQLStore) CreateGroupSpy(g models.GroupSpy) (int64, error) {
 
 func (s *SQLStore) SoftDeleteGroupSpy(id int64) error {
 	_, err := s.db.Exec(`UPDATE group_spies SET active = false, deleted_at = now() WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error) {
+	if limit <= 0 { limit = 50 }
+	var out []models.SpyMessage
+	err := s.db.Select(&out,
+		`SELECT id, spy_id, sender, text, media_url, collected_at
+		 FROM spy_messages WHERE spy_id = $1
+		 ORDER BY collected_at DESC LIMIT $2`, spyID, limit)
+	if out == nil { out = []models.SpyMessage{} }
+	return out, err
+}
+
+func (s *SQLStore) CreateSpyMessage(m models.SpyMessage) error {
+	_, err := s.db.Exec(
+		`INSERT INTO spy_messages (spy_id, sender, text, media_url) VALUES ($1, $2, $3, $4)`,
+		m.SpyID, m.Sender, m.Text, m.MediaURL)
 	return err
 }

@@ -107,6 +107,28 @@ func (h *GroupSpiesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, g)
 }
 
+// Messages godoc
+//
+//	@Summary     Listar mensagens coletadas de um spy
+//	@Tags        crawlers
+//	@Produce     json
+//	@Param       id path int true "ID do spy"
+//	@Success     200 {array} models.SpyMessage
+//	@Router      /api/crawlers/group-spy/{id}/messages [get]
+func (h *GroupSpiesHandler) Messages(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	msgs, err := h.store.ListSpyMessages(id, 100)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar mensagens")
+		return
+	}
+	writeJSON(w, http.StatusOK, msgs)
+}
+
 // Delete godoc
 //
 //	@Summary     Remover group spy (soft-delete)

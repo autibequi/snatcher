@@ -185,3 +185,111 @@ func RankChannels(product ProductInput, channels []models.Channel) []Score {
 	}
 	return scores
 }
+
+// GroupScore representa o resultado de match para um grupo físico (WA/TG) dentro de um canal.
+type GroupScore struct {
+	GroupID   int64    `json:"group_id"`
+	GroupName string   `json:"group_name"`
+	ChannelID int64    `json:"channel_id"`
+	ChannelName string  `json:"channel_name"`
+	Subcategory string  `json:"subcategory,omitempty"`
+	Score     int      `json:"score"`
+	Reasons   []string `json:"reasons"`
+	MissingReasons []string `json:"missing_reasons,omitempty"`
+	// Campos enriquecidos (be-03)
+	MembersCount      int      `json:"members_count"`
+	ChannelCTR        float64  `json:"channel_ctr"`
+	HistoricalCTRHere *float64 `json:"historical_ctr_here,omitempty"` // null se < 5 dispatches
+	DiscountThreshold float64  `json:"discount_threshold,omitempty"`
+}
+
+// ScoreGroup calcula o score de afinidade entre produto e grupo usando o canal pai.
+// Função pura: sem IO. O enriquecimento de campos extras (HistoricalCTRHere, etc.)
+// é responsabilidade do caller (handler).
+func ScoreGroup(product ProductInput, group models.RedesignGroup, channel models.Channel, w Weights) GroupScore {
+	// Aproveitar ScoreChannel para calcular o score baseado na audience do canal.
+	chanScore := ScoreChannel(product, channel, w)
+
+	// Subcategoria: primeiro elemento das categories da audience do canal.
+	subcategory := ""
+	if len(channel.Audience.Categories) > 0 {
+		subcategory = channel.Audience.Categories[0]
+	}
+
+	// MissingReasons: componentes sem razão de match explícita.
+	var missing []string
+	if len(channel.Audience.Categories) > 0 {
+		hasCat := false
+		for _, r := range chanScore.Reasons {
+			if r == "categoria match" {
+				hasCat = true
+				break
+			}
+		}
+		if !hasCat {
+			missing = append(missing, "sem match de categoria")
+		}
+	}
+	if len(channel.Audience.Brands) > 0 {
+		hasBrand := false
+		for _, r := range chanScore.Reasons {
+			if r == "marca presente no perfil" {
+				hasBrand = true
+				break
+			}
+		}
+		if !hasBrand {
+			missing = append(missing, "sem match de marca")
+		}
+	}
+
+	gs := GroupScore{
+		GroupID:     group.ID,
+		GroupName:   group.Name,
+		ChannelID:   channel.ID,
+		ChannelName: channel.Name,
+		Subcategory: subcategory,
+		Score:       int(chanScore.Value),
+		Reasons:     chanScore.Reasons,
+		MissingReasons: missing,
+		// Campos enriquecidos preenchidos pelo handler após a chamada.
+		MembersCount: int(group.MemberCount),
+		ChannelCTR:   channel.CTR30d,
+		// TODO: DiscountThreshold — aguarda coluna groups.min_drop ou groups.discount_threshold no schema.
+		// Por ora usa channel.Audience.MinDrop como proxy do limiar de desconto do canal.
+		DiscountThreshold: channel.Audience.MinDrop,
+	}
+	return gs
+}
+
+// RankGroups calcula scores para grupos físicos (tabela groups) de canais ativos
+// e retorna os top 50 ordenados por score desc.
+// channelByID é um mapa channel_id → Channel para lookup O(1).
+func RankGroups(product ProductInput, groups []models.RedesignGroup, channelByID map[int64]models.Channel) []GroupScore {
+	scores := make([]GroupScore, 0, len(groups))
+	for _, g := range groups {
+		if g.Status != "active" {
+			continue
+		}
+		ch, ok := channelByID[g.ChannelID]
+		if !ok {
+			continue
+		}
+		gs := ScoreGroup(product, g, ch, defaultWeights)
+		if gs.Score > 0 {
+			scores = append(scores, gs)
+		}
+	}
+	// ordenação bubble sort desc
+	for i := 0; i < len(scores)-1; i++ {
+		for j := i + 1; j < len(scores); j++ {
+			if scores[j].Score > scores[i].Score {
+				scores[i], scores[j] = scores[j], scores[i]
+			}
+		}
+	}
+	if len(scores) > 50 {
+		scores = scores[:50]
+	}
+	return scores
+}

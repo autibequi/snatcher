@@ -694,7 +694,68 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
   )
 }
 
+function SpyDetailDrawer({ spy, onClose }: { spy: Record<string, unknown>; onClose: () => void }) {
+  const { data: messages = [], isLoading } = useQuery({
+    queryKey: ['spy-messages', spy.id],
+    queryFn: () => apiClient.get(`/api/crawlers/group-spy/${spy.id}/messages`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 30_000,
+  })
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg w-full max-w-xl max-h-[80vh] flex flex-col shadow-modal" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h3 className="font-semibold text-fg">{String(spy.group_name ?? '')}</h3>
+            <p className="text-xs text-fg-3">{String(spy.platform ?? '')} · {spy.active ? 'ativo' : 'parado'}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg p-1 rounded">✕</button>
+        </div>
+
+        {/* Mensagens coletadas */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Mensagens coletadas</p>
+          {isLoading ? (
+            <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : messages.length === 0 ? (
+            <div className="text-center py-8 space-y-1">
+              <p className="text-sm text-fg-2">Nenhuma mensagem coletada ainda.</p>
+              <p className="text-xs text-fg-3">O sistema coleta automaticamente as postagens do grupo enquanto o spy estiver ativo.</p>
+            </div>
+          ) : (
+            messages.map((m: any) => (
+              <div key={m.id} className="bg-surface-2 rounded-md p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-accent">{m.sender || 'desconhecido'}</p>
+                  <p className="text-xs text-fg-3">{new Date(m.collected_at).toLocaleString('pt-BR')}</p>
+                </div>
+                {m.media_url && (
+                  <img src={m.media_url} alt="" className="w-full max-h-32 object-cover rounded mb-2"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                )}
+                <p className="text-sm text-fg whitespace-pre-wrap break-words">{m.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Invite link */}
+        {spy.invite_link && (
+          <div className="px-5 py-3 border-t border-border flex-shrink-0">
+            <a href={String(spy.invite_link)} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-accent hover:underline truncate block">
+              {String(spy.invite_link)}
+            </a>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SpyTab({ onNew }: { onNew: () => void }) {
+  const [selected, setSelected] = React.useState<Record<string, unknown> | null>(null)
   const { data: spies = [], isLoading } = useQuery({
     queryKey: ['crawlers', 'group-spy'],
     queryFn: () => apiClient.get('/api/crawlers/group-spy').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
@@ -712,17 +773,27 @@ function SpyTab({ onNew }: { onNew: () => void }) {
   )
 
   return (
-    <div className="p-4">
-      {spies.map((s: Record<string, unknown>) => (
-        <div key={String(s.id)} className="flex items-center justify-between p-3 bg-surface border border-border rounded-md mb-2">
-          <div>
-            <p className="text-sm font-medium text-fg">{String(s.group_name ?? '')}</p>
-            <p className="text-xs text-fg-3">{String(s.platform ?? '')}</p>
+    <>
+      <div className="p-4">
+        {spies.map((s: Record<string, unknown>) => (
+          <div
+            key={String(s.id)}
+            className="flex items-center justify-between p-3 bg-surface border border-border rounded-md mb-2 cursor-pointer hover:border-accent transition-colors"
+            onClick={() => setSelected(s)}
+          >
+            <div>
+              <p className="text-sm font-medium text-fg">{String(s.group_name ?? '')}</p>
+              <p className="text-xs text-fg-3">{String(s.platform ?? '')}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant={s.active as boolean ? 'success' : 'default'}>{s.active ? 'ativo' : 'parado'}</Badge>
+              <span className="text-xs text-accent">ver detalhes →</span>
+            </div>
           </div>
-          <Badge variant={s.active ? 'success' : 'default'}>{s.active ? 'ativo' : 'parado'}</Badge>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      {selected && <SpyDetailDrawer spy={selected} onClose={() => setSelected(null)} />}
+    </>
   )
 }
 

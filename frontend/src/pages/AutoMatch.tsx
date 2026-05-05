@@ -20,6 +20,13 @@ interface AutoMatchStatus {
   logs: AutoMatchLog[]
 }
 
+interface PreviewItem {
+  product_name: string
+  channel_name: string
+  score: number
+  already_sent: boolean
+}
+
 export default function AutoMatch() {
   const qc = useQueryClient()
 
@@ -27,6 +34,12 @@ export default function AutoMatch() {
     queryKey: ['auto-match'],
     queryFn: () => apiClient.get('/api/auto-match').then(r => r.data),
     refetchInterval: 30_000,
+  })
+
+  const { data: previewData, refetch: refetchPreview, isFetching: previewFetching } = useQuery<{ items: PreviewItem[]; threshold: number; max_per_run: number }>({
+    queryKey: ['auto-match-preview'],
+    queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data),
+    staleTime: 60_000,
   })
 
   const toggleMut = useMutation({
@@ -116,6 +129,60 @@ export default function AutoMatch() {
             />
           </label>
         </div>
+      </div>
+
+      {/* Próximo ciclo — preview */}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-fg">Próximo ciclo — o que seria disparado</p>
+            <p className="text-xs text-fg-3">Produtos com score ≥ {threshold} que serão enviados na próxima iteração</p>
+          </div>
+          <button type="button" onClick={() => refetchPreview()} className="text-xs text-accent hover:underline">
+            {previewFetching ? '⏳' : '↻ recalcular'}
+          </button>
+        </div>
+        {previewFetching ? (
+          <div className="p-4 space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+        ) : !previewData?.items?.length ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-fg-3">Nenhum produto com score ≥ {threshold} no momento.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-2 border-b border-border">
+                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Produto</th>
+                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Canal</th>
+                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Score</th>
+                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {previewData.items.map((item, i) => (
+                <tr key={i} className={`border-b border-border last:border-0 ${item.already_sent ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-2.5">
+                    <p className="text-sm text-fg truncate max-w-[180px]">{item.product_name}</p>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <p className="text-sm text-fg">{item.channel_name}</p>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-sm font-semibold ${item.score >= 70 ? 'text-success' : item.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>
+                      {item.score.toFixed(0)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {item.already_sent
+                      ? <span className="text-xs text-fg-3">enviado nas últimas 6h</span>
+                      : <span className="text-xs text-accent font-medium">✓ será enviado</span>
+                    }
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Log de posts auto matched */}

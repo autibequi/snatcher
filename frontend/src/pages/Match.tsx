@@ -3,57 +3,117 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
+import { ProductSwitcher } from '../components/match/ProductSwitcher'
+import {
+  GroupRankItem,
+  GroupScore,
+  ChannelScore,
+  adaptChannelScore,
+} from '../components/match/GroupRankItem'
 
-// Fatores de score com peso e como chegar ao 100%
+// ── Score breakdown modal ─────────────────────────────────────────────────────
+
 const SCORE_FACTORS = [
-  { key: 'categoria match',     weight: 30, label: 'Categoria',          fix: 'Adicione a categoria deste produto ao perfil do canal em Canais → Audiência' },
-  { key: 'brand presente',      weight: 20, label: 'Marca',              fix: 'Adicione a marca deste produto ao perfil do canal em Canais → Audiência' },
-  { key: 'drop acima minimo',   weight: 20, label: 'Desconto mínimo',    fix: 'Reduza o desconto mínimo do canal ou aguarde promoção maior' },
-  { key: 'ticket dentro faixa', weight: 15, label: 'Faixa de preço',     fix: 'Ajuste a faixa de preço do canal para incluir R$ deste produto' },
+  { key: 'categoria match',     weight: 30, label: 'Categoria',            fix: 'Adicione a categoria deste produto ao perfil do canal em Canais → Audiência' },
+  { key: 'brand presente',      weight: 20, label: 'Marca',                fix: 'Adicione a marca deste produto ao perfil do canal em Canais → Audiência' },
+  { key: 'drop acima minimo',   weight: 20, label: 'Desconto mínimo',      fix: 'Reduza o desconto mínimo do canal ou aguarde promoção maior' },
+  { key: 'ticket dentro faixa', weight: 15, label: 'Faixa de preço',       fix: 'Ajuste a faixa de preço do canal para incluir R$ deste produto' },
   { key: 'historico',           weight: 15, label: 'Histórico de cliques', fix: 'Faça os primeiros disparos — o histórico de conversão se constrói automaticamente' },
 ]
 
-function ScoreBreakdown({ score, reasons, onClose }: { score: number; reasons: string[]; onClose: () => void }) {
+function ScoreBreakdown({
+  score,
+  reasons,
+  onClose,
+}: {
+  score: number
+  reasons: string[]
+  onClose: () => void
+}) {
   const lowerReasons = reasons.map(r => r.toLowerCase())
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-5 w-full max-w-sm shadow-modal" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border border-border rounded-lg p-5 w-full max-w-sm shadow-modal"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-fg">Como o score {score} foi calculado</h3>
-          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+          <h3 className="font-semibold text-fg">
+            Como o score {score} foi calculado
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-fg-3 hover:text-fg text-lg leading-none"
+          >
+            ×
+          </button>
         </div>
 
-        {/* Barra total */}
         <div className="mb-4">
           <div className="flex justify-between text-xs mb-1">
             <span className="text-fg-2">Score total</span>
-            <span className={`font-bold ${score >= 70 ? 'text-success' : score >= 40 ? 'text-warning' : 'text-danger'}`}>{score}/100</span>
+            <span
+              className={`font-bold ${
+                score >= 70
+                  ? 'text-success'
+                  : score >= 40
+                  ? 'text-warning'
+                  : 'text-danger'
+              }`}
+            >
+              {score}/100
+            </span>
           </div>
           <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${score >= 70 ? 'bg-success' : score >= 40 ? 'bg-warning' : 'bg-danger'}`} style={{ width: `${score}%` }} />
+            <div
+              className={`h-full rounded-full transition-all ${
+                score >= 70
+                  ? 'bg-success'
+                  : score >= 40
+                  ? 'bg-warning'
+                  : 'bg-danger'
+              }`}
+              style={{ width: `${score}%` }}
+            />
           </div>
         </div>
 
-        {/* Breakdown por fator */}
         <div className="space-y-2.5">
           {SCORE_FACTORS.map(factor => {
-            const matched = lowerReasons.some(r => r.includes(factor.key.split(' ')[0]))
+            const matched = lowerReasons.some(r =>
+              r.includes(factor.key.split(' ')[0])
+            )
             const earned = matched ? factor.weight : 0
             return (
               <div key={factor.key}>
                 <div className="flex items-center justify-between mb-0.5">
                   <div className="flex items-center gap-1.5">
-                    <span className={matched ? 'text-success' : 'text-danger'}>{matched ? '✓' : '✗'}</span>
+                    <span className={matched ? 'text-success' : 'text-danger'}>
+                      {matched ? '✓' : '✗'}
+                    </span>
                     <span className="text-sm text-fg">{factor.label}</span>
                   </div>
-                  <span className={`text-xs font-medium ${matched ? 'text-success' : 'text-danger'}`}>
+                  <span
+                    className={`text-xs font-medium ${
+                      matched ? 'text-success' : 'text-danger'
+                    }`}
+                  >
                     {earned}/{factor.weight} pts
                   </span>
                 </div>
                 <div className="h-1 bg-surface-2 rounded-full overflow-hidden ml-5">
-                  <div className={`h-full rounded-full ${matched ? 'bg-success' : 'bg-danger/30'}`}
-                    style={{ width: matched ? '100%' : '0%' }} />
+                  <div
+                    className={`h-full rounded-full ${
+                      matched ? 'bg-success' : 'bg-danger/30'
+                    }`}
+                    style={{ width: matched ? '100%' : '0%' }}
+                  />
                 </div>
                 {!matched && (
                   <p className="text-xs text-fg-3 ml-5 mt-0.5">→ {factor.fix}</p>
@@ -64,255 +124,241 @@ function ScoreBreakdown({ score, reasons, onClose }: { score: number; reasons: s
         </div>
 
         <p className="text-xs text-fg-3 mt-4 border-t border-border pt-3">
-          Para chegar a 100, configure o perfil do canal em <a href="/channels" className="text-accent hover:underline">Canais → Audiência</a>.
+          Para chegar a 100, configure o perfil do canal em{' '}
+          <a href="/channels" className="text-accent hover:underline">
+            Canais → Audiência
+          </a>
+          .
         </p>
       </div>
     </div>
   )
 }
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
+// ── Adapter: resposta do backend pode ser GroupScore[] ou ChannelScore[] ───────
 
-interface Product {
-  id: number
-  canonical_name?: string
-  brand?: string
-  image_url?: string
-  lowest_price?: number
-  lowest_price_source?: string
-  tags?: string[]
+type BackendResponse = GroupScore[] | ChannelScore[]
+
+function normalizeScores(data: BackendResponse): GroupScore[] {
+  if (!Array.isArray(data) || data.length === 0) return []
+  // Detect by presence of group_id (new format) vs only channel_id (legacy)
+  const first = data[0] as unknown as Record<string, unknown>
+  if ('group_id' in first) {
+    return data as GroupScore[]
+  }
+  return (data as ChannelScore[]).map(adaptChannelScore)
 }
 
-interface MatchScore {
-  channel_id: number
-  channel_name: string
-  score: number
-  reasons: string[]
-  platform?: string
-  member_count?: number
-}
-
-// ── Linha de produto com match de canais ─────────────────────────────────────
-
-function ProductMatchRow({ product }: { product: Product }) {
-  const navigate = useNavigate()
-  const [breakdown, setBreakdown] = React.useState<{ score: number; reasons: string[] } | null>(null)
-  const title = product.canonical_name ?? 'Produto'
-  const price = product.lowest_price ?? 0
-  const source = product.lowest_price_source ?? ''
-
-  const { data: scores, mutate: runMatch, isPending } = useMutation<MatchScore[]>({
-    mutationFn: () =>
-      apiClient.post('/api/match', {
-        product_id: product.id,
-        category: (product.tags ?? [])[0] ?? '',
-        brand: product.brand ?? '',
-        price,
-        drop: 0,
-      }).then(r => r.data).catch(() => []),
-  })
-
-  // Rodar match ao montar
-  React.useEffect(() => { runMatch() }, [])
-
-  const topChannels = (scores ?? []).filter(s => s.score >= 30).slice(0, 3)
-
-  return (
-    <div className="border border-border rounded-md bg-surface overflow-hidden">
-      {/* Cabeçalho do produto */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-        {product.image_url ? (
-          <img src={product.image_url} alt="" className="w-10 h-10 rounded-sm object-cover bg-surface-2 flex-shrink-0" />
-        ) : (
-          <div className="w-10 h-10 rounded-sm bg-surface-2 flex items-center justify-center flex-shrink-0 text-lg">📦</div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-fg truncate">{title}</p>
-          <p className="text-xs text-fg-3">{source && `${source} · `}{price > 0 ? `R$ ${price.toFixed(2)}` : ''}</p>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => navigate(`/compose?productId=${product.id}`)}
-        >
-          ✈ Disparar
-        </Button>
-      </div>
-
-      {/* Canais com fit */}
-      <div className="px-4 py-2.5">
-        {isPending ? (
-          <div className="flex gap-2">
-            <Skeleton className="h-5 w-20" />
-            <Skeleton className="h-5 w-24" />
-          </div>
-        ) : topChannels.length === 0 ? (
-          <p className="text-xs text-fg-3">Nenhum canal compatível — configure canais com audiência.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-fg-3">Canais com fit:</span>
-            {breakdown && (
-              <ScoreBreakdown score={breakdown.score} reasons={breakdown.reasons} onClose={() => setBreakdown(null)} />
-            )}
-            {topChannels.map(s => {
-              const color = s.score >= 70 ? 'bg-success/10 text-success' : s.score >= 40 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'
-              return (
-                <div key={s.channel_id} className="flex items-center">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/compose?productId=${product.id}&targets=${s.channel_id}`)}
-                    className={`text-xs px-2 py-0.5 rounded-l-sm font-medium ${color} hover:opacity-80`}
-                  >
-                    {s.channel_name} ({s.score})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBreakdown({ score: s.score, reasons: s.reasons ?? [] })}
-                    className={`text-xs px-1 py-0.5 rounded-r-sm ${color} hover:opacity-80 border-l border-current/20`}
-                    title="Ver breakdown do score"
-                  >
-                    ?
-                  </button>
-                </div>
-              )
-            })}
-            {(scores?.length ?? 0) > 3 && (
-              <button
-                type="button"
-                className="text-xs text-fg-3 hover:text-fg"
-                onClick={() => navigate(`/match?productId=${product.id}`)}
-              >
-                +{(scores?.length ?? 0) - 3} mais →
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── View de detalhe: 1 produto × todos os canais ──────────────────────────────
+// ── Detail view: 2-col layout ─────────────────────────────────────────────────
 
 function ProductDetailMatch({ productId }: { productId: string }) {
   const navigate = useNavigate()
-  const [minScore, setMinScore] = React.useState(0)
-  const [selected, setSelected] = React.useState<number[]>([])
+  const [, setSearchParams] = useSearchParams()
 
+  const [minScore, setMinScore] = React.useState(0)
+  const [breakdown, setBreakdown] = React.useState<GroupScore | null>(null)
+  const [selected, setSelected] = React.useState<number[]>([])
+  const [batchMode, setBatchMode] = React.useState(false)
+
+  // Product list (for switcher)
+  const { data: allProducts = [] } = useQuery<Product[]>({
+    queryKey: ['catalog', 'match-list'],
+    queryFn: () =>
+      apiClient
+        .get('/api/catalog?limit=50')
+        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? [])))
+        .catch(() => []),
+    staleTime: 60_000,
+  })
+
+  // Current product
   const { data: product } = useQuery<Product>({
     queryKey: ['catalog', productId],
-    queryFn: () => apiClient.get(`/api/catalog/${productId}`).then(r => r.data),
+    queryFn: () =>
+      apiClient.get(`/api/catalog/${productId}`).then(r => r.data),
   })
 
-  const { data: scores = [], isPending, mutate: runMatch } = useMutation<MatchScore[]>({
+  // Match scores
+  const {
+    data: rawScores = [],
+    isPending,
+    mutate: runMatch,
+  } = useMutation<BackendResponse>({
     mutationFn: () =>
-      apiClient.post('/api/match', {
-        product_id: Number(productId),
-        category: (product?.tags ?? [])[0] ?? '',
-        brand: product?.brand ?? '',
-        price: product?.lowest_price ?? 0,
-        drop: 0,
-      }).then(r => r.data).catch(() => []),
+      apiClient
+        .post('/api/match', { product_id: Number(productId) })
+        .then(r => r.data)
+        .catch(() => []),
   })
 
-  React.useEffect(() => { if (product || productId) runMatch() }, [product])
+  React.useEffect(() => {
+    if (productId) runMatch()
+  }, [productId])
 
-  const toggle = (id: number) =>
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-
+  const scores: GroupScore[] = normalizeScores(rawScores)
   const filtered = scores.filter(s => s.score >= minScore)
   const greenCount = filtered.filter(s => s.score >= 70).length
 
+  const toggleGroup = (id: number) =>
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+
+  const handleAction = (group: GroupScore, action: 'send' | 'review' | 'skip') => {
+    if (action === 'send' || action === 'review') {
+      navigate(
+        `/compose?productId=${productId}&targets=${group.group_id}`
+      )
+    }
+    // skip: no-op (could add a "dismissed" set later)
+  }
+
+  const handleSwitchProduct = (id: number) => {
+    setSearchParams({ productId: String(id) })
+    setSelected([])
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-border flex items-center gap-3">
-        <button type="button" onClick={() => navigate('/match')} className="text-fg-3 hover:text-fg text-sm">← Todos os produtos</button>
-        {product && (
-          <span className="text-sm font-medium text-fg">{product.canonical_name}</span>
-        )}
-      </div>
+      {/* Page header */}
+      <div className="px-6 pt-5 pb-3 border-b border-border flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-lg font-semibold text-fg">Match</h1>
+          <p className="text-sm text-fg-3 mt-0.5">
+            Escolha um produto. O sistema mostra{' '}
+            <strong>quais grupos têm fit</strong> — e por quê.
+          </p>
+        </div>
 
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-border flex-wrap">
-        <label className="flex items-center gap-2 text-sm text-fg-2">
-          Score mínimo: <b className="text-fg">{minScore}</b>
-          <input type="range" min={0} max={100} step={5} value={minScore}
-            onChange={e => setMinScore(Number(e.target.value))}
-            className="w-28 accent-accent" />
-        </label>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {isPending ? (
-          Array.from({length:4}).map((_,i) => <Skeleton key={i} className="h-16 w-full" />)
-        ) : filtered.length === 0 ? (
-          <EmptyState title="Nenhum canal compatível" description="Configure canais com perfil de audiência." />
-        ) : (
-          filtered.map(s => {
-            const pct = s.score
-            const barColor = pct >= 70 ? 'bg-success' : pct >= 40 ? 'bg-warning' : 'bg-danger'
-            const textColor = pct >= 70 ? 'text-success' : pct >= 40 ? 'text-warning' : 'text-danger'
-            return (
-              <div key={s.channel_id} onClick={() => toggle(s.channel_id)}
-                className={`flex items-center gap-4 p-3 border rounded-md cursor-pointer transition-colors ${
-                  selected.includes(s.channel_id) ? 'border-accent bg-accent/5' : 'border-border bg-surface hover:border-border-strong'
-                }`}
-              >
-                <div className={`w-1 h-10 rounded-full flex-shrink-0 ${barColor}`} />
-                <input type="checkbox" checked={selected.includes(s.channel_id)}
-                  onChange={() => toggle(s.channel_id)} className="accent-accent"
-                  onClick={e => e.stopPropagation()} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-fg">{s.channel_name}</p>
-                  <div className="flex gap-1 flex-wrap mt-0.5">
-                    {(s.reasons ?? []).map((r, i) => (
-                      <span key={i} className="text-xs px-1.5 py-0.5 rounded-sm bg-success/10 text-success">+ {r}</span>
-                    ))}
-                    {/* Mostrar o que falta */}
-                    {SCORE_FACTORS.filter(f => !(s.reasons ?? []).some((r: string) => r.toLowerCase().includes(f.key.split(' ')[0]))).slice(0, 2).map(f => (
-                      <span key={f.key} className="text-xs px-1.5 py-0.5 rounded-sm bg-danger/10 text-danger" title={f.fix}>− {f.label}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="w-24 flex-shrink-0 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <span className={`text-lg font-bold ${textColor}`}>{pct}</span>
-                    <button type="button"
-                      className="text-xs text-fg-3 hover:text-fg"
-                      title="Ver breakdown"
-                      onClick={e => { e.stopPropagation(); /* mostrar breakdown */ }}
-                    >/100</button>
-                  </div>
-                  <div className="h-1 bg-surface-2 rounded-full mt-1">
-                    <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}} />
-                  </div>
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
-
-      <div className="border-t border-border p-4 flex items-center justify-between">
-        <span className="text-sm text-fg-2">{selected.length} selecionado(s)</span>
-        <div className="flex gap-2">
-          {greenCount > 0 && selected.length === 0 && (
-            <Button variant="secondary" size="sm"
-              onClick={() => setSelected(filtered.filter(s=>s.score>=70).map(s=>s.channel_id))}>
-              Selecionar {greenCount} verde{greenCount!==1?'s':''}
+        {/* Card 05: Modo lote + Disparar batch */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setBatchMode(b => !b)
+              if (batchMode) setSelected([])
+            }}
+            className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${
+              batchMode
+                ? 'bg-accent/10 border-accent text-accent'
+                : 'border-border text-fg-2 hover:bg-surface-2'
+            }`}
+          >
+            Modo lote
+          </button>
+          {batchMode && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={selected.length === 0 && greenCount === 0}
+              onClick={() => {
+                const targets =
+                  selected.length > 0
+                    ? selected
+                    : filtered.filter(s => s.score >= 70).map(s => s.group_id)
+                navigate(
+                  `/compose?productId=${productId}&targets=${targets.join(',')}`
+                )
+              }}
+            >
+              ✈ Disparar para {selected.length > 0 ? selected.length : `${greenCount} verdes`}
             </Button>
           )}
-          <Button variant="primary"
-            disabled={selected.length === 0}
-            onClick={() => navigate(`/compose?productId=${productId}&targets=${selected.join(',')}`)}>
-            ✈ Disparar para {selected.length > 0 ? selected.length : `os ${greenCount} verdes`}
-          </Button>
         </div>
       </div>
+
+      {/* 2-col grid */}
+      <div className="flex-1 overflow-hidden grid grid-cols-[2fr_3fr] gap-6 p-6">
+        {/* ── Coluna esquerda ── */}
+        <div className="flex flex-col gap-4 overflow-y-auto">
+          {/* Card 02: ProductFocusCard */}
+          {product ? (
+            <ProductFocusCard product={product} />
+          ) : (
+            <Skeleton className="h-36 w-full" />
+          )}
+
+          {/* Card 03: ProductSwitcher */}
+          <ProductSwitcher
+            products={allProducts}
+            selectedId={product?.id ?? null}
+            onSelect={handleSwitchProduct}
+          />
+        </div>
+
+        {/* ── Coluna direita ── */}
+        <div className="flex flex-col overflow-hidden">
+          {/* Card 05: header coluna direita */}
+          <div className="flex items-center gap-3 mb-3 flex-wrap flex-shrink-0">
+            <span className="text-sm font-medium text-fg flex-1">
+              Grupos rankeados · {filtered.length} de {scores.length}
+            </span>
+
+            {/* Botão "+ IA" placeholder */}
+            <button
+              type="button"
+              onClick={() => console.log('[IA placeholder] clicked')}
+              className="text-xs font-medium px-2.5 py-1 rounded-full border border-accent text-accent hover:bg-accent/10 transition-colors"
+            >
+              + IA
+            </button>
+
+            {/* Score slider reposicionado */}
+            <label className="flex items-center gap-1.5 text-xs text-fg-2 flex-shrink-0">
+              Score ≥ <span className="font-bold text-fg w-5 text-right">{minScore}</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={minScore}
+                onChange={e => setMinScore(Number(e.target.value))}
+                className="w-24 accent-accent"
+              />
+            </label>
+          </div>
+
+          {/* Lista grupos */}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            {isPending ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title="Nenhum grupo compatível"
+                description="Configure grupos com perfil de audiência ou reduza o score mínimo."
+              />
+            ) : (
+              filtered.map(g => (
+                <GroupRankItem
+                  key={g.group_id}
+                  group={g}
+                  selected={selected.includes(g.group_id)}
+                  batchMode={batchMode}
+                  onToggle={() => toggleGroup(g.group_id)}
+                  onAction={action => handleAction(g, action)}
+                  onBreakdown={() => setBreakdown(g)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Score breakdown modal */}
+      {breakdown && (
+        <ScoreBreakdown
+          score={breakdown.score}
+          reasons={breakdown.reasons}
+          onClose={() => setBreakdown(null)}
+        />
+      )}
     </div>
   )
 }
 
-// ── Página principal ──────────────────────────────────────────────────────────
+// ── Página principal (sem productId → lista compacta c/ 1º produto auto) ──────
 
 export default function Match() {
   const [params] = useSearchParams()
@@ -320,18 +366,18 @@ export default function Match() {
   const productId = params.get('productId')
   const [search, setSearch] = React.useState('')
 
-  // Se tem productId → view de detalhe
+  // Com productId → detail 2-col
   if (productId) {
     return <ProductDetailMatch productId={productId} />
   }
 
-  // Sem productId → lista de produtos do catálogo com match inline
+  // Sem productId → lista de produtos com link pra detail
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
         <h1 className="text-lg font-semibold text-fg">Match</h1>
         <p className="text-sm text-fg-3 mt-0.5">
-          Produtos do catálogo × canais compatíveis — clique em um canal para disparar direto.
+          Produtos do catálogo — clique em um produto para ver grupos compatíveis.
         </p>
       </div>
 
@@ -344,26 +390,42 @@ export default function Match() {
         />
       </div>
 
-      <ProductList search={search} navigate={navigate} />
+      <ProductListNav search={search} navigate={navigate} />
     </div>
   )
 }
 
-function ProductList({ search, navigate }: { search: string; navigate: ReturnType<typeof useNavigate> }) {
+function ProductListNav({
+  search,
+  navigate,
+}: {
+  search: string
+  navigate: ReturnType<typeof useNavigate>
+}) {
   const { data: raw = [], isLoading } = useQuery<Product[]>({
     queryKey: ['catalog', 'match-list'],
-    queryFn: () => apiClient.get('/api/catalog?limit=50').then(r =>
-      Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
-    ).catch(() => []),
+    queryFn: () =>
+      apiClient
+        .get('/api/catalog?limit=50')
+        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? [])))
+        .catch(() => []),
     staleTime: 60_000,
   })
 
   const products = search
-    ? raw.filter(p => (p.canonical_name ?? '').toLowerCase().includes(search.toLowerCase()))
+    ? raw.filter(p =>
+        (p.canonical_name ?? '').toLowerCase().includes(search.toLowerCase())
+      )
     : raw
 
   if (isLoading) {
-    return <div className="p-6 space-y-3">{Array.from({length:5}).map((_,i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
+      </div>
+    )
   }
 
   if (products.length === 0) {
@@ -372,17 +434,56 @@ function ProductList({ search, navigate }: { search: string; navigate: ReturnTyp
         <EmptyState
           title="Nenhum produto no catálogo"
           description="Configure crawlers para coletar produtos e o match será calculado automaticamente."
-          cta={{ label: 'Ir para Crawlers', onClick: () => navigate('/crawlers') }}
+          cta={{
+            label: 'Ir para Crawlers',
+            onClick: () => navigate('/crawlers'),
+          }}
         />
       </div>
     )
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-3">
-      {products.map(p => (
-        <ProductMatchRow key={p.id} product={p} />
-      ))}
+    <div className="flex-1 overflow-y-auto p-6 space-y-2">
+      {products.map(p => {
+        const price = p.lowest_price ?? 0
+        const originalPrice = p.original_price
+        const discount =
+          originalPrice && originalPrice > price
+            ? Math.round((1 - price / originalPrice) * 100)
+            : null
+
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => navigate(`/match?productId=${p.id}`)}
+            className="w-full flex items-center gap-3 px-4 py-3 border border-border rounded-md bg-surface hover:border-border-strong hover:bg-surface-2 transition-colors text-left"
+          >
+            <div className="w-9 h-9 rounded-sm bg-surface-2 flex-shrink-0 flex items-center justify-center overflow-hidden">
+              {p.image_url ? (
+                <img
+                  src={p.image_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-xl">📦</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-fg truncate">
+                {p.canonical_name ?? 'Produto'}
+              </p>
+              <p className="text-xs text-fg-3">
+                {price > 0 ? `R$ ${price.toFixed(2)}` : ''}
+                {discount !== null ? ` · −${discount}%` : ''}
+              </p>
+            </div>
+            <span className="text-xs text-fg-3">Ver grupos →</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

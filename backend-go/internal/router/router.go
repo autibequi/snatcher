@@ -110,6 +110,8 @@ func Build(
 	// ---------------------------------------------------------------------------
 	postbackH := handlers.NewAffiliatePostbackHandler(db)
 	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
+	evoWebhook := handlers.NewEvolutionWebhookHandler(st)
+	r.Post("/webhooks/evolution", evoWebhook.Handle)
 
 	r.Get("/api/health", healthHandler)
 	r.Get("/api/brand", brand.Get) // white-label public config
@@ -287,6 +289,7 @@ func Build(
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)
+		r.Get("/api/auto-match/preview", autoMatch.Preview)
 		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
 
 		// Short Links
@@ -324,6 +327,7 @@ func Build(
 		r.Get("/api/crawlers/group-spy", groupSpies.List)
 		r.Post("/api/crawlers/group-spy", groupSpies.Create)
 		r.Get("/api/crawlers/group-spy/{id}", groupSpies.Get)
+		r.Get("/api/crawlers/group-spy/{id}/messages", groupSpies.Messages)
 		r.Delete("/api/crawlers/group-spy/{id}", groupSpies.Delete)
 
 		// Clusters analíticos
@@ -335,6 +339,8 @@ func Build(
 		r.Get("/api/dashboard/feed", dash.Feed)
 		r.Get("/api/dashboard/inbox", dash.Inbox)
 		r.Get("/api/dashboard/performance", dash.Performance)
+		r.Get("/api/dashboard/channel-performance", dash.Performance)
+		r.Get("/api/dashboard/upcoming-dispatches", dash.UpcomingDispatches)
 
 		// Team (operadores)
 		r.Get("/api/team", team.List)

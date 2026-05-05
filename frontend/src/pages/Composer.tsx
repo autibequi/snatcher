@@ -30,7 +30,7 @@ interface ComposePreviewResponse {
 }
 
 export default function Composer() {
-  const [params] = useSearchParams()
+  const [params, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const productId = params.get('productId')
   // Suporte a múltiplos produtos: ?productIds=1,2,3 ou ?productId=1
@@ -50,6 +50,7 @@ export default function Composer() {
   )
 
   const [text, setText] = React.useState('')
+  const [previewIndex, setPreviewIndex] = React.useState(0)
 
   // Carregar rascunho se draftId presente
   useQuery({
@@ -254,40 +255,97 @@ export default function Composer() {
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">1</span>
                 <p className="font-medium text-fg">Produtos ({productIds.length})</p>
               </div>
-              <button type="button" onClick={() => navigate('/catalog')} className="text-xs text-accent hover:underline">
-                + Selecionar do catálogo
-              </button>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => navigate('/match')} className="text-xs text-fg-2 hover:underline">
+                  Trocar
+                </button>
+                <button type="button" onClick={() => navigate('/catalog')} className="text-xs text-accent hover:underline">
+                  + Selecionar do catálogo
+                </button>
+              </div>
             </div>
             <div className="p-4">
               {productIds.length > 0 ? (
-                <div className="space-y-2">
-                  {productIds.map((pid, i) => {
-                    const pd = productsData[i]
-                    const img = pd ? nullStr(pd?.image_url) : null
-                    const name = pd ? (nullStr(pd?.canonical_name) || pd?.canonical_name || '') : null
-                    const price = pd?.lowest_price?.Float64 ?? pd?.lowest_price ?? 0
-                    return (
-                      <div key={pid} className="flex items-center gap-2.5 p-2 bg-surface-2 rounded-md">
-                        {img ? (
-                          <img src={img} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0"
-                            onError={e => { (e.target as HTMLImageElement).src = '' }} />
-                        ) : (
-                          <div className="w-10 h-10 rounded bg-surface flex items-center justify-center text-lg flex-shrink-0">📦</div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-fg truncate">{name || `Produto #${pid}`}</p>
-                          {price > 0 && <p className="text-xs text-success">R$ {Number(price).toFixed(2)}</p>}
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {productIds.map((pid, i) => {
+                      const pd = productsData[i] as any
+                      const img = pd ? nullStr(pd?.image_url) : null
+                      const name = pd ? (nullStr(pd?.canonical_name) || pd?.canonical_name || '') : null
+                      const price: number = pd?.lowest_price?.Float64 ?? pd?.lowest_price ?? 0
+                      const origPrice: number = pd?.original_price?.Float64 ?? pd?.original_price ?? 0
+                      const discountPct = origPrice > 0 && price > 0 && origPrice > price
+                        ? Math.round((origPrice - price) / origPrice * 100)
+                        : 0
+                      const removeProduct = () => {
+                        const next = productIds.filter(id => id !== pid)
+                        const newParams = new URLSearchParams(params)
+                        if (next.length > 0) {
+                          newParams.set('productIds', next.join(','))
+                        } else {
+                          newParams.delete('productIds')
+                          newParams.delete('productId')
+                        }
+                        setSearchParams(newParams)
+                      }
+                      return (
+                        <div key={pid} className="relative bg-surface-2 rounded-lg overflow-hidden border border-border">
+                          <button
+                            type="button"
+                            onClick={removeProduct}
+                            className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/50 text-white text-xs hover:bg-black/70"
+                            aria-label="Remover produto"
+                          >
+                            ×
+                          </button>
+                          <div className="aspect-square w-full bg-surface flex items-center justify-center overflow-hidden">
+                            {img ? (
+                              <img
+                                src={img}
+                                alt={name || `Produto #${pid}`}
+                                className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            ) : (
+                              <span className="text-4xl">📦</span>
+                            )}
+                          </div>
+                          <div className="p-3">
+                            <p className="text-sm font-semibold text-fg leading-snug line-clamp-2">{name || `Produto #${pid}`}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              {price > 0 && (
+                                <span className="text-base font-bold text-success">R$ {Number(price).toFixed(2)}</span>
+                              )}
+                              {discountPct > 0 && (
+                                <span className="text-xs font-semibold bg-success/15 text-success rounded px-1.5 py-0.5">
+                                  -{discountPct}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        {i === 0 && <button type="button" onClick={() => navigate('/match')} className="text-xs text-accent hover:underline flex-shrink-0">Trocar</button>}
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                  {/* Card 02: summary footer */}
+                  <p className="text-xs text-fg-3 mt-3">
+                    {productIds.length} mensagem{productIds.length !== 1 ? 's' : ''} × {targetIds.length > 0 ? targetIds.length : '?'} grupo{targetIds.length !== 1 ? 's' : ''} = {' '}
+                    {targetIds.length > 0
+                      ? <strong className="text-fg font-bold">{productIds.length * targetIds.length} envios</strong>
+                      : <span className="italic">selecione canais via Match</span>
+                    }
+                  </p>
+                </>
               ) : (
-                <p className="text-sm text-fg-3">
-                  Nenhum produto.{' '}
-                  <button type="button" className="text-accent hover:underline" onClick={() => navigate('/match')}>Escolher via Match</button>
-                </p>
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <span className="text-4xl">📦</span>
+                  <p className="text-sm text-fg-3">Selecione produtos no Match ou Catálogo</p>
+                  <div className="flex gap-2 mt-1">
+                    <button type="button" className="text-xs text-accent hover:underline" onClick={() => navigate('/match')}>Ir para Match</button>
+                    <span className="text-fg-3">·</span>
+                    <button type="button" className="text-xs text-accent hover:underline" onClick={() => navigate('/catalog')}>Ir para Catálogo</button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -401,20 +459,21 @@ export default function Composer() {
           <div className="bg-surface border border-border rounded-md p-4">
             <p className="text-xs font-medium text-fg-2 mb-3 uppercase tracking-wide">Preview WhatsApp</p>
             <div className="bg-[#0b141a] rounded-lg p-2 min-h-32">
+              {/* "Você" sender label */}
+              <p className="text-xs text-[#8696a0] mb-1 ml-1">Você</p>
               <div className="bg-[#005c4b] rounded-lg max-w-xs ml-auto shadow overflow-hidden">
-                {/* Imagem/mosaico do(s) produto(s) */}
-                {productImages.length > 1 ? (
-                  // Mosaico 2x2 para múltiplos produtos
-                  <div className={`grid gap-0.5 ${productImages.length >= 4 ? 'grid-cols-2' : productImages.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                    {productImages.slice(0, 4).map((img, i) => (
-                      <img key={i} src={img} alt="" className="w-full h-24 object-cover"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                    ))}
-                  </div>
-                ) : productImage ? (
-                  <img src={productImage} alt="Produto" className="w-full max-h-48 object-cover"
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                ) : null}
+                {/* Single product image for currently previewed product */}
+                {(() => {
+                  const curImg = productImages.length > 0 ? productImages[previewIndex % productImages.length] : productImage
+                  return curImg ? (
+                    <img
+                      src={curImg}
+                      alt="Produto"
+                      className="w-full max-h-48 object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  ) : null
+                })()}
                 <div className="p-3">
                   <p className="text-sm text-white whitespace-pre-wrap break-words">
                     {previewText || '...'}
@@ -422,6 +481,20 @@ export default function Composer() {
                   <p className="text-xs text-green-300 mt-1 text-right opacity-60">agora ✓✓</p>
                 </div>
               </div>
+              {/* Pagination dots — only when multiple products */}
+              {productImages.length > 1 && (
+                <div className="flex items-center justify-center gap-1.5 mt-2">
+                  {productImages.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setPreviewIndex(i)}
+                      className={`w-1.5 h-1.5 rounded-full transition-colors ${i === previewIndex % productImages.length ? 'bg-accent' : 'bg-fg-3/40'}`}
+                      aria-label={`Produto ${i + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -429,9 +502,9 @@ export default function Composer() {
           <div className="bg-surface border border-border rounded-md p-4">
             <p className="text-sm font-medium text-fg mb-3">Resumo</p>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-fg-2">Produtos</span><span className="text-fg font-medium">{productId ? 1 : 0}</span></div>
+              <div className="flex justify-between"><span className="text-fg-2">Produtos</span><span className="text-fg font-medium">{productIds.length}</span></div>
               <div className="flex justify-between"><span className="text-fg-2">Canais</span><span className="text-fg font-medium">{channels.length}</span></div>
-              <div className="flex justify-between"><span className="text-fg-2">Total de envios</span><span className="text-fg font-bold text-accent">{channels.length * Math.max(1, productId ? 1 : 0)}</span></div>
+              <div className="flex justify-between"><span className="text-fg-2">Total de envios</span><span className="text-fg font-bold text-accent">{productIds.length * channels.length}</span></div>
             </div>
           </div>
 

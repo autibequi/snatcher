@@ -555,6 +555,15 @@ type GroupSpy struct {
 	DeletedAt     NullTime   `db:"deleted_at"      json:"-"`
 }
 
+type SpyMessage struct {
+	ID          int64      `db:"id"           json:"id"`
+	SpyID       int64      `db:"spy_id"        json:"spy_id"`
+	Sender      string     `db:"sender"        json:"sender"`
+	Text        string     `db:"text"          json:"text"`
+	MediaURL    NullString `db:"media_url"     json:"media_url,omitempty"`
+	CollectedAt time.Time  `db:"collected_at"  json:"collected_at"`
+}
+
 type TelegramChat struct {
 	ChatID          string         `db:"chat_id" json:"chat_id"`
 	Type            string         `db:"type" json:"type"`
