@@ -421,10 +421,20 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	var qrBody map[string]any
 	_ = json.Unmarshal([]byte(qrJSON), &qrBody)
 
-	// Instância não existe → criar automaticamente
+	// Instância não existe ou connect retorna 404 → deletar se existir e recriar com qrcode:true
 	if status, _ := qrBody["status"].(float64); status == 404 {
-		_ = evo.createInstance(r.Context())
-		writeJSON(w, http.StatusOK, map[string]string{"state": "creating", "message": "Criando instância " + instance + "..."})
+		// Deletar instância existente (pode estar em estado inconsistente)
+		_ = evo.deleteInstance(r.Context())
+		b64, err := evo.createInstanceWithQR(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]string{"state": "error", "message": err.Error()})
+			return
+		}
+		if b64 != "" {
+			writeJSON(w, http.StatusOK, map[string]string{"state": "qr", "base64": b64})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"state": "creating", "message": "Instância recriada, aguardando QR..."})
 		return
 	}
 
@@ -724,29 +734,65 @@ func (e *evoClient) createGroup(ctx context.Context, name string) (map[string]an
 	return result, nil
 }
 
-func (e *evoClient) createInstance(ctx context.Context) error {
+// createInstanceWithQR cria a instância pedindo QR code imediato.
+// Retorna base64 do QR se vier na resposta de criação (Evolution v2.3+).
+func (e *evoClient) createInstanceWithQR(ctx context.Context) (string, error) {
 	body := map[string]any{
 		"instanceName": e.instance,
 		"integration":  "WHATSAPP-BAILEYS",
+		"qrcode":       true,
 	}
 	b, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST",
 		e.baseURL+"/instance/create", bytes.NewReader(b))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apiKey", e.apiKey)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	// 409 = já existe — tentar pegar QR via connect
+	if resp.StatusCode == 409 {
+		return "", nil
+	}
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("evolution create: status %d — %s", resp.StatusCode, string(respBody))
+	}
+
+	// Tentar extrair QR da resposta de criação
+	var createResp map[string]any
+	_ = json.Unmarshal(respBody, &createResp)
+	if qr, ok := createResp["qrcode"].(map[string]any); ok {
+		if b64, _ := qr["base64"].(string); b64 != "" {
+			return b64, nil
+		}
+	}
+	return "", nil
+}
+
+func (e *evoClient) createInstance(ctx context.Context) error {
+	_, err := e.createInstanceWithQR(ctx)
+	return err
+}
+
+func (e *evoClient) deleteInstance(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "DELETE",
+		e.baseURL+"/instance/delete/"+e.instance, nil)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("apiKey", e.apiKey)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	// 409 = já existe — ok
-	if resp.StatusCode >= 400 && resp.StatusCode != 409 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("evolution create: status %d — %s", resp.StatusCode, string(b))
-	}
+	resp.Body.Close()
 	return nil
 }
 
