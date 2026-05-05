@@ -474,12 +474,6 @@ export default function Catalog() {
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-fg-2 uppercase tracking-wide">
                   Preco
                 </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Desconto
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Estado
-                </th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -538,16 +532,6 @@ export default function Catalog() {
                       ) : (
                         '—'
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Badge variant="success" size="sm">
-                        novo
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="default" size="sm">
-                        • novo
-                      </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
