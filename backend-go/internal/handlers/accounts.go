@@ -424,16 +424,28 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
 <script>setTimeout(()=>location.reload(),5000)</script>
 </head><body style="margin:0;background:#111;color:#c44;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px;padding:16px;text-align:center">
-<p>Erro ao conectar na Evolution API</p>
-<p style="font-size:11px;color:#888">%s</p>
+<p>Erro ao conectar na Evolution API</p><p style="font-size:11px;color:#888">%s</p>
 <p style="font-size:11px">(<a href="%s" style="color:#555">tentar novamente</a>)</p>
 </body></html>`, err.Error(), refreshURL)
 		return
 	}
 
-	// Extrai base64 do JSON — suporta {base64:"..."} e {qrcode:{base64:"..."}}
+	// Se a instância não existe (404) → criar e aguardar
 	var qrBody map[string]any
 	_ = json.Unmarshal([]byte(qrJSON), &qrBody)
+	if status, _ := qrBody["status"].(float64); status == 404 {
+		// Criar instância automaticamente e pedir para recarregar
+		_ = evo.createInstance(r.Context())
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
+<script>setTimeout(()=>location.reload(),3000)</script>
+</head><body style="margin:0;background:#111;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px">
+<p>Criando instância <strong>%s</strong>...</p>
+<p style="font-size:11px">Aguarde, o QR aparecerá em instantes.</p>
+</body></html>`, instance)
+		return
+	}
+
+	// Extrai base64 — suporta {base64:"..."} e {qrcode:{base64:"..."}}
 	base64QR, _ := qrBody["base64"].(string)
 	if base64QR == "" {
 		if nested, ok := qrBody["qrcode"].(map[string]any); ok {
@@ -449,7 +461,6 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 <p style="color:#666;font-size:11px;font-family:sans-serif">Atualiza em 20s · <a href="%s" style="color:#555">agora</a></p>
 </body></html>`, base64QR, refreshURL)
 	} else {
-		// Mostrar o JSON bruto para diagnóstico
 		preview := qrJSON
 		if len(preview) > 200 { preview = preview[:200] + "..." }
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
