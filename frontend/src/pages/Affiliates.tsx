@@ -1,222 +1,194 @@
 import React from 'react'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Badge, Button, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
-interface AffiliateProgram {
-  id: number
-  short_id: string
-  name: string
+// Marketplaces suportados com label e campo de credencial
+const MARKETPLACES = [
+  { id: 'amazon',       label: 'Amazon Associates',   field: 'tag',          placeholder: 'snatcher-20',     hint: 'Amazon Associates tracking tag' },
+  { id: 'mercadolivre', label: 'Mercado Livre',        field: 'affiliate_id', placeholder: '1234567',          hint: 'ID do afiliado ML' },
+  { id: 'magalu',       label: 'Magalu Parceiro',      field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID do parceiro Magalu' },
+  { id: 'shopee',       label: 'Shopee Afiliados',     field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Shopee' },
+  { id: 'aliexpress',   label: 'AliExpress',           field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado AliExpress' },
+  { id: 'kabum',        label: 'Kabum',                field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Kabum' },
+  { id: 'americanas',   label: 'Americanas',           field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Americanas' },
+  { id: 'casasbahia',   label: 'Casas Bahia',          field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Casas Bahia' },
+] as const
+
+interface Program {
+  id?: number
   marketplace: string
   active: boolean
-  rules: unknown
-  postback: unknown
+  credentials: Record<string, string>
 }
 
-const MARKETPLACES = ['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas']
-
-function CreateProgramModal({ onClose }: { onClose: () => void }) {
+function AffiliateRow({ mkt, program }: { mkt: typeof MARKETPLACES[number]; program?: Program }) {
   const qc = useQueryClient()
-  const [form, setForm] = React.useState({
-    name: '',
-    marketplace: 'amazon',
-    active: true,
-    tag: '',
-    affiliate_id: '',
-  })
-  const [saving, setSaving] = React.useState(false)
+  const [value, setValue] = React.useState(program?.credentials?.[mkt.field] ?? '')
+  const [active, setActive] = React.useState(program?.active ?? false)
+  const [testResult, setTestResult] = React.useState<string | null>(null)
+  const [testing, setTesting] = React.useState(false)
 
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault()
-    if (!form.name.trim()) return
-    setSaving(true)
-    const credentials: Record<string, string> = {}
-    if (form.tag) credentials.tag = form.tag
-    if (form.affiliate_id) credentials.affiliate_id = form.affiliate_id
+  // Sincronizar com dados do servidor quando chegam
+  React.useEffect(() => {
+    setValue(program?.credentials?.[mkt.field] ?? '')
+    setActive(program?.active ?? false)
+  }, [program])
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const creds = { [mkt.field]: value }
+      if (program?.id) {
+        return apiClient.patch(`/api/affiliates/programs/${program.id}`, {
+          active,
+          credentials: JSON.stringify(creds),
+        }).then(r => r.data)
+      } else {
+        return apiClient.post('/api/affiliates/programs', {
+          name: mkt.label,
+          marketplace: mkt.id,
+          active,
+          credentials: JSON.stringify(creds),
+        }).then(r => r.data)
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['affiliates'] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  const handleTest = async () => {
+    if (!value.trim()) return
+    setTesting(true)
+    setTestResult(null)
     try {
-      await apiClient.post('/api/affiliates/programs', {
-        name: form.name.trim(),
-        marketplace: form.marketplace,
-        active: form.active,
-        credentials: JSON.stringify(credentials),
-        rules: JSON.stringify({ priority: 10 }),
-        postback: JSON.stringify({ enabled: false }),
+      const res = await apiClient.post('/api/affiliates/build-link', {
+        product_url: 'https://www.amazon.com.br/dp/B08N5WRWNW',
+        marketplace: mkt.id,
       })
-      qc.invalidateQueries({ queryKey: ['affiliates', 'programs'] })
-      onClose()
-    } catch (err: any) {
-      alert(err?.response?.data?.error || 'Erro ao criar programa')
+      setTestResult(`✅ Link gerado: ${res.data.url?.slice(0, 60)}...`)
+    } catch {
+      setTestResult('❌ Falhou — verifique o ID/tag e tente novamente')
     } finally {
-      setSaving(false)
+      setTesting(false)
     }
   }
 
+  const isDirty = value !== (program?.credentials?.[mkt.field] ?? '') || active !== (program?.active ?? false)
+
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold text-fg mb-4">Novo programa de afiliado</h3>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome do programa *</label>
-            <input required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="Amazon Associates BR" />
+    <div className="border border-border rounded-md p-4 bg-surface">
+      <div className="flex items-start justify-between gap-4">
+        {/* Esquerda: label + campo */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-sm font-medium text-fg">{mkt.label}</p>
+            <Badge variant={active ? 'success' : 'default'} size="sm">
+              {active ? 'ativo' : 'inativo'}
+            </Badge>
           </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Marketplace *</label>
-            <select value={form.marketplace} onChange={e => setForm(f => ({...f, marketplace: e.target.value}))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg">
-              {MARKETPLACES.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+          <div className="flex gap-2 items-center">
+            <input
+              className="flex-1 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono"
+              placeholder={mkt.placeholder}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+            />
+            <span className="text-xs text-fg-3 hidden sm:block">{mkt.hint}</span>
           </div>
-          {form.marketplace === 'amazon' && (
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">Amazon Tag (tracking ID)</label>
-              <input value={form.tag} onChange={e => setForm(f => ({...f, tag: e.target.value}))}
-                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                placeholder="snatcher-20" />
-            </div>
+          {testResult && (
+            <p className="text-xs mt-2 text-fg-2">{testResult}</p>
           )}
-          {form.marketplace !== 'amazon' && (
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">ID de afiliado</label>
-              <input value={form.affiliate_id} onChange={e => setForm(f => ({...f, affiliate_id: e.target.value}))}
-                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
-            </div>
-          )}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({...f, active: e.target.checked}))} className="accent-accent" />
-            <span className="text-sm text-fg">Ativo</span>
+        </div>
+
+        {/* Direita: toggle + ações */}
+        <div className="flex flex-col gap-2 items-end flex-shrink-0">
+          {/* Toggle ativo */}
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={active}
+              onChange={e => setActive(e.target.checked)}
+              className="accent-accent"
+            />
+            <span className="text-xs text-fg-2">Ativo</span>
           </label>
-          <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={onClose} className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2">Cancelar</button>
-            <button type="submit" disabled={saving} className="text-sm px-4 py-2 rounded-md bg-accent text-white disabled:opacity-50">
-              {saving ? 'Salvando...' : 'Criar programa'}
-            </button>
+
+          {/* Ações */}
+          <div className="flex gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={testing}
+              disabled={!value.trim()}
+              onClick={handleTest}
+            >
+              Testar
+            </Button>
+            <Button
+              variant={isDirty ? 'primary' : 'secondary'}
+              size="sm"
+              loading={saveMut.isPending}
+              disabled={!isDirty && !saveMut.isSuccess}
+              onClick={() => saveMut.mutate()}
+            >
+              {saveMut.isSuccess && !isDirty ? '✓ Salvo' : 'Salvar'}
+            </Button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   )
 }
 
 export default function Affiliates() {
-  const qc = useQueryClient()
-  const [buildLinkProductUrl, setBuildLinkProductUrl] = React.useState('')
-  const [buildLinkMarketplace, setBuildLinkMarketplace] = React.useState('')
-  const [builtLink, setBuiltLink] = React.useState<string | null>(null)
-  const [showCreateModal, setShowCreateModal] = React.useState(false)
-
-  const { data: programs = [], isLoading } = useQuery<AffiliateProgram[]>({
-    queryKey: ['affiliates', 'programs'],
-    queryFn: () => apiClient.get('/api/affiliates/programs').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+  const { data: programs = [], isLoading } = useQuery<Program[]>({
+    queryKey: ['affiliates'],
+    queryFn: () => apiClient.get('/api/affiliates/programs').then(r => {
+      const d = r.data
+      // Parse credentials se vier como string JSON
+      const items = Array.isArray(d) ? d : (d?.items ?? [])
+      return items.map((p: any) => ({
+        ...p,
+        credentials: typeof p.credentials === 'string'
+          ? (() => { try { return JSON.parse(p.credentials) } catch { return {} } })()
+          : (p.credentials ?? {}),
+      }))
+    }).catch(() => []),
   })
 
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => apiClient.delete(`/api/affiliates/programs/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['affiliates'] }),
-  })
-
-  const buildLink = async () => {
-    if (!buildLinkProductUrl || !buildLinkMarketplace) return
-    try {
-      const r = await apiClient.post('/api/affiliates/build-link', {
-        product_url: buildLinkProductUrl,
-        marketplace: buildLinkMarketplace,
-      })
-      setBuiltLink(r.data.url)
-    } catch {
-      setBuiltLink('Erro ao construir link')
+  // Mapear programas por marketplace para lookup rápido
+  const byMarketplace = React.useMemo(() => {
+    const map: Record<string, Program> = {}
+    for (const p of programs) {
+      map[p.marketplace] = p
     }
-  }
+    return map
+  }, [programs])
 
   return (
-    <div className="p-6">
-      <h1 className="text-lg font-semibold text-fg mb-6">Afiliados</h1>
-
-      {/* Lista de programas */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-fg-2">Programas</h2>
-          <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>+ Novo programa</Button>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({length:3}).map((_,i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-        ) : !programs.length ? (
-          <EmptyState title="Nenhum programa" description="Configure programas de afiliados para monetizar os links." cta={{ label: 'Criar programa', onClick: () => setShowCreateModal(true) }} />
-        ) : (
-          <div className="bg-surface border border-border rounded-md overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  {['Nome', 'Marketplace', 'Status', 'Ações'].map(h => (
-                    <th key={h} className="text-left p-3 text-fg-2 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {programs.map(p => (
-                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                    <td className="p-3 font-medium text-fg">{p.name}</td>
-                    <td className="p-3"><Badge size="sm">{p.marketplace}</Badge></td>
-                    <td className="p-3"><Badge variant={p.active ? 'success' : 'default'} size="sm">{p.active ? 'ativo' : 'inativo'}</Badge></td>
-                    <td className="p-3">
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm('Deletar programa?')) deleteMut.mutate(p.id)
-                        }}
-                      >
-                        Deletar
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+    <div className="p-6 max-w-2xl">
+      <div className="mb-6">
+        <h1 className="text-lg font-semibold text-fg">Afiliados</h1>
+        <p className="text-sm text-fg-3 mt-0.5">
+          Configure 1 ID de afiliado por marketplace. Os links de produtos serão gerados automaticamente.
+        </p>
       </div>
 
-      {/* Build link */}
-      <div className="bg-surface border border-border rounded-md p-4 max-w-lg">
-        <h2 className="text-sm font-medium text-fg mb-3">Preview link de afiliado</h2>
+      {isLoading ? (
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">URL do produto</label>
-            <input
-              type="text"
-              value={buildLinkProductUrl}
-              onChange={e => setBuildLinkProductUrl(e.target.value)}
-              placeholder="https://amazon.com.br/..."
-              className="w-full text-sm px-2.5 h-8 rounded-md border border-border bg-surface text-fg focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Marketplace</label>
-            <select
-              value={buildLinkMarketplace}
-              onChange={e => setBuildLinkMarketplace(e.target.value)}
-              className="w-full text-sm px-2.5 h-8 rounded-md border border-border bg-surface text-fg focus:outline-none focus:border-accent"
-            >
-              <option value="">Selecione</option>
-              {['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress'].map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-          <Button variant="secondary" size="sm" onClick={buildLink}>
-            Construir link
-          </Button>
-          {builtLink && (
-            <div className="bg-surface-2 p-2 rounded text-xs text-fg font-mono break-all">{builtLink}</div>
-          )}
+          {MARKETPLACES.map(m => <Skeleton key={m.id} className="h-20 w-full" />)}
         </div>
-      </div>
-
-      {showCreateModal && <CreateProgramModal onClose={() => setShowCreateModal(false)} />}
+      ) : (
+        <div className="space-y-3">
+          {MARKETPLACES.map(mkt => (
+            <AffiliateRow
+              key={mkt.id}
+              mkt={mkt}
+              program={byMarketplace[mkt.id]}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

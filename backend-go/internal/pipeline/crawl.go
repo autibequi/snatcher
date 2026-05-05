@@ -36,6 +36,7 @@ type ScraperWithCategory interface {
 // CrawlSearchTerm executa o crawl de um SearchTerm e salva os resultados.
 func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm, scrapers map[string]Scraper) error {
 	log := slog.With("term_id", term.ID, "query", term.Query)
+	log.Info("crawl iniciado", "sources", term.GetSources(), "queries", len(term.GetQueries()))
 
 	logID, err := st.InsertCrawlLog(models.CrawlLog{
 		SearchTermID: term.ID,
@@ -159,6 +160,12 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 		totalItems += count
 	}
 	_ = st.TouchSearchTerm(term.ID, totalItems)
+
+	if crawlErr != nil {
+		log.Error("crawl finalizado com erro", "err", crawlErr)
+	} else {
+		log.Info("crawl finalizado", "total_itens", totalItems, "por_source", sourceCounts)
+	}
 
 	return crawlErr
 }

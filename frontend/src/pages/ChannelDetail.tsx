@@ -1,8 +1,72 @@
 import React from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Badge, Tabs, KpiCard, Skeleton } from '../components/ui'
+import { Badge, Button, Tabs, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+
+// ── Componente: lista grupos WA de uma conta para seleção ─────────────────────
+function AccountGroupsPicker({
+  account,
+  search,
+  alreadyAdded,
+  onAdd,
+  loading,
+}: {
+  account: { id: number; name: string }
+  search: string
+  alreadyAdded: string[]
+  onAdd: (g: { id: string; name: string }) => void
+  loading: boolean
+}) {
+  const { data: waGroups = [], isLoading } = useQuery({
+    queryKey: ['wa-groups', account.id],
+    queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/groups`).then(r => Array.isArray(r.data) ? r.data : []),
+    staleTime: 30_000,
+  })
+
+  const filtered = search
+    ? waGroups.filter((g: any) => g.name?.toLowerCase().includes(search.toLowerCase()))
+    : waGroups
+
+  return (
+    <div>
+      <div className="px-5 py-2 bg-surface-2 border-b border-border">
+        <p className="text-xs font-medium text-fg-2">{account.name}</p>
+      </div>
+      {isLoading ? (
+        <div className="px-5 py-3 text-xs text-fg-3">Carregando grupos...</div>
+      ) : filtered.length === 0 ? (
+        <div className="px-5 py-3 text-xs text-fg-3">
+          {waGroups.length === 0 ? 'Sem grupos (aguarde sync)' : 'Nenhum grupo encontrado'}
+        </div>
+      ) : (
+        filtered.map((g: any) => {
+          const added = alreadyAdded.includes(g.id)
+          return (
+            <div key={g.id} className="flex items-center justify-between px-5 py-2.5 border-b border-border last:border-0 hover:bg-surface-2">
+              <div>
+                <p className="text-sm text-fg">{g.name || '(sem nome)'}</p>
+                {g.size > 0 && <p className="text-xs text-fg-3">{g.size.toLocaleString('pt-BR')} membros</p>}
+              </div>
+              {added ? (
+                <Badge variant="success" size="sm">já adicionado</Badge>
+              ) : (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onAdd(g)}
+                  className="text-xs text-accent hover:underline disabled:opacity-50"
+                >
+                  + Adicionar
+                </button>
+              )}
+            </div>
+          )
+        })
+      )}
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'overview', label: 'Visão geral' },
@@ -34,10 +98,47 @@ export default function ChannelDetail() {
     enabled: tab === 'audience' && !!id,
   })
 
+  const qc = useQueryClient()
+  const [showAddGroup, setShowAddGroup] = React.useState(false)
+  const [search, setSearch] = React.useState('')
+
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', { channelId: id }],
     queryFn: () => apiClient.get(`/api/groups?channelId=${id}`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     enabled: tab === 'groups' && !!id,
+  })
+
+  // Buscar contas WA e seus grupos reais (para o modal de adicionar)
+  const { data: waAccounts = [] } = useQuery({
+    queryKey: ['accounts', 'wa'],
+    queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []),
+    enabled: showAddGroup,
+  })
+
+  // Para cada conta conectada, buscar grupos WA reais
+  const connectedAccounts = waAccounts.filter((a: any) => a.active)
+
+  const addGroupMut = useMutation({
+    mutationFn: (g: { name: string; jid: string; accountId: number }) =>
+      apiClient.post('/api/groups', {
+        channel_id: Number(id),
+        name: g.name,
+        platform: 'whatsapp',
+        jid: g.jid,
+        account_id: g.accountId,
+        status: 'active',
+      }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
+      setShowAddGroup(false)
+      setSearch('')
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao adicionar grupo'),
+  })
+
+  const removeGroupMut = useMutation({
+    mutationFn: (groupId: number) => apiClient.delete(`/api/groups/${groupId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] }),
   })
 
   if (isLoading) return <div className="p-6"><Skeleton className="h-48 w-full" /></div>
@@ -89,18 +190,98 @@ export default function ChannelDetail() {
         )}
 
         {tab === 'groups' && (
-          <div className="space-y-2">
-            {groups.length === 0 ? (
-              <p className="text-sm text-fg-3">Nenhum grupo vinculado a este canal.</p>
-            ) : groups.map((g: any) => (
-              <div key={g.id} className="flex items-center justify-between p-3 bg-surface border border-border rounded-md">
-                <div>
-                  <p className="text-sm font-medium text-fg">{g.name}</p>
-                  <p className="text-xs text-fg-3">{g.platform} · {g.member_count} membros</p>
+          <div>
+            {/* Header da tab */}
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-fg-2">{groups.length} grupo{groups.length !== 1 ? 's' : ''} vinculado{groups.length !== 1 ? 's' : ''}</p>
+              <Button variant="primary" size="sm" onClick={() => setShowAddGroup(true)}>
+                + Adicionar grupo
+              </Button>
+            </div>
+
+            {/* Modal — lista de grupos WA reais */}
+            {showAddGroup && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setShowAddGroup(false); setSearch('') }}>
+                <div className="bg-surface border border-border rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col shadow-modal" onClick={e => e.stopPropagation()}>
+                  <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+                    <h3 className="font-medium text-fg">Selecionar grupo WhatsApp</h3>
+                    <button type="button" onClick={() => setShowAddGroup(false)} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+                  </div>
+
+                  {/* Busca */}
+                  <div className="px-5 py-3 border-b border-border">
+                    <input
+                      autoFocus
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                      placeholder="Buscar grupo..."
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Lista de grupos por conta */}
+                  <div className="flex-1 overflow-y-auto">
+                    {connectedAccounts.length === 0 ? (
+                      <div className="p-6 text-sm text-fg-3 text-center">
+                        Nenhuma conta WhatsApp conectada.<br/>
+                        Conecte uma conta em <a href="/accounts" className="text-accent hover:underline">Contas conectadas</a>.
+                      </div>
+                    ) : (
+                      connectedAccounts.map((account: any) => (
+                        <AccountGroupsPicker
+                          key={account.id}
+                          account={account}
+                          search={search}
+                          alreadyAdded={groups.map((g: any) => g.jid).filter(Boolean)}
+                          onAdd={(g) => addGroupMut.mutate({ name: g.name, jid: g.id, accountId: account.id })}
+                          loading={addGroupMut.isPending}
+                        />
+                      ))
+                    )}
+                  </div>
                 </div>
-                <Badge variant={g.status === 'active' ? 'success' : 'warning'}>{g.status}</Badge>
               </div>
-            ))}
+            )}
+
+            {/* Tabela */}
+            {groups.length === 0 ? (
+              <p className="text-sm text-fg-3 py-4">Nenhum grupo vinculado. Clique em "+ Adicionar grupo" para associar.</p>
+            ) : (
+              <div className="border border-border rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface-2 border-b border-border">
+                      <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Nome</th>
+                      <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Plataforma</th>
+                      <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
+                      <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Membros</th>
+                      <th className="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map((g: any) => (
+                      <tr key={g.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                        <td className="px-4 py-2.5 font-medium text-fg">{g.name}</td>
+                        <td className="px-4 py-2.5 text-fg-2">{g.platform}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge variant={g.status === 'active' ? 'success' : 'warning'} size="sm">{g.status}</Badge>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-fg-2">{g.member_count ?? 0}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            type="button"
+                            className="text-xs text-danger hover:underline"
+                            onClick={() => { if (confirm(`Remover "${g.name}" deste canal?`)) removeGroupMut.mutate(g.id) }}
+                          >
+                            Remover
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

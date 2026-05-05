@@ -122,6 +122,7 @@ func (h *AccountsHandler) CreateWA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.ID = id
+	slog.Info("conta WA criada", "id", id, "name", a.Name, "provider", a.Provider)
 	writeJSON(w, http.StatusCreated, a)
 }
 
@@ -205,9 +206,11 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 	if status == "WORKING" && dbStatus != "connected" {
 		acc.Status = "connected"
 		_ = h.store.UpdateWAAccount(acc)
+		slog.Info("conta WA conectada", "id", acc.ID, "name", acc.Name)
 	} else if (status == "STOPPED" || status == "SCAN_QR_CODE") && dbStatus == "connected" {
 		acc.Status = "disconnected"
 		_ = h.store.UpdateWAAccount(acc)
+		slog.Warn("conta WA desconectada", "id", acc.ID, "name", acc.Name, "evolution_status", status)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})

@@ -25,6 +25,10 @@ function processQueue(token: string) {
   refreshQueue = []
 }
 
+// Dedup de toasts: evitar flood de erros do mesmo endpoint
+const recentErrors = new Map<string, number>()
+const ERROR_DEDUP_MS = 8000 // suprimir mesmo erro por 8s
+
 // Catch-all de erros: emite evento global pra UI mostrar toast
 function emitApiError(error: AxiosError) {
   const status = error.response?.status
@@ -32,10 +36,17 @@ function emitApiError(error: AxiosError) {
   const url = error.config?.url ?? ''
   const method = error.config?.method?.toUpperCase() ?? 'GET'
   const msg = data?.error || data?.message || error.message || 'Erro desconhecido'
+
   // Não emitir 401 (interceptor de refresh trata)
   if (status === 401) return
-  // Não emitir toasts para endpoints de background (session/start, session/logout)
+  // Não emitir toasts para endpoints de background
   if (url.includes('/session/start') || url.includes('/session/logout')) return
+  // GETs com 502/503: suprimir durante backend restart (dedup por URL)
+  const dedupKey = `${status}:${method}:${url.split('?')[0]}`
+  const lastSeen = recentErrors.get(dedupKey) ?? 0
+  if (Date.now() - lastSeen < ERROR_DEDUP_MS) return
+  recentErrors.set(dedupKey, Date.now())
+
   console.error(`[API ${status}] ${method} ${url}: ${msg}`, error.response?.data)
   window.dispatchEvent(new CustomEvent('api:error', {
     detail: { status, method, url, message: msg, data: error.response?.data },
