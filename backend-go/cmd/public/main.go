@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/db"
+	"snatcher/backendv2/internal/handlers"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/store"
@@ -81,7 +82,7 @@ func main() {
 
 	// ── Redirects ─────────────────────────────────────────────────────────────
 	r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", shortLinkHandler(st))
+	r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st))
 	r.Get("/g/{slug}", publicLinkHandler(st))
 	r.Get("/canal/{slug}", canalHandler(st))
 	r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
@@ -283,49 +284,6 @@ func renderChannel(w http.ResponseWriter, channel interface{}, targets interface
 		"Channel": channel,
 		"Targets": targets,
 	})
-}
-
-// ── Short link redirect (/v/{shortID}) ────────────────────────────────────────
-
-func shortLinkHandler(st store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		shortID := chi.URLParam(r, "shortID")
-
-		// Primeiro: tabela genérica short_links (com tracking de cliques)
-		destURL, source, found := st.GetShortLinkByID(shortID)
-		if !found {
-			// Fallback: catalogvariant (legado)
-			v, ok, err := st.GetVariantByShortID(shortID)
-			if err != nil || !ok {
-				http.Redirect(w, r, "/", http.StatusFound)
-				return
-			}
-			destURL = v.URL
-			source = v.Source
-		}
-
-		// Aplicar tag de afiliado
-		finalURL := destURL
-		switch source {
-		case "amazon":
-			aff, ok, _ := st.GetAffiliateBySource("amz")
-			if ok && aff.TrackingID != "" {
-				sep := "?"
-				if strings.Contains(destURL, "?") { sep = "&" }
-				finalURL = destURL + sep + "tag=" + aff.TrackingID
-			}
-		case "mercadolivre":
-			aff, ok, _ := st.GetAffiliateBySource("ml")
-			if ok && aff.TrackingID != "" {
-				sep := "?"
-				if strings.Contains(destURL, "?") { sep = "&" }
-				finalURL = destURL + sep + "matt_tool=" + aff.TrackingID + "&matt_source=affiliate"
-			}
-		}
-
-		w.Header().Set("Cache-Control", "no-cache")
-		http.Redirect(w, r, finalURL, http.StatusFound)
-	}
 }
 
 var _ = strings.TrimSpace
