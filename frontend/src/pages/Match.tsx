@@ -31,7 +31,7 @@ function ScoreBreakdown({
   reasons: string[]
   onClose: () => void
 }) {
-  const lowerReasons = reasons.map(r => r.toLowerCase())
+  const lowerReasons = (reasons ?? []).map(r => r.toLowerCase())
 
   return (
     <div
@@ -144,7 +144,7 @@ function normalizeScores(data: BackendResponse): GroupScore[] {
   // Detect by presence of group_id (new format) vs only channel_id (legacy)
   const first = data[0] as unknown as Record<string, unknown>
   if ('group_id' in first) {
-    return data as GroupScore[]
+    return (data as GroupScore[]).map(g => ({ ...g, reasons: g.reasons ?? [] }))
   }
   return (data as ChannelScore[]).map(adaptChannelScore)
 }

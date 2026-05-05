@@ -128,9 +128,9 @@ export function GroupRankItem({
         </p>
 
         {/* Tags positivas */}
-        {group.reasons.length > 0 && (
+        {(group.reasons ?? []).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
-            {group.reasons.map((r, i) => (
+            {(group.reasons ?? []).map((r, i) => (
               <span
                 key={i}
                 className="text-xs px-1.5 py-0.5 rounded-sm bg-success/10 text-success"
