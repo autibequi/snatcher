@@ -342,7 +342,8 @@ func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
 	_, err := s.db.NamedExec(`
 		UPDATE catalogproduct SET canonical_name=:canonical_name, brand=:brand, weight=:weight,
 			image_url=:image_url, lowest_price=:lowest_price, lowest_price_url=:lowest_price_url,
-			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at
+			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at,
+			curation_status=:curation_status
 		WHERE id = :id`, p)
 	return err
 }
@@ -1169,7 +1170,8 @@ func (s *SQLStore) GetAccountsByTargetWithRole(targetID int64, role string) ([]m
 
 func (s *SQLStore) ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error) {
 	q := `SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
-	             jid, invite_link, status, member_count, overrides, created_at, last_message_at
+	             jid, invite_link, status, member_count, overrides, created_at, last_message_at,
+	             COALESCE(archived, false) AS archived, last_error, last_error_at
 	      FROM groups WHERE ($1 = 0 OR channel_id = $1)
 	        AND ($2 = '' OR platform = $2)
 	        AND ($3 = '' OR status = $3)
@@ -1182,7 +1184,8 @@ func (s *SQLStore) GetRedesignGroup(id int64) (models.RedesignGroup, error) {
 	var g models.RedesignGroup
 	return g, s.db.Get(&g,
 		`SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
-		        jid, invite_link, status, member_count, overrides, created_at, last_message_at
+		        jid, invite_link, status, member_count, overrides, created_at, last_message_at,
+		        COALESCE(archived, false) AS archived, last_error, last_error_at
 		 FROM groups WHERE id = $1`, id)
 }
 
@@ -1201,7 +1204,8 @@ func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	_, err := s.db.NamedExec(`
 		UPDATE groups SET name=:name, platform=:platform, jid=:jid,
 			invite_link=:invite_link, status=:status, member_count=:member_count,
-			overrides=:overrides, wa_account_id=:wa_account_id, tg_account_id=:tg_account_id
+			overrides=:overrides, wa_account_id=:wa_account_id, tg_account_id=:tg_account_id,
+			archived=:archived, last_error=:last_error, last_error_at=:last_error_at
 		WHERE id=:id`, g)
 	return err
 }
@@ -1560,4 +1564,66 @@ func (s *SQLStore) CreateSpyMessage(m models.SpyMessage) error {
 		`INSERT INTO spy_messages (spy_id, sender, text, media_url) VALUES ($1, $2, $3, $4)`,
 		m.SpyID, m.Sender, m.Text, m.MediaURL)
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// GroupAdmins (migration 0085)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error) {
+	var out []models.GroupAdmin
+	err := s.db.Select(&out,
+		`SELECT id, group_id, account_type, account_id, added_at
+		 FROM group_admins WHERE group_id = $1 ORDER BY added_at ASC`, groupID)
+	if out == nil {
+		out = []models.GroupAdmin{}
+	}
+	return out, err
+}
+
+func (s *SQLStore) AddGroupAdmin(a models.GroupAdmin) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO group_admins (group_id, account_type, account_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (group_id, account_type, account_id) DO UPDATE SET added_at = now()
+		 RETURNING id`,
+		a.GroupID, a.AccountType, a.AccountID).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) DeleteGroupAdmin(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM group_admins WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) CountGroupAdmins(groupID int64) (int, error) {
+	var count int
+	err := s.db.Get(&count, `SELECT COUNT(*) FROM group_admins WHERE group_id = $1`, groupID)
+	return count, err
+}
+
+// SetGroupArchived alterna archived e opcionalmente seta last_error.
+func (s *SQLStore) SetGroupArchived(id int64, archived bool, lastError *string) error {
+	if lastError != nil {
+		_, err := s.db.Exec(
+			`UPDATE groups SET archived = $1, last_error = $2, last_error_at = now() WHERE id = $3`,
+			archived, *lastError, id)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE groups SET archived = $1 WHERE id = $2`, archived, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// AffiliateConversions (migration 0086)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliate_conversions (program_id, click_id, external_order_id, revenue, status)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		c.ProgramID, c.ClickID, c.ExternalOrderID, c.Revenue, c.Status).Scan(&id)
+	return id, err
 }

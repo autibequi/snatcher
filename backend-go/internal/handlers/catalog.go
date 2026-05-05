@@ -97,16 +97,16 @@ func (h *CatalogHandler) groupedCounts(r *http.Request) map[string]int64 {
 	ctx := r.Context()
 	since7d := time.Now().Add(-7 * 24 * time.Hour)
 
-	// novos: criados nos últimos 7 dias
+	// novos: curation_status='pending' criados nos últimos 7 dias
 	var novos int64
 	_ = h.db.GetContext(ctx, &novos,
-		`SELECT COUNT(*) FROM catalogproduct WHERE created_at >= $1`, since7d)
+		`SELECT COUNT(*) FROM catalogproduct WHERE curation_status='pending' AND created_at >= $1`, since7d)
 	counts["novos"] = novos
 
-	// curados: com brand preenchido (proxy — TODO: substituir por status='approved')
+	// curados: curation_status='curated'
 	var curados int64
 	_ = h.db.GetContext(ctx, &curados,
-		`SELECT COUNT(*) FROM catalogproduct WHERE brand IS NOT NULL AND brand != ''`)
+		`SELECT COUNT(*) FROM catalogproduct WHERE curation_status='curated'`)
 	counts["curados"] = curados
 
 	// disparados_7d: produtos vinculados a dispatches nos últimos 7 dias
@@ -183,6 +183,55 @@ func (h *CatalogHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PatchCurationStatus atualiza o curation_status de um produto.
+//
+//	@Summary      Atualizar curação
+//	@Description  Define curation_status de um produto (curated|rejected|pending).
+//	@Tags         catalog
+//	@Accept       json
+//	@Produce      json
+//	@Param        id    path      int     true  "ID do produto"
+//	@Param        body  body      object  true  "{ curation_status: string }"
+//	@Success      200   {object}  models.CatalogProduct
+//	@Failure      400   {object}  object{error=string}
+//	@Failure      404   {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/catalog/{id} [patch]
+func (h *CatalogHandler) PatchCurationStatus(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	p, err := h.store.GetCatalogProduct(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	var req struct {
+		CurationStatus string `json:"curation_status"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	switch req.CurationStatus {
+	case "curated", "rejected", "pending":
+	default:
+		writeErr(w, http.StatusBadRequest, "curation_status must be curated, rejected or pending")
+		return
+	}
+
+	p.CurationStatus = req.CurationStatus
+	if err := h.store.UpdateCatalogProduct(p); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 func (h *CatalogHandler) ListVariantHistory(w http.ResponseWriter, r *http.Request) {

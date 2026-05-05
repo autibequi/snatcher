@@ -8,6 +8,7 @@ import (
 
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
+	"github.com/go-chi/chi/v5"
 )
 
 type GroupsHandler struct {
@@ -58,11 +59,10 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enriquece cada grupo com channel_name, account_label, admin_count e audience_status.
-	// admin_count: TODO — requer tabela group_admins (não existe); retorna 0.
-	// account_label: nome da conta WA ou TG vinculada.
 	out := make([]groupEnriched, 0, len(groups))
 	for _, g := range groups {
-		enriched := groupEnriched{RedesignGroup: g, AdminCount: 0 /* TODO: group_admins */}
+		adminCount, _ := h.store.CountGroupAdmins(g.ID)
+		enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount}
 
 		// channel_name
 		if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
@@ -266,4 +266,122 @@ func memberRole(clicks30d int) string {
 	default:
 		return "dormente"
 	}
+}
+
+// Archive alterna o campo archived do grupo e opcionalmente seta last_error.
+//
+// POST /api/groups/{id}/archive
+// Body: { "archived": bool, "error"?: string }
+func (h *GroupsHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := h.store.GetRedesignGroup(id); err != nil {
+		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
+		return
+	}
+
+	var req struct {
+		Archived bool    `json:"archived"`
+		Error    *string `json:"error"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	if err := h.store.SetGroupArchived(id, req.Archived, req.Error); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao atualizar grupo")
+		return
+	}
+
+	g, _ := h.store.GetRedesignGroup(id)
+	writeJSON(w, http.StatusOK, g)
+}
+
+// ListAdmins retorna os administradores de um grupo.
+//
+// GET /api/groups/{id}/admins
+func (h *GroupsHandler) ListAdmins(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := h.store.GetRedesignGroup(id); err != nil {
+		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
+		return
+	}
+	admins, err := h.store.ListGroupAdmins(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao listar admins")
+		return
+	}
+	writeJSON(w, http.StatusOK, admins)
+}
+
+// AddAdmin adiciona um administrador a um grupo.
+//
+// POST /api/groups/{id}/admins
+// Body: { "account_type": "wa"|"tg", "account_id": int }
+func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := h.store.GetRedesignGroup(id); err != nil {
+		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
+		return
+	}
+
+	var req struct {
+		AccountType string `json:"account_type" validate:"required,oneof=wa tg"`
+		AccountID   int64  `json:"account_id"   validate:"required"`
+	}
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
+		return
+	}
+
+	adminID, err := h.store.AddGroupAdmin(models.GroupAdmin{
+		GroupID:     id,
+		AccountType: req.AccountType,
+		AccountID:   req.AccountID,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao adicionar admin")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":           adminID,
+		"group_id":     id,
+		"account_type": req.AccountType,
+		"account_id":   req.AccountID,
+	})
+}
+
+// DeleteAdmin remove um administrador de um grupo.
+//
+// DELETE /api/groups/{id}/admins/{adminId}
+func (h *GroupsHandler) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
+	_, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid group id")
+		return
+	}
+	adminIDStr := chi.URLParam(r, "adminId")
+	adminID, err := strconv.ParseInt(adminIDStr, 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid admin id")
+		return
+	}
+	if err := h.store.DeleteGroupAdmin(adminID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao remover admin")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

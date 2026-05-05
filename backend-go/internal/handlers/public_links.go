@@ -218,52 +218,49 @@ func (h *PublicLinksHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// clicksDaily: clicks por dia dos últimos 7 dias agrupados via dispatch_targets
-	// Estratégia: agrupar click_count de dispatch_targets cujo group_id está na fallback_chain do link,
-	// por dia (D-6 a D-0). Se DB não disponível ou sem dados → retorna zeros.
+	// clicksDaily: clicks únicos por dia dos últimos 7 dias via clicklog.
+	// Estratégia: a fallback_chain contém group_ids; grupos estão ligados a products via dispatches.
+	// Agregamos clicklog por product_id onde o produto foi despachado para grupos da chain,
+	// usando clicked_at para o agrupamento diário.
+	// Se não houver dados suficientes → retorna zeros honestos.
 	clicksDaily := [7]int{}
 	var clicksTotal int
 	var revenue float64
 
 	if h.db != nil {
-		// Desserializa fallback_chain para obter group IDs associados
 		var chainIDs []int64
 		_ = json.Unmarshal(link.FallbackChain, &chainIDs)
 
 		if len(chainIDs) > 0 {
-			// Agregar clicks por dia dos últimos 7 dias
-			// TODO: quando houver tabela link_clicks com timestamps por link, usar essa tabela.
-			// Por ora, agrega click_count de dispatch_targets por group_id e dia de entrega.
-			type dayAgg struct {
-				DayOffset int     `db:"day_offset"`
-				Clicks    int     `db:"clicks"`
-				Revenue   float64 `db:"revenue"`
-			}
-
-			// Gera série de 0-6 dias e agrega — compatível com Postgres; SQLite usa CTE recursivo mas
-			// generate_series não está disponível: retorna zeros com TODO.
 			now := time.Now()
 			for i := 0; i < 7; i++ {
 				dayStart := now.Add(-time.Duration(6-i) * 24 * time.Hour).Truncate(24 * time.Hour)
 				dayEnd := dayStart.Add(24 * time.Hour)
 				var dayClicks int
-				var dayRevenue float64
-				// TODO: filtrar por link_id quando tabela link_clicks existir.
-				// Atualmente agrega por group_id da fallback_chain no intervalo do dia.
+				// Contar clicks únicos (DISTINCT ip_hash) no clicklog para produtos
+				// despachados para grupos desta public link.
 				_ = h.db.GetContext(r.Context(), &dayClicks,
-					`SELECT COALESCE(SUM(dt.click_count), 0)
-					 FROM dispatch_targets dt
-					 WHERE dt.group_id = ANY($1)
-					   AND dt.delivered_at >= $2 AND dt.delivered_at < $3`,
+					`SELECT COUNT(DISTINCT cl.ip_hash)
+					 FROM clicklog cl
+					 JOIN dispatches d ON d.product_id = cl.product_id
+					 JOIN dispatch_targets dt ON dt.dispatch_id = d.id AND dt.group_id = ANY($1)
+					 WHERE cl.clicked_at >= $2 AND cl.clicked_at < $3`,
 					chainIDs, dayStart, dayEnd)
+				clicksDaily[i] = dayClicks
+				clicksTotal += dayClicks
+			}
+
+			// revenue via dispatch_targets (ainda é a fonte para revenue)
+			for i := 0; i < 7; i++ {
+				dayStart := now.Add(-time.Duration(6-i) * 24 * time.Hour).Truncate(24 * time.Hour)
+				dayEnd := dayStart.Add(24 * time.Hour)
+				var dayRevenue float64
 				_ = h.db.GetContext(r.Context(), &dayRevenue,
 					`SELECT COALESCE(SUM(dt.revenue), 0.0)
 					 FROM dispatch_targets dt
 					 WHERE dt.group_id = ANY($1)
 					   AND dt.delivered_at >= $2 AND dt.delivered_at < $3`,
 					chainIDs, dayStart, dayEnd)
-				clicksDaily[i] = dayClicks
-				clicksTotal += dayClicks
 				revenue += dayRevenue
 			}
 		}

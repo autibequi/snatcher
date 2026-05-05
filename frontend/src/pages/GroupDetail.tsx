@@ -1,6 +1,6 @@
 import React from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
@@ -128,17 +128,163 @@ function EngagementBadge({ role }: { role?: string }) {
   )
 }
 
+// ── Add Admin Modal ───────────────────────────────────────────────────────────
+
+interface AccountOption {
+  id: number
+  name: string
+  phone?: string
+  platform: 'wa' | 'tg'
+}
+
+function AddAdminModal({
+  groupId,
+  onClose,
+  onSuccess,
+}: {
+  groupId: string | number
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [selectedId, setSelectedId] = React.useState<string>('')
+  const [submitting, setSubmitting] = React.useState(false)
+
+  const { data: waAccounts = [] } = useQuery<AccountOption[]>({
+    queryKey: ['accounts', 'wa'],
+    queryFn: () =>
+      apiClient
+        .get('/api/accounts/wa')
+        .then(r => (Array.isArray(r.data) ? r.data.map((a: any) => ({ ...a, platform: 'wa' as const })) : []))
+        .catch(() => []),
+    staleTime: 30_000,
+  })
+
+  const { data: tgAccounts = [] } = useQuery<AccountOption[]>({
+    queryKey: ['accounts', 'tg'],
+    queryFn: () =>
+      apiClient
+        .get('/api/accounts/tg')
+        .then(r => (Array.isArray(r.data) ? r.data.map((a: any) => ({ ...a, platform: 'tg' as const })) : []))
+        .catch(() => []),
+    staleTime: 30_000,
+  })
+
+  const allAccounts = [...waAccounts, ...tgAccounts]
+
+  const handleSubmit = async (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    if (!selectedId) return
+    const found = allAccounts.find(a => String(a.id) === selectedId)
+    if (!found) return
+    setSubmitting(true)
+    try {
+      await apiClient.post(`/api/groups/${groupId}/admins`, {
+        account_type: found.platform,
+        account_id: found.id,
+      })
+      onSuccess()
+      onClose()
+    } catch (err) {
+      console.error('[add-admin] POST failed (BE may not be ready yet):', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border border-border rounded-lg p-6 w-full max-w-sm shadow-modal"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-semibold text-fg mb-4">Adicionar conta admin</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Conta</label>
+            <select
+              required
+              value={selectedId}
+              onChange={e => setSelectedId(e.target.value)}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            >
+              <option value="">Selecionar conta...</option>
+              {waAccounts.length > 0 && (
+                <optgroup label="WhatsApp">
+                  {waAccounts.map(a => (
+                    <option key={`wa-${a.id}`} value={String(a.id)}>
+                      {a.name}{a.phone ? ` (${a.phone})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {tgAccounts.length > 0 && (
+                <optgroup label="Telegram">
+                  {tgAccounts.map(a => (
+                    <option key={`tg-${a.id}`} value={String(a.id)}>
+                      {a.name}{a.phone ? ` (${a.phone})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {allAccounts.length === 0 && (
+                <option disabled value="">Nenhuma conta disponível</option>
+              )}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2 hover:bg-border"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !selectedId}
+              className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {submitting ? 'Adicionando...' : 'Adicionar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Admin accounts section ────────────────────────────────────────────────────
 
 function AdminAccountsSection({
+  groupId,
   admins,
   isProtected,
+  onAdminAdded,
 }: {
+  groupId: string | number
   admins: AdminAccount[]
   isProtected: boolean
+  onAdminAdded: () => void
 }) {
+  const qc = useQueryClient()
+  const [showAddModal, setShowAddModal] = React.useState(false)
+
   const protCount = admins.filter(a => (a.protected_count ?? 0) > 0).length
   const total = admins.length
+
+  const removeAdmin = useMutation({
+    mutationFn: (adminId: number) =>
+      apiClient.delete(`/api/groups/${groupId}/admins/${adminId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', String(groupId), 'admins'] })
+    },
+    onError: (err) => {
+      console.error('[remove-admin] DELETE failed (BE may not be ready yet):', err)
+    },
+  })
 
   return (
     <div className="border border-border rounded-md p-4 mb-6">
@@ -149,17 +295,26 @@ function AdminAccountsSection({
             Mínimo recomendado: 2 contas independentes para sobreviver a ban.
           </p>
         </div>
-        {total > 0 && (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
-              isProtected
-                ? 'bg-green-900/20 border border-green-700/40 text-green-400'
-                : 'bg-amber-900/20 border border-amber-700/40 text-amber-400'
-            }`}
+        <div className="flex items-center gap-2">
+          {total > 0 && (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
+                isProtected
+                  ? 'bg-green-900/20 border border-green-700/40 text-green-400'
+                  : 'bg-amber-900/20 border border-amber-700/40 text-amber-400'
+              }`}
+            >
+              {isProtected ? '✓' : '⚠'} {protCount}/{total} — {isProtected ? 'protegido' : 'risco'}
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowAddModal(true)}
           >
-            {isProtected ? '✓' : '⚠'} {protCount}/{total} — {isProtected ? 'protegido' : 'risco'}
-          </span>
-        )}
+            + Adicionar admin
+          </Button>
+        </div>
       </div>
 
       {admins.length === 0 ? (
@@ -169,6 +324,7 @@ function AdminAccountsSection({
           {admins.map(a => {
             const label = a.initials ?? initials(a.name)
             const color = a.color ?? avatarColor(a.name)
+            const isRemoving = removeAdmin.isPending && removeAdmin.variables === a.id
             return (
               <div
                 key={a.id}
@@ -179,7 +335,7 @@ function AdminAccountsSection({
                 >
                   {label}
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-fg truncate">{a.name}</p>
                   {a.phone && (
                     <p className="text-xs text-fg-3">
@@ -187,10 +343,30 @@ function AdminAccountsSection({
                     </p>
                   )}
                 </div>
+                <button
+                  type="button"
+                  disabled={isRemoving}
+                  onClick={() => removeAdmin.mutate(a.id)}
+                  className="text-fg-3 hover:text-danger transition-colors text-sm p-0.5 disabled:opacity-40"
+                  title="Remover admin"
+                >
+                  ✗
+                </button>
               </div>
             )
           })}
         </div>
+      )}
+
+      {showAddModal && (
+        <AddAdminModal
+          groupId={groupId}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            onAdminAdded()
+            setShowAddModal(false)
+          }}
+        />
       )}
     </div>
   )
@@ -381,6 +557,7 @@ function MembersTable({
 export default function GroupDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [membersPage, setMembersPage] = React.useState(1)
 
   const { data: group, isLoading } = useQuery<GroupDetail>({
@@ -526,7 +703,12 @@ export default function GroupDetail() {
         </div>
 
         {/* Admin accounts */}
-        <AdminAccountsSection admins={admins} isProtected={isProtected} />
+        <AdminAccountsSection
+          groupId={id!}
+          admins={admins}
+          isProtected={isProtected}
+          onAdminAdded={() => qc.invalidateQueries({ queryKey: ['groups', id, 'admins'] })}
+        />
 
         {/* Members section */}
         <div>

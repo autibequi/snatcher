@@ -54,9 +54,10 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 		`SELECT COALESCE(SUM(click_count),0) FROM dispatch_targets
 		 WHERE created_at >= $1 AND created_at < $2`, week1Start, week0Start)
 
-	// unique_clicks_7d: dispatch_targets não tem coluna de usuário distinto;
-	// TODO: quando rastreamento por dispositivo estiver disponível, usar COUNT DISTINCT client_id.
-	uniqueClicks7d := clicks7d
+	// unique_clicks_7d: COUNT(DISTINCT ip_hash) FROM clicklog nos últimos 7 dias.
+	var uniqueClicks7d int
+	_ = h.db.GetContext(r.Context(), &uniqueClicks7d,
+		`SELECT COUNT(DISTINCT ip_hash) FROM clicklog WHERE clicked_at >= $1`, week0Start)
 
 	// CTR: clicks / dispatches (em %)
 	ctrAvg := 0.0
@@ -71,6 +72,7 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 
 	// Health score baseado em wa_accounts.
 	// Heurística: (active - banned*2 - disconnected) / total * 100, clamp [0,100].
+	// Penalidade adicional: grupos ativos com admin_count < 2 reduzem o score (peso pequeno).
 	// Se sem contas → null.
 	accounts, err := h.store.ListWAAccounts()
 	var healthScore *int
@@ -90,6 +92,21 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		raw := float64(active-banned*2-disconnected) / float64(total) * 100
+
+		// Penalidade: grupos ativos com admin_count < 2 — cada grupo penaliza 1 ponto (máx 10)
+		if h.db != nil {
+			var underAdminCount int
+			_ = h.db.GetContext(r.Context(), &underAdminCount, `
+				SELECT COUNT(*) FROM groups g
+				WHERE g.status = 'active'
+				  AND (SELECT COUNT(*) FROM group_admins ga WHERE ga.group_id = g.id) < 2`)
+			penalty := float64(underAdminCount)
+			if penalty > 10 {
+				penalty = 10
+			}
+			raw -= penalty
+		}
+
 		if raw < 0 {
 			raw = 0
 		}
@@ -208,15 +225,56 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Categoria: curation_pending — catalogproduct com status='pending_curation'
-	// TODO: a tabela catalogproduct não possui coluna status; adicionar coluna status
-	// (pending_curation|approved|rejected) para habilitar este alerta.
-	// Por ora, retorna lista vazia para esta categoria.
+	// Categoria: curation_pending — catalogproduct com curation_status='pending' nos últimos 7 dias
+	if h.db != nil {
+		since7d := time.Now().Add(-7 * 24 * time.Hour)
+		var pendingCount int
+		_ = h.db.GetContext(r.Context(), &pendingCount,
+			`SELECT COUNT(*) FROM catalogproduct WHERE curation_status='pending' AND created_at >= $1`, since7d)
+		if pendingCount > 0 {
+			alerts = append(alerts, Alert{
+				ID:       "curation_pending",
+				Severity: "atencao",
+				Category: "curation_pending",
+				Title:    fmt.Sprintf("%d produto(s) aguardando curação", pendingCount),
+				Subtitle: "últimos 7 dias",
+				CTA:      CTA{Label: "Ver catálogo", Href: "/catalog?tab=novos"},
+			})
+		}
+	}
 
-	// Categoria: group_fail — grupos arquivados com erro
-	// TODO: a tabela groups/redesign_groups não possui colunas archived + last_error;
-	// adicionar esses campos para habilitar este alerta.
-	// Por ora, retorna lista vazia para esta categoria.
+	// Categoria: group_fail — grupos arquivados ou com last_error preenchido
+	if h.db != nil {
+		type failRow struct {
+			ID        int64  `db:"id"`
+			Name      string `db:"name"`
+			Archived  bool   `db:"archived"`
+			LastError string `db:"last_error"`
+		}
+		var failGroups []failRow
+		_ = h.db.SelectContext(r.Context(), &failGroups,
+			`SELECT id, name, COALESCE(archived, false) AS archived, COALESCE(last_error, '') AS last_error
+			 FROM groups WHERE archived = true OR last_error IS NOT NULL LIMIT 10`)
+		for _, fg := range failGroups {
+			severity := "atencao"
+			subtitle := "erro detectado"
+			if fg.Archived {
+				severity = "critico"
+				subtitle = "arquivado"
+			}
+			if fg.LastError != "" {
+				subtitle = fg.LastError
+			}
+			alerts = append(alerts, Alert{
+				ID:       fmt.Sprintf("group_fail-%d", fg.ID),
+				Severity: severity,
+				Category: "group_fail",
+				Title:    fmt.Sprintf("Grupo %q com falha", fg.Name),
+				Subtitle: subtitle,
+				CTA:      CTA{Label: "Ver grupo", Href: fmt.Sprintf("/groups/%d", fg.ID)},
+			})
+		}
+	}
 
 	if alerts == nil {
 		alerts = []Alert{}

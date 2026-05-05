@@ -1,5 +1,5 @@
 import React from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Badge, Button, Skeleton, EmptyState, Input, Tabs } from '../components/ui'
@@ -282,6 +282,18 @@ export default function Catalog() {
   const [showAddModal, setShowAddModal] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
 
+  const curateMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
+      apiClient.patch(`/api/catalog/${id}`, { curation_status: status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['catalog'] })
+      try { qc.invalidateQueries({ queryKey: ['catalog-counts'] }) } catch (_) {}
+    },
+    onError: (err) => {
+      console.error('[curation] patch failed (BE may not be ready yet):', err)
+    },
+  })
+
   // ── 1 fetch inicial para grouped_counts ──────────────────────────────────
   const { data: countsData } = useQuery<{ counts?: TabCounts }>({
     queryKey: ['catalog', 'grouped-counts'],
@@ -539,6 +551,27 @@ export default function Catalog() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
+                        {tab === 'new' && (
+                          <>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 focus-visible:ring-green-500"
+                              loading={curateMutation.isPending && curateMutation.variables?.id === p.id && curateMutation.variables?.status === 'curated'}
+                              onClick={e => { e.stopPropagation(); curateMutation.mutate({ id: p.id, status: 'curated' }) }}
+                            >
+                              ✓ Curar
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              loading={curateMutation.isPending && curateMutation.variables?.id === p.id && curateMutation.variables?.status === 'rejected'}
+                              onClick={e => { e.stopPropagation(); curateMutation.mutate({ id: p.id, status: 'rejected' }) }}
+                            >
+                              ✗ Rejeitar
+                            </Button>
+                          </>
+                        )}
                         <Button
                           variant="primary"
                           size="sm"

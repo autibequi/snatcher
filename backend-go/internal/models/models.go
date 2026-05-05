@@ -235,6 +235,8 @@ type CatalogProduct struct {
 	Tags              string          `db:"tags" json:"tags"`
 	CreatedAt         time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt         time.Time       `db:"updated_at" json:"updated_at"`
+	// migration 0084
+	CurationStatus string `db:"curation_status" json:"curation_status"`
 }
 
 func (p *CatalogProduct) GetTags() []string {
@@ -469,6 +471,19 @@ type RedesignGroup struct {
 	Overrides     []byte     `db:"overrides" json:"-"`
 	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
 	LastMessageAt NullTime   `db:"last_message_at" json:"last_message_at,omitempty"`
+	// migration 0083
+	Archived    bool       `db:"archived" json:"archived"`
+	LastError   NullString `db:"last_error" json:"last_error,omitempty"`
+	LastErrorAt NullTime   `db:"last_error_at" json:"last_error_at,omitempty"`
+}
+
+// GroupAdmin representa um administrador de um grupo (tabela group_admins).
+type GroupAdmin struct {
+	ID          int64     `db:"id" json:"id"`
+	GroupID     int64     `db:"group_id" json:"group_id"`
+	AccountType string    `db:"account_type" json:"account_type"` // wa|tg
+	AccountID   int64     `db:"account_id" json:"account_id"`
+	AddedAt     time.Time `db:"added_at" json:"added_at"`
 }
 
 // AffiliateProgram é o programa de afiliado do ReDesign (tabela affiliate_programs).
@@ -587,4 +602,15 @@ type ChannelHistoryEntry struct {
 	DeliveredAt NullTime  `db:"delivered_at" json:"delivered_at,omitempty"`
 	MessageText string    `db:"message_text" json:"message_text"`
 	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+}
+
+// AffiliateConversion representa uma conversão de afiliado (tabela affiliate_conversions).
+type AffiliateConversion struct {
+	ID              int64      `db:"id" json:"id"`
+	ProgramID       int64      `db:"program_id" json:"program_id"`
+	ClickID         NullInt64  `db:"click_id" json:"click_id,omitempty"`
+	ExternalOrderID NullString `db:"external_order_id" json:"external_order_id,omitempty"`
+	Revenue         NullFloat64 `db:"revenue" json:"revenue,omitempty"`
+	Status          string     `db:"status" json:"status"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
 }

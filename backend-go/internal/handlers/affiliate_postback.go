@@ -9,16 +9,25 @@ import (
 	"net/http"
 	"strings"
 
+	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/store"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
 )
 
 type AffiliatePostbackHandler struct {
-	db *sqlx.DB
+	db    *sqlx.DB
+	store store.Store
 }
 
 func NewAffiliatePostbackHandler(db *sqlx.DB) *AffiliatePostbackHandler {
 	return &AffiliatePostbackHandler{db: db}
+}
+
+// NewAffiliatePostbackHandlerStore cria o handler com store para inserir conversões.
+func NewAffiliatePostbackHandlerStore(db *sqlx.DB, st store.Store) *AffiliatePostbackHandler {
+	return &AffiliatePostbackHandler{db: db, store: st}
 }
 
 // POST /webhooks/affiliate/:programId

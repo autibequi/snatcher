@@ -127,6 +127,13 @@ type Store interface {
 	CreateRedesignGroup(g models.RedesignGroup) (int64, error)
 	UpdateRedesignGroup(g models.RedesignGroup) error
 	DeleteRedesignGroup(id int64) error
+	SetGroupArchived(id int64, archived bool, lastError *string) error
+
+	// GroupAdmins
+	ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error)
+	AddGroupAdmin(a models.GroupAdmin) (int64, error)
+	DeleteGroupAdmin(id int64) error
+	CountGroupAdmins(groupID int64) (int, error)
 
 	// AffiliatePrograms (ReDesign)
 	ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error)
@@ -184,4 +191,7 @@ type Store interface {
 	// Short Links
 	GetOrCreateShortLink(destURL, source string) (string, error)
 	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
+
+	// AffiliateConversions
+	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
 }
