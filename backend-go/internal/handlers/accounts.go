@@ -416,34 +416,49 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	evo := newEvolutionClient(baseURL, apiKey, instance)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	refreshURL := r.URL.Path
+
 	qrJSON, err := evo.getQRCode(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
+<script>setTimeout(()=>location.reload(),5000)</script>
+</head><body style="margin:0;background:#111;color:#c44;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px;padding:16px;text-align:center">
+<p>Erro ao conectar na Evolution API</p>
+<p style="font-size:11px;color:#888">%s</p>
+<p style="font-size:11px">(<a href="%s" style="color:#555">tentar novamente</a>)</p>
+</body></html>`, err.Error(), refreshURL)
 		return
 	}
 
-	// Extrai base64 do JSON e retorna HTML com <img>
+	// Extrai base64 do JSON — suporta {base64:"..."} e {qrcode:{base64:"..."}}
 	var qrBody map[string]any
 	_ = json.Unmarshal([]byte(qrJSON), &qrBody)
 	base64QR, _ := qrBody["base64"].(string)
+	if base64QR == "" {
+		if nested, ok := qrBody["qrcode"].(map[string]any); ok {
+			base64QR, _ = nested["base64"].(string)
+		}
+	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// O QR expira a cada ~25s na Evolution — recarrega o iframe automaticamente
-	refreshURL := r.URL.Path
 	if base64QR != "" {
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
 <script>setTimeout(()=>location.reload(),20000)</script>
 </head><body style="margin:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:8px">
 <img src="%s" style="max-width:90%%;max-height:90%%;object-fit:contain"/>
-<p style="color:#666;font-size:11px;font-family:sans-serif">Atualiza automaticamente a cada 20s</p>
-</body></html>`, base64QR)
+<p style="color:#666;font-size:11px;font-family:sans-serif">Atualiza em 20s · <a href="%s" style="color:#555">agora</a></p>
+</body></html>`, base64QR, refreshURL)
 	} else {
+		// Mostrar o JSON bruto para diagnóstico
+		preview := qrJSON
+		if len(preview) > 200 { preview = preview[:200] + "..." }
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
-<script>setTimeout(()=>location.reload(),5000)</script>
-</head><body style="margin:0;background:#111;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px">
+<script>setTimeout(()=>location.reload(),4000)</script>
+</head><body style="margin:0;background:#111;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px;padding:16px;text-align:center">
 <p>Aguardando QR code...</p>
+<p style="font-size:10px;color:#555;word-break:break-all;max-width:300px">%s</p>
 <p style="font-size:11px">(<a href="%s" style="color:#555">atualizar agora</a>)</p>
-</body></html>`, refreshURL)
+</body></html>`, preview, refreshURL)
 	}
 }
 
