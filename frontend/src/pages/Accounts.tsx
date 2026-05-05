@@ -143,14 +143,15 @@ function QRModal({
   })
 
   // Fechar automaticamente quando conectado
+  // Backend mapeia Evolution "open" → "WORKING"; também aceitar "connected" do DB
+  const connected = statusData?.status === 'WORKING' || statusData?.status === 'connected'
+
   useEffect(() => {
-    if (statusData?.status === 'connected') {
-      const t = setTimeout(onClose, 1000)
+    if (connected) {
+      const t = setTimeout(onClose, 1500)
       return () => clearTimeout(t)
     }
-  }, [statusData?.status, onClose])
-
-  const connected = statusData?.status === 'connected'
+  }, [connected, onClose])
 
   return (
     <Modal open={!!accountId} onClose={onClose} title="Conectar via QR Code" maxWidth="max-w-sm">
@@ -169,9 +170,10 @@ function QRModal({
             {/* Backend retorna HTML com <img> do QR — usar iframe diretamente */}
             <iframe
               src={`/api/accounts/wa/${accountId}/qr`}
-              className="w-72 h-80 rounded-md border border-border bg-white"
+              className="w-72 rounded-md border border-border bg-white"
+              style={{ colorScheme: 'light', height: '340px' }}
               title="QR Code WhatsApp"
-              style={{ colorScheme: 'light' }}
+              scrolling="no"
             />
             <p className="text-xs text-fg-3">
               Status atual:{' '}

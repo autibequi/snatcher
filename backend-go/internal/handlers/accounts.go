@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -168,11 +169,18 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "account not found")
 		return
 	}
-	if !acc.BaseURL.Valid || !acc.APIKey.Valid || !acc.Instance.Valid {
+	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
+	if !acc.BaseURL.Valid || baseURL == "" {
+		cfg, _ := h.store.GetConfig()
+		if cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+		if cfg.WAApiKey.Valid && apiKey == "" { apiKey = cfg.WAApiKey.String }
+		if cfg.WAInstance.Valid && instance == "" { instance = cfg.WAInstance.String }
+	}
+	if baseURL == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED"})
 		return
 	}
-	evo := newEvolutionClient(acc.BaseURL.String, acc.APIKey.String, acc.Instance.String)
+	evo := newEvolutionClient(baseURL, apiKey, instance)
 	status, err := evo.getStatus(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED", "error": err.Error()})
@@ -367,8 +375,8 @@ func (h *AccountsHandler) WAStartSession(w http.ResponseWriter, r *http.Request)
 
 	evo := newEvolutionClient(baseURL, apiKey, instance)
 	if err := evo.createInstance(r.Context()); err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
+		// Log mas não falha — instância pode já existir com resposta não-409
+		slog.Warn("createInstance error (continuando)", "err", err, "instance", instance)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "STARTING"})
 }

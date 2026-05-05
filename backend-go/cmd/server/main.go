@@ -83,8 +83,8 @@ func main() {
 	amzScraper := scrapers.NewAmazonScraper()
 
 	scraperMap := map[string]pipeline.Scraper{
-		"mercadolivre": mlScraper,
-		"amazon":       amzScraper,
+		"ml":  mlScraper,
+		"amz": amzScraper,
 	}
 
 	// Adapters de mensagem

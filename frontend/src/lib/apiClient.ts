@@ -34,6 +34,8 @@ function emitApiError(error: AxiosError) {
   const msg = data?.error || data?.message || error.message || 'Erro desconhecido'
   // Não emitir 401 (interceptor de refresh trata)
   if (status === 401) return
+  // Não emitir toasts para endpoints de background (session/start, session/logout)
+  if (url.includes('/session/start') || url.includes('/session/logout')) return
   console.error(`[API ${status}] ${method} ${url}: ${msg}`, error.response?.data)
   window.dispatchEvent(new CustomEvent('api:error', {
     detail: { status, method, url, message: msg, data: error.response?.data },
