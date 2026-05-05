@@ -120,7 +120,7 @@ func Build(
 	r.Post("/api/auth/logout", auth.Logout)
 
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st))
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
 
 	r.Get("/canal/{slug}", canal.GroupPicker)
 	r.Get("/canal/{slug}/preview", canal.Preview)

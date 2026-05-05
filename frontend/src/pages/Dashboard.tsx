@@ -1,13 +1,12 @@
-import React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { KpiCard, Badge, Skeleton, EmptyState } from '../components/ui'
+import { KpiCard } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
-import { UpcomingDispatches } from '../components/dashboard/UpcomingDispatches'
+import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
-import { useWSEvent } from '../lib/useWS'
+import type { InboxItem } from '../components/dashboard/OperationInbox'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -23,17 +22,6 @@ interface KPIs {
   unique_clicks?: number
   health_score?: number
   accounts_normal_count?: number
-}
-
-interface Product {
-  id: number
-  canonical_name?: string
-  title?: string
-  marketplace?: string
-  lowest_price?: number
-  price?: number
-  lowest_price_source?: string
-  image_url?: string
 }
 
 // ── Mock fallback para KPIs (enquanto backend não expõe os novos campos) ───────
@@ -56,13 +44,35 @@ function healthScoreClass(score: number): string {
   return 'text-danger'
 }
 
+// ── Dynamic subtitle helper ────────────────────────────────────────────────────
+
+function renderDynamicSubtitle(inboxCount: number, nextDispatchEta?: string) {
+  if (inboxCount > 0 && nextDispatchEta) {
+    return (
+      <>
+        <span className="text-danger font-medium">{inboxCount}</span> itens precisam da sua atenção · próximo disparo em {nextDispatchEta}
+      </>
+    )
+  }
+  if (inboxCount > 0) {
+    return (
+      <>
+        <span className="text-danger">{inboxCount}</span> itens precisam da sua atenção
+      </>
+    )
+  }
+  if (nextDispatchEta) {
+    return <>Tudo em ordem · próximo disparo em {nextDispatchEta}</>
+  }
+  return <>Tudo em ordem</>
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const qc = useQueryClient()
-  const [feed, setFeed] = React.useState<Product[]>([])
 
   const hora = new Date().getHours()
   const greeting = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -77,22 +87,29 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   })
 
-  const { data: catalogData, isLoading: loadingFeed } = useQuery({
-    queryKey: ['catalog', { limit: 20, dashboard: true }],
+
+  // Fetch inbox para contar itens
+  const { data: inboxItems = [] } = useQuery<InboxItem[]>({
+    queryKey: ['dashboard', 'inbox-v2'],
     queryFn: () =>
       apiClient
-        .get('/api/catalog?limit=20')
-        .then(r => r.data)
+        .get('/api/dashboard/inbox')
+        .then(r => (Array.isArray(r.data) ? (r.data as InboxItem[]) : []))
         .catch(() => []),
+    refetchInterval: 30_000,
   })
 
-  useWSEvent('product.new', (data) => {
-    setFeed(prev => [data.product as unknown as Product, ...prev].slice(0, 50))
+  // Fetch upcoming dispatches para pegar primeira ETA
+  const { data: dispatches = [] } = useQuery<UpcomingDispatch[]>({
+    queryKey: ['dashboard', 'upcoming-dispatches'],
+    queryFn: () =>
+      apiClient
+        .get('/api/dashboard/upcoming-dispatches?limit=5')
+        .then(r => (Array.isArray(r.data) ? (r.data as UpcomingDispatch[]) : []))
+        .catch(() => []),
+    refetchInterval: 60_000,
   })
 
-  const products: Product[] = feed.length > 0
-    ? feed
-    : (Array.isArray(catalogData) ? catalogData : (catalogData?.items ?? []))
 
   // Merge backend KPIs com fallback mock para campos ausentes
   const resolvedKpis = { ...KPI_MOCK_FALLBACK, ...kpis }
@@ -132,10 +149,12 @@ export default function Dashboard() {
           <h1 className="text-xl font-semibold text-fg">
             {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
           </h1>
-          {/* Subtítulo dinâmico — gerenciado pelo card 022-03 (não alterar aqui) */}
+          {/* Subtítulo dinâmico — renderizado com base em inboxCount + nextDispatchEta */}
           <p className="text-sm text-fg-3 mt-0.5" id="dashboard-subtitle">
-            {/* placeholder — card 022-03 substitui este nó */}
-            Carregando...
+            {renderDynamicSubtitle(
+              inboxItems.length,
+              dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -221,65 +240,6 @@ export default function Dashboard() {
         <UpcomingDispatches />
       </div>
 
-      {/* ── 5. Produtos novos (mantido — card 022-08 remove) ─────────────────── */}
-      <div>
-        <p className="text-sm font-medium text-fg-2 mb-3">Produtos novos</p>
-        {loadingFeed ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <EmptyState
-            title="Nenhum produto ainda"
-            description="Configure um crawler para coletar produtos."
-            cta={{ label: 'Ir para Crawlers', onClick: () => navigate('/crawlers') }}
-          />
-        ) : (
-          <div className="space-y-2">
-            {products.slice(0, 15).map((p, i) => (
-              <div
-                key={p.id ?? i}
-                className="flex items-center gap-3 p-3 bg-surface border border-border rounded-md hover:border-border-strong cursor-pointer transition-colors"
-                onClick={() => navigate(`/match?productId=${p.id}`)}
-              >
-                <div className="w-12 h-12 bg-surface-2 rounded-sm flex-shrink-0 overflow-hidden">
-                  {p.image_url
-                    ? <img src={p.image_url} alt="" className="w-full h-full object-cover" />
-                    : <span className="flex items-center justify-center h-full text-xl">📦</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-fg truncate">
-                    {p.canonical_name ?? p.title ?? 'Produto'}
-                  </p>
-                  <div className="flex gap-1.5 mt-0.5 flex-wrap">
-                    {p.lowest_price_source && <Badge size="sm">{p.lowest_price_source}</Badge>}
-                    {((p.lowest_price ?? p.price ?? 0) > 0) && (
-                      <span className="text-xs text-fg-2">
-                        R$ {((p.lowest_price ?? p.price) as number).toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className="text-xs text-accent flex-shrink-0">Match →</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Insights IA (mantido — card 022-08 remove) ───────────────────────── */}
-      <div className="bg-surface border border-border rounded-md p-4">
-        <p className="text-sm font-medium text-fg mb-3">Insights IA</p>
-        <p className="text-sm text-fg-3 italic">
-          Configure o LLM em{' '}
-          <a href="/settings" className="text-accent hover:underline">
-            Configurações → LLM / IA
-          </a>{' '}
-          para ver insights automáticos.
-        </p>
-      </div>
 
     </div>
   )
