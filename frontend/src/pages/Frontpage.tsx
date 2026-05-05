@@ -77,7 +77,7 @@ export default function Frontpage(): React.ReactElement {
 
         {/* Footer */}
         <div className="text-center mt-16 pt-8 border-t border-gray-800">
-          <Link to="/login" className="text-gray-700 hover:text-gray-400 text-xs transition-colors">
+          <Link to="/admin" className="text-gray-700 hover:text-gray-400 text-xs transition-colors">
             Powered by Promo Snatcher
           </Link>
         </div>

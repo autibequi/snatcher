@@ -79,7 +79,7 @@ api.interceptors.response.use(
       const isWAConfig = url.includes('/wa/') || url.includes('/config/wa')
       if (!isWAConfig) {
         localStorage.removeItem('ph_token')
-        window.location.href = '/login'
+        window.location.href = '/admin'
       }
     }
     return Promise.reject(err)
