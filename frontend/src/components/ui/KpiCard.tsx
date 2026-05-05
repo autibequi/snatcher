@@ -18,6 +18,8 @@ interface KpiCardProps {
   delta?: KpiCardDelta
   /** Subtítulo/nota abaixo do valor (ex: "2.184 únicos", "2 contas em uso normal") */
   subtitle?: string
+  /** Texto de tooltip explicando a métrica */
+  tooltip?: string
   className?: string
 }
 
@@ -34,7 +36,7 @@ function resolveTone(delta: KpiCardDelta): DeltaTone {
   return delta.value >= 0 ? 'success' : 'danger'
 }
 
-export function KpiCard({ label, value, delta, subtitle, className = '' }: KpiCardProps) {
+export function KpiCard({ label, value, delta, subtitle, tooltip, className = '' }: KpiCardProps) {
   let deltaText: string | undefined
   let deltaColorClass = ''
 
@@ -53,7 +55,17 @@ export function KpiCard({ label, value, delta, subtitle, className = '' }: KpiCa
 
   return (
     <div className={`bg-surface border border-border rounded-md p-4 shadow-card ${className}`}>
-      <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">{label}</p>
+      <div className="flex items-center gap-1">
+        <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">{label}</p>
+        {tooltip && (
+          <span
+            title={tooltip}
+            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-fg-3 text-fg-3 text-[9px] leading-none cursor-help hover:border-accent hover:text-accent"
+          >
+            i
+          </span>
+        )}
+      </div>
       <p className="text-2xl font-semibold text-fg mt-1">{value}</p>
       {deltaText !== undefined && (
         <p className={`text-xs mt-1 ${deltaColorClass}`}>{deltaText}</p>

@@ -800,18 +800,22 @@ export default function ChannelDetail() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 label="Disparos 7D"
+                tooltip="Número de mensagens enviadas pelos grupos deste canal nos últimos 7 dias."
                 value={metrics?.dispatches_7d ?? metrics?.dispatches_last_7d ?? '—'}
               />
               <KpiCard
                 label="CTR"
+                tooltip="Click-Through Rate: percentual de pessoas que clicaram no link após receber a mensagem. Calculado sobre os últimos 30 dias."
                 value={metrics?.ctr ? `${(metrics.ctr * 100).toFixed(1)}%` : '—'}
               />
               <KpiCard
                 label="Produtos"
+                tooltip="Quantidade de produtos únicos já disparados para os grupos deste canal."
                 value={metrics?.product_count ?? metrics?.products ?? '—'}
               />
               <KpiCard
                 label="Cliques estimados"
+                tooltip="Total de cliques registrados nos links dos disparos enviados para os grupos deste canal."
                 value={
                   metrics?.estimated_clicks != null
                     ? Number(metrics.estimated_clicks).toLocaleString('pt-BR')
