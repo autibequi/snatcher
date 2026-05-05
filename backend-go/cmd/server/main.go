@@ -1,3 +1,12 @@
+// @title           Snatcher API
+// @version         1.0
+// @description     API de scraping e monitoramento de preços com integração Telegram/WhatsApp.
+// @host            localhost:8000
+// @BasePath        /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 package main
 
 import (
@@ -15,6 +24,7 @@ import (
 	"snatcher/backendv2/internal/config"
 	appdb "snatcher/backendv2/internal/db"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/observability"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/router"
@@ -24,7 +34,18 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	// Set up JSON structured logger before any other action so all subsequent
+	// log calls (including from imported packages) use the correct handler.
+	slog.SetDefault(observability.NewLogger(os.Getenv("LOG_LEVEL"), os.Getenv("ENV")))
+
+	// Register all Prometheus metrics with the default registry.
+	observability.MustRegisterAll()
+
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("config validation failed", "err", err)
+		os.Exit(1)
+	}
 
 	if cfg.GOMAXPROCS > 0 {
 		runtime.GOMAXPROCS(cfg.GOMAXPROCS)
@@ -62,8 +83,8 @@ func main() {
 	amzScraper := scrapers.NewAmazonScraper()
 
 	scraperMap := map[string]pipeline.Scraper{
-		"mercadolivre": mlScraper,
-		"amazon":       amzScraper,
+		"ml":  mlScraper,
+		"amz": amzScraper,
 	}
 
 	// Adapters de mensagem
@@ -93,7 +114,7 @@ func main() {
 	runner := pipeline.NewRunner(st, scraperMap, adapterMap)
 
 	// Scheduler
-	sched, err := scheduler.New(cfg.ScanInterval, runner, nil)
+	sched, err := scheduler.New(cfg.ScanInterval, runner, nil, st, nil)
 	if err != nil {
 		slog.Error("scheduler init", "err", err)
 		os.Exit(1)
@@ -109,7 +130,7 @@ func main() {
 	defer sched.Stop()
 
 	// HTTP server
-	h := router.Build(st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret, cfg.AdminUser, cfg.AdminPass)
+	h := router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      h,
@@ -148,7 +169,7 @@ func bootstrapConfig(st store.Store) {
 
 	evoURL := os.Getenv("EVOLUTION_URL")
 	if evoURL == "" {
-		evoURL = "http://promo-snatcher-evolution:8080"
+		evoURL = "http://snatcher-evolution:8080"
 	}
 	if !cfg.WABaseURL.Valid || cfg.WABaseURL.String == "" {
 		cfg.WABaseURL = models.NullString{NullString: sql.NullString{String: evoURL, Valid: true}}

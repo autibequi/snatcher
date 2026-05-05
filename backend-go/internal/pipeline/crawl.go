@@ -25,9 +25,18 @@ type Scraper interface {
 	Search(ctx context.Context, query string, minVal, maxVal float64) ([]Item, error)
 }
 
+// ScraperWithCategory extends Scraper with category information.
+// New scrapers should implement this for category-based filtering.
+type ScraperWithCategory interface {
+	Scraper
+	ID() string
+	Category() string
+}
+
 // CrawlSearchTerm executa o crawl de um SearchTerm e salva os resultados.
 func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm, scrapers map[string]Scraper) error {
 	log := slog.With("term_id", term.ID, "query", term.Query)
+	log.Info("crawl iniciado", "sources", term.GetSources(), "queries", len(term.GetQueries()))
 
 	logID, err := st.InsertCrawlLog(models.CrawlLog{
 		SearchTermID: term.ID,
@@ -38,23 +47,40 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 	}
 
 	var (
-		mu      sync.Mutex
-		mlCount int
-		amzCount int
-		allItems []Item
-		crawlErr error
+		mu           sync.Mutex
+		allItems     []Item
+		sourceCounts map[string]int
+		crawlErr     error
 	)
+	sourceCounts = make(map[string]int)
 
 	queries := term.GetQueries()
+	enabledSources := term.GetSources()
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 
 	for _, q := range queries {
-		for source, scraper := range scrapers {
-			if term.Sources != "all" && term.Sources != source {
+		for _, sourceID := range enabledSources {
+			scraper, exists := scrapers[sourceID]
+			if !exists {
+				log.Warn("scraper not found", "source", sourceID)
 				continue
 			}
-			q, source, scraper := q, source, scraper
+
+			// Defense-in-depth: filter sources by category match.
+			// If scraper implements ScraperWithCategory, check that it matches the search term's category.
+			if categorized, ok := scraper.(ScraperWithCategory); ok {
+				if categorized.Category() != term.Category {
+					log.Warn("source category mismatch",
+						"search_term_id", term.ID,
+						"source", sourceID,
+						"expected_category", term.Category,
+						"got_category", categorized.Category())
+					continue
+				}
+			}
+
+			q, sourceID, scraper := q, sourceID, scraper
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -65,19 +91,14 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					log.Warn("scraper error", "source", source, "query", q, "err", err)
+					log.Warn("scraper error", "source", sourceID, "query", q, "err", err)
 					return
 				}
 				for i := range items {
-					items[i].Source = source
+					items[i].Source = sourceID
 				}
 				allItems = append(allItems, items...)
-				switch source {
-				case "mercadolivre":
-					mlCount += len(items)
-				case "amazon":
-					amzCount += len(items)
-				}
+				sourceCounts[sourceID] += len(items)
 			}()
 		}
 	}
@@ -115,12 +136,16 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 
 	now := time.Now()
 	cl := models.CrawlLog{
-		ID:         logID,
+		ID:           logID,
 		SearchTermID: term.ID,
-		FinishedAt: models.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}},
-		MLCount:    mlCount,
-		AmzCount:   amzCount,
+		FinishedAt:   models.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}},
+		MLCount:      sourceCounts["ml"],
+		AmzCount:     sourceCounts["amz"],
 	}
+
+	// Set source_counts JSON for new source-agnostic tracking
+	_ = cl.SetSourceCounts(sourceCounts)
+
 	if crawlErr != nil {
 		cl.Status = "error"
 		cl.ErrorMsg = models.NullString{NullString: sql.NullString{String: crawlErr.Error(), Valid: true}}
@@ -128,7 +153,19 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 		cl.Status = "done"
 	}
 	_ = st.UpdateCrawlLog(cl)
-	_ = st.TouchSearchTerm(term.ID, mlCount+amzCount)
+
+	// Calculate total items found
+	totalItems := 0
+	for _, count := range sourceCounts {
+		totalItems += count
+	}
+	_ = st.TouchSearchTerm(term.ID, totalItems)
+
+	if crawlErr != nil {
+		log.Error("crawl finalizado com erro", "err", crawlErr)
+	} else {
+		log.Info("crawl finalizado", "total_itens", totalItems, "por_source", sourceCounts)
+	}
 
 	return crawlErr
 }

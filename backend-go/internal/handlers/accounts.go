@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -103,6 +104,8 @@ type waAccountRequest struct {
 	APIKey      string `json:"api_key"`
 	Instance    string `json:"instance"`
 	GroupPrefix string `json:"group_prefix"`
+	Role        string `json:"role"`
+	DailyLimit  int    `json:"daily_limit"`
 	Active      bool   `json:"active"`
 }
 
@@ -119,6 +122,7 @@ func (h *AccountsHandler) CreateWA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.ID = id
+	slog.Info("conta WA criada", "id", id, "name", a.Name, "provider", a.Provider)
 	writeJSON(w, http.StatusCreated, a)
 }
 
@@ -166,11 +170,18 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "account not found")
 		return
 	}
-	if !acc.BaseURL.Valid || !acc.APIKey.Valid || !acc.Instance.Valid {
+	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
+	if !acc.BaseURL.Valid || baseURL == "" {
+		cfg, _ := h.store.GetConfig()
+		if cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+		if cfg.WAApiKey.Valid && apiKey == "" { apiKey = cfg.WAApiKey.String }
+		if cfg.WAInstance.Valid && instance == "" { instance = cfg.WAInstance.String }
+	}
+	if baseURL == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED"})
 		return
 	}
-	evo := newEvolutionClient(acc.BaseURL.String, acc.APIKey.String, acc.Instance.String)
+	evo := newEvolutionClient(baseURL, apiKey, instance)
 	status, err := evo.getStatus(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED", "error": err.Error()})
@@ -195,9 +206,11 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 	if status == "WORKING" && dbStatus != "connected" {
 		acc.Status = "connected"
 		_ = h.store.UpdateWAAccount(acc)
+		slog.Info("conta WA conectada", "id", acc.ID, "name", acc.Name)
 	} else if (status == "STOPPED" || status == "SCAN_QR_CODE") && dbStatus == "connected" {
 		acc.Status = "disconnected"
 		_ = h.store.UpdateWAAccount(acc)
+		slog.Warn("conta WA desconectada", "id", acc.ID, "name", acc.Name, "evolution_status", status)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
@@ -365,8 +378,8 @@ func (h *AccountsHandler) WAStartSession(w http.ResponseWriter, r *http.Request)
 
 	evo := newEvolutionClient(baseURL, apiKey, instance)
 	if err := evo.createInstance(r.Context()); err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
+		// Log mas não falha — instância pode já existir com resposta não-409
+		slog.Warn("createInstance error (continuando)", "err", err, "instance", instance)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "STARTING"})
 }
@@ -495,6 +508,8 @@ type tgAccountRequest struct {
 	BotToken    string `json:"bot_token"`
 	BotUsername string `json:"bot_username"`
 	GroupPrefix string `json:"group_prefix"`
+	Role        string `json:"role"`
+	DailyLimit  int    `json:"daily_limit"`
 	Active      bool   `json:"active"`
 }
 
@@ -741,10 +756,13 @@ func waAccountFromReq(req waAccountRequest) models.WAAccount {
 		active = true // default ativo — frontend não manda esse campo
 	}
 	a := models.WAAccount{
-		Name:     req.Name,
-		Provider: req.Provider,
-		Status:   "disconnected",
-		Active:   active,
+		Name:       req.Name,
+		Provider:   req.Provider,
+		Status:     "disconnected",
+		Active:     active,
+		Role:       req.Role,
+		DailyLimit: req.DailyLimit,
+		SentToday:  0, // reset on creation
 	}
 	if a.Provider == "" {
 		a.Provider = "evolution"
@@ -766,8 +784,11 @@ func waAccountFromReq(req waAccountRequest) models.WAAccount {
 
 func tgAccountFromReq(req tgAccountRequest) models.TGAccount {
 	a := models.TGAccount{
-		Name:   req.Name,
-		Active: req.Active,
+		Name:       req.Name,
+		Active:     req.Active,
+		Role:       req.Role,
+		DailyLimit: req.DailyLimit,
+		SentToday:  0, // reset on creation
 	}
 	if req.BotToken != "" {
 		a.BotToken = models.NullString{NullString: sql.NullString{String: req.BotToken, Valid: true}}

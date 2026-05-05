@@ -6,15 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 )
 
 type EvolutionAdapter struct {
-	client   *http.Client
-	baseURL  string
-	apiKey   string
-	instance string
+	client    *http.Client
+	baseURL   string
+	apiKey    string
+	instance  string
+	accountID int64 // Optional: set for single-account adapters
+}
+
+type SendResult struct {
+	Success   bool
+	AccountID int64
+	Error     error
 }
 
 func NewEvolution(baseURL, apiKey, instance string) *EvolutionAdapter {
@@ -23,6 +31,16 @@ func NewEvolution(baseURL, apiKey, instance string) *EvolutionAdapter {
 		baseURL:  baseURL,
 		apiKey:   apiKey,
 		instance: instance,
+	}
+}
+
+func NewEvolutionWithAccount(accountID int64, baseURL, apiKey, instance string) *EvolutionAdapter {
+	return &EvolutionAdapter{
+		client:    &http.Client{Timeout: 15 * time.Second},
+		baseURL:   baseURL,
+		apiKey:    apiKey,
+		instance:  instance,
+		accountID: accountID,
 	}
 }
 
@@ -144,4 +162,55 @@ func (a *EvolutionAdapter) get(ctx context.Context, path string, out any) error 
 		return json.Unmarshal(body, out)
 	}
 	return nil
+}
+
+// SendTextWithFallback tries to send text to the first accountadapter; if it fails, tries next adapters in chain.
+// accountAdapters should be ordered by priority (primary first, then fallbacks).
+// Logs result to Prometheus: wa_send_total{account_id, target_id, result}
+func SendTextWithFallback(ctx context.Context, targetID int64, chatID, text string, accountAdapters []struct {
+	AccountID int64
+	Adapter   *EvolutionAdapter
+}) (accountID int64, err error) {
+	if len(accountAdapters) == 0 {
+		return 0, fmt.Errorf("no adapters provided for target %d", targetID)
+	}
+
+	var lastErr error
+	for _, aa := range accountAdapters {
+		if err := aa.Adapter.SendText(ctx, chatID, text); err == nil {
+			slog.Info("message sent via fallback", "target_id", targetID, "account_id", aa.AccountID, "result", "success")
+			return aa.AccountID, nil
+		} else {
+			slog.Warn("fallback attempt failed", "target_id", targetID, "account_id", aa.AccountID, "err", err)
+			lastErr = err
+			// Continue to next account
+		}
+	}
+
+	slog.Error("all fallback attempts exhausted", "target_id", targetID, "err", lastErr)
+	return 0, fmt.Errorf("all fallback accounts failed for target %d: %w", targetID, lastErr)
+}
+
+// SendImageWithFallback tries to send image via fallback chain.
+func SendImageWithFallback(ctx context.Context, targetID int64, chatID, imageURL, caption string, accountAdapters []struct {
+	AccountID int64
+	Adapter   *EvolutionAdapter
+}) (accountID int64, err error) {
+	if len(accountAdapters) == 0 {
+		return 0, fmt.Errorf("no adapters provided for target %d", targetID)
+	}
+
+	var lastErr error
+	for _, aa := range accountAdapters {
+		if err := aa.Adapter.SendImage(ctx, chatID, imageURL, caption); err == nil {
+			slog.Info("image sent via fallback", "target_id", targetID, "account_id", aa.AccountID, "result", "success")
+			return aa.AccountID, nil
+		} else {
+			slog.Warn("fallback attempt failed", "target_id", targetID, "account_id", aa.AccountID, "err", err)
+			lastErr = err
+		}
+	}
+
+	slog.Error("all fallback attempts exhausted", "target_id", targetID, "err", lastErr)
+	return 0, fmt.Errorf("all fallback accounts failed for target %d: %w", targetID, lastErr)
 }

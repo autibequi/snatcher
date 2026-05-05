@@ -8,16 +8,36 @@ COMPOSE := $(shell \
   else \
     echo "docker-compose"; \
   fi)
-BACKEND_URL := http://localhost:8000
-FRONTEND_URL := http://localhost:6060
+BACKEND_URL ?= http://localhost:8000
+FRONTEND_URL ?= http://localhost:6060
 
 .DEFAULT_GOAL := help
 
 .PHONY: help setup start start-tunnel deploy deploy-tunnel update pi-setup snatcher snatcher-down snatcher-logs beta up down dev dev-down dev-logs logs logs-backend logs-frontend \
-        shell ps clean test scan status fix-network build-base
+        shell ps clean test health smoke scan status fix-network build-base \
+        backend-test-up backend-test backend-test-down backend-build backend-vet admin
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"}{printf "\033[36m%-18s\033[0m %s\n",$$1,$$2}'
+
+# ---------------------------------------------------------------------------
+# Backend Go — testes integrados (delegam ao backend-go/Makefile)
+# ---------------------------------------------------------------------------
+
+backend-test-up: ## Sobe Postgres efêmero p/ testes do backend-go
+	$(MAKE) -C backend-go test-up
+
+backend-test: ## Roda go test ./... no backend-go (assume Postgres up)
+	GOTOOLCHAIN=local $(MAKE) -C backend-go test
+
+backend-test-down: ## Derruba Postgres de testes do backend-go
+	$(MAKE) -C backend-go test-down
+
+backend-build: ## go build no backend-go
+	GOTOOLCHAIN=local $(MAKE) -C backend-go build
+
+backend-vet: ## go vet no backend-go
+	GOTOOLCHAIN=local $(MAKE) -C backend-go vet
 
 # ---------------------------------------------------------------------------
 # Stack
@@ -196,6 +216,12 @@ dev-down: ## Para o ambiente dev
 dev-logs: ## Logs do ambiente dev (follow)
 	$(COMPOSE) -f docker-compose.dev.yml logs -f
 
+admin: ## Cria ou atualiza usuario admin (pergunta email e senha)
+	@read -p "Email do admin: " EMAIL; \
+	read -s -p "Senha: " PASS; echo; \
+	$(COMPOSE) exec backend sh -c \
+	  "DATABASE_URL=\"$$DATABASE_URL\" SEED_ADMIN_EMAIL=\"$$EMAIL\" SEED_ADMIN_PASSWORD=\"$$PASS\" ./seed"
+
 shell: ## Abre shell no container do backend
 	$(COMPOSE) exec backend bash
 
@@ -206,16 +232,35 @@ shell-frontend: ## Abre shell no container do frontend
 # Testes e saúde
 # ---------------------------------------------------------------------------
 
-test: ## Testa saúde da stack via HTTP
-	@echo "Testando backend..."
-	@curl -sf $(BACKEND_URL)/api/health | python3 -m json.tool
+test: ## Roda test suite do backend (sobe Postgres efêmero, executa go test, derruba)
+	$(MAKE) -C backend-go test-up
+	GOTOOLCHAIN=local $(MAKE) -C backend-go test || { st=$$?; $(MAKE) -C backend-go test-down; exit $$st; }
+	$(MAKE) -C backend-go test-down
+
+health: ## Smoke HTTP da stack rodando (default: localhost:8000; override: BACKEND_URL=https://...)
+	@echo "Verificando $(BACKEND_URL) ..."
+	@curl -sf $(BACKEND_URL)/api/health > /tmp/snhealth.json 2>/dev/null || { \
+	  echo "ERRO: backend nao responde em $(BACKEND_URL)."; \
+	  echo "  → subir stack: make beta"; \
+	  echo "  → ou apontar pra prod: BACKEND_URL=https://beta.autibequi.com make health"; \
+	  exit 1; }
+	@cat /tmp/snhealth.json | python3 -m json.tool
 	@echo ""
-	@echo "Testando endpoints principais..."
-	@curl -sf $(BACKEND_URL)/api/groups  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  grupos: {len(d)}')"
-	@curl -sf $(BACKEND_URL)/api/config  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  config: provider={d[\"wa_provider\"]} interval={d[\"global_interval\"]}min')"
-	@curl -sf $(BACKEND_URL)/api/scan/status | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  scheduler: running={d[\"running\"]} next={d.get(\"next_run\",\"?\")[:19]}')"
+	@echo "Endpoints publicos..."
+	@curl -sf $(BACKEND_URL)/api/public/channels | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  canais publicos: {len(d) if d else 0}')"
 	@echo ""
-	@echo "Stack OK — frontend: $(FRONTEND_URL)  docs: $(BACKEND_URL)/docs"
+	@echo "OpenAPI / Swagger UI..."
+	@curl -sf $(BACKEND_URL)/api/swagger/doc.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  swagger={d[\"swagger\"]} title={d[\"info\"][\"title\"]} version={d[\"info\"][\"version\"]}')"
+	@echo ""
+	@echo "Validator + rate-limit (Fase 0)..."
+	@curl -sf -o /dev/null -w "  /api/auth/login {} → status %{http_code} (esperado 400)\n" -X POST $(BACKEND_URL)/api/auth/login -H 'Content-Type: application/json' -d '{}'
+	@echo ""
+	@echo "Prometheus..."
+	@curl -sf $(BACKEND_URL)/metrics | grep -c '^http_\|^snatcher_' | xargs -I{} echo "  series Prometheus: {}"
+	@echo ""
+	@echo "Stack OK — frontend: $(FRONTEND_URL)  swagger: $(BACKEND_URL)/api/swagger  metrics: $(BACKEND_URL)/metrics"
+
+smoke: health ## Alias para 'health'
 
 status: ## Status resumido da stack + próximo scan
 	@$(COMPOSE) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || $(COMPOSE) ps

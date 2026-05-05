@@ -1,0 +1,17 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: snatcher-postgres-test
+    environment:
+      POSTGRES_USER: snatcher
+      POSTGRES_PASSWORD: snatcher
+      POSTGRES_DB: snatcher_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatcher -d snatcher_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -1,0 +1,469 @@
+basePath: /
+definitions:
+  internal_handlers.channelRequest:
+    properties:
+      active:
+        type: boolean
+      description:
+        type: string
+      digest_max_items:
+        type: integer
+      digest_mode:
+        type: boolean
+      message_template:
+        type: string
+      name:
+        type: string
+      send_end_hour:
+        type: integer
+      send_start_hour:
+        type: integer
+      slug:
+        type: string
+    required:
+    - name
+    type: object
+  internal_handlers.searchTermRequest:
+    properties:
+      active:
+        type: boolean
+      amz_tracking_id:
+        type: string
+      crawl_interval:
+        type: integer
+      max_val:
+        minimum: 0
+        type: number
+      min_val:
+        minimum: 0
+        type: number
+      ml_affiliate_tool_id:
+        type: string
+      queries:
+        items:
+          type: string
+        type: array
+      query:
+        minLength: 2
+        type: string
+      sources:
+        type: string
+    required:
+    - query
+    type: object
+  snatcher_backendv2_internal_models.CatalogProduct:
+    properties:
+      brand:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      canonical_name:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      image_url:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      lowest_price:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullFloat64'
+      lowest_price_source:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      lowest_price_url:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      tags:
+        type: string
+      updated_at:
+        type: string
+      weight:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+    type: object
+  snatcher_backendv2_internal_models.CatalogVariant:
+    properties:
+      catalog_product_id:
+        type: integer
+      first_seen_at:
+        type: string
+      id:
+        type: integer
+      image_url:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      last_seen_at:
+        type: string
+      price:
+        type: number
+      short_id:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      source:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+      variant_label:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+    type: object
+  snatcher_backendv2_internal_models.Channel:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      description:
+        type: string
+      digest_max_items:
+        type: integer
+      digest_mode:
+        type: boolean
+      id:
+        type: integer
+      message_template:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      name:
+        type: string
+      send_end_hour:
+        type: integer
+      send_start_hour:
+        type: integer
+      slug:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+    type: object
+  snatcher_backendv2_internal_models.NullFloat64:
+    properties:
+      float64:
+        format: float64
+        type: number
+      valid:
+        description: Valid is true if Float64 is not NULL
+        type: boolean
+    type: object
+  snatcher_backendv2_internal_models.NullString:
+    properties:
+      string:
+        type: string
+      valid:
+        description: Valid is true if String is not NULL
+        type: boolean
+    type: object
+  snatcher_backendv2_internal_models.NullTime:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  snatcher_backendv2_internal_models.SearchTerm:
+    properties:
+      active:
+        type: boolean
+      amz_tracking_id:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      crawl_interval:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: integer
+      last_crawled_at:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullTime'
+      max_val:
+        type: number
+      min_val:
+        type: number
+      ml_affiliate_tool_id:
+        $ref: '#/definitions/snatcher_backendv2_internal_models.NullString'
+      queries:
+        type: string
+      query:
+        type: string
+      result_count:
+        type: integer
+      sources:
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: API de scraping e monitoramento de preços com integração Telegram/WhatsApp.
+  title: Snatcher API
+  version: "1.0"
+paths:
+  /api/analytics/summary:
+    get:
+      description: Retorna métricas consolidadas de scraping, produtos e alertas para
+        o período.
+      parameters:
+      - description: Número de dias (1-365, default 30)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resumo analítico
+      tags:
+      - analytics
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Autentica com usuário e senha, retorna access_token JWT.
+      parameters:
+      - description: Credenciais
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            password:
+              type: string
+            username:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              access_token:
+                type: string
+              token_type:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Login
+      tags:
+      - auth
+  /api/catalog:
+    get:
+      description: Retorna lista paginada de produtos do catálogo.
+      parameters:
+      - description: Número máximo de itens (default 30)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset para paginação
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              items:
+                items:
+                  $ref: '#/definitions/snatcher_backendv2_internal_models.CatalogProduct'
+                type: array
+              limit:
+                type: integer
+              offset:
+                type: integer
+              total:
+                type: integer
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Listar catálogo
+      tags:
+      - catalog
+  /api/catalog/{id}:
+    get:
+      description: Retorna um produto com suas variantes pelo ID.
+      parameters:
+      - description: ID do produto
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              product:
+                $ref: '#/definitions/snatcher_backendv2_internal_models.CatalogProduct'
+              variants:
+                items:
+                  $ref: '#/definitions/snatcher_backendv2_internal_models.CatalogVariant'
+                type: array
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Obter produto
+      tags:
+      - catalog
+  /api/channels:
+    post:
+      consumes:
+      - application/json
+      description: Cria um canal de notificação (WhatsApp/Telegram) com regras de
+        alerta.
+      parameters:
+      - description: Dados do canal
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.channelRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/snatcher_backendv2_internal_models.Channel'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Criar canal
+      tags:
+      - channels
+  /api/health:
+    get:
+      description: Verifica se o servidor está no ar.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+      summary: Health check
+      tags:
+      - health
+  /api/search-terms:
+    get:
+      description: Retorna todos os termos de busca cadastrados.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/snatcher_backendv2_internal_models.SearchTerm'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Listar search terms
+      tags:
+      - search-terms
+    post:
+      consumes:
+      - application/json
+      description: Cria um novo termo de busca para scraping.
+      parameters:
+      - description: Dados do search term
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.searchTermRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/snatcher_backendv2_internal_models.SearchTerm'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Criar search term
+      tags:
+      - search-terms
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

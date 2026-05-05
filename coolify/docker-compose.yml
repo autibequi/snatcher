@@ -1,0 +1,121 @@
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.1
+    environment:
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - SERVER_URL=http://evolution:8080
+      - SERVER_PORT=8080
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${EVOLUTION_DB_PASS:-evolution}@evo-postgres:5432/evolution?schema=evolution_api
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=false
+      - DATABASE_SAVE_DATA_CONTACTS=false
+      - DATABASE_SAVE_DATA_CHATS=false
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evo-redis:6379/0
+      - CACHE_REDIS_PREFIX_KEY=evo
+      - DEL_INSTANCE=false
+      - QRCODE_LIMIT=30
+      - LOG_LEVEL=ERROR,WARN
+      - LOG_BAILEYS=error
+      - CONFIG_SESSION_PHONE_CLIENT=Promo Snatcher
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+    volumes:
+      - evo_instances:/evolution/instances
+    depends_on:
+      evo-postgres:
+        condition: service_started
+      evo-redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  evo-postgres:
+    image: postgres:15-alpine
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=256MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=20
+    environment:
+      - POSTGRES_DB=evolution
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=${EVOLUTION_DB_PASS:-evolution}
+    volumes:
+      - evo_pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  evo-redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - evo_redis_data:/data
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/autibequi/promosnatcher-backend:latest
+    shm_size: 128mb
+    volumes:
+      - snatcher-data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
+      - TZ_NAME=${TZ_NAME:-America/Sao_Paulo}
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - EVOLUTION_URL=http://evolution:8080
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD=${AUTH_PASSWORD}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AMZ_TRACKING_ID=${AMZ_TRACKING_ID:-}
+      - PUBLIC_URL=${PUBLIC_URL:-https://snatcher.autibequi.com}
+      - BASE_DOMAIN=${BASE_DOMAIN:-snatcher.autibequi.com}
+      - ML_CLIENT_ID=${ML_CLIENT_ID:-}
+      - ML_CLIENT_SECRET=${ML_CLIENT_SECRET:-}
+      - GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN:-}
+    depends_on:
+      evolution:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      - GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      default: {}
+      nuvem:
+        aliases:
+          - snatcher-frontend
+    restart: unless-stopped
+
+volumes:
+  evo_instances:
+  evo_pg_data:
+  evo_redis_data:
+  snatcher-data:
+
+networks:
+  nuvem:
+    external: true
+    name: nuvem_nuvem

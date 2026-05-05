@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"strconv"
 	"strings"
@@ -19,6 +20,13 @@ var amzUserAgents = []string{
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
 }
 
+// amazonScraper implements the Scraper interface for Amazon marketplace.
+type amazonScraper struct {
+	client  *http.Client
+	uaIndex int
+}
+
+// AmazonScraper is the legacy struct kept for compatibility.
 type AmazonScraper struct {
 	client    *http.Client
 	uaIndex   int
@@ -109,3 +117,48 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 }
 
 func (s *AmazonScraper) Provider() string { return "amazon" }
+
+// Plugin interface implementations for amazonScraper
+// ===================================================
+
+// ID returns the unique identifier for this scraper.
+func (s *amazonScraper) ID() string {
+	return "amz"
+}
+
+// Category returns the source category.
+func (s *amazonScraper) Category() string {
+	return "ecommerce"
+}
+
+// Search implements the Scraper interface, returning models.CrawlResult.
+// It delegates to the legacy pipeline-based search logic.
+func (s *amazonScraper) Search(ctx context.Context, query string, minVal, maxVal float64) ([]models.CrawlResult, error) {
+	legacyScraper := NewAmazonScraper()
+	items, err := legacyScraper.Search(ctx, query, minVal, maxVal)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert pipeline.Item to models.CrawlResult
+	results := make([]models.CrawlResult, len(items))
+	for i, item := range items {
+		results[i] = models.CrawlResult{
+			Title:     item.Title,
+			Price:     item.Price,
+			URL:       item.URL,
+			ImageURL:  nullableString(item.ImageURL),
+			Source:    item.Source,
+			CrawledAt: time.Now(),
+		}
+	}
+	return results, nil
+}
+
+// init registers the amazonScraper in the global registry.
+func init() {
+	Register(&amazonScraper{
+		client:  &http.Client{Timeout: 20 * time.Second},
+		uaIndex: 0,
+	})
+}

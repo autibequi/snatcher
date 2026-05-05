@@ -13,15 +13,14 @@ import (
 
 // searchTermRequest aceita queries como array (como o frontend envia).
 type searchTermRequest struct {
-	Query             string   `json:"query"`
-	Queries           []string `json:"queries"`
-	MinVal            float64  `json:"min_val"`
-	MaxVal            float64  `json:"max_val"`
-	Sources           string   `json:"sources"`
-	Active            *bool    `json:"active"`
-	CrawlInterval     int      `json:"crawl_interval"`
-	MLAffiliateToolID string   `json:"ml_affiliate_tool_id"`
-	AmzTrackingID     string   `json:"amz_tracking_id"`
+	Query         string   `json:"query"              validate:"required,min=2"`
+	Queries       []string `json:"queries"`
+	MinVal        float64  `json:"min_val"            validate:"gte=0"`
+	MaxVal        float64  `json:"max_val"            validate:"gte=0"`
+	Sources       string   `json:"sources"`
+	Category      string   `json:"category"           validate:"omitempty,oneof=ecommerce cdkey"`
+	Active        *bool    `json:"active"`
+	CrawlInterval int      `json:"crawl_interval"`
 }
 
 func (req searchTermRequest) toModel() models.SearchTerm {
@@ -32,6 +31,7 @@ func (req searchTermRequest) toModel() models.SearchTerm {
 		MinVal:        req.MinVal,
 		MaxVal:        req.MaxVal,
 		Sources:       req.Sources,
+		Category:      req.Category,
 		CrawlInterval: req.CrawlInterval,
 	}
 	if t.Queries == "" || t.Queries == "null" {
@@ -40,6 +40,9 @@ func (req searchTermRequest) toModel() models.SearchTerm {
 	if t.Sources == "" {
 		t.Sources = "all"
 	}
+	if t.Category == "" {
+		t.Category = "ecommerce"
+	}
 	if t.CrawlInterval == 0 {
 		t.CrawlInterval = 30
 	}
@@ -47,12 +50,6 @@ func (req searchTermRequest) toModel() models.SearchTerm {
 		t.Active = *req.Active
 	} else {
 		t.Active = true
-	}
-	if req.MLAffiliateToolID != "" {
-		t.MLAffiliateToolID = models.NullString{NullString: sqlNullString(req.MLAffiliateToolID)}
-	}
-	if req.AmzTrackingID != "" {
-		t.AmzTrackingID = models.NullString{NullString: sqlNullString(req.AmzTrackingID)}
 	}
 	return t
 }
@@ -66,6 +63,16 @@ func NewSearchTerms(st store.Store, scrapers map[string]pipeline.Scraper) *Searc
 	return &SearchTermsHandler{store: st, scrapers: scrapers}
 }
 
+// List retorna todos os search terms.
+//
+//	@Summary      Listar search terms
+//	@Description  Retorna todos os termos de busca cadastrados.
+//	@Tags         search-terms
+//	@Produce      json
+//	@Success      200  {array}   models.SearchTerm
+//	@Failure      500  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/search-terms [get]
 func (h *SearchTermsHandler) List(w http.ResponseWriter, r *http.Request) {
 	terms, err := h.store.ListSearchTerms()
 	if err != nil {
@@ -92,10 +99,23 @@ func (h *SearchTermsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// Create cria um novo search term.
+//
+//	@Summary      Criar search term
+//	@Description  Cria um novo termo de busca para scraping.
+//	@Tags         search-terms
+//	@Accept       json
+//	@Produce      json
+//	@Param        body  body      searchTermRequest  true  "Dados do search term"
+//	@Success      201   {object}  models.SearchTerm
+//	@Failure      400   {object}  object{error=string}
+//	@Failure      500   {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/search-terms [post]
 func (h *SearchTermsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req searchTermRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body")
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
 		return
 	}
 	t := req.toModel()
@@ -115,8 +135,8 @@ func (h *SearchTermsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req searchTermRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body")
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
 		return
 	}
 	t := req.toModel()

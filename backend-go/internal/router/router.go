@@ -1,20 +1,33 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"time"
+
+	_ "snatcher/backendv2/internal/docs" // swagger docs
+	"snatcher/backendv2/internal/compose"
 	"snatcher/backendv2/internal/handlers"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
+	wsmod "snatcher/backendv2/internal/ws"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func Build(
+	db *sqlx.DB,
 	st store.Store,
 	rd *redirect.Redirector,
 	runner *pipeline.Runner,
@@ -22,18 +35,24 @@ func Build(
 	scrapers map[string]pipeline.Scraper,
 	adapters pipeline.AdapterRegistry,
 	jwtSecret string,
-	adminUser, adminPass string,
 ) http.Handler {
 	r := chi.NewRouter()
+	r.Use(chimw.RequestID)
+	r.Use(requestIDLogger)
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.CleanPath)   // normaliza // e remove trailing slash
+	r.Use(chimw.CleanPath)                              // normaliza // e remove trailing slash
 	r.Use(middleware.CORS)
+	r.Use(chimw.Timeout(30 * time.Second))              // global request timeout
+	r.Use(middleware.BodyLimit(1 << 20))                // global 1 MB body limit
+	r.Use(middleware.MetricsMiddleware)
 
-	auth := handlers.NewAuth(adminUser, adminPass, jwtSecret)
+	auth := handlers.NewAuthHandler(db, jwtSecret)
 	scan := handlers.NewScan(st, runner, sched)
 	terms := handlers.NewSearchTerms(st, scrapers)
-	catalog := handlers.NewCatalog(st)
+	sources := handlers.NewSources(st)
+	affiliates := handlers.NewAffiliates(st)
+	catalog := handlers.NewCatalogDB(st, db)
 	channels := handlers.NewChannels(st, adapters)
 	config := handlers.NewConfig(st)
 	canal := handlers.NewCanal(st)
@@ -41,46 +60,77 @@ func Build(
 	crawlLogs := handlers.NewCrawlLogs(st)
 	broadcast := handlers.NewBroadcast(st)
 	analytics := handlers.NewAnalytics(st)
+	coverage := handlers.NewCoverageHandler(st)
+	dispatches := handlers.NewDispatchHandler(st)
+
+	// ReDesign handlers
+	groups      := handlers.NewGroupsHandler(st)
+	matchH      := handlers.NewMatchHandler(st)
+	publLinks   := handlers.NewPublicLinksHandlerDB(st, db)
+	affPrograms := handlers.NewAffiliateProgramsHandlerDB(st, db)
+	groupSpies  := handlers.NewGroupSpiesHandler(st)
+	clustersH   := handlers.NewClustersHandlerDB(st, db)
+	dash        := handlers.NewDashboardHandler(st, db)
+	team        := handlers.NewTeamHandler(db)
+	brand       := handlers.NewBrandHandler(st)
+	autoMatch   := handlers.NewAutoMatchHandler(st)
+	linksH      := handlers.NewLinksHandler(st)
+
+	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
+	var composeH *handlers.ComposeHandler
+	{
+		var llmCli llm.Client = &nopLLMClient{}
+		svc := compose.NewService(llmCli)
+		composeH = handlers.NewComposeHandler(st, svc)
+	}
+
+	// WebSocket hub + handler
+	hub := wsmod.NewHub()
+	wsHandler := wsmod.NewHandler(hub, jwtSecret)
+	go hub.StartListener(context.Background(), "") // DSN vazio = no-op silencioso
+
+	// ---------------------------------------------------------------------------
+	// Rota de métricas (pública — antes do grupo JWT)
+	// ---------------------------------------------------------------------------
+	r.Handle("/metrics", promhttp.Handler())
+
+	// ---------------------------------------------------------------------------
+	// OpenAPI / Swagger UI
+	// ---------------------------------------------------------------------------
+	r.Get("/api/swagger", func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "/api/swagger/index.html", http.StatusFound)
+	})
+	r.Get("/api/swagger/", func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "/api/swagger/index.html", http.StatusFound)
+	})
+	r.Get("/api/swagger/*", httpSwagger.Handler(httpSwagger.URL("/api/swagger/doc.json")))
 
 	// ---------------------------------------------------------------------------
 	// Rotas públicas
 	// ---------------------------------------------------------------------------
-	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	postbackH := handlers.NewAffiliatePostbackHandlerStore(db, st)
+	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
+	evoWebhook := handlers.NewEvolutionWebhookHandler(st)
+	r.Post("/webhooks/evolution", evoWebhook.Handle)
 
-	r.Post("/api/auth/login", auth.Login)
-	r.Get("/api/auth/me", auth.Me)
+	r.Get("/api/health", healthHandler)
+	r.Get("/api/brand", brand.Get) // white-label public config
 
-	r.Get("/r/{shortID}", rd.Handler())
-	// Redirect para variantes do catálogo v2
-	r.Get("/v/{shortID}", func(w http.ResponseWriter, r *http.Request) {
-		shortID := r.PathValue("shortID")
-		v, found, err := st.GetVariantByShortID(shortID)
-		if err != nil || !found {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
-		// Affiliate URL
-		cfg, _ := st.GetConfig()
-		finalURL := v.URL
-		if cfg.AmzTrackingID.Valid && cfg.AmzTrackingID.String != "" && v.Source == "amazon" {
-			finalURL = v.URL + "?tag=" + cfg.AmzTrackingID.String
-		} else if cfg.MLAffiliateToolID.Valid && cfg.MLAffiliateToolID.String != "" && v.Source == "mercadolivre" {
-			sep := "?"
-			if len(v.URL) > 0 {
-				sep = "&"
-			}
-			finalURL = v.URL + sep + "matt_tool=" + cfg.MLAffiliateToolID.String + "&matt_source=affiliate"
-		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		http.Redirect(w, r, finalURL, http.StatusFound)
-	})
+	// /api/auth/login: 5 req/min per IP (burst 5) — brute-force protection
+	r.With(middleware.RateLimit(5.0/60.0, 5)).Post("/api/auth/login", auth.Login)
+	r.Post("/api/auth/refresh", auth.Refresh)
+	r.Post("/api/auth/logout", auth.Logout)
+
+	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
 
 	r.Get("/canal/{slug}", canal.GroupPicker)
 	r.Get("/canal/{slug}/preview", canal.Preview)
 	r.Get("/join/{slug}", canal.JoinRedirect)
+
+	// ReDesign: public link resolve + WebSocket (auth via query param token)
+	r.Get("/g/{slug}", publLinks.Resolve)
+	r.Get("/ws", wsHandler.ServeHTTP)
 
 	r.Get("/api/public/channels", func(w http.ResponseWriter, r *http.Request) {
 		chs, _ := st.ListChannels()
@@ -116,13 +166,31 @@ func Build(
 	// Rotas protegidas
 	// ---------------------------------------------------------------------------
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.JWTMiddleware(jwtSecret))
+		r.Use(middleware.RequireAuth(jwtSecret))
+
+		// Auth
+		r.Get("/api/auth/me", auth.Me)
 
 		// Scan
 		r.Get("/api/scan/status", scan.Status)
 		r.Get("/api/scan/jobs", scan.ListJobs)
 		r.Post("/api/scan/pipeline", scan.TriggerPipeline)
 		r.Post("/api/scan/process", scan.TriggerProcess)
+
+		// Sources
+		r.Get("/api/sources", sources.List)
+		r.Get("/api/sources/", sources.List)
+		r.Get("/api/sources/{id}", sources.Get)
+		r.Patch("/api/sources/{id}", sources.Update)
+
+		// Affiliates
+		r.Get("/api/affiliates", affiliates.List)
+		r.Get("/api/affiliates/", affiliates.List)
+		r.Get("/api/affiliates/{id}", affiliates.Get)
+		r.Post("/api/affiliates", affiliates.Create)
+		r.Post("/api/affiliates/", affiliates.Create)
+		r.Put("/api/affiliates/{id}", affiliates.Update)
+		r.Delete("/api/affiliates/{id}", affiliates.Delete)
 
 		// Search Terms (com e sem trailing slash)
 		r.Get("/api/search-terms", terms.List)
@@ -140,7 +208,9 @@ func Build(
 		r.Get("/api/catalog/", catalog.List)
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
+		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
+		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
 		r.Get("/api/catalog/variants/{variant_id}/history", catalog.ListVariantHistory)
 		r.Get("/api/catalog/keywords", catalog.ListKeywords)
 		r.Get("/api/catalog/keywords/", catalog.ListKeywords)
@@ -156,6 +226,7 @@ func Build(
 		r.Post("/api/channels/{id}/targets", channels.CreateTarget)
 		r.Patch("/api/channels/{id}/targets/{target_id}", channels.UpdateTarget)
 		r.Delete("/api/channels/{id}/targets/{target_id}", channels.DeleteTarget)
+		r.Get("/api/channels/{id}/rules", channels.ListRules)
 		r.Post("/api/channels/{id}/rules", channels.CreateRule)
 		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
 		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
@@ -196,14 +267,163 @@ func Build(
 		// Analytics
 		r.Get("/api/analytics/summary", analytics.Summary)
 
+		// Coverage (multi-WA)
+		r.Get("/api/coverage", coverage.GetCoverage)
+		r.Post("/api/coverage/sync", coverage.PostCoverageSync)
+
 		// Telegram chats discovery (dois paths — o frontend usa /api/config/tg/chats)
 		r.Get("/api/telegram/chats", accounts.ListTGChats)
 		r.Get("/api/config/tg/chats", accounts.ListTGChats)
 
-		// Legacy v1 groups
-		r.Get("/api/groups", accounts.ListGroups)
-		r.Get("/api/groups/", accounts.ListGroups)
+		// Legacy v1 groups (alias mantido para compatibilidade)
+		r.Get("/api/groups/legacy", accounts.ListGroups)
+
+		// ReDesign: Groups
+		r.Get("/api/groups", groups.List)
+		r.Post("/api/groups", groups.Create)
+		r.Get("/api/groups/{id}", groups.Get)
+		r.Patch("/api/groups/{id}", groups.Update)
+		r.Delete("/api/groups/{id}", groups.Delete)
+		r.Get("/api/groups/{id}/members", groups.Members)
+		r.Post("/api/groups/{id}/archive", groups.Archive)
+		r.Get("/api/groups/{id}/admins", groups.ListAdmins)
+		r.Post("/api/groups/{id}/admins", groups.AddAdmin)
+		r.Delete("/api/groups/{id}/admins/{adminId}", groups.DeleteAdmin)
+
+		// ReDesign: Match
+		r.Post("/api/match", matchH.Match)
+
+		// Auto Match
+		r.Get("/api/auto-match", autoMatch.Status)
+		r.Get("/api/auto-match/preview", autoMatch.Preview)
+		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
+		r.Post("/api/auto-match/run-now", autoMatch.RunNow)
+		r.Post("/api/auto-match/dispatch-one", autoMatch.DispatchOne)
+
+		// Short Links
+		r.Post("/api/links/shorten", linksH.Shorten)
+
+		// ReDesign: Compose
+		r.Post("/api/compose/preview", composeH.Preview)
+
+		// ReDesign: Dispatches
+		r.Get("/api/dispatches", dispatches.List)
+		r.Post("/api/dispatches", dispatches.Create)
+		r.Get("/api/dispatches/{id}", dispatches.Get)
+		r.Post("/api/dispatches/{id}/cancel", dispatches.Cancel)
+
+		// ReDesign: Public Links (autenticado — gestão)
+		r.Get("/api/public-links", publLinks.List)
+		r.Post("/api/public-links", publLinks.Create)
+		r.Get("/api/public-links/{id}", publLinks.Get)
+		r.Patch("/api/public-links/{id}", publLinks.Update)
+		r.Delete("/api/public-links/{id}", publLinks.Delete)
+		r.Get("/api/public-links/{id}/analytics", publLinks.Analytics)
+
+		// ReDesign: Affiliate Programs
+		r.Get("/api/affiliates/programs", affPrograms.List)
+		r.Post("/api/affiliates/programs", affPrograms.Create)
+		r.Get("/api/affiliates/programs/stats", affPrograms.Stats) // antes de /{id} — evita colisão
+		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
+		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
+		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)
+
+		// ReDesign: Channels extras (audience + metrics)
+		r.Get("/api/channels/{id}/audience", channels.GetAudience)
+		r.Get("/api/channels/{id}/metrics", channels.GetMetrics)
+		r.Get("/api/channels/{id}/history", channels.GetHistory)
+
+		// Crawlers: Group Spies
+		r.Get("/api/crawlers/group-spy", groupSpies.List)
+		r.Post("/api/crawlers/group-spy", groupSpies.Create)
+		r.Get("/api/crawlers/group-spy/{id}", groupSpies.Get)
+		r.Get("/api/crawlers/group-spy/{id}/messages", groupSpies.Messages)
+		r.Delete("/api/crawlers/group-spy/{id}", groupSpies.Delete)
+		r.Patch("/api/crawlers/group-spy/{id}", groupSpies.UpdateReader)
+
+		// Clusters analíticos
+		r.Get("/api/clusters", clustersH.List)
+		r.Get("/api/clusters/{id}", clustersH.Get)
+		r.Post("/api/clusters/recompute", clustersH.Recompute)
+
+		// Dashboard
+		r.Get("/api/dashboard/kpis", dash.KPIs)
+		r.Get("/api/dashboard/feed", dash.Feed)
+		r.Get("/api/dashboard/inbox", dash.Inbox)
+		r.Get("/api/dashboard/performance", dash.Performance)
+		r.Get("/api/dashboard/channel-performance", dash.Performance)
+		r.Get("/api/dashboard/upcoming-dispatches", dash.UpcomingDispatches)
+
+		// Team (operadores)
+		r.Get("/api/team", team.List)
+		r.Post("/api/team", team.Invite)
+		r.Patch("/api/team/{id}/role", team.UpdateRole)
+		r.Delete("/api/team/{id}", team.Remove)
+
+		// Admin: LLM observability
+		llmAdmin := handlers.NewLLMAdminHandler(db)
+		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
+		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
+		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
+		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
 	})
 
 	return r
+}
+
+// requestIDLogger is a middleware that extracts the request ID set by
+// chimw.RequestID and injects it into the default slog logger so that all
+// subsequent log calls within the request carry the "request_id" field.
+func requestIDLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := chimw.GetReqID(r.Context())
+		if reqID != "" {
+			logger := slog.Default().With("request_id", reqID)
+			// Store the per-request logger in the context so handlers can
+			// retrieve it with slog.Default() after SetDefault — or use it
+			// directly via contextLogger(r.Context()).
+			ctx := r.Context()
+			r = r.WithContext(withLogger(ctx, logger))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type loggerKeyType struct{}
+
+var loggerKey = loggerKeyType{}
+
+// withLogger stores a *slog.Logger in the context.
+func withLogger(ctx context.Context, l *slog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey, l)
+}
+
+// LoggerFromContext retrieves the per-request slog.Logger stored by
+// requestIDLogger, falling back to slog.Default() if none is present.
+func LoggerFromContext(ctx context.Context) *slog.Logger {
+	if l, ok := ctx.Value(loggerKey).(*slog.Logger); ok && l != nil {
+		return l
+	}
+	return slog.Default()
+}
+
+// healthHandler verifica a saúde da aplicação.
+//
+//	@Summary      Health check
+//	@Description  Verifica se o servidor está no ar.
+//	@Tags         health
+//	@Produce      json
+//	@Success      200  {object}  object{status=string}
+//	@Router       /api/health [get]
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// nopLLMClient é um cliente LLM nulo usado quando OPENROUTER_API_KEY não está configurado.
+// Compose handlers retornam fallback em vez de erro fatal.
+type nopLLMClient struct{}
+
+func (n *nopLLMClient) Complete(_ context.Context, _ string, _ llm.Options) (string, error) {
+	return "", fmt.Errorf("LLM not configured: set OPENROUTER_API_KEY to enable compose")
 }

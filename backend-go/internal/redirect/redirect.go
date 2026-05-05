@@ -26,9 +26,8 @@ type productEntry struct {
 }
 
 type configEntry struct {
-	amzTag   string
-	mlToolID string
-	validAt  time.Time
+	affiliates map[string]string // source_id -> tracking_id
+	validAt    time.Time
 }
 
 type Redirector struct {
@@ -44,7 +43,17 @@ func New(db *sqlx.DB, st store.Store) *Redirector {
 }
 
 func (rd *Redirector) Prewarm() {
-	amzTag, mlToolID := rd.getConfig()
+	affiliates, err := rd.store.ListAffiliates(nil)
+	if err != nil {
+		return
+	}
+
+	affMap := make(map[string]string)
+	for _, a := range affiliates {
+		if a.Active {
+			affMap[a.SourceID] = a.TrackingID
+		}
+	}
 
 	rows, err := rd.db.Query(
 		`SELECT short_id, url, source FROM product WHERE short_id IS NOT NULL AND short_id != ''`,
@@ -61,6 +70,14 @@ func (rd *Redirector) Prewarm() {
 		if err := rows.Scan(&shortID, &rawURL, &source); err != nil {
 			continue
 		}
+
+		var amzTag, mlToolID string
+		if source == "amazon" {
+			amzTag = affMap["amz"]
+		} else if source == "mercadolivre" {
+			mlToolID = affMap["ml"]
+		}
+
 		rd.cache.Store(shortID, productEntry{
 			redirectURL: affiliateURL(rawURL, source, amzTag, mlToolID),
 			expiresAt:   expires,
@@ -121,7 +138,7 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 func (rd *Redirector) getConfig() (amzTag, mlToolID string) {
 	rd.cfgMu.RLock()
 	if time.Now().Before(rd.cfgV.validAt) {
-		a, m := rd.cfgV.amzTag, rd.cfgV.mlToolID
+		a, m := rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
 		rd.cfgMu.RUnlock()
 		return a, m
 	}
@@ -131,18 +148,23 @@ func (rd *Redirector) getConfig() (amzTag, mlToolID string) {
 	defer rd.cfgMu.Unlock()
 
 	if time.Now().Before(rd.cfgV.validAt) {
-		return rd.cfgV.amzTag, rd.cfgV.mlToolID
+		return rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
 	}
 
-	cfg, err := rd.store.GetConfig()
-	if err == nil {
+	affiliates, err := rd.store.ListAffiliates(nil)
+	if err == nil && len(affiliates) > 0 {
+		aff := make(map[string]string)
+		for _, a := range affiliates {
+			if a.Active {
+				aff[a.SourceID] = a.TrackingID
+			}
+		}
 		rd.cfgV = configEntry{
-			amzTag:   cfg.AmzTrackingID.String,
-			mlToolID: cfg.MLAffiliateToolID.String,
-			validAt:  time.Now().Add(configTTL),
+			affiliates: aff,
+			validAt:    time.Now().Add(configTTL),
 		}
 	}
-	return rd.cfgV.amzTag, rd.cfgV.mlToolID
+	return rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
 }
 
 func (rd *Redirector) logClick(r *http.Request, shortID string) {

@@ -1,0 +1,40 @@
+{
+  "products": [
+    {
+      "title": "Smartphone Samsung Galaxy A12 64GB",
+      "price": 799.90,
+      "url": "https://shopee.com.br/Smartphone-Samsung-Galaxy-A12-64GB-p-123456789",
+      "image_url": "https://cf.shopee.com.br/file/12345678901234567890123456"
+    },
+    {
+      "title": "Smartphone Xiaomi Redmi Note 11",
+      "price": 1299.00,
+      "url": "https://shopee.com.br/Smartphone-Xiaomi-Redmi-Note-11-p-987654321",
+      "image_url": "https://cf.shopee.com.br/file/98765432109876543210987654"
+    },
+    {
+      "title": "Smartphone Motorola G32",
+      "price": 1199.99,
+      "url": "https://shopee.com.br/Smartphone-Motorola-G32-p-555666777",
+      "image_url": "https://cf.shopee.com.br/file/55566677788899001122334455"
+    },
+    {
+      "title": "Smartphone Realme 9i",
+      "price": 1099.90,
+      "url": "https://shopee.com.br/Smartphone-Realme-9i-p-444555666",
+      "image_url": "https://cf.shopee.com.br/file/44455566677788899001122334"
+    },
+    {
+      "title": "Smartphone TCL 20 SE",
+      "price": 649.90,
+      "url": "https://shopee.com.br/Smartphone-TCL-20-SE-p-222333444",
+      "image_url": "https://cf.shopee.com.br/file/22233344455566677788899001"
+    },
+    {
+      "title": "Smartphone Samsung Galaxy A32 128GB",
+      "price": 1399.00,
+      "url": "https://shopee.com.br/Smartphone-Samsung-Galaxy-A32-128GB-p-111222333",
+      "image_url": "https://cf.shopee.com.br/file/11122233344455566677788899"
+    }
+  ]
+}

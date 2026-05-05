@@ -29,6 +29,14 @@ type Store interface {
 	DeleteSearchTerm(id int64) error
 	TouchSearchTerm(id int64, count int) error
 
+	// Affiliates
+	ListAffiliates(sourceID *string) ([]models.Affiliate, error)
+	GetAffiliate(id int64) (models.Affiliate, error)
+	CreateAffiliate(a models.Affiliate) (int64, error)
+	UpdateAffiliate(a models.Affiliate) error
+	DeleteAffiliate(id int64) error
+	GetAffiliateBySource(sourceID string) (models.Affiliate, bool, error)
+
 	// CrawlResults
 	InsertCrawlResult(r models.CrawlResult) (int64, error)
 	ListUnprocessedCrawlResults() ([]models.CrawlResult, error)
@@ -51,12 +59,14 @@ type Store interface {
 	DeleteCatalogProduct(id int64) error
 	GetVariantByURL(url string) (models.CatalogVariant, bool, error)
 	GetVariantByShortID(shortID string) (models.CatalogVariant, bool, error)
+	GetCatalogVariant(id int64) (models.CatalogVariant, error)
 	GetShortIDByURL(url string) string
 	CreateCatalogVariant(v models.CatalogVariant) (int64, error)
 	UpdateCatalogVariant(v models.CatalogVariant) error
 	ListVariantsByProduct(productID int64) ([]models.CatalogVariant, error)
 	InsertPriceHistoryV2(h models.PriceHistoryV2) error
 	ListPriceHistoryV2(variantID int64) ([]models.PriceHistoryV2, error)
+	GetVariantStats(variantID int64, windowDays int) (*models.VariantStats, error)
 	ListGroupingKeywords() ([]models.GroupingKeyword, error)
 	CreateGroupingKeyword(k models.GroupingKeyword) (int64, error)
 	UpdateGroupingKeyword(k models.GroupingKeyword) error
@@ -70,7 +80,11 @@ type Store interface {
 	CreateChannel(c models.Channel) (int64, error)
 	UpdateChannel(c models.Channel) error
 	DeleteChannel(id int64) error
+	ListChannelsByCategory(category string) ([]models.Channel, error)
+	ListChannelsForProduct(category, brand string, price, drop float64) ([]models.Channel, error)
 	ListChannelTargets(channelID int64) ([]models.ChannelTarget, error)
+	GetChannelTarget(id int64) (models.ChannelTarget, error)
+	ListAllChannelTargets() ([]models.ChannelTarget, error)
 	CreateChannelTarget(t models.ChannelTarget) (int64, error)
 	UpdateChannelTarget(t models.ChannelTarget) error
 	DeleteChannelTarget(id int64) error
@@ -102,4 +116,83 @@ type Store interface {
 
 	// Analytics
 	GetAnalyticsSummary(since time.Time, days int) (map[string]any, error)
+
+	// Coverage (multi-WA)
+	ListAccountsForTarget(targetID int64) ([]models.ChannelTargetAccount, error)
+	GetAccountsByTargetWithRole(targetID int64, role string) ([]models.ChannelTargetAccount, error)
+
+	// RedesignGroups
+	ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error)
+	GetRedesignGroup(id int64) (models.RedesignGroup, error)
+	CreateRedesignGroup(g models.RedesignGroup) (int64, error)
+	UpdateRedesignGroup(g models.RedesignGroup) error
+	DeleteRedesignGroup(id int64) error
+	SetGroupArchived(id int64, archived bool, lastError *string) error
+
+	// GroupAdmins
+	ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error)
+	AddGroupAdmin(a models.GroupAdmin) (int64, error)
+	DeleteGroupAdmin(id int64) error
+	CountGroupAdmins(groupID int64) (int, error)
+
+	// AffiliatePrograms (ReDesign)
+	ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error)
+	GetAffiliateProgram(id int64) (models.AffiliateProgram, error)
+	CreateAffiliateProgram(p models.AffiliateProgram) (int64, error)
+	UpdateAffiliateProgram(p models.AffiliateProgram) error
+	DeleteAffiliateProgram(id int64) error
+	ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error)
+
+	// PublicLinks
+	CreatePublicLink(l models.PublicLink) (int64, error)
+	GetPublicLink(id int64) (models.PublicLink, error)
+	GetPublicLinkBySlug(slug string) (models.PublicLink, error)
+	ListPublicLinks() ([]models.PublicLink, error)
+	UpdatePublicLink(l models.PublicLink) error
+	DeletePublicLink(id int64) error
+	IncrementRoundRobinIdx(id int64, newIdx int) error
+
+	// Channel history
+	ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error)
+
+	// Clusters
+	ListClusters() ([]models.Cluster, error)
+	GetCluster(id int64) (models.Cluster, error)
+	UpsertClusters(clusters []models.Cluster) error
+
+	// GroupSpies (spy crawlers)
+	ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error)
+	GetGroupSpy(id int64) (models.GroupSpy, error)
+	CreateGroupSpy(g models.GroupSpy) (int64, error)
+	SoftDeleteGroupSpy(id int64) error
+	UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error
+	ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error)
+	CreateSpyMessage(m models.SpyMessage) error
+
+	// Dispatches
+	CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error)
+	GetDispatch(id int64) (models.Dispatch, error)
+	ListDispatches(status string, limit, offset int) ([]models.Dispatch, error)
+	ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error)
+	ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error)
+	UpdateDispatchTargetStatus(id int64, status, errorReason string) error
+	UpdateDispatchStatus(id int64, status string) error
+	CancelDispatch(id int64) error
+	AllDispatchTargetsFinished(dispatchID int64) (bool, error)
+
+	// Auto Match
+	CreateAutoMatchLog(log models.AutoMatchLog) error
+	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
+
+	// Match — CTR histórico
+	// GetHistoricalCTRForGroup calcula CTR = clicks/dispatches para o grupo no contexto
+	// da categoria do produto. Retorna nil se o número de dispatches for < minDispatches.
+	GetHistoricalCTRForGroup(groupID int64, category string, minDispatches int) (*float64, error)
+
+	// Short Links
+	GetOrCreateShortLink(destURL, source string) (string, error)
+	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
+
+	// AffiliateConversions
+	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
 }

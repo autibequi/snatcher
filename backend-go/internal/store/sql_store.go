@@ -18,6 +18,24 @@ func New(db *sqlx.DB) Store {
 	return &SQLStore{db: db}
 }
 
+// insertReturningID executa um NamedExec com RETURNING id para compatibilidade Postgres.
+// Substitui o padrão res.LastInsertId() que não funciona no driver pq.
+func insertReturningID(db *sqlx.DB, query string, arg interface{}) (int64, error) {
+	query = query + " RETURNING id"
+	rows, err := sqlx.NamedQuery(db, query, arg)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var id int64
+	if rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -35,13 +53,73 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			wa_instance=:wa_instance, global_interval=:global_interval,
 			send_start_hour=:send_start_hour, send_end_hour=:send_end_hour,
 			ml_client_id=:ml_client_id, ml_client_secret=:ml_client_secret,
-			wa_group_prefix=:wa_group_prefix, amz_tracking_id=:amz_tracking_id,
-			ml_affiliate_tool_id=:ml_affiliate_tool_id, alert_phone=:alert_phone,
+			wa_group_prefix=:wa_group_prefix, alert_phone=:alert_phone,
 			use_short_links=:use_short_links, tg_enabled=:tg_enabled,
 			tg_bot_token=:tg_bot_token, tg_bot_username=:tg_bot_username,
-			tg_group_prefix=:tg_group_prefix, tg_last_update_id=:tg_last_update_id
+			tg_group_prefix=:tg_group_prefix, tg_last_update_id=:tg_last_update_id,
+			llm_provider=:llm_provider, llm_api_key=:llm_api_key,
+			llm_base_url=:llm_base_url, llm_model=:llm_model,
+			app_name=:app_name, app_domain=:app_domain,
+			auto_match_enabled=:auto_match_enabled,
+			auto_match_threshold=:auto_match_threshold,
+			auto_match_max_per_run=:auto_match_max_per_run
 		WHERE id = 1`, cfg)
 	return err
+}
+
+func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) error {
+	_, err := s.db.Exec(`
+		INSERT INTO auto_match_logs (product_id, channel_id, dispatch_id, score)
+		VALUES ($1, $2, $3, $4)`,
+		log.ProductID, log.ChannelID, log.DispatchID, log.Score)
+	return err
+}
+
+func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
+	if limit <= 0 { limit = 50 }
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+		       p.canonical_name as product_name, c.name as channel_name
+		FROM auto_match_logs l
+		LEFT JOIN catalogproduct p ON p.id = l.product_id
+		LEFT JOIN channels c ON c.id = l.channel_id
+		ORDER BY l.created_at DESC LIMIT $1`, limit)
+	return out, err
+}
+
+// GetHistoricalCTRForGroup calcula CTR = SUM(click_count) / COUNT(dispatches) para o
+// grupo no contexto da categoria do produto (match via tags JSONB do catalog product).
+// Retorna nil se o número de dispatches qualificados for menor que minDispatches.
+//
+// Tabelas: dispatch_targets (group_id, click_count, dispatch_id),
+//          dispatches (id, product_id), catalogproduct (id, tags).
+// Nota: category é comparada contra tags JSONB de catalogproduct via operador @>.
+func (s *SQLStore) GetHistoricalCTRForGroup(groupID int64, category string, minDispatches int) (*float64, error) {
+	if minDispatches <= 0 {
+		minDispatches = 5
+	}
+	var result struct {
+		TotalDispatches int     `db:"total_dispatches"`
+		TotalClicks     int64   `db:"total_clicks"`
+	}
+	err := s.db.Get(&result, `
+		SELECT COUNT(dt.id)       AS total_dispatches,
+		       COALESCE(SUM(dt.click_count), 0) AS total_clicks
+		FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		JOIN catalogproduct cp ON cp.id = d.product_id
+		WHERE dt.group_id = $1
+		  AND ($2 = '' OR cp.tags::jsonb @> to_jsonb($2::text))
+	`, groupID, category)
+	if err != nil {
+		return nil, err
+	}
+	if result.TotalDispatches < minDispatches {
+		return nil, nil //nolint:nilnil
+	}
+	ctr := float64(result.TotalClicks) / float64(result.TotalDispatches)
+	return &ctr, nil
 }
 
 func (s *SQLStore) ListWAAccounts() ([]models.WAAccount, error) {
@@ -52,18 +130,14 @@ func (s *SQLStore) ListWAAccounts() ([]models.WAAccount, error) {
 
 func (s *SQLStore) GetWAAccount(id int64) (models.WAAccount, error) {
 	var a models.WAAccount
-	err := s.db.Get(&a, `SELECT * FROM waaccount WHERE id = ?`, id)
+	err := s.db.Get(&a, `SELECT * FROM waaccount WHERE id = $1`, id)
 	return a, err
 }
 
 func (s *SQLStore) CreateWAAccount(a models.WAAccount) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO waaccount (name, provider, base_url, api_key, instance, group_prefix, status, active)
 		VALUES (:name, :provider, :base_url, :api_key, :instance, :group_prefix, :status, :active)`, a)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateWAAccount(a models.WAAccount) error {
@@ -76,7 +150,7 @@ func (s *SQLStore) UpdateWAAccount(a models.WAAccount) error {
 }
 
 func (s *SQLStore) DeleteWAAccount(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM waaccount WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM waaccount WHERE id = $1`, id)
 	return err
 }
 
@@ -88,18 +162,14 @@ func (s *SQLStore) ListTGAccounts() ([]models.TGAccount, error) {
 
 func (s *SQLStore) GetTGAccount(id int64) (models.TGAccount, error) {
 	var a models.TGAccount
-	err := s.db.Get(&a, `SELECT * FROM tgaccount WHERE id = ?`, id)
+	err := s.db.Get(&a, `SELECT * FROM tgaccount WHERE id = $1`, id)
 	return a, err
 }
 
 func (s *SQLStore) CreateTGAccount(a models.TGAccount) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO tgaccount (name, bot_token, bot_username, group_prefix, active)
 		VALUES (:name, :bot_token, :bot_username, :group_prefix, :active)`, a)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateTGAccount(a models.TGAccount) error {
@@ -111,7 +181,7 @@ func (s *SQLStore) UpdateTGAccount(a models.TGAccount) error {
 }
 
 func (s *SQLStore) DeleteTGAccount(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM tgaccount WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM tgaccount WHERE id = $1`, id)
 	return err
 }
 
@@ -127,38 +197,39 @@ func (s *SQLStore) ListSearchTerms() ([]models.SearchTerm, error) {
 
 func (s *SQLStore) GetSearchTerm(id int64) (models.SearchTerm, error) {
 	var t models.SearchTerm
-	err := s.db.Get(&t, `SELECT * FROM searchterm WHERE id = ?`, id)
+	err := s.db.Get(&t, `SELECT * FROM searchterm WHERE id = $1`, id)
 	return t, err
 }
 
 func (s *SQLStore) CreateSearchTerm(t models.SearchTerm) (int64, error) {
-	res, err := s.db.NamedExec(`
-		INSERT INTO searchterm (query, queries, min_val, max_val, sources, active, crawl_interval, ml_affiliate_tool_id, amz_tracking_id)
-		VALUES (:query, :queries, :min_val, :max_val, :sources, :active, :crawl_interval, :ml_affiliate_tool_id, :amz_tracking_id)`, t)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO searchterm (query, queries, min_val, max_val, sources, category, active, crawl_interval)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval,
+	).Scan(&id)
+	return id, err
 }
 
 func (s *SQLStore) UpdateSearchTerm(t models.SearchTerm) error {
-	_, err := s.db.NamedExec(`
-		UPDATE searchterm SET query=:query, queries=:queries, min_val=:min_val, max_val=:max_val,
-			sources=:sources, active=:active, crawl_interval=:crawl_interval,
-			ml_affiliate_tool_id=:ml_affiliate_tool_id, amz_tracking_id=:amz_tracking_id
-		WHERE id = :id`, t)
+	_, err := s.db.Exec(`
+		UPDATE searchterm SET query=$1, queries=$2, min_val=$3, max_val=$4,
+			sources=$5, category=$6, active=$7, crawl_interval=$8
+		WHERE id = $9`,
+		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval, t.ID,
+	)
 	return err
 }
 
 func (s *SQLStore) DeleteSearchTerm(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM searchterm WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM searchterm WHERE id = $1`, id)
 	return err
 }
 
 func (s *SQLStore) TouchSearchTerm(id int64, count int) error {
 	_, err := s.db.Exec(`
-		UPDATE searchterm SET last_crawled_at = CURRENT_TIMESTAMP, result_count = result_count + ?
-		WHERE id = ?`, count, id)
+		UPDATE searchterm SET last_crawled_at = CURRENT_TIMESTAMP, result_count = result_count + $1
+		WHERE id = $2`, count, id)
 	return err
 }
 
@@ -167,26 +238,22 @@ func (s *SQLStore) TouchSearchTerm(id int64, count int) error {
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) InsertCrawlResult(r models.CrawlResult) (int64, error) {
-	res, err := s.db.NamedExec(`
-		INSERT INTO crawlresult (search_term_id, title, price, url, image_url, source)
-		VALUES (:search_term_id, :title, :price, :url, :image_url, :source)`, r)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+	return insertReturningID(s.db, `
+		INSERT INTO crawlresult (search_term_id, title, price, url, image_url, source, source_subid)
+		VALUES (:search_term_id, :title, :price, :url, :image_url, :source, :source_subid)`, r)
 }
 
 func (s *SQLStore) ListCrawlResultsByTerm(termID int64, limit, offset int) ([]models.CrawlResult, error) {
 	var out []models.CrawlResult
 	err := s.db.Select(&out,
-		`SELECT * FROM crawlresult WHERE search_term_id = ? ORDER BY crawled_at DESC LIMIT ? OFFSET ?`,
+		`SELECT * FROM crawlresult WHERE search_term_id = $1 ORDER BY crawled_at DESC LIMIT $2 OFFSET $3`,
 		termID, limit, offset)
 	return out, err
 }
 
 func (s *SQLStore) CountCrawlResultsByTerm(termID int64) (int64, error) {
 	var count int64
-	err := s.db.Get(&count, `SELECT COUNT(*) FROM crawlresult WHERE search_term_id = ?`, termID)
+	err := s.db.Get(&count, `SELECT COUNT(*) FROM crawlresult WHERE search_term_id = $1`, termID)
 	return count, err
 }
 
@@ -197,14 +264,14 @@ func (s *SQLStore) ListUnprocessedCrawlResults() ([]models.CrawlResult, error) {
 }
 
 func (s *SQLStore) MarkCrawlResultProcessed(id int64, variantID int64) error {
-	_, err := s.db.Exec(`UPDATE crawlresult SET catalog_variant_id = ? WHERE id = ?`, variantID, id)
+	_, err := s.db.Exec(`UPDATE crawlresult SET catalog_variant_id = $1 WHERE id = $2`, variantID, id)
 	return err
 }
 
 func (s *SQLStore) URLAlreadyCrawled(searchTermID int64, url string) (bool, error) {
 	var count int
 	err := s.db.Get(&count,
-		`SELECT COUNT(*) FROM crawlresult WHERE search_term_id = ? AND url = ?`, searchTermID, url)
+		`SELECT COUNT(*) FROM crawlresult WHERE search_term_id = $1 AND url = $2`, searchTermID, url)
 	return count > 0, err
 }
 
@@ -213,13 +280,9 @@ func (s *SQLStore) URLAlreadyCrawled(searchTermID int64, url string) (bool, erro
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) InsertCrawlLog(l models.CrawlLog) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO crawllog (search_term_id, status, ml_count, amz_count)
 		VALUES (:search_term_id, :status, :ml_count, :amz_count)`, l)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateCrawlLog(l models.CrawlLog) error {
@@ -235,10 +298,10 @@ func (s *SQLStore) ListCrawlLogs(termID int64, limit int) ([]models.CrawlLog, er
 	var err error
 	if termID > 0 {
 		err = s.db.Select(&out,
-			`SELECT * FROM crawllog WHERE search_term_id = ? ORDER BY started_at DESC LIMIT ?`, termID, limit)
+			`SELECT * FROM crawllog WHERE search_term_id = $1 ORDER BY started_at DESC LIMIT $2`, termID, limit)
 	} else {
 		err = s.db.Select(&out,
-			`SELECT * FROM crawllog ORDER BY started_at DESC LIMIT ?`, limit)
+			`SELECT * FROM crawllog ORDER BY started_at DESC LIMIT $1`, limit)
 	}
 	return out, err
 }
@@ -250,7 +313,7 @@ func (s *SQLStore) ListCrawlLogs(termID int64, limit int) ([]models.CrawlLog, er
 func (s *SQLStore) ListCatalogProducts(limit, offset int) ([]models.CatalogProduct, error) {
 	var out []models.CatalogProduct
 	err := s.db.Select(&out,
-		`SELECT * FROM catalogproduct ORDER BY updated_at DESC LIMIT ? OFFSET ?`, limit, offset)
+		`SELECT * FROM catalogproduct ORDER BY updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	return out, err
 }
 
@@ -262,20 +325,16 @@ func (s *SQLStore) CountCatalogProducts() (int64, error) {
 
 func (s *SQLStore) GetCatalogProduct(id int64) (models.CatalogProduct, error) {
 	var p models.CatalogProduct
-	err := s.db.Get(&p, `SELECT * FROM catalogproduct WHERE id = ?`, id)
+	err := s.db.Get(&p, `SELECT * FROM catalogproduct WHERE id = $1`, id)
 	return p, err
 }
 
 func (s *SQLStore) CreateCatalogProduct(p models.CatalogProduct) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO catalogproduct (canonical_name, brand, weight, image_url, lowest_price,
 			lowest_price_url, lowest_price_source, tags)
 		VALUES (:canonical_name, :brand, :weight, :image_url, :lowest_price,
 			:lowest_price_url, :lowest_price_source, :tags)`, p)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
@@ -283,19 +342,20 @@ func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
 	_, err := s.db.NamedExec(`
 		UPDATE catalogproduct SET canonical_name=:canonical_name, brand=:brand, weight=:weight,
 			image_url=:image_url, lowest_price=:lowest_price, lowest_price_url=:lowest_price_url,
-			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at
+			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at,
+			curation_status=:curation_status
 		WHERE id = :id`, p)
 	return err
 }
 
 func (s *SQLStore) DeleteCatalogProduct(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM catalogproduct WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM catalogproduct WHERE id = $1`, id)
 	return err
 }
 
 func (s *SQLStore) GetVariantByURL(url string) (models.CatalogVariant, bool, error) {
 	var v models.CatalogVariant
-	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE url = ? LIMIT 1`, url)
+	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE url = $1 LIMIT 1`, url)
 	if err == sql.ErrNoRows {
 		return v, false, nil
 	}
@@ -307,34 +367,66 @@ func (s *SQLStore) CreateCatalogVariant(v models.CatalogVariant) (int64, error) 
 	if !v.ShortID.Valid || v.ShortID.String == "" {
 		v.ShortID = models.NullString{NullString: sql.NullString{String: genShortID(), Valid: true}}
 	}
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO catalogvariant (catalog_product_id, title, variant_label, price, url, short_id, image_url, source)
 		VALUES (:catalog_product_id, :title, :variant_label, :price, :url, :short_id, :image_url, :source)`, v)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) GetShortIDByURL(url string) string {
 	var shortID string
-	_ = s.db.Get(&shortID, `SELECT COALESCE(short_id,'') FROM catalogvariant WHERE url = ? LIMIT 1`, url)
+	_ = s.db.Get(&shortID, `SELECT COALESCE(short_id,'') FROM catalogvariant WHERE url = $1 LIMIT 1`, url)
 	if shortID != "" {
 		return shortID
 	}
 	// Gera e persiste on-demand
 	shortID = genShortID()
-	_, _ = s.db.Exec(`UPDATE catalogvariant SET short_id = ? WHERE url = ? AND (short_id IS NULL OR short_id = '')`, shortID, url)
+	_, _ = s.db.Exec(`UPDATE catalogvariant SET short_id = $1 WHERE url = $2 AND (short_id IS NULL OR short_id = '')`, shortID, url)
 	return shortID
+}
+
+// GetOrCreateShortLink retorna short_id para destURL, criando se não existir.
+func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) {
+	var sid string
+	err := s.db.Get(&sid, `SELECT short_id FROM short_links WHERE dest_url = $1 LIMIT 1`, destURL)
+	if err == nil {
+		return sid, nil
+	}
+	sid = genShortID()
+	_, _ = s.db.Exec(`INSERT INTO short_links (short_id, dest_url, source) VALUES ($1, $2, $3) ON CONFLICT (dest_url) DO NOTHING`,
+		sid, destURL, source)
+	// Re-busca para pegar o sid real (pode ter perdido a corrida)
+	_ = s.db.Get(&sid, `SELECT short_id FROM short_links WHERE dest_url = $1 LIMIT 1`, destURL)
+	if sid == "" {
+		return "", fmt.Errorf("short link not found after insert")
+	}
+	return sid, nil
+}
+
+func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	var row struct {
+		DestURL string `db:"dest_url"`
+		Source  string `db:"source"`
+	}
+	if err := s.db.Get(&row, `SELECT dest_url, source FROM short_links WHERE short_id = $1`, shortID); err != nil {
+		return "", "", false
+	}
+	_, _ = s.db.Exec(`UPDATE short_links SET click_count = click_count + 1 WHERE short_id = $1`, shortID)
+	return row.DestURL, row.Source, true
 }
 
 func (s *SQLStore) GetVariantByShortID(shortID string) (models.CatalogVariant, bool, error) {
 	var v models.CatalogVariant
-	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE short_id = ? LIMIT 1`, shortID)
+	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE short_id = $1 LIMIT 1`, shortID)
 	if err == sql.ErrNoRows {
 		return v, false, nil
 	}
 	return v, err == nil, err
+}
+
+func (s *SQLStore) GetCatalogVariant(id int64) (models.CatalogVariant, error) {
+	var v models.CatalogVariant
+	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE id = $1 LIMIT 1`, id)
+	return v, err
 }
 
 func genShortID() string {
@@ -359,7 +451,7 @@ func (s *SQLStore) UpdateCatalogVariant(v models.CatalogVariant) error {
 func (s *SQLStore) ListVariantsByProduct(productID int64) ([]models.CatalogVariant, error) {
 	var out []models.CatalogVariant
 	err := s.db.Select(&out,
-		`SELECT * FROM catalogvariant WHERE catalog_product_id = ? ORDER BY price`, productID)
+		`SELECT * FROM catalogvariant WHERE catalog_product_id = $1 ORDER BY price`, productID)
 	return out, err
 }
 
@@ -372,8 +464,170 @@ func (s *SQLStore) InsertPriceHistoryV2(h models.PriceHistoryV2) error {
 func (s *SQLStore) ListPriceHistoryV2(variantID int64) ([]models.PriceHistoryV2, error) {
 	var out []models.PriceHistoryV2
 	err := s.db.Select(&out,
-		`SELECT * FROM pricehistoryv2 WHERE variant_id = ? ORDER BY recorded_at DESC LIMIT 100`, variantID)
+		`SELECT * FROM pricehistoryv2 WHERE variant_id = $1 ORDER BY recorded_at DESC LIMIT 100`, variantID)
 	return out, err
+}
+
+// GetVariantStats calculates price statistics (percentiles, mean, score) for a variant over a time window.
+// Returns nil if variant has no prices in the window.
+func (s *SQLStore) GetVariantStats(variantID int64, windowDays int) (*models.VariantStats, error) {
+	// Get current price (most recent)
+	var currentPrice sql.NullFloat64
+	var currentTime sql.NullTime
+	err := s.db.QueryRow(`
+		SELECT price, recorded_at
+		FROM pricehistoryv2
+		WHERE variant_id = $1
+		ORDER BY recorded_at DESC
+		LIMIT 1
+	`, variantID).Scan(&currentPrice, &currentTime)
+
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if err == sql.ErrNoRows || !currentPrice.Valid {
+		return nil, nil // No data for this variant
+	}
+
+	// Build window filter
+	windowSQL := fmt.Sprintf("AND recorded_at >= NOW() - INTERVAL '%d days'", windowDays)
+
+	// Fetch all prices in window for manual percentile calculation (supports both SQLite and Postgres)
+	var prices []float64
+	rows, err := s.db.Query(`
+		SELECT price
+		FROM pricehistoryv2
+		WHERE variant_id = $1 `+windowSQL+`
+		ORDER BY price ASC
+	`, variantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p float64
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		prices = append(prices, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Check if we have enough data
+	if len(prices) == 0 {
+		return nil, nil
+	}
+
+	// Apply IQR cleanup (remove outliers)
+	cleanedPrices := applyIQRCleanup(prices)
+
+	// If after cleanup we don't have enough data, return null score
+	if len(cleanedPrices) < 5 {
+		window := fmt.Sprintf("%dd", windowDays)
+		reason := "insufficient_data"
+		return &models.VariantStats{
+			Count:  len(prices),
+			Window: window,
+			Score:  nil,
+			Reason: &reason,
+		}, nil
+	}
+
+	// Calculate percentiles and mean from cleaned data
+	p25 := percentile(cleanedPrices, 0.25)
+	p50 := percentile(cleanedPrices, 0.50)
+	p75 := percentile(cleanedPrices, 0.75)
+	mean := calculateMean(cleanedPrices)
+
+	// Calculate score
+	var score *float64
+	var reason *string
+	if p75 == p25 {
+		// No variance
+		noVar := "no_variance"
+		reason = &noVar
+		score = nil
+	} else {
+		// score = clamp((p75 - current) / (p75 - p25), 0, 1)
+		s := (p75 - currentPrice.Float64) / (p75 - p25)
+		if s < 0 {
+			s = 0
+		} else if s > 1 {
+			s = 1
+		}
+		score = &s
+	}
+
+	window := fmt.Sprintf("%dd", windowDays)
+	return &models.VariantStats{
+		P25:    p25,
+		P50:    p50,
+		P75:    p75,
+		Mean:   mean,
+		Current: currentPrice.Float64,
+		Score:  score,
+		Count:  len(cleanedPrices),
+		Window: window,
+		Reason: reason,
+	}, nil
+}
+
+// Helper: apply IQR cleanup to remove outliers
+func applyIQRCleanup(prices []float64) []float64 {
+	if len(prices) < 5 {
+		return prices
+	}
+
+	q1 := percentile(prices, 0.25)
+	q3 := percentile(prices, 0.75)
+	iqr := q3 - q1
+
+	lower := q1 - 1.5*iqr
+	upper := q3 + 1.5*iqr
+
+	var cleaned []float64
+	for _, p := range prices {
+		if p >= lower && p <= upper {
+			cleaned = append(cleaned, p)
+		}
+	}
+	return cleaned
+}
+
+// Helper: calculate percentile (assumes sorted array)
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+
+	idx := p * float64(len(sorted)-1)
+	lower := int(idx)
+	upper := lower + 1
+	weight := idx - float64(lower)
+
+	if upper >= len(sorted) {
+		return sorted[lower]
+	}
+
+	return sorted[lower]*(1-weight) + sorted[upper]*weight
+}
+
+// Helper: calculate mean
+func calculateMean(prices []float64) float64 {
+	if len(prices) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, p := range prices {
+		sum += p
+	}
+	return sum / float64(len(prices))
 }
 
 func (s *SQLStore) ListGroupingKeywords() ([]models.GroupingKeyword, error) {
@@ -383,12 +637,8 @@ func (s *SQLStore) ListGroupingKeywords() ([]models.GroupingKeyword, error) {
 }
 
 func (s *SQLStore) CreateGroupingKeyword(k models.GroupingKeyword) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO groupingkeyword (keyword, tag, active) VALUES (:keyword, :tag, :active)`, k)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateGroupingKeyword(k models.GroupingKeyword) error {
@@ -398,14 +648,14 @@ func (s *SQLStore) UpdateGroupingKeyword(k models.GroupingKeyword) error {
 }
 
 func (s *SQLStore) DeleteGroupingKeyword(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM groupingkeyword WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM groupingkeyword WHERE id = $1`, id)
 	return err
 }
 
 func (s *SQLStore) GetRecentlyUpdatedProducts(since time.Time) ([]models.CatalogProduct, error) {
 	var out []models.CatalogProduct
 	err := s.db.Select(&out,
-		`SELECT * FROM catalogproduct WHERE updated_at >= ? ORDER BY updated_at DESC`, since)
+		`SELECT * FROM catalogproduct WHERE updated_at >= $1 ORDER BY updated_at DESC`, since)
 	return out, err
 }
 
@@ -413,65 +663,129 @@ func (s *SQLStore) GetRecentlyUpdatedProducts(since time.Time) ([]models.Catalog
 // Channels
 // ---------------------------------------------------------------------------
 
+func (s *SQLStore) listChannelsUnmarshal(out []models.Channel) []models.Channel {
+	for i := range out {
+		_ = out[i].UnmarshalAudience()
+	}
+	return out
+}
+
 func (s *SQLStore) ListChannels() ([]models.Channel, error) {
 	var out []models.Channel
 	err := s.db.Select(&out, `SELECT * FROM channel ORDER BY id`)
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return s.listChannelsUnmarshal(out), nil
 }
 
 func (s *SQLStore) GetChannel(id int64) (models.Channel, error) {
 	var c models.Channel
-	err := s.db.Get(&c, `SELECT * FROM channel WHERE id = ?`, id)
-	return c, err
+	err := s.db.Get(&c, `SELECT * FROM channel WHERE id = $1`, id)
+	if err != nil {
+		return c, err
+	}
+	_ = c.UnmarshalAudience()
+	return c, nil
 }
 
 func (s *SQLStore) GetChannelBySlug(slug string) (models.Channel, error) {
 	var c models.Channel
-	err := s.db.Get(&c, `SELECT * FROM channel WHERE slug = ?`, slug)
-	return c, err
+	err := s.db.Get(&c, `SELECT * FROM channel WHERE slug = $1`, slug)
+	if err != nil {
+		return c, err
+	}
+	_ = c.UnmarshalAudience()
+	return c, nil
 }
 
 func (s *SQLStore) CreateChannel(c models.Channel) (int64, error) {
-	res, err := s.db.NamedExec(`
-		INSERT INTO channel (name, description, slug, message_template, send_start_hour, send_end_hour,
-			digest_mode, digest_max_items, active)
-		VALUES (:name, :description, :slug, :message_template, :send_start_hour, :send_end_hour,
-			:digest_mode, :digest_max_items, :active)`, c)
-	if err != nil {
+	if err := c.MarshalAudience(); err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return insertReturningID(s.db, `
+		INSERT INTO channel (name, description, slug, message_template, send_start_hour, send_end_hour,
+			digest_mode, digest_max_items, active, audience, member_count, ctr_30d, cvr_30d, revenue_30d)
+		VALUES (:name, :description, :slug, :message_template, :send_start_hour, :send_end_hour,
+			:digest_mode, :digest_max_items, :active, :audience, :member_count, :ctr_30d, :cvr_30d, :revenue_30d)`, c)
 }
 
 func (s *SQLStore) UpdateChannel(c models.Channel) error {
+	if err := c.MarshalAudience(); err != nil {
+		return err
+	}
 	_, err := s.db.NamedExec(`
 		UPDATE channel SET name=:name, description=:description, slug=:slug,
 			message_template=:message_template, send_start_hour=:send_start_hour,
 			send_end_hour=:send_end_hour, digest_mode=:digest_mode,
-			digest_max_items=:digest_max_items, active=:active
+			digest_max_items=:digest_max_items, active=:active,
+			audience=:audience, member_count=:member_count,
+			ctr_30d=:ctr_30d, cvr_30d=:cvr_30d, revenue_30d=:revenue_30d
 		WHERE id = :id`, c)
 	return err
 }
 
 func (s *SQLStore) DeleteChannel(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM channel WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM channel WHERE id = $1`, id)
 	return err
+}
+
+// ListChannelsByCategory retorna canais ativos cuja audience contém a categoria via índice GIN.
+func (s *SQLStore) ListChannelsByCategory(category string) ([]models.Channel, error) {
+	rows := []models.Channel{}
+	err := s.db.Select(&rows, `
+		SELECT id, name, description, slug, message_template, send_start_hour, send_end_hour,
+			digest_mode, digest_max_items, active, created_at,
+			audience, member_count, ctr_30d, cvr_30d, revenue_30d
+		FROM channel
+		WHERE active = true
+		  AND ($1 = '' OR audience->'categories' ? $1)
+		ORDER BY id
+	`, category)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		_ = rows[i].UnmarshalAudience()
+	}
+	return rows, nil
+}
+
+// ListChannelsForProduct retorna canais compatíveis com o produto via filtros de audience.
+// Filtra channels cujo audience.categories contém category, price está no range e drop >= min_drop.
+func (s *SQLStore) ListChannelsForProduct(category, brand string, price, drop float64) ([]models.Channel, error) {
+	rows := []models.Channel{}
+	err := s.db.Select(&rows, `
+		SELECT id, name, description, slug, message_template, send_start_hour, send_end_hour,
+			digest_mode, digest_max_items, active, created_at,
+			audience, member_count, ctr_30d, cvr_30d, revenue_30d
+		FROM channel
+		WHERE active = true
+		  AND ($1 = '' OR audience->'categories' ? $1)
+		  AND ($3 = 0 OR (audience->>'min_price')::numeric <= $3)
+		  AND ($3 = 0 OR (audience->>'max_price')::numeric = 0 OR (audience->>'max_price')::numeric >= $3)
+		  AND ($4 = 0 OR (audience->>'min_drop')::numeric <= $4)
+		ORDER BY id
+	`, category, brand, price, drop)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		_ = rows[i].UnmarshalAudience()
+	}
+	return rows, nil
 }
 
 func (s *SQLStore) ListChannelTargets(channelID int64) ([]models.ChannelTarget, error) {
 	var out []models.ChannelTarget
-	err := s.db.Select(&out, `SELECT * FROM channeltarget WHERE channel_id = ? ORDER BY id`, channelID)
+	err := s.db.Select(&out, `SELECT * FROM channeltarget WHERE channel_id = $1 ORDER BY id`, channelID)
 	return out, err
 }
 
 func (s *SQLStore) CreateChannelTarget(t models.ChannelTarget) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO channeltarget (channel_id, provider, chat_id, name, invite_url, status)
 		VALUES (:channel_id, :provider, :chat_id, :name, :invite_url, :status)`, t)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateChannelTarget(t models.ChannelTarget) error {
@@ -483,26 +797,36 @@ func (s *SQLStore) UpdateChannelTarget(t models.ChannelTarget) error {
 }
 
 func (s *SQLStore) DeleteChannelTarget(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM channeltarget WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM channeltarget WHERE id = $1`, id)
 	return err
+}
+
+// GetChannelTarget retorna um target específico pelo ID.
+func (s *SQLStore) GetChannelTarget(id int64) (models.ChannelTarget, error) {
+	var t models.ChannelTarget
+	err := s.db.Get(&t, `SELECT * FROM channeltarget WHERE id = $1`, id)
+	return t, err
+}
+
+// ListAllChannelTargets retorna TODOS os channel targets (sem filtro de channel_id).
+func (s *SQLStore) ListAllChannelTargets() ([]models.ChannelTarget, error) {
+	var out []models.ChannelTarget
+	err := s.db.Select(&out, `SELECT * FROM channeltarget ORDER BY id`)
+	return out, err
 }
 
 func (s *SQLStore) ListChannelRules(channelID int64) ([]models.ChannelRule, error) {
 	var out []models.ChannelRule
-	err := s.db.Select(&out, `SELECT * FROM channelrule WHERE channel_id = ? ORDER BY id`, channelID)
+	err := s.db.Select(&out, `SELECT * FROM channelrule WHERE channel_id = $1 ORDER BY id`, channelID)
 	return out, err
 }
 
 func (s *SQLStore) CreateChannelRule(r models.ChannelRule) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO channelrule (channel_id, match_type, match_value, max_price,
 			notify_new, notify_drop, notify_lowest, drop_threshold, active)
 		VALUES (:channel_id, :match_type, :match_value, :max_price,
 			:notify_new, :notify_drop, :notify_lowest, :drop_threshold, :active)`, r)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateChannelRule(r models.ChannelRule) error {
@@ -515,14 +839,14 @@ func (s *SQLStore) UpdateChannelRule(r models.ChannelRule) error {
 }
 
 func (s *SQLStore) DeleteChannelRule(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM channelrule WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM channelrule WHERE id = $1`, id)
 	return err
 }
 
 func (s *SQLStore) WasSentRecently(productID, targetID int64, since time.Time) (bool, error) {
 	var count int
 	err := s.db.Get(&count,
-		`SELECT COUNT(*) FROM sentmessagev2 WHERE catalog_product_id = ? AND channel_target_id = ? AND sent_at >= ?`,
+		`SELECT COUNT(*) FROM sentmessagev2 WHERE catalog_product_id = $1 AND channel_target_id = $2 AND sent_at >= $3`,
 		productID, targetID, since)
 	return count > 0, err
 }
@@ -539,13 +863,9 @@ func (s *SQLStore) RecordSent(sv models.SentMessageV2) error {
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) CreateBroadcast(b models.BroadcastMessage) (int64, error) {
-	res, err := s.db.NamedExec(`
+	return insertReturningID(s.db, `
 		INSERT INTO broadcastmessage (text, image_url, channel_ids, status)
 		VALUES (:text, :image_url, :channel_ids, :status)`, b)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *SQLStore) UpdateBroadcast(b models.BroadcastMessage) error {
@@ -559,7 +879,7 @@ func (s *SQLStore) UpdateBroadcast(b models.BroadcastMessage) error {
 func (s *SQLStore) ListBroadcasts(limit int) ([]models.BroadcastMessage, error) {
 	var out []models.BroadcastMessage
 	err := s.db.Select(&out,
-		`SELECT * FROM broadcastmessage ORDER BY created_at DESC LIMIT ?`, limit)
+		`SELECT * FROM broadcastmessage ORDER BY created_at DESC LIMIT $1`, limit)
 	return out, err
 }
 
@@ -570,7 +890,7 @@ func (s *SQLStore) ListBroadcasts(limit int) ([]models.BroadcastMessage, error) 
 func (s *SQLStore) CountClicksByProduct(productID int64) (int64, error) {
 	var count int64
 	err := s.db.Get(&count,
-		`SELECT COUNT(*) FROM clicklog WHERE product_id = ?`, productID)
+		`SELECT COUNT(*) FROM clicklog WHERE product_id = $1`, productID)
 	return count, err
 }
 
@@ -593,20 +913,20 @@ func (s *SQLStore) ListGroups() ([]models.Group, error) {
 
 func (s *SQLStore) GetGroup(id int64) (models.Group, error) {
 	var g models.Group
-	err := s.db.Get(&g, `SELECT * FROM "group" WHERE id = ?`, id)
+	err := s.db.Get(&g, `SELECT * FROM "group" WHERE id = $1`, id)
 	return g, err
 }
 
 func (s *SQLStore) ListProductsByGroup(groupID int64, limit int) ([]models.Product, error) {
 	var out []models.Product
 	err := s.db.Select(&out,
-		`SELECT * FROM product WHERE group_id = ? ORDER BY found_at DESC LIMIT ?`, groupID, limit)
+		`SELECT * FROM product WHERE group_id = $1 ORDER BY found_at DESC LIMIT $2`, groupID, limit)
 	return out, err
 }
 
 func (s *SQLStore) GetProductByShortID(shortID string) (models.Product, bool, error) {
 	var p models.Product
-	err := s.db.Get(&p, `SELECT * FROM product WHERE short_id = ? LIMIT 1`, shortID)
+	err := s.db.Get(&p, `SELECT * FROM product WHERE short_id = $1 LIMIT 1`, shortID)
 	if err == sql.ErrNoRows {
 		return p, false, nil
 	}
@@ -636,8 +956,8 @@ func (s *SQLStore) ListTelegramChats() ([]models.TelegramChat, error) {
 
 func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]any, error) {
 	var total, unique int64
-	_ = s.db.Get(&total, `SELECT COUNT(*) FROM clicklog WHERE clicked_at >= ?`, since)
-	_ = s.db.Get(&unique, `SELECT COUNT(DISTINCT ip_hash) FROM clicklog WHERE clicked_at >= ?`, since)
+	_ = s.db.Get(&total, `SELECT COUNT(*) FROM clicklog WHERE clicked_at >= $1`, since)
+	_ = s.db.Get(&unique, `SELECT COUNT(DISTINCT ip_hash) FROM clicklog WHERE clicked_at >= $1`, since)
 
 	type dailyRow struct {
 		Day    string `db:"day"`
@@ -645,8 +965,8 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	}
 	var daily []dailyRow
 	_ = s.db.Select(&daily, `
-		SELECT strftime('%Y-%m-%d', clicked_at) AS day, COUNT(*) AS clicks
-		FROM clicklog WHERE clicked_at >= ? GROUP BY day ORDER BY day`, since)
+		SELECT TO_CHAR(clicked_at, 'YYYY-MM-DD') AS day, COUNT(*) AS clicks
+		FROM clicklog WHERE clicked_at >= $1 GROUP BY day ORDER BY day`, since)
 
 	type sourceRow struct {
 		Source string `db:"source"`
@@ -656,7 +976,7 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	_ = s.db.Select(&bySource, `
 		SELECT p.source, COUNT(*) AS clicks FROM clicklog c
 		JOIN product p ON c.product_id = p.id
-		WHERE c.clicked_at >= ? GROUP BY p.source`, since)
+		WHERE c.clicked_at >= $1 GROUP BY p.source`, since)
 
 	type topRow struct {
 		ID     int64   `db:"id" json:"id"`
@@ -669,13 +989,13 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	_ = s.db.Select(&topProducts, `
 		SELECT p.id, p.title, p.source, p.price, COUNT(*) AS clicks
 		FROM clicklog c JOIN product p ON c.product_id = p.id
-		WHERE c.clicked_at >= ? GROUP BY p.id ORDER BY clicks DESC LIMIT 10`, since)
+		WHERE c.clicked_at >= $1 GROUP BY p.id ORDER BY clicks DESC LIMIT 10`, since)
 
 	var catalogTotal, catalogNew, variantsTotal, messagesSent int64
 	_ = s.db.Get(&catalogTotal, `SELECT COUNT(*) FROM catalogproduct`)
-	_ = s.db.Get(&catalogNew, `SELECT COUNT(*) FROM catalogproduct WHERE created_at >= ?`, since)
+	_ = s.db.Get(&catalogNew, `SELECT COUNT(*) FROM catalogproduct WHERE created_at >= $1`, since)
 	_ = s.db.Get(&variantsTotal, `SELECT COUNT(*) FROM catalogvariant`)
-	_ = s.db.Get(&messagesSent, `SELECT COUNT(*) FROM sentmessagev2 WHERE sent_at >= ?`, since)
+	_ = s.db.Get(&messagesSent, `SELECT COUNT(*) FROM sentmessagev2 WHERE sent_at >= $1`, since)
 
 	dailyOut := make([]map[string]any, 0, len(daily))
 	for _, d := range daily {
@@ -711,4 +1031,607 @@ func ValidSlug(slug string) error {
 		}
 	}
 	return nil
+}
+
+// ─────────────────── Affiliates ──────────────────────
+
+// ListAffiliates retorna todos os afiliados, opcionalmente filtrados por source_id.
+func (s *SQLStore) ListAffiliates(sourceID *string) ([]models.Affiliate, error) {
+	var query string
+	var args []interface{}
+
+	if sourceID != nil && *sourceID != "" {
+		query = `SELECT id, source_id, name, tracking_id, active, created_at FROM affiliates WHERE source_id = $1 ORDER BY created_at DESC`
+		args = []interface{}{*sourceID}
+	} else {
+		query = `SELECT id, source_id, name, tracking_id, active, created_at FROM affiliates ORDER BY created_at DESC`
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var affiliates []models.Affiliate
+	for rows.Next() {
+		var a models.Affiliate
+		if err := rows.Scan(&a.ID, &a.SourceID, &a.Name, &a.TrackingID, &a.Active, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		affiliates = append(affiliates, a)
+	}
+	return affiliates, nil
+}
+
+// GetAffiliate retorna um afiliado por ID.
+func (s *SQLStore) GetAffiliate(id int64) (models.Affiliate, error) {
+	var a models.Affiliate
+	err := s.db.QueryRow(
+		`SELECT id, source_id, name, tracking_id, active, created_at FROM affiliates WHERE id = $1`,
+		id,
+	).Scan(&a.ID, &a.SourceID, &a.Name, &a.TrackingID, &a.Active, &a.CreatedAt)
+	return a, err
+}
+
+// CreateAffiliate cria um novo afiliado.
+func (s *SQLStore) CreateAffiliate(a models.Affiliate) (int64, error) {
+	active := 0
+	if a.Active {
+		active = 1
+	}
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliates (source_id, name, tracking_id, active) VALUES ($1, $2, $3, $4) RETURNING id`,
+		a.SourceID, a.Name, a.TrackingID, active,
+	).Scan(&id)
+	return id, err
+}
+
+// UpdateAffiliate atualiza um afiliado existente.
+func (s *SQLStore) UpdateAffiliate(a models.Affiliate) error {
+	active := 0
+	if a.Active {
+		active = 1
+	}
+	_, err := s.db.Exec(
+		`UPDATE affiliates SET source_id = $1, name = $2, tracking_id = $3, active = $4 WHERE id = $5`,
+		a.SourceID, a.Name, a.TrackingID, active, a.ID,
+	)
+	return err
+}
+
+// DeleteAffiliate deleta um afiliado.
+func (s *SQLStore) DeleteAffiliate(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM affiliates WHERE id = $1`, id)
+	return err
+}
+
+// GetAffiliateBySource retorna o afiliado ativo para um source_id específico.
+func (s *SQLStore) GetAffiliateBySource(sourceID string) (models.Affiliate, bool, error) {
+	var a models.Affiliate
+	err := s.db.QueryRow(
+		`SELECT id, source_id, name, tracking_id, active, created_at FROM affiliates WHERE source_id = $1 AND active = true LIMIT 1`,
+		sourceID,
+	).Scan(&a.ID, &a.SourceID, &a.Name, &a.TrackingID, &a.Active, &a.CreatedAt)
+	if err == sql.ErrNoRows {
+		return a, false, nil
+	}
+	return a, err == nil, err
+}
+
+// ListAccountsForTarget retorna todas as contas associadas a um target, ordenadas por priority.
+func (s *SQLStore) ListAccountsForTarget(targetID int64) ([]models.ChannelTargetAccount, error) {
+	rows, err := s.db.Query(
+		`SELECT id, target_id, account_id, role, priority, created_at FROM channel_target_accounts WHERE target_id = $1 ORDER BY priority ASC`,
+		targetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []models.ChannelTargetAccount
+	for rows.Next() {
+		var cta models.ChannelTargetAccount
+		if err := rows.Scan(&cta.ID, &cta.TargetID, &cta.AccountID, &cta.Role, &cta.Priority, &cta.CreatedAt); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, cta)
+	}
+	return accounts, rows.Err()
+}
+
+// GetAccountsByTargetWithRole retorna contas com um role específico para um target.
+func (s *SQLStore) GetAccountsByTargetWithRole(targetID int64, role string) ([]models.ChannelTargetAccount, error) {
+	rows, err := s.db.Query(
+		`SELECT id, target_id, account_id, role, priority, created_at FROM channel_target_accounts WHERE target_id = $1 AND role = $2 ORDER BY priority ASC`,
+		targetID, role,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []models.ChannelTargetAccount
+	for rows.Next() {
+		var cta models.ChannelTargetAccount
+		if err := rows.Scan(&cta.ID, &cta.TargetID, &cta.AccountID, &cta.Role, &cta.Priority, &cta.CreatedAt); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, cta)
+	}
+	return accounts, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// RedesignGroups
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error) {
+	q := `SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
+	             jid, invite_link, status, member_count, overrides, created_at, last_message_at,
+	             COALESCE(archived, false) AS archived, last_error, last_error_at
+	      FROM groups WHERE ($1 = 0 OR channel_id = $1)
+	        AND ($2 = '' OR platform = $2)
+	        AND ($3 = '' OR status = $3)
+	      ORDER BY created_at DESC`
+	var out []models.RedesignGroup
+	return out, s.db.Select(&out, q, channelID, platform, status)
+}
+
+func (s *SQLStore) GetRedesignGroup(id int64) (models.RedesignGroup, error) {
+	var g models.RedesignGroup
+	return g, s.db.Get(&g,
+		`SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
+		        jid, invite_link, status, member_count, overrides, created_at, last_message_at,
+		        COALESCE(archived, false) AS archived, last_error, last_error_at
+		 FROM groups WHERE id = $1`, id)
+}
+
+func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO groups (channel_id, wa_account_id, tg_account_id, name, platform, jid, invite_link, status, overrides)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		g.ChannelID, g.WAAccountID, g.TGAccountID, g.Name, g.Platform,
+		g.JID, g.InviteLink, g.Status, g.Overrides,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
+	_, err := s.db.NamedExec(`
+		UPDATE groups SET name=:name, platform=:platform, jid=:jid,
+			invite_link=:invite_link, status=:status, member_count=:member_count,
+			overrides=:overrides, wa_account_id=:wa_account_id, tg_account_id=:tg_account_id,
+			archived=:archived, last_error=:last_error, last_error_at=:last_error_at
+		WHERE id=:id`, g)
+	return err
+}
+
+func (s *SQLStore) DeleteRedesignGroup(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM groups WHERE id = $1`, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// AffiliatePrograms (ReDesign)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error) {
+	var out []models.AffiliateProgram
+	if active == nil {
+		return out, s.db.Select(&out,
+			`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+			 FROM affiliate_programs ORDER BY name`)
+	}
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE active = $1 ORDER BY name`, *active)
+}
+
+func (s *SQLStore) GetAffiliateProgram(id int64) (models.AffiliateProgram, error) {
+	var p models.AffiliateProgram
+	return p, s.db.Get(&p,
+		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE id = $1`, id)
+}
+
+func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, error) {
+	if p.Credentials == nil {
+		p.Credentials = []byte("{}")
+	}
+	if p.Rules == nil {
+		p.Rules = []byte("{}")
+	}
+	if p.Postback == nil {
+		p.Postback = []byte("{}")
+	}
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliate_programs (name, marketplace, credentials, active, rules, postback)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		p.Name, p.Marketplace, p.Credentials, p.Active, p.Rules, p.Postback,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) UpdateAffiliateProgram(p models.AffiliateProgram) error {
+	_, err := s.db.Exec(
+		`UPDATE affiliate_programs SET name=$1, active=$2, rules=$3, postback=$4 WHERE id=$5`,
+		p.Name, p.Active, p.Rules, p.Postback, p.ID)
+	return err
+}
+
+func (s *SQLStore) DeleteAffiliateProgram(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM affiliate_programs WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error) {
+	var out []models.AffiliateProgram
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, name, marketplace, credentials, active, rules, postback, created_at
+		 FROM affiliate_programs WHERE marketplace = $1 AND active = true ORDER BY id`, marketplace)
+}
+
+// ---------------------------------------------------------------------------
+// PublicLinks
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) CreatePublicLink(l models.PublicLink) (int64, error) {
+	if l.FallbackChain == nil {
+		l.FallbackChain = []byte("[]")
+	}
+	if l.RedirectStrategy == "" {
+		l.RedirectStrategy = "first_active"
+	}
+	var id int64
+	return id, s.db.QueryRow(`
+		INSERT INTO public_links (slug, channel_id, fallback_chain, redirect_strategy)
+		VALUES ($1, $2, $3, $4) RETURNING id`,
+		l.Slug, l.ChannelID, l.FallbackChain, l.RedirectStrategy,
+	).Scan(&id)
+}
+
+func (s *SQLStore) GetPublicLink(id int64) (models.PublicLink, error) {
+	var l models.PublicLink
+	return l, s.db.Get(&l,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links WHERE id = $1`, id)
+}
+
+func (s *SQLStore) GetPublicLinkBySlug(slug string) (models.PublicLink, error) {
+	var l models.PublicLink
+	return l, s.db.Get(&l,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links WHERE slug = $1 AND active = true`, slug)
+}
+
+func (s *SQLStore) ListPublicLinks() ([]models.PublicLink, error) {
+	var out []models.PublicLink
+	return out, s.db.Select(&out,
+		`SELECT id, slug, channel_id, fallback_chain, redirect_strategy, round_robin_idx, active, clicks_30d, created_at
+		 FROM public_links ORDER BY created_at DESC`)
+}
+
+func (s *SQLStore) UpdatePublicLink(l models.PublicLink) error {
+	_, err := s.db.Exec(`
+		UPDATE public_links SET slug=$1, fallback_chain=$2, redirect_strategy=$3, active=$4 WHERE id=$5`,
+		l.Slug, l.FallbackChain, l.RedirectStrategy, l.Active, l.ID)
+	return err
+}
+
+func (s *SQLStore) DeletePublicLink(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM public_links WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) IncrementRoundRobinIdx(id int64, newIdx int) error {
+	_, err := s.db.Exec(`UPDATE public_links SET round_robin_idx = $1 WHERE id = $2`, newIdx, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Dispatches
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error) {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if d.Message == nil {
+		d.Message = []byte("{}")
+	}
+
+	var id int64
+	status := d.Status
+	if status == "" {
+		status = "queued"
+	}
+	var scheduledFor interface{}
+	if d.ScheduledFor.Valid {
+		scheduledFor = d.ScheduledFor.Time
+	}
+	err = tx.QueryRow(`
+		INSERT INTO dispatches (product_id, composed_by, message, affiliate_link, status, scheduled_for)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink, status, scheduledFor,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, t := range targets {
+		_, err = tx.Exec(`
+			INSERT INTO dispatch_targets (dispatch_id, group_id, wa_account_id, tg_account_id, status)
+			VALUES ($1, $2, $3, $4, 'pending')`,
+			id, t.GroupID, t.WAAccountID, t.TGAccountID)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return id, tx.Commit()
+}
+
+func (s *SQLStore) GetDispatch(id int64) (models.Dispatch, error) {
+	var d models.Dispatch
+	return d, s.db.Get(&d,
+		`SELECT id, short_id, product_id, composed_by, message, affiliate_link,
+		        scheduled_for, created_by, status, created_at
+		 FROM dispatches WHERE id = $1`, id)
+}
+
+func (s *SQLStore) ListDispatches(status string, limit, offset int) ([]models.Dispatch, error) {
+	if limit == 0 {
+		limit = 50
+	}
+	var out []models.Dispatch
+	return out, s.db.Select(&out,
+		`SELECT id, short_id, product_id, composed_by, message, affiliate_link,
+		        scheduled_for, created_by, status, created_at
+		 FROM dispatches WHERE ($1 = '' OR status = $1)
+		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, status, limit, offset)
+}
+
+func (s *SQLStore) ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error) {
+	var out []models.DispatchTarget
+	return out, s.db.Select(&out,
+		`SELECT id, dispatch_id, group_id, wa_account_id, tg_account_id, status,
+		        attempted_at, delivered_at, error_reason, click_count, conversions, revenue
+		 FROM dispatch_targets WHERE dispatch_id = $1`, dispatchID)
+}
+
+func (s *SQLStore) UpdateDispatchTargetStatus(id int64, status, errorReason string) error {
+	_, err := s.db.Exec(`
+		UPDATE dispatch_targets
+		SET status = $1,
+		    error_reason = NULLIF($2, ''),
+		    attempted_at = CASE WHEN $1 = 'sending' THEN now() ELSE attempted_at END,
+		    delivered_at = CASE WHEN $1 = 'delivered' THEN now() ELSE delivered_at END
+		WHERE id = $3`, status, errorReason, id)
+	return err
+}
+
+func (s *SQLStore) UpdateDispatchStatus(id int64, status string) error {
+	_, err := s.db.Exec(`UPDATE dispatches SET status = $1 WHERE id = $2`, status, id)
+	return err
+}
+
+func (s *SQLStore) CancelDispatch(id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE dispatches SET status = 'failed'
+		WHERE id = $1 AND status IN ('draft', 'queued')`, id)
+	return err
+}
+
+func (s *SQLStore) ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error) {
+	if limit <= 0 { limit = 20 }
+	var out []models.DispatchTarget
+	err := s.db.Select(&out, `
+		SELECT dt.* FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		WHERE dt.status = 'pending' AND d.status IN ('queued', 'sending')
+		  AND (d.scheduled_for IS NULL OR d.scheduled_for <= now())
+		ORDER BY dt.id ASC
+		LIMIT $1`, limit)
+	return out, err
+}
+
+func (s *SQLStore) AllDispatchTargetsFinished(dispatchID int64) (bool, error) {
+	var count int
+	err := s.db.Get(&count,
+		`SELECT COUNT(*) FROM dispatch_targets WHERE dispatch_id = $1 AND status IN ('pending','sending')`, dispatchID)
+	return count == 0, err
+}
+
+func (s *SQLStore) ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error) {
+	if limit == 0 { limit = 50 }
+	var out []models.ChannelHistoryEntry
+	err := s.db.Select(&out, `
+		SELECT dt.dispatch_id, g.id as group_id, g.name as group_name,
+		       dt.status, dt.delivered_at,
+		       COALESCE((d.message->>'text')::text, '') as message_text,
+		       d.created_at
+		FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		JOIN groups g ON g.id = dt.group_id
+		WHERE g.channel_id = $1
+		ORDER BY d.created_at DESC
+		LIMIT $2`, channelID, limit)
+	return out, err
+}
+
+// ---------------------------------------------------------------------------
+// Clusters
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListClusters() ([]models.Cluster, error) {
+	var out []models.Cluster
+	return out, s.db.Select(&out,
+		`SELECT id, label, COALESCE(description,'') as description,
+		        member_channels, metrics, top_categories, top_brands, computed_at
+		 FROM clusters ORDER BY computed_at DESC`)
+}
+
+func (s *SQLStore) GetCluster(id int64) (models.Cluster, error) {
+	var c models.Cluster
+	return c, s.db.Get(&c,
+		`SELECT id, label, COALESCE(description,'') as description,
+		        member_channels, metrics, top_categories, top_brands, computed_at
+		 FROM clusters WHERE id = $1`, id)
+}
+
+func (s *SQLStore) UpsertClusters(clusters []models.Cluster) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM clusters`); err != nil {
+		return err
+	}
+	for _, c := range clusters {
+		if _, err := tx.Exec(`
+			INSERT INTO clusters (label, description, member_channels, metrics, top_categories, top_brands)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			c.Label, c.Description, c.MemberChannels, c.Metrics, c.TopCategories, c.TopBrands); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ---------------------------------------------------------------------------
+// GroupSpies
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error) {
+	q := `SELECT id, short_id, group_name, platform, invite_link, reader_wa_id, reader_tg_id,
+	             remote_group_id, active, joined_at, stats
+	      FROM group_spies
+	      WHERE deleted_at IS NULL
+	        AND ($1 = '' OR platform = $1)
+	        AND ($2 = false OR active = true)
+	      ORDER BY joined_at DESC`
+	var out []models.GroupSpy
+	return out, s.db.Select(&out, q, platform, activeOnly)
+}
+
+func (s *SQLStore) GetGroupSpy(id int64) (models.GroupSpy, error) {
+	var g models.GroupSpy
+	return g, s.db.Get(&g,
+		`SELECT id, short_id, group_name, platform, invite_link, reader_wa_id, reader_tg_id,
+		        remote_group_id, active, joined_at, stats
+		 FROM group_spies WHERE id = $1 AND deleted_at IS NULL`, id)
+}
+
+func (s *SQLStore) CreateGroupSpy(g models.GroupSpy) (int64, error) {
+	if g.Stats == nil {
+		g.Stats = []byte("{}")
+	}
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO group_spies (group_name, platform, invite_link, reader_wa_id, reader_tg_id, active, stats)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		g.GroupName, g.Platform, g.InviteLink, g.ReaderWAID, g.ReaderTGID, true, g.Stats,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) SoftDeleteGroupSpy(id int64) error {
+	_, err := s.db.Exec(`UPDATE group_spies SET active = false, deleted_at = now() WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error {
+	_, err := s.db.Exec(
+		`UPDATE group_spies SET reader_wa_id = $1, reader_tg_id = $2 WHERE id = $3 AND deleted_at IS NULL`,
+		readerWAID, readerTGID, id,
+	)
+	return err
+}
+
+func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error) {
+	if limit <= 0 { limit = 50 }
+	var out []models.SpyMessage
+	err := s.db.Select(&out,
+		`SELECT id, spy_id, sender, text, media_url, collected_at
+		 FROM spy_messages WHERE spy_id = $1
+		 ORDER BY collected_at DESC LIMIT $2`, spyID, limit)
+	if out == nil { out = []models.SpyMessage{} }
+	return out, err
+}
+
+func (s *SQLStore) CreateSpyMessage(m models.SpyMessage) error {
+	_, err := s.db.Exec(
+		`INSERT INTO spy_messages (spy_id, sender, text, media_url) VALUES ($1, $2, $3, $4)`,
+		m.SpyID, m.Sender, m.Text, m.MediaURL)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// GroupAdmins (migration 0085)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error) {
+	var out []models.GroupAdmin
+	err := s.db.Select(&out,
+		`SELECT id, group_id, account_type, account_id, added_at
+		 FROM group_admins WHERE group_id = $1 ORDER BY added_at ASC`, groupID)
+	if out == nil {
+		out = []models.GroupAdmin{}
+	}
+	return out, err
+}
+
+func (s *SQLStore) AddGroupAdmin(a models.GroupAdmin) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO group_admins (group_id, account_type, account_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (group_id, account_type, account_id) DO UPDATE SET added_at = now()
+		 RETURNING id`,
+		a.GroupID, a.AccountType, a.AccountID).Scan(&id)
+	return id, err
+}
+
+func (s *SQLStore) DeleteGroupAdmin(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM group_admins WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) CountGroupAdmins(groupID int64) (int, error) {
+	var count int
+	err := s.db.Get(&count, `SELECT COUNT(*) FROM group_admins WHERE group_id = $1`, groupID)
+	return count, err
+}
+
+// SetGroupArchived alterna archived e opcionalmente seta last_error.
+func (s *SQLStore) SetGroupArchived(id int64, archived bool, lastError *string) error {
+	if lastError != nil {
+		_, err := s.db.Exec(
+			`UPDATE groups SET archived = $1, last_error = $2, last_error_at = now() WHERE id = $3`,
+			archived, *lastError, id)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE groups SET archived = $1 WHERE id = $2`, archived, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// AffiliateConversions (migration 0086)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO affiliate_conversions (program_id, click_id, external_order_id, revenue, status)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		c.ProgramID, c.ClickID, c.ExternalOrderID, c.Revenue, c.Status).Scan(&id)
+	return id, err
 }

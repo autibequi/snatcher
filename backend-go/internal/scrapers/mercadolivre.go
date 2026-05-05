@@ -2,11 +2,13 @@ package scrapers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"strconv"
 	"strings"
@@ -18,6 +20,17 @@ import (
 
 const mlBaseURL = "https://lista.mercadolivre.com.br"
 
+// mercadoLivreScraper implements the Scraper interface for Mercado Livre marketplace.
+type mercadoLivreScraper struct {
+	client       *http.Client
+	clientID     string
+	clientSecret string
+	tokenMu      sync.Mutex
+	token        string
+	tokenExpiry  time.Time
+}
+
+// NewMLScraper creates a new Mercado Livre scraper (legacy constructor, kept for compatibility).
 type MLScraper struct {
 	client       *http.Client
 	clientID     string
@@ -193,4 +206,60 @@ func (s *MLScraper) searchHTML(ctx context.Context, query string, minVal, maxVal
 // readAll é helper para leitura de body (não usado mas mantido para referência)
 func readAll(r io.Reader) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r, 2<<20))
+}
+
+// Plugin interface implementations for mercadoLivreScraper
+// ========================================================
+
+// ID returns the unique identifier for this scraper.
+func (s *mercadoLivreScraper) ID() string {
+	return "ml"
+}
+
+// Category returns the source category.
+func (s *mercadoLivreScraper) Category() string {
+	return "ecommerce"
+}
+
+// Search implements the Scraper interface, returning models.CrawlResult.
+// It delegates to the legacy pipeline-based search logic.
+func (s *mercadoLivreScraper) Search(ctx context.Context, query string, minVal, maxVal float64) ([]models.CrawlResult, error) {
+	// Use a fresh MLScraper instance for each search (sync.Mutex cannot be copied)
+	legacyScraper := NewMLScraper(s.clientID, s.clientSecret)
+
+	items, err := legacyScraper.Search(ctx, query, minVal, maxVal)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert pipeline.Item to models.CrawlResult
+	results := make([]models.CrawlResult, len(items))
+	for i, item := range items {
+		results[i] = models.CrawlResult{
+			Title:     item.Title,
+			Price:     item.Price,
+			URL:       item.URL,
+			ImageURL:  nullableString(item.ImageURL),
+			Source:    item.Source,
+			CrawledAt: time.Now(),
+		}
+	}
+	return results, nil
+}
+
+// nullableString converts a string to a models.NullString.
+func nullableString(s string) models.NullString {
+	return models.NullString{
+		NullString: sql.NullString{String: s, Valid: s != ""},
+	}
+}
+
+// init registers the mercadoLivreScraper in the global registry.
+func init() {
+	// Empty clientID/clientSecret will trigger HTML fallback in the legacy scraper.
+	Register(&mercadoLivreScraper{
+		client:       &http.Client{Timeout: 20 * time.Second},
+		clientID:     "", // Will be populated from AppConfig at runtime
+		clientSecret: "",
+	})
 }

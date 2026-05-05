@@ -1,0 +1,40 @@
+{
+  "products": [
+    {
+      "title": "Smartphone Global Version 5G 12GB RAM 256GB",
+      "price": 250.75,
+      "url": "https://www.aliexpress.com/item/1005001234567890.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc123456789.jpg"
+    },
+    {
+      "title": "Android 12 Smartphone Dual Camera 6.5 inch Screen",
+      "price": 189.99,
+      "url": "https://www.aliexpress.com/item/1005001234567891.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc987654321.jpg"
+    },
+    {
+      "title": "Unlocked Smartphone 48MP Camera 4G LTE",
+      "price": 149.50,
+      "url": "https://www.aliexpress.com/item/1005001234567892.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc555666777.jpg"
+    },
+    {
+      "title": "Budget Smartphone Quad Core 5 inch Display",
+      "price": 99.90,
+      "url": "https://www.aliexpress.com/item/1005001234567893.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc111222333.jpg"
+    },
+    {
+      "title": "Pro Smartphone with Curved Screen AMOLED",
+      "price": 399.99,
+      "url": "https://www.aliexpress.com/item/1005001234567894.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc444555666.jpg"
+    },
+    {
+      "title": "Gaming Smartphone 120Hz Refresh Rate",
+      "price": 299.00,
+      "url": "https://www.aliexpress.com/item/1005001234567895.html",
+      "image_url": "https://ae01.alicdn.com/kf/Hc777888999.jpg"
+    }
+  ]
+}

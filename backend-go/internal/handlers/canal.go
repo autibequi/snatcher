@@ -59,8 +59,9 @@ func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, redirectHTML,
 			channelName, channelDesc,
 			html.EscapeString(t.InviteURL),
-			channelName,
 			html.EscapeString(t.InviteURL),
+			html.EscapeString(t.InviteURL),
+			channelName,
 		)
 
 	default:

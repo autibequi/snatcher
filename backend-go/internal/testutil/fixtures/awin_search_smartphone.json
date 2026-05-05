@@ -1,0 +1,76 @@
+{
+  "products": [
+    {
+      "product_name": "Smartphone Pro 5G 256GB Storage",
+      "product_price": 1899.90,
+      "product_id": "awin-12345678",
+      "product_image": "https://cdn.awin.com/images/phone-pro-5g.jpg",
+      "deeplink": "https://www.awin1.com/cread.php?awinaffid=123456&awinmid=45678&p=https://adidas.com/smartphone-pro-5g",
+      "merchant": {
+        "merchant_id": 123456,
+        "merchant_name": "Adidas Official Store",
+        "logo": "https://cdn.awin.com/merchants/adidas.png",
+        "default_cpc": "10.50"
+      },
+      "commission_group": "Electronics"
+    },
+    {
+      "product_name": "Smartphone Pro 5G 256GB Storage",
+      "product_price": 1799.00,
+      "product_id": "awin-87654321",
+      "product_image": "https://cdn.awin.com/images/phone-pro-5g.jpg",
+      "deeplink": "https://www.awin1.com/cread.php?awinaffid=123456&awinmid=98765&p=https://nike.com/smartphone-pro-5g",
+      "merchant": {
+        "merchant_id": 98765,
+        "merchant_name": "Nike Store",
+        "logo": "https://cdn.awin.com/merchants/nike.png",
+        "default_cpc": "12.75"
+      },
+      "commission_group": "Electronics"
+    },
+    {
+      "product_name": "Smartphone Budget 4G 128GB",
+      "product_price": 699.90,
+      "product_id": "awin-55667788",
+      "product_image": "https://cdn.awin.com/images/phone-budget-4g.jpg",
+      "deeplink": "https://www.awin1.com/cread.php?awinaffid=123456&awinmid=55667&p=https://amazon.com.br/smartphone-budget-4g",
+      "merchant": {
+        "merchant_id": 55667,
+        "merchant_name": "Amazon Brasil",
+        "logo": "https://cdn.awin.com/merchants/amazon.png",
+        "default_cpc": "5.50"
+      },
+      "commission_group": "Electronics"
+    },
+    {
+      "product_name": "Smartphone Ultra Gaming 512GB",
+      "product_price": 2499.00,
+      "product_id": "awin-11223344",
+      "product_image": "https://cdn.awin.com/images/phone-gaming.jpg",
+      "deeplink": "https://www.awin1.com/cread.php?awinaffid=123456&awinmid=11223&p=https://razer.com/smartphone-gaming",
+      "merchant": {
+        "merchant_id": 11223,
+        "merchant_name": "Razer Gaming",
+        "logo": "https://cdn.awin.com/merchants/razer.png",
+        "default_cpc": "25.00"
+      },
+      "commission_group": "Electronics"
+    },
+    {
+      "product_name": "Smartphone Budget 4G 128GB",
+      "product_price": 699.00,
+      "product_id": "awin-44556677",
+      "product_image": "https://cdn.awin.com/images/phone-budget-4g.jpg",
+      "deeplink": "https://www.awin1.com/cread.php?awinaffid=123456&awinmid=44556&p=https://bestbuy.com.br/smartphone-budget-4g",
+      "merchant": {
+        "merchant_id": 44556,
+        "merchant_name": "Best Buy Brasil",
+        "logo": "https://cdn.awin.com/merchants/bestbuy.png",
+        "default_cpc": "6.75"
+      },
+      "commission_group": "Electronics"
+    }
+  ],
+  "total": 5,
+  "status": "success"
+}

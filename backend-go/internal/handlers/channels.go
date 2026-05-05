@@ -114,15 +114,16 @@ func (h *ChannelsHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 type channelRequest struct {
-	Name            string  `json:"name"`
-	Description     string  `json:"description"`
-	Slug            *string `json:"slug"`
-	MessageTemplate *string `json:"message_template"`
-	SendStartHour   int     `json:"send_start_hour"`
-	SendEndHour     int     `json:"send_end_hour"`
-	DigestMode      bool    `json:"digest_mode"`
-	DigestMaxItems  int     `json:"digest_max_items"`
-	Active          bool    `json:"active"`
+	Name            string           `json:"name"             validate:"required"`
+	Description     string           `json:"description"`
+	Slug            *string          `json:"slug"`
+	MessageTemplate *string          `json:"message_template"`
+	SendStartHour   int              `json:"send_start_hour"`
+	SendEndHour     int              `json:"send_end_hour"`
+	DigestMode      bool             `json:"digest_mode"`
+	DigestMaxItems  int              `json:"digest_max_items"`
+	Active          bool             `json:"active"`
+	Audience        *models.Audience `json:"audience"`
 }
 
 func (req channelRequest) toModel() models.Channel {
@@ -141,6 +142,9 @@ func (req channelRequest) toModel() models.Channel {
 	if req.MessageTemplate != nil {
 		c.MessageTemplate = models.NullString{NullString: sql.NullString{String: *req.MessageTemplate, Valid: true}}
 	}
+	if req.Audience != nil {
+		c.Audience = *req.Audience
+	}
 	if c.SendStartHour == 0 && c.SendEndHour == 0 {
 		c.SendStartHour = 8
 		c.SendEndHour = 22
@@ -151,14 +155,23 @@ func (req channelRequest) toModel() models.Channel {
 	return c
 }
 
+// Create cria um novo canal de notificação.
+//
+//	@Summary      Criar canal
+//	@Description  Cria um canal de notificação (WhatsApp/Telegram) com regras de alerta.
+//	@Tags         channels
+//	@Accept       json
+//	@Produce      json
+//	@Param        body  body      channelRequest  true  "Dados do canal"
+//	@Success      201   {object}  models.Channel
+//	@Failure      400   {object}  object{error=string}
+//	@Failure      500   {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels [post]
 func (h *ChannelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req channelRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body")
-		return
-	}
-	if req.Name == "" {
-		writeErr(w, http.StatusBadRequest, "name is required")
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
 		return
 	}
 	c := req.toModel()
@@ -228,6 +241,26 @@ func (h *ChannelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["message_template"].(string); ok {
 		current.MessageTemplate = models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
+	}
+	if v, ok := patch["audience"]; ok {
+		// Re-marshal the audience sub-object from the raw patch
+		b, _ := json.Marshal(v)
+		var aud models.Audience
+		if err := json.Unmarshal(b, &aud); err == nil {
+			current.Audience = aud
+		}
+	}
+	if v, ok := patch["member_count"].(float64); ok {
+		current.MemberCount = int64(v)
+	}
+	if v, ok := patch["ctr_30d"].(float64); ok {
+		current.CTR30d = v
+	}
+	if v, ok := patch["cvr_30d"].(float64); ok {
+		current.CVR30d = v
+	}
+	if v, ok := patch["revenue_30d"].(float64); ok {
+		current.Revenue30d = v
 	}
 
 	if err := h.store.UpdateChannel(current); err != nil {
@@ -342,7 +375,7 @@ func (h *ChannelsHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 }
 
 type ruleRequest struct {
-	MatchType     string   `json:"match_type"`
+	MatchType     string   `json:"match_type"     validate:"required"`
 	MatchValue    *string  `json:"match_value"`
 	MaxPrice      *float64 `json:"max_price"`
 	NotifyNew     bool     `json:"notify_new"`
@@ -359,8 +392,8 @@ func (h *ChannelsHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req ruleRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body")
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
 		return
 	}
 	rule := models.ChannelRule{
@@ -390,6 +423,35 @@ func (h *ChannelsHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rule)
 }
 
+// ListRules retorna todas as regras de um canal.
+//
+//	@Summary      Listar regras do canal
+//	@Description  Retorna todas as regras (ChannelRule) do canal especificado.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id   path      int  true  "Channel ID"
+//	@Success      200  {array}   models.ChannelRule
+//	@Failure      400  {object}  object{error=string}
+//	@Failure      500  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/rules [get]
+func (h *ChannelsHandler) ListRules(w http.ResponseWriter, r *http.Request) {
+	channelID, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	rules, err := h.store.ListChannelRules(channelID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rules == nil {
+		rules = []models.ChannelRule{}
+	}
+	writeJSON(w, http.StatusOK, rules)
+}
+
 func (h *ChannelsHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	ruleID, ok := pathInt(r, "rule_id")
 	if !ok {
@@ -401,6 +463,68 @@ func (h *ChannelsHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetAudience retorna o perfil de audiência de um canal.
+//
+//	@Summary      Perfil de audiência
+//	@Description  Retorna o perfil de audiência (audience JSONB) de um canal.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id   path      int  true  "Channel ID"
+//	@Success      200  {object}  models.Audience
+//	@Failure      404  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/audience [get]
+func (h *ChannelsHandler) GetAudience(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.store.GetChannel(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "canal nao encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, c.Audience)
+}
+
+// GetMetrics retorna métricas de desempenho de um canal nos últimos 30 dias.
+//
+//	@Summary      Métricas do canal
+//	@Description  Retorna CTR, CVR, receita e contagem de membros do canal.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id      path      int     true   "Channel ID"
+//	@Param        period  query     string  false  "Período (ex: 30d)"
+//	@Success      200     {object}  object{ctr=number,cvr=number,revenue=number,member_count=integer}
+//	@Failure      404     {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/metrics [get]
+func (h *ChannelsHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.store.GetChannel(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "canal nao encontrado")
+		return
+	}
+	metrics := struct {
+		CTR     float64 `json:"ctr"`
+		CVR     float64 `json:"cvr"`
+		Revenue float64 `json:"revenue"`
+		Members int64   `json:"member_count"`
+	}{
+		CTR:     c.CTR30d,
+		CVR:     c.CVR30d,
+		Revenue: c.Revenue30d,
+		Members: c.MemberCount,
+	}
+	writeJSON(w, http.StatusOK, metrics)
 }
 
 // SendDigest envia o digest consolidado do canal manualmente.
@@ -457,7 +581,7 @@ func (h *ChannelsHandler) SendDigest(w http.ResponseWriter, r *http.Request) {
 		}
 		// Usa short link se configurado, senão affiliate direto
 		shortID := h.store.GetShortIDByURL(rawURL)
-		finalURL := buildProductURL(rawURL, source, shortID, publicURL, appCfg)
+		finalURL := buildProductURL(rawURL, source, shortID, publicURL, appCfg, h.store)
 		sb.WriteString(fmt.Sprintf("%d. *%s*\n💰 R$ %.2f\n🔗 %s\n\n", i+1, p.CanonicalName, price, finalURL))
 	}
 	msg := sb.String()
@@ -526,7 +650,7 @@ func (h *ChannelsHandler) SendProduct(w http.ResponseWriter, r *http.Request) {
 		publicURL = "https://beta.autibequi.com"
 	}
 	shortID := h.store.GetShortIDByURL(rawURL)
-	finalURL := buildProductURL(rawURL, source, shortID, publicURL, cfg)
+	finalURL := buildProductURL(rawURL, source, shortID, publicURL, cfg, h.store)
 	msg := strings.NewReplacer(
 		"{title}", p.CanonicalName,
 		"{price:.2f}", fmt.Sprintf("%.2f", price),
@@ -559,30 +683,36 @@ func (h *ChannelsHandler) SendProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildProductURL retorna URL com short link ou affiliate direto.
-func buildProductURL(rawURL, source, shortID, publicBaseURL string, cfg models.AppConfig) string {
+func buildProductURL(rawURL, source, shortID, publicBaseURL string, cfg models.AppConfig, st store.Store) string {
 	if cfg.UseShortLinks && shortID != "" && publicBaseURL != "" {
 		return publicBaseURL + "/v/" + shortID
 	}
-	return applyAffiliateURL(rawURL, source, cfg)
+	return applyAffiliateURL(rawURL, source, st)
 }
 
 // applyAffiliateURL adiciona parâmetros de afiliado na URL baseado no source.
-func applyAffiliateURL(rawURL, source string, cfg models.AppConfig) string {
+func applyAffiliateURL(rawURL, source string, st store.Store) string {
+	if st == nil {
+		return rawURL
+	}
+
 	switch source {
 	case "amazon":
-		if cfg.AmzTrackingID.Valid && cfg.AmzTrackingID.String != "" {
+		aff, found, _ := st.GetAffiliateBySource("amz")
+		if found && aff.TrackingID != "" {
 			if strings.Contains(rawURL, "?") {
-				return rawURL + "&tag=" + cfg.AmzTrackingID.String
+				return rawURL + "&tag=" + aff.TrackingID
 			}
-			return rawURL + "?tag=" + cfg.AmzTrackingID.String
+			return rawURL + "?tag=" + aff.TrackingID
 		}
 	case "mercadolivre":
-		if cfg.MLAffiliateToolID.Valid && cfg.MLAffiliateToolID.String != "" {
+		aff, found, _ := st.GetAffiliateBySource("ml")
+		if found && aff.TrackingID != "" {
 			sep := "?"
 			if strings.Contains(rawURL, "?") {
 				sep = "&"
 			}
-			return rawURL + sep + "matt_tool=" + cfg.MLAffiliateToolID.String + "&matt_source=affiliate"
+			return rawURL + sep + "matt_tool=" + aff.TrackingID + "&matt_source=affiliate"
 		}
 	}
 	return rawURL
@@ -620,4 +750,22 @@ func (h *ChannelsHandler) resolveAdapter(target models.ChannelTarget, cfg models
 		return a
 	}
 	return nil
+}
+
+// GetHistory retorna os disparos recentes do canal (via grupos associados).
+func (h *ChannelsHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	entries, err := h.store.ListChannelDispatchHistory(id, 50)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar histórico")
+		return
+	}
+	if entries == nil {
+		entries = []models.ChannelHistoryEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
 }

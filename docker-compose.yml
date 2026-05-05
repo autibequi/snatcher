@@ -1,21 +1,21 @@
 services:
   evolution:
     image: evoapicloud/evolution-api:v2.3.1
-    container_name: promo-snatcher-evolution
+    container_name: snatcher-evolution
     ports:
       - "127.0.0.1:3200:8080"
     environment:
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
-      - SERVER_URL=http://promo-snatcher-evolution:8080
+      - SERVER_URL=http://snatcher-evolution:8080
       - SERVER_PORT=8080
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://evolution:${EVOLUTION_DB_PASS:-evolution}@promo-snatcher-evo-postgres:5432/evolution?schema=evolution_api
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${EVOLUTION_DB_PASS:-evolution}@snatcher-evo-postgres:5432/evolution?schema=evolution_api
       - DATABASE_SAVE_DATA_INSTANCE=true
       - DATABASE_SAVE_DATA_NEW_MESSAGE=false
       - DATABASE_SAVE_DATA_CONTACTS=false
       - DATABASE_SAVE_DATA_CHATS=false
       - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://promo-snatcher-evo-redis:6379/0
+      - CACHE_REDIS_URI=redis://snatcher-evo-redis:6379/0
       - CACHE_REDIS_PREFIX_KEY=evo
       - DEL_INSTANCE=false
       - QRCODE_LIMIT=30
@@ -42,7 +42,7 @@ services:
 
   evo-postgres:
     image: postgres:15-alpine
-    container_name: promo-snatcher-evo-postgres
+    container_name: snatcher-evo-postgres
     # Tuning para baixo consumo de RAM no Pi
     command: >
       postgres
@@ -66,7 +66,7 @@ services:
 
   evo-redis:
     image: redis:7-alpine
-    container_name: promo-snatcher-evo-redis
+    container_name: snatcher-evo-redis
     command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
     volumes:
       - evo_redis_data:/data
@@ -77,8 +77,8 @@ services:
           memory: 96m
 
   backend:
-    image: ghcr.io/autibequi/promosnatcher-backend:latest
-    container_name: promo-snatcher-backend
+    image: ghcr.io/autibequi/snatcher-backend:latest
+    container_name: snatcher-backend
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     # shm_size necessário para o Chromium (Amazon scraping) não crashar no Pi
@@ -90,7 +90,7 @@ services:
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
       - TZ_NAME=${TZ_NAME:-America/Sao_Paulo}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-      - EVOLUTION_URL=http://promo-snatcher-evolution:8080
+      - EVOLUTION_URL=http://snatcher-evolution:8080
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - AUTH_USERNAME=${AUTH_USERNAME:-admin}
@@ -116,8 +116,8 @@ services:
       start_period: 60s   # Chromium ARM demora mais pra inicializar (Python); Go ignora esse delay
 
   redirect:
-    image: ghcr.io/autibequi/promosnatcher-redirect:latest
-    container_name: promo-snatcher-redirect
+    image: ghcr.io/autibequi/snatcher-redirect:latest
+    container_name: snatcher-redirect
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
@@ -141,8 +141,8 @@ services:
       start_period: 5s
 
   frontend:
-    image: ghcr.io/autibequi/promosnatcher-frontend:latest
-    container_name: promo-snatcher-frontend
+    image: ghcr.io/autibequi/snatcher-frontend:latest
+    container_name: snatcher-frontend
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     ports:
@@ -160,7 +160,7 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: promo-snatcher-cloudflared
+    container_name: snatcher-cloudflared
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
     restart: unless-stopped
     profiles: [tunnel]
@@ -173,7 +173,7 @@ services:
 
   watchtower:
     image: containrrr/watchtower
-    container_name: promo-snatcher-watchtower
+    container_name: snatcher-watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
@@ -187,7 +187,28 @@ services:
         limits:
           memory: 32m
 
+  app-postgres:
+    image: postgres:16-alpine
+    container_name: snatcher-app-postgres
+    environment:
+      - POSTGRES_DB=snatcher
+      - POSTGRES_USER=snatcher
+      - POSTGRES_PASSWORD=${SNATCHER_DB_PASS:-devpass}
+    volumes:
+      - app_pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatcher -d snatcher"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
 volumes:
   evo_instances:
   evo_pg_data:
   evo_redis_data:
+  app_pg_data:
