@@ -106,8 +106,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..
+      dockerfile: coolify/Dockerfile.frontend
     environment:
       - GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}
     depends_on:
