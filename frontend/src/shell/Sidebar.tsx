@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '../lib/apiClient'
 
 interface SidebarProps {
   onClose?: () => void
@@ -66,13 +68,22 @@ const navGroups: NavGroup[] = [
 export function Sidebar({ onClose }: SidebarProps) {
   const { user } = useAuth()
 
-  const displayName = user?.name ?? 'Rafael C.'
-  const displayEmail = user?.email ?? 'operador · estrategia.com'
+  const { data: brand } = useQuery({
+    queryKey: ['brand'],
+    queryFn: () => apiClient.get('/api/brand').then(r => r.data).catch(() => ({})),
+    staleTime: 60_000,
+  })
+
+  const appName = brand?.app_name || 'Snatcher'
+  const appLetter = appName[0]?.toUpperCase() ?? 'S'
+
+  const displayName = user?.name ?? ''
+  const displayEmail = user?.email ?? ''
   const roleLabel = user?.role === 'admin' ? 'Admin' : 'Operador'
   const initials = displayName
     .split(' ')
     .slice(0, 2)
-    .map(w => w[0]?.toUpperCase() ?? '')
+    .map((w: string) => w[0]?.toUpperCase() ?? '')
     .join('')
 
   return (
@@ -80,14 +91,14 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* Logo / Header */}
       <div className="flex items-center justify-between h-14 px-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* Avatar quadrado "S" */}
+          {/* Avatar com inicial do app */}
           <div className="flex-shrink-0 w-8 h-8 rounded-md bg-accent flex items-center justify-center">
-            <span className="text-sm font-bold text-white leading-none">S</span>
+            <span className="text-sm font-bold text-white leading-none">{appLetter}</span>
           </div>
-          {/* Título + workspace */}
+          {/* Nome do app */}
           <div className="min-w-0">
-            <p className="text-sm font-bold text-fg leading-tight">Snatcher</p>
-            <p className="text-xs text-fg-3 leading-tight">v3 · workspace</p>
+            <p className="text-sm font-bold text-fg leading-tight truncate">{appName}</p>
+            <p className="text-xs text-fg-3 leading-tight">{brand?.app_domain ?? 'workspace'}</p>
           </div>
         </div>
         <button
