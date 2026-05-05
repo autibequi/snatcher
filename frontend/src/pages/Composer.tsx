@@ -171,7 +171,7 @@ export default function Composer() {
       if (link && !finalText.includes(link)) finalText = finalText + '\n\n' + link
       return apiClient
         .post<DispatchResponse>('/api/dispatches', {
-          product_id: productId ? Number(productId) : undefined,
+          product_id: productIds[0] ?? undefined,
           message: { text: finalText, media_url: productImage || undefined },
           affiliate_link: affiliateLink,
           scheduled_for: scheduledFor || undefined,
@@ -186,7 +186,7 @@ export default function Composer() {
     mutationFn: () =>
       apiClient
         .post('/api/dispatches', {
-          product_id: productId ? Number(productId) : undefined,
+          product_id: productIds[0] ?? undefined,
           message: { text },
           targets: [],
         })
@@ -196,7 +196,7 @@ export default function Composer() {
 
   // Gerar short link rastreável com domínio próprio e tag de afiliado no redirect
   const { data: affiliateUrl = '' } = useQuery<string>({
-    queryKey: ['short-link', productId, realUrl, realSource],
+    queryKey: ['short-link', productIds[0], realUrl, realSource],
     queryFn: () =>
       apiClient.post('/api/links/shorten', {
         url: realUrl,
@@ -210,7 +210,7 @@ export default function Composer() {
     mutationFn: () =>
       apiClient
         .post('/api/compose/preview', {
-          product_id: productId ? Number(productId) : undefined,
+          product_id: productIds[0] ?? undefined,
         })
         .then((r) => r.data),
     onSuccess: (data: { text?: string }) => {
@@ -409,8 +409,8 @@ export default function Composer() {
                 <button
                   type="button"
                   className="text-xs border border-border rounded px-2 py-1 text-accent hover:bg-accent/5 disabled:opacity-50"
-                  disabled={rewriteMut.isPending || !productId}
-                  title={!productId ? 'Selecione um produto primeiro' : undefined}
+                  disabled={rewriteMut.isPending || productIds.length === 0}
+                  title={productIds.length === 0 ? 'Selecione um produto primeiro' : undefined}
                   onClick={() => rewriteMut.mutate()}
                 >
                   {rewriteMut.isPending ? '⏳ Reescrevendo...' : '✨ IA Reescrever para audiência'}
