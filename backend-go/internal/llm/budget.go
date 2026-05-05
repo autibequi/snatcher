@@ -111,7 +111,7 @@ func (g *BudgetGuard) Charge(ctx context.Context, op string, costUSD float64) er
 	_, err := g.db.ExecContext(ctx,
 		`UPDATE llm_op_budgets SET daily_spent_usd = daily_spent_usd + $1 WHERE operation = $2`,
 		costUSD, op)
-	// TODO: emit metric llm_op_cost_usd{op=<op>} += costUSD
+	// Metric llm_op_cost_usd already emitted by recordUsage() in openrouter.go
 	return err
 }
 

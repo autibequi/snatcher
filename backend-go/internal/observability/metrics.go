@@ -82,13 +82,13 @@ var (
 	)
 )
 
-// LLM metrics (placeholder — populated in Fase 1)
+// LLM metrics (populated via internal/llm/telemetry.go recordUsage)
 var (
 	// LLMRequests counts LLM API call attempts.
 	LLMRequests = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "snatcher_llm_requests_total",
-			Help: "Total number of LLM API requests (placeholder, populated in Fase 1).",
+			Help: "Total number of LLM API requests.",
 		},
 		[]string{"model", "task", "outcome"},
 	)
@@ -97,7 +97,7 @@ var (
 	LLMTokensUsed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "snatcher_llm_tokens_used_total",
-			Help: "Total number of LLM tokens used (placeholder, populated in Fase 1).",
+			Help: "Total number of LLM tokens used.",
 		},
 		[]string{"model", "direction"},
 	)
@@ -106,7 +106,7 @@ var (
 	LLMCostUSD = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "snatcher_llm_cost_usd_total",
-			Help: "Estimated total cost in USD of LLM API calls (placeholder, populated in Fase 1).",
+			Help: "Estimated total cost in USD of LLM API calls.",
 		},
 		[]string{"model", "task"},
 	)

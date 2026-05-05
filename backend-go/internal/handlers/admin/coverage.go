@@ -146,11 +146,13 @@ type CoverageSyncRequest struct {
 
 // CoverageSyncResponse é a resposta para POST /api/coverage/sync
 type CoverageSyncResponse struct {
-	Preview        string `json:"preview,omitempty"`
-	EstimatedJobs  int    `json:"estimated_jobs,omitempty"`
-	JobsEnqueued   int    `json:"jobs_enqueued,omitempty"`
-	SkippedTargets []int64 `json:"skipped_targets,omitempty"` // targets where account is already present/fallback
-	Message        string `json:"message,omitempty"`
+	Preview              string  `json:"preview,omitempty"`
+	EstimatedJobs        int     `json:"estimated_jobs,omitempty"`
+	JobsEnqueued         int     `json:"jobs_enqueued,omitempty"`
+	SkippedTargets       []int64 `json:"skipped_targets,omitempty"` // targets where account is already present/fallback
+	Message              string  `json:"message,omitempty"`
+	ManualActionRequired bool    `json:"manual_action_required,omitempty"`
+	PendingTargets       []int64 `json:"pending_targets,omitempty"` // targets requiring manual join
 }
 
 // PostCoverageSync handles manual sync requests: preview or execute joining groups
@@ -222,8 +224,25 @@ func (h *CoverageHandler) PostCoverageSync(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Confirmed: return 501 Not Implemented (Evolution doesn't support join group API yet)
-	writeJSON(w, http.StatusNotImplemented, CoverageSyncResponse{
-		Message: "Evolution API does not yet support automatic group joining. Please join groups manually via WhatsApp and then re-check the coverage matrix.",
+	// Confirmed: Evolution API doesn't support automatic group join yet.
+	// Return 200 with manual_action_required so the frontend can render step-by-step instructions.
+	pendingTargets := make([]int64, 0)
+	for _, targetID := range req.TargetIDs {
+		found := false
+		for _, skipped := range skippedTargets {
+			if skipped == targetID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			pendingTargets = append(pendingTargets, targetID)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, CoverageSyncResponse{
+		Message:              "Manual action required: Evolution API does not support automatic group joining. Open the WhatsApp app on the connected account and accept the invites listed below. After joining, re-check the coverage matrix.",
+		ManualActionRequired: true,
+		PendingTargets:       pendingTargets,
 	})
 }

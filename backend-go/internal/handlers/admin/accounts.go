@@ -253,6 +253,7 @@ type groupView struct {
 }
 
 // WAGroups lista os grupos WA via Evolution API com cache em memória.
+// @Param   fresh  query  bool  false  "If true, blocks until Evolution returns groups (default: cached + async)"
 func (h *AccountsHandler) WAGroups(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
@@ -282,6 +283,19 @@ func (h *AccountsHandler) WAGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evo := newEvolutionClient(baseURL, apiKey, instance)
+
+	// Fresh mode: block until Evolution returns groups
+	if r.URL.Query().Get("fresh") == "true" {
+		groups, err := evo.getGroups(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "evolution unavailable"})
+			return
+		}
+		out := mapGroups(groups)
+		waGroupsCache.Store(id, out)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 
 	// Retorna cache imediatamente (evita timeout do Cloudflare)
 	if cached, ok := waGroupsCache.Load(id); ok {
