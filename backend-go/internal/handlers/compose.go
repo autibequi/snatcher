@@ -126,8 +126,11 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 
 	switch strings.ToLower(provider) {
 	case "ollama":
-		if baseURL == "" { baseURL = "http://ollama:11434/v1" }
-		// Ollama não precisa de API key
+		if baseURL == "" { return nil } // URL obrigatória para Ollama — configure em Configurações → LLM/IA
+		// Garantir sufixo /v1 para compatibilidade OpenAI
+		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
+			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
+		}
 		cli := llm.NewOpenAICompat(baseURL, "")
 		if model != "" {
 			return &modelOverrideClient{inner: cli, model: model}

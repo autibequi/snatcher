@@ -406,8 +406,36 @@ export default function Composer() {
                   placeholder={'🔥 OFERTA RELÂMPAGO\n\n*{produto}*\n\nDe ~{de}~ por *{por}*\n{desconto} OFF\n{link}'}
                 />
               )}
-              {/* Tom da mensagem */}
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border flex-wrap">
+              {/* Imagem do produto — em cima */}
+              <div className="mt-3 pt-3 border-t border-border">
+                <div className="flex items-center gap-2">
+                  <label className={`flex items-center gap-1.5 text-xs border rounded px-2 py-1.5 cursor-pointer hover:bg-surface-2 ${imageUrl ? 'border-success text-success' : 'border-border text-fg-2'}`}>
+                    <span>{imageUrl ? '🖼' : '📷'}</span>
+                    <span>{imageUrl ? 'Imagem carregada ✓ (trocar)' : 'Imagem do produto'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = () => { setImageUrl(reader.result as string); setShowImageInput(false) }
+                        reader.readAsDataURL(file)
+                      }}
+                    />
+                  </label>
+                  {imageUrl && (
+                    <>
+                      <img src={imageUrl} alt="" className="h-8 w-8 rounded object-cover border border-border" />
+                      <button type="button" onClick={() => setImageUrl('')} className="text-xs text-danger">remover</button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Tom + IA Reescrever — juntos embaixo */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <select
                   value={tone}
                   onChange={e => setTone(e.target.value)}
@@ -426,19 +454,10 @@ export default function Composer() {
                     type="text"
                     value={customContext}
                     onChange={e => setCustomContext(e.target.value)}
-                    placeholder="Descreva o tom desejado..."
-                    className="flex-1 text-xs border border-border rounded px-2 py-1 bg-surface text-fg focus:border-accent outline-none min-w-0"
+                    placeholder="Descreva o tom..."
+                    className="flex-1 text-xs border border-border rounded px-2 py-1 bg-surface text-fg focus:border-accent outline-none min-w-[120px]"
                   />
                 )}
-              </div>
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  type="button"
-                  className={`text-xs border rounded px-2 py-1 hover:bg-surface-2 ${imageUrl ? 'border-success text-success' : 'border-border text-fg-2'}`}
-                  onClick={() => setShowImageInput((prev) => !prev)}
-                >
-                  {imageUrl ? '🖼 Imagem carregada ✓' : '📷 Imagem do produto'}
-                </button>
                 <button
                   type="button"
                   className="text-xs border border-border rounded px-2 py-1 text-accent hover:bg-accent/5 disabled:opacity-50"
@@ -450,40 +469,6 @@ export default function Composer() {
                 </button>
                 <span className="ml-auto text-xs text-fg-3">{text.length} caracteres</span>
               </div>
-              {showImageInput && (
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <label className="flex-1 flex items-center gap-2 text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg cursor-pointer hover:border-accent">
-                      <span>📁</span>
-                      <span className="text-fg-3">{imageUrl ? 'Imagem selecionada — clique para trocar' : 'Selecionar imagem do computador...'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          const reader = new FileReader()
-                          reader.onload = () => setImageUrl(reader.result as string)
-                          reader.readAsDataURL(file)
-                        }}
-                      />
-                    </label>
-                    {imageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setImageUrl('')}
-                        className="text-xs text-danger hover:text-danger/80"
-                      >
-                        remover
-                      </button>
-                    )}
-                  </div>
-                  {imageUrl && (
-                    <img src={imageUrl} alt="Preview" className="h-20 rounded-md object-cover border border-border" />
-                  )}
-                </div>
-              )}
             </div>
           </div>
 
