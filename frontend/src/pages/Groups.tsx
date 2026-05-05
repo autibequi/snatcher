@@ -2,144 +2,129 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import React from 'react'
 
-interface WAAccount {
-  id: number
-  name: string
-  status: string
-  active: boolean
-}
+interface WAAccount { id: number; name: string; status: string; active: boolean }
+interface TGAccount { id: number; name: string; bot_username?: any; active: boolean; role: string }
+interface WAGroup { id: string; name: string; size: number }
+interface TGChat { chat_id: string; title: string; type: string; member_count?: number; is_admin?: boolean }
 
-interface WAGroup {
-  id: string
-  name: string
-  size: number
-}
-
-// ── Modal criar grupo ────────────────────────────────────────────────────────
-function CreateGroupModal({
-  accounts,
-  onClose,
-}: {
-  accounts: WAAccount[]
-  onClose: () => void
-}) {
+// ── Modal criar grupo WA ──────────────────────────────────────────────────────
+function CreateWAGroupModal({ accounts, onClose }: { accounts: WAAccount[]; onClose: () => void }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', accountId: accounts[0]?.id?.toString() ?? '' })
-  const [saving, setSaving] = useState(false)
-
   const createMut = useMutation({
-    mutationFn: () =>
-      apiClient.post(`/api/accounts/wa/${form.accountId}/groups`, { name: form.name }).then(r => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wa-groups'] })
-      onClose()
-    },
-    onError: (err: any) => {
-      alert(err?.response?.data?.error ?? 'Erro ao criar grupo')
-      setSaving(false)
-    },
+    mutationFn: () => apiClient.post(`/api/accounts/wa/${form.accountId}/groups`, { name: form.name }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['wa-groups'] }); onClose() },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar grupo'),
   })
-
-  const handleSubmit = (e: React.SyntheticEvent) => {
-    e.preventDefault()
-    if (!form.name.trim() || !form.accountId) return
-    setSaving(true)
-    createMut.mutate()
-  }
-
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold text-fg mb-4">Criar grupo WhatsApp</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome do grupo *</label>
-            <Input
-              required
-              placeholder="Ex: Promos Tech BR"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Conta WhatsApp *</label>
-            <select
-              required
-              value={form.accountId}
-              onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            >
-              {accounts.map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
+      <div className="bg-surface border border-border rounded-lg p-5 w-full max-w-sm shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-medium text-fg mb-4">Criar grupo WhatsApp</h3>
+        <div className="space-y-3">
+          <input autoFocus className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+            placeholder="Nome do grupo..." value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} />
+          {accounts.length > 1 && (
+            <select className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+              value={form.accountId} onChange={e => setForm(f => ({...f, accountId: e.target.value}))}>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" variant="primary" size="sm" loading={saving}>
-              Criar grupo
-            </Button>
-          </div>
-        </form>
+          )}
+        </div>
+        <div className="flex gap-2 justify-end mt-4">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" size="sm" loading={createMut.isPending} disabled={!form.name.trim()} onClick={() => createMut.mutate()}>Criar</Button>
+        </div>
       </div>
     </div>
   )
 }
 
-// ── Seção de grupos por conta ────────────────────────────────────────────────
-function AccountGroups({ account }: { account: WAAccount }) {
+// ── Seção WA por conta ─────────────────────────────────────────────────────────
+function WAAccountSection({ account, search }: { account: WAAccount; search: string }) {
   const { data: groups = [], isLoading } = useQuery<WAGroup[]>({
     queryKey: ['wa-groups', account.id],
-    queryFn: () =>
-      apiClient.get(`/api/accounts/wa/${account.id}/groups`).then(r =>
-        Array.isArray(r.data) ? r.data : []
-      ),
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/groups`).then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 30_000, staleTime: 20_000,
   })
+  const filtered = search ? groups.filter(g => g.name?.toLowerCase().includes(search.toLowerCase())) : groups
 
   return (
     <div className="mb-6">
-      <div className="flex items-center gap-3 mb-3">
-        <p className="text-sm font-semibold text-fg">{account.name}</p>
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <span className="text-xs font-bold text-fg-3 uppercase">WA</span>
+        <span className="text-sm font-medium text-fg">{account.name}</span>
         <Badge variant={account.status === 'connected' ? 'success' : 'default'} size="sm">
           {account.status === 'connected' ? '● conectada' : account.status}
         </Badge>
-        {!isLoading && (
-          <span className="text-xs text-fg-3">{groups.length} grupo{groups.length !== 1 ? 's' : ''}</span>
-        )}
+        {!isLoading && <span className="text-xs text-fg-3">{filtered.length} grupos</span>}
       </div>
-
       {isLoading ? (
-        <div className="space-y-1.5">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
-        </div>
-      ) : groups.length === 0 ? (
-        <div className="text-sm text-fg-3 bg-surface-2 rounded-md px-4 py-3">
-          {account.status === 'connected'
-            ? 'Aguardando sync de grupos... (pode levar alguns segundos)'
-            : 'Conta desconectada — conecte via QR para ver os grupos.'
-          }
-        </div>
+        <div className="space-y-1">{[1,2,3].map(i => <Skeleton key={i} className="h-9 w-full" />)}</div>
+      ) : filtered.length === 0 ? (
+        <p className="text-xs text-fg-3 px-1 py-2">
+          {account.status !== 'connected' ? 'Conta desconectada.' : groups.length === 0 ? 'Aguardando sync...' : 'Nenhum grupo encontrado.'}
+        </p>
       ) : (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="border border-border rounded-md overflow-hidden">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase tracking-wide">Grupo</th>
-                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase tracking-wide">Membros</th>
-              </tr>
-            </thead>
             <tbody>
-              {groups.map(g => (
-                <tr key={g.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                  <td className="px-4 py-2.5">
+              {filtered.map(g => (
+                <tr key={g.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-3 py-2">
                     <p className="font-medium text-fg">{g.name || '(sem nome)'}</p>
-                    <p className="text-xs text-fg-3 font-mono truncate max-w-xs">{g.id}</p>
+                    <p className="text-xs text-fg-3 font-mono">{g.id}</p>
                   </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className="text-fg font-medium">{g.size > 0 ? g.size.toLocaleString('pt-BR') : '—'}</span>
+                  <td className="px-3 py-2 text-right text-xs text-fg-2">{g.size > 0 ? `${g.size.toLocaleString('pt-BR')} membros` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Seção TG ───────────────────────────────────────────────────────────────────
+function TGSection({ accounts, search }: { accounts: TGAccount[]; search: string }) {
+  const { data: chats = [], isLoading } = useQuery<TGChat[]>({
+    queryKey: ['tg-chats'],
+    queryFn: () => apiClient.get('/api/telegram/chats').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 60_000, staleTime: 30_000,
+  })
+  const filtered = search ? chats.filter(c => c.title?.toLowerCase().includes(search.toLowerCase())) : chats
+
+  if (accounts.length === 0) return null
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <span className="text-xs font-bold text-fg-3 uppercase">TG</span>
+        <span className="text-sm font-medium text-fg">Telegram</span>
+        <Badge variant="default" size="sm">{accounts.length} conta{accounts.length!==1?'s':''}</Badge>
+        {!isLoading && <span className="text-xs text-fg-3">{filtered.length} chats</span>}
+      </div>
+      {isLoading ? (
+        <div className="space-y-1">{[1,2,3].map(i => <Skeleton key={i} className="h-9 w-full" />)}</div>
+      ) : filtered.length === 0 ? (
+        <p className="text-xs text-fg-3 px-1 py-2">
+          {chats.length === 0 ? 'Nenhum chat TG descoberto. Configure o bot token em Configurações.' : 'Nenhum chat encontrado.'}
+        </p>
+      ) : (
+        <div className="border border-border rounded-md overflow-hidden">
+          <table className="w-full text-sm">
+            <tbody>
+              {filtered.map(c => (
+                <tr key={c.chat_id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-3 py-2">
+                    <p className="font-medium text-fg">{c.title}</p>
+                    <p className="text-xs text-fg-3">{c.type} · {c.chat_id}</p>
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs text-fg-2">
+                    {c.member_count ? `${c.member_count} membros` : '—'}
+                    {c.is_admin && <span className="ml-1 text-accent">admin</span>}
                   </td>
                 </tr>
               ))}
@@ -151,83 +136,67 @@ function AccountGroups({ account }: { account: WAAccount }) {
   )
 }
 
-// ── Página principal ─────────────────────────────────────────────────────────
+// ── Página principal ──────────────────────────────────────────────────────────
 export default function Groups() {
-  const [showCreate, setShowCreate] = useState(false)
+  const [showCreateWA, setShowCreateWA] = useState(false)
   const [search, setSearch] = useState('')
 
-  const { data: accounts = [], isLoading } = useQuery<WAAccount[]>({
+  const { data: waAccounts = [], isLoading: waLoading } = useQuery<WAAccount[]>({
     queryKey: ['accounts', 'wa'],
     queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   })
 
-  const activeAccounts = accounts.filter(a => a.active)
-  const filtered = search
-    ? activeAccounts.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
-    : activeAccounts
+  const { data: tgAccounts = [], isLoading: tgLoading } = useQuery<TGAccount[]>({
+    queryKey: ['accounts', 'tg'],
+    queryFn: () => apiClient.get('/api/accounts/tg').then(r => Array.isArray(r.data) ? r.data : []),
+  })
 
-  const connectedCount = accounts.filter(a => a.status === 'connected').length
+  const activeWA = waAccounts.filter(a => a.active)
+  const activeTG = tgAccounts.filter(a => a.active)
+  const connectedWA = waAccounts.filter(a => a.status === 'connected').length
+  const isLoading = waLoading || tgLoading
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Grupos WhatsApp</h1>
+          <h1 className="text-lg font-semibold text-fg">Grupos</h1>
           <p className="text-sm text-fg-3 mt-0.5">
-            {connectedCount} conta{connectedCount !== 1 ? 's' : ''} conectada{connectedCount !== 1 ? 's' : ''} ·
-            grupos carregados da Evolution em tempo real
+            {connectedWA} WA conectada{connectedWA!==1?'s':''} · {activeTG.length} TG configurada{activeTG.length!==1?'s':''}
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={activeAccounts.length === 0}
-          onClick={() => setShowCreate(true)}
-        >
-          + Criar grupo
+        <Button variant="primary" size="sm" disabled={activeWA.length===0} onClick={() => setShowCreateWA(true)}>
+          + Criar grupo WA
         </Button>
       </div>
 
-      {/* Filtro de conta (só se tiver mais de 1) */}
-      {activeAccounts.length > 1 && (
-        <div className="mb-6 w-72">
-          <Input
-            placeholder="Filtrar por conta..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+      {(activeWA.length > 1 || activeTG.length > 0) && (
+        <div className="mb-4 w-64">
+          <Input placeholder="Buscar grupo/chat..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       )}
 
-      {/* Conteúdo */}
       {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2].map(i => <Skeleton key={i} className="h-40 w-full" />)}
-        </div>
-      ) : activeAccounts.length === 0 ? (
+        <div className="space-y-4">{[1,2].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>
+      ) : activeWA.length === 0 && activeTG.length === 0 ? (
         <EmptyState
-          title="Nenhuma conta WhatsApp configurada"
-          description="Conecte uma conta WhatsApp em Contas conectadas para ver e gerenciar grupos."
-          cta={{ label: 'Ir para Contas conectadas', onClick: () => window.location.href = '/accounts' }}
+          title="Nenhuma conta configurada"
+          description="Conecte uma conta WhatsApp ou Telegram em Contas conectadas."
+          cta={{ label: 'Ir para Contas', onClick: () => window.location.href = '/accounts' }}
         />
       ) : (
-        filtered.map(account => (
-          <AccountGroups key={account.id} account={account} />
-        ))
+        <>
+          {activeWA.map(account => (
+            <WAAccountSection key={account.id} account={account} search={search} />
+          ))}
+          <TGSection accounts={activeTG} search={search} />
+        </>
       )}
 
-      {/* Modal criar grupo */}
-      {showCreate && activeAccounts.length > 0 && (
-        <CreateGroupModal
-          accounts={activeAccounts}
-          onClose={() => setShowCreate(false)}
-        />
+      {showCreateWA && activeWA.length > 0 && (
+        <CreateWAGroupModal accounts={activeWA} onClose={() => setShowCreateWA(false)} />
       )}
     </div>
   )
 }
-
-// Necessário para React.SyntheticEvent no form
-import React from 'react'

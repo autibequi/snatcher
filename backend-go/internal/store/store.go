@@ -161,7 +161,9 @@ type Store interface {
 	GetDispatch(id int64) (models.Dispatch, error)
 	ListDispatches(status string, limit, offset int) ([]models.Dispatch, error)
 	ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error)
+	ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error)
 	UpdateDispatchTargetStatus(id int64, status, errorReason string) error
 	UpdateDispatchStatus(id int64, status string) error
 	CancelDispatch(id int64) error
+	AllDispatchTargetsFinished(dispatchID int64) (bool, error)
 }

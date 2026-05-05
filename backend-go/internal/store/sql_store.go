@@ -1326,6 +1326,26 @@ func (s *SQLStore) CancelDispatch(id int64) error {
 	return err
 }
 
+func (s *SQLStore) ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error) {
+	if limit <= 0 { limit = 20 }
+	var out []models.DispatchTarget
+	err := s.db.Select(&out, `
+		SELECT dt.* FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		WHERE dt.status = 'pending' AND d.status IN ('queued', 'sending')
+		  AND (d.scheduled_for IS NULL OR d.scheduled_for <= now())
+		ORDER BY dt.id ASC
+		LIMIT $1`, limit)
+	return out, err
+}
+
+func (s *SQLStore) AllDispatchTargetsFinished(dispatchID int64) (bool, error) {
+	var count int
+	err := s.db.Get(&count,
+		`SELECT COUNT(*) FROM dispatch_targets WHERE dispatch_id = $1 AND status IN ('pending','sending')`, dispatchID)
+	return count == 0, err
+}
+
 // ---------------------------------------------------------------------------
 // Clusters
 // ---------------------------------------------------------------------------

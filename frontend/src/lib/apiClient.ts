@@ -41,6 +41,8 @@ function emitApiError(error: AxiosError) {
   if (status === 401) return
   // Não emitir toasts para endpoints de background
   if (url.includes('/session/start') || url.includes('/session/logout')) return
+  // Suprimir 400 de compose/preview (erro de validação de parâmetros, não bug)
+  if (url.includes('/compose/preview') && status === 400) return
   // GETs com 502/503: suprimir durante backend restart (dedup por URL)
   const dedupKey = `${status}:${method}:${url.split('?')[0]}`
   const lastSeen = recentErrors.get(dedupKey) ?? 0

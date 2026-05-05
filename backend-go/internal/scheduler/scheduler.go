@@ -61,6 +61,18 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Job de dispatch worker — processa targets pendentes a cada 15s
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(15*time.Second),
+			gocron.NewTask(func() { RunDispatchWorker(ctx, sc.storeRef) }),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Job semanal de clusters (segunda-feira 03:00 UTC)
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(

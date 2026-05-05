@@ -79,6 +79,8 @@ export default function ChannelDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [tab, setTab] = React.useState('overview')
+  const [showEdit, setShowEdit] = React.useState(false)
+  const [editForm, setEditForm] = React.useState({ name: '', description: '', active: true })
 
   const { data: channel, isLoading } = useQuery({
     queryKey: ['channels', id],
@@ -99,6 +101,28 @@ export default function ChannelDetail() {
   })
 
   const qc = useQueryClient()
+
+  // Pré-popular form de edição quando canal carrega
+  React.useEffect(() => {
+    if (channel) setEditForm({ name: channel.name ?? '', description: channel.description ?? '', active: channel.active ?? true })
+  }, [channel])
+
+  const updateMut = useMutation({
+    mutationFn: () => apiClient.put(`/api/channels/${id}`, {
+      ...channel,
+      name: editForm.name,
+      description: editForm.description,
+      active: editForm.active,
+    }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['channels', id] }); qc.invalidateQueries({ queryKey: ['channels'] }); setShowEdit(false) },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => apiClient.delete(`/api/channels/${id}`),
+    onSuccess: () => navigate('/channels'),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao excluir'),
+  })
   const [showAddGroup, setShowAddGroup] = React.useState(false)
   const [search, setSearch] = React.useState('')
 
@@ -156,9 +180,45 @@ export default function ChannelDetail() {
             <h1 className="text-lg font-semibold text-fg">{channel.name}</h1>
             {channel.description && <p className="text-sm text-fg-2">{channel.description}</p>}
           </div>
-          <Badge variant={channel.active ? 'success' : 'default'}>{channel.active ? 'ativo' : 'inativo'}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={channel.active ? 'success' : 'default'}>{channel.active ? 'ativo' : 'inativo'}</Badge>
+            <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>Editar</Button>
+            <Button variant="danger" size="sm" loading={deleteMut.isPending}
+              onClick={() => { if (confirm(`Excluir canal "${channel.name}"? Esta ação é irreversível.`)) deleteMut.mutate() }}>
+              Excluir
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Modal de edição */}
+      {showEdit && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowEdit(false)}>
+          <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-fg mb-4">Editar canal</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Nome *</label>
+                <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                  value={editForm.name} onChange={e => setEditForm(f => ({...f, name: e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Descrição</label>
+                <textarea rows={3} className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
+                  value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({...f, active: e.target.checked}))} className="accent-accent" />
+                <span className="text-sm text-fg">Canal ativo</span>
+              </label>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <Button variant="secondary" size="sm" onClick={() => setShowEdit(false)}>Cancelar</Button>
+              <Button variant="primary" size="sm" loading={updateMut.isPending} disabled={!editForm.name.trim()} onClick={() => updateMut.mutate()}>Salvar</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs tabs={TABS} active={tab} onChange={setTab} className="px-6" />

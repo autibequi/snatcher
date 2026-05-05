@@ -248,11 +248,14 @@ export default function Logs() {
                   className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
                   onClick={() => setSelected(d)}
                 >
-                  <td className="p-3 text-fg font-mono text-xs">
-                    {d.short_id ?? d.id}
-                  </td>
-                  <td className="p-3 text-fg-2 text-xs truncate max-w-[160px]">
-                    {d.composed_by ?? '—'}
+                  <td className="p-3">
+                    <div>
+                      {/* Preview da mensagem */}
+                      <p className="text-xs text-fg line-clamp-1">
+                        {d.message?.text?.slice(0, 80) ?? `#${d.short_id ?? d.id}`}
+                      </p>
+                      <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
+                    </div>
                   </td>
                   <td className="p-3">
                     <Badge variant={statusVariant[d.status] ?? 'default'}>
@@ -261,7 +264,7 @@ export default function Logs() {
                   </td>
                   <td className="p-3 text-fg-3 text-xs hidden sm:table-cell">
                     {d.target_count != null
-                      ? `${d.delivered_count ?? 0}/${d.target_count}`
+                      ? `${d.delivered_count ?? 0}/${d.target_count} entregues`
                       : '—'}
                   </td>
                   <td className="p-3 text-fg-3 text-xs whitespace-nowrap">

@@ -1,9 +1,55 @@
 import React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { LineChart, Line, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Badge, Button, Skeleton, EmptyState, Input, Tabs } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+
+// ── Gráfico de histórico de preços (expandido ao clicar na linha) ─────────────
+function PriceHistoryChart({ productId }: { productId: number }) {
+  const { data: history = [], isLoading } = useQuery({
+    queryKey: ['catalog', 'history', productId],
+    queryFn: () =>
+      apiClient.get(`/api/catalog/variants/${productId}/history`)
+        .then(r => Array.isArray(r.data) ? r.data : [])
+        .catch(() => []),
+  })
+
+  if (isLoading) return <div className="h-24 flex items-center justify-center text-xs text-fg-3">Carregando histórico...</div>
+  if (history.length < 2) return <div className="h-16 flex items-center justify-center text-xs text-fg-3">Histórico insuficiente (mínimo 2 registros)</div>
+
+  const data = history.map((h: any) => ({
+    price: h.price ?? h.value ?? 0,
+    date: h.recorded_at ? new Date(h.recorded_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '',
+  }))
+
+  const prices = data.map((d: any) => d.price)
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  const isDown = prices[prices.length - 1] <= prices[0]
+
+  return (
+    <div className="px-4 pb-3">
+      <p className="text-xs text-fg-3 mb-1">
+        Histórico de preços · {history.length} registros ·
+        <span className={isDown ? ' text-success' : ' text-danger'}> {isDown ? '↓' : '↑'} tendência</span>
+        {' '}· mín R$ {min.toFixed(2)} · máx R$ {max.toFixed(2)}
+      </p>
+      <ResponsiveContainer width="100%" height={80}>
+        <LineChart data={data}>
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#888' }} tickLine={false} axisLine={false} />
+          <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10, fill: '#888' }} tickLine={false} axisLine={false} width={60}
+            tickFormatter={(v: number) => `R$${v.toFixed(0)}`} />
+          <Tooltip
+            contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 6, fontSize: 12 }}
+            formatter={(v: any) => [`R$ ${Number(v).toFixed(2)}`, 'Preço']}
+          />
+          <Line type="monotone" dataKey="price" stroke={isDown ? '#22c55e' : '#ef4444'} strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'new', label: 'Novos' },
@@ -213,14 +259,19 @@ export default function Catalog() {
   const qc = useQueryClient()
   const [tab, setTab] = React.useState('all')
   const [search, setSearch] = React.useState('')
+  const [source, setSource] = React.useState('')
+  const [priceMin, setPriceMin] = React.useState('')
+  const [priceMax, setPriceMax] = React.useState('')
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [showAddModal, setShowAddModal] = React.useState(false)
+  const [expandedId, setExpandedId] = React.useState<number | null>(null)
 
   const { data: rawProducts = [], isLoading } = useQuery<Product[]>({
-    queryKey: ['catalog', tab, search],
+    queryKey: ['catalog', tab, search, source],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
+      if (source) params.set('source', source)
       return apiClient.get(`/api/catalog?${params}`).then(r => {
         const d = r.data
         return Array.isArray(d) ? d : (d?.items ?? d?.products ?? [])
@@ -229,7 +280,13 @@ export default function Catalog() {
     staleTime: 30_000,
   })
 
-  const products = rawProducts
+  // Filtrar por preço no cliente (rápido, sem chamada extra)
+  const products = rawProducts.filter(p => {
+    const price = p.lowest_price ?? 0
+    if (priceMin && price < Number(priceMin)) return false
+    if (priceMax && price > Number(priceMax)) return false
+    return true
+  })
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -290,8 +347,8 @@ export default function Catalog() {
       </div>
 
       {/* Filtros */}
-      <div className="px-6 py-3 flex gap-3 border-b border-border flex-shrink-0">
-        <div className="w-72">
+      <div className="px-6 py-3 flex gap-3 border-b border-border flex-shrink-0 flex-wrap items-end">
+        <div className="w-60">
           <Input
             placeholder="Buscar por nome, marca, tag..."
             value={search}
@@ -299,15 +356,43 @@ export default function Catalog() {
           />
         </div>
         <select
-          className="text-sm border border-border rounded-md px-3 py-1.5 bg-surface text-fg"
-          onChange={() => {}}
+          className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
+          value={source}
+          onChange={e => setSource(e.target.value)}
         >
           <option value="">Todas as fontes</option>
           <option value="amazon">Amazon</option>
           <option value="mercadolivre">Mercado Livre</option>
           <option value="magalu">Magalu</option>
           <option value="shopee">Shopee</option>
+          <option value="aliexpress">AliExpress</option>
+          <option value="kabum">Kabum</option>
+          <option value="americanas">Americanas</option>
+          <option value="casasbahia">Casas Bahia</option>
         </select>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-fg-3">R$</span>
+          <input
+            type="number" min="0" placeholder="Mín"
+            value={priceMin}
+            onChange={e => setPriceMin(e.target.value)}
+            className="w-20 text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent h-8"
+          />
+          <span className="text-xs text-fg-3">–</span>
+          <input
+            type="number" min="0" placeholder="Máx"
+            value={priceMax}
+            onChange={e => setPriceMax(e.target.value)}
+            className="w-20 text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent h-8"
+          />
+        </div>
+        {(search || source || priceMin || priceMax) && (
+          <button type="button" onClick={() => { setSearch(''); setSource(''); setPriceMin(''); setPriceMax('') }}
+            className="text-xs text-fg-3 hover:text-danger">
+            × Limpar filtros
+          </button>
+        )}
+        <span className="text-xs text-fg-3 ml-auto">{products.length} produto{products.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Tabela */}
@@ -360,10 +445,12 @@ export default function Catalog() {
                 const source = p.lowest_price_source ?? ''
                 const isSelected = selected.has(p.id)
 
+                const isExpanded = expandedId === p.id
                 return (
+                  <React.Fragment key={p.id}>
                   <tr
-                    key={p.id}
-                    className={`border-b border-border hover:bg-surface-2 transition-colors ${isSelected ? 'bg-accent/5' : ''}`}
+                    className={`border-b ${isExpanded ? '' : 'border-border'} hover:bg-surface-2 transition-colors cursor-pointer ${isSelected ? 'bg-accent/5' : ''}`}
+                    onClick={() => setExpandedId(isExpanded ? null : p.id)}
                   >
                     <td className="px-4 py-3">
                       <input
@@ -431,6 +518,14 @@ export default function Catalog() {
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="border-b border-border bg-surface-2">
+                      <td colSpan={6} className="px-2 pt-2">
+                        <PriceHistoryChart productId={p.id} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 )
               })}
             </tbody>

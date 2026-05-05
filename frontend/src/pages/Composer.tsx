@@ -252,7 +252,8 @@ export default function Composer() {
                 <button
                   type="button"
                   className="text-xs border border-border rounded px-2 py-1 text-accent hover:bg-accent/5 disabled:opacity-50"
-                  disabled={rewriteMut.isPending}
+                  disabled={rewriteMut.isPending || !productId}
+                  title={!productId ? 'Selecione um produto primeiro' : undefined}
                   onClick={() => rewriteMut.mutate()}
                 >
                   {rewriteMut.isPending ? '⏳ Reescrevendo...' : '✨ IA Reescrever para audiência'}
