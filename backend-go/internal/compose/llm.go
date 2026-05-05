@@ -76,8 +76,8 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 		return Suggestion{}, fmt.Errorf("prompt render error: %w", err)
 	}
 
-	// Injetar instrução de tom no prompt
-	rendered = injectToneInstruction(rendered, product.Tone, product.CustomContext)
+	// Substituir por prompt direto com dados do produto + tom
+	rendered = buildDirectPrompt(product, rendered)
 
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
@@ -102,6 +102,39 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 	return parseResponse(resp, product), nil
 }
 
+// buildDirectPrompt cria um prompt direto ignorando o template JSON do registry.
+// Retorna texto simples sem JSON para não confundir o LLM.
+func buildDirectPrompt(p ProductInput, _ string) string {
+	toneMap := map[string]string{
+		"promocional": "promocional e direto, destacando economia",
+		"animada":     "animado e entusiasmado com emojis",
+		"chamativa":   "chamativo e impactante com call-to-action forte",
+		"urgente":     "urgente — estoque limitado, aja agora",
+		"casual":      "casual e amigável, como indicando para um amigo",
+		"formal":      "formal e profissional",
+		"personalizado": p.CustomContext,
+	}
+	tone := toneMap[strings.ToLower(p.Tone)]
+	if tone == "" {
+		tone = toneMap["promocional"]
+	}
+
+	priceInfo := ""
+	if p.Price > 0 {
+		priceInfo = fmt.Sprintf(" por R$%.2f", p.Price)
+	}
+	brand := ""
+	if p.Brand != "" {
+		brand = " (" + p.Brand + ")"
+	}
+
+	return fmt.Sprintf(`Crie uma mensagem de propaganda para grupo de WhatsApp.
+Produto: %s%s%s
+Tom: %s
+Responda APENAS com o texto da mensagem pronto para envio. Sem JSON, sem aspas, sem comentários.
+Máximo 200 caracteres. Emojis são bem-vindos.`, p.Title, brand, priceInfo, tone)
+}
+
 // injectToneInstruction adiciona instrução de tom ao final do prompt.
 func injectToneInstruction(prompt, tone, customContext string) string {
 	toneMap := map[string]string{
@@ -122,7 +155,12 @@ func injectToneInstruction(prompt, tone, customContext string) string {
 		instruction = "Tom personalizado: " + customContext
 	}
 
-	return fmt.Sprintf("%s\n\n[INSTRUÇÃO DE TOM] %s\n[FORMATO] Texto para grupo de WhatsApp. Máximo 200 caracteres. Emojis são bem-vindos. Sem links nem hashtags no texto.", prompt, instruction)
+	// Substituir o prompt completo por instrução direta — evita conflito com templates JSON do registry
+	_ = prompt // descartamos o template; geramos direto
+	return fmt.Sprintf(`Crie uma mensagem de propaganda para WhatsApp sobre um produto.
+Tom: %s
+Responda APENAS com o texto da mensagem, sem JSON, sem aspas, sem explicações.
+Máximo 180 caracteres. Pode usar emojis. Sem links nem hashtags.`, instruction)
 }
 
 // fallback retorna copy formulaico quando o LLM falha.
