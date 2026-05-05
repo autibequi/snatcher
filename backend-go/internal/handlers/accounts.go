@@ -384,64 +384,47 @@ func (h *AccountsHandler) WAStartSession(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "STARTING"})
 }
 
+// WAQR retorna JSON com o QR code base64 para o frontend renderizar via <img>.
+// GET /api/accounts/wa/:id/qr — público (não requer auth, a URL já é opaca)
 func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	acc, err := h.store.GetWAAccount(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
 
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
 	if !acc.BaseURL.Valid || baseURL == "" {
 		cfg, _ := h.store.GetConfig()
-		if cfg.WABaseURL.Valid {
-			baseURL = cfg.WABaseURL.String
-		}
-		if cfg.WAApiKey.Valid {
-			apiKey = cfg.WAApiKey.String
-		}
-		if cfg.WAInstance.Valid {
-			instance = cfg.WAInstance.String
-		}
+		if cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+		if cfg.WAApiKey.Valid  { apiKey   = cfg.WAApiKey.String  }
+		if cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
 	}
 
 	if baseURL == "" {
-		http.Error(w, "not configured", http.StatusUnprocessableEntity)
+		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured"})
 		return
 	}
 
 	evo := newEvolutionClient(baseURL, apiKey, instance)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	refreshURL := r.URL.Path
-
 	qrJSON, err := evo.getQRCode(r.Context())
 	if err != nil {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
-<script>setTimeout(()=>location.reload(),5000)</script>
-</head><body style="margin:0;background:#111;color:#c44;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px;padding:16px;text-align:center">
-<p>Erro ao conectar na Evolution API</p><p style="font-size:11px;color:#888">%s</p>
-<p style="font-size:11px">(<a href="%s" style="color:#555">tentar novamente</a>)</p>
-</body></html>`, err.Error(), refreshURL)
+		writeJSON(w, http.StatusOK, map[string]string{"state": "error", "message": err.Error()})
 		return
 	}
 
-	// Se a instância não existe (404) → criar e aguardar
 	var qrBody map[string]any
 	_ = json.Unmarshal([]byte(qrJSON), &qrBody)
+
+	// Instância não existe → criar automaticamente
 	if status, _ := qrBody["status"].(float64); status == 404 {
-		// Criar instância automaticamente e pedir para recarregar
 		_ = evo.createInstance(r.Context())
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
-<script>setTimeout(()=>location.reload(),3000)</script>
-</head><body style="margin:0;background:#111;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px">
-<p>Criando instância <strong>%s</strong>...</p>
-<p style="font-size:11px">Aguarde, o QR aparecerá em instantes.</p>
-</body></html>`, instance)
+		writeJSON(w, http.StatusOK, map[string]string{"state": "creating", "message": "Criando instância " + instance + "..."})
 		return
 	}
 
@@ -454,23 +437,14 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if base64QR != "" {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
-<script>setTimeout(()=>location.reload(),20000)</script>
-</head><body style="margin:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:8px">
-<img src="%s" style="max-width:90%%;max-height:90%%;object-fit:contain"/>
-<p style="color:#666;font-size:11px;font-family:sans-serif">Atualiza em 20s · <a href="%s" style="color:#555">agora</a></p>
-</body></html>`, base64QR, refreshURL)
-	} else {
-		preview := qrJSON
-		if len(preview) > 200 { preview = preview[:200] + "..." }
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head>
-<script>setTimeout(()=>location.reload(),4000)</script>
-</head><body style="margin:0;background:#111;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;gap:8px;padding:16px;text-align:center">
-<p>Aguardando QR code...</p>
-<p style="font-size:10px;color:#555;word-break:break-all;max-width:300px">%s</p>
-<p style="font-size:11px">(<a href="%s" style="color:#555">atualizar agora</a>)</p>
-</body></html>`, preview, refreshURL)
+		writeJSON(w, http.StatusOK, map[string]string{"state": "qr", "base64": base64QR})
+		return
 	}
+
+	// Ainda inicializando
+	preview := qrJSON
+	if len(preview) > 120 { preview = preview[:120] }
+	writeJSON(w, http.StatusOK, map[string]string{"state": "waiting", "message": preview})
 }
 
 // WAHealth verifica se a Evolution API está acessível — retorna {online, url, version?, error?}.
