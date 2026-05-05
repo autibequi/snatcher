@@ -5,12 +5,12 @@ import { apiClient } from '../lib/apiClient'
 import { useTheme } from '../lib/theme'
 
 const TABS = [
+  { id: 'general', label: 'Geral' },
   { id: 'appearance', label: 'Aparência' },
   { id: 'team', label: 'Equipe' },
   { id: 'integrations', label: 'Integrações' },
   { id: 'llm', label: 'LLM / IA' },
   { id: 'branding', label: 'Domínio' },
-  { id: 'advanced', label: 'Avançado' },
 ]
 
 // ───────────────────────────────────────
@@ -469,7 +469,196 @@ function BrandingTab() {
 }
 
 // ───────────────────────────────────────
-// Avançado Tab
+// Anti-ban Section
+// ───────────────────────────────────────
+
+interface AntiBanConfig {
+  interval_between_groups?: number
+  interval_between_channels?: number
+  daily_limit_per_account?: number
+  rotate_accounts?: boolean
+  [key: string]: unknown
+}
+
+function AntiBanSection({
+  config,
+  localConfig,
+  onChange,
+}: {
+  config: AntiBanConfig | undefined
+  localConfig: Partial<AntiBanConfig>
+  onChange: (key: keyof AntiBanConfig, value: unknown) => void
+}) {
+  const merged: AntiBanConfig = { ...config, ...localConfig }
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-fg">Anti-ban</p>
+        <p className="text-xs text-fg-3 mt-0.5">Limites para evitar banimento nas plataformas de mensagens.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Intervalo entre grupos (s)</label>
+          <input
+            type="number"
+            min={0}
+            value={(merged.interval_between_groups as number) ?? 5}
+            onChange={e => onChange('interval_between_groups', Number(e.target.value))}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Intervalo entre canais (s)</label>
+          <input
+            type="number"
+            min={0}
+            value={(merged.interval_between_channels as number) ?? 30}
+            onChange={e => onChange('interval_between_channels', Number(e.target.value))}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Limite diário por conta</label>
+          <input
+            type="number"
+            min={0}
+            value={(merged.daily_limit_per_account as number) ?? 200}
+            onChange={e => onChange('daily_limit_per_account', Number(e.target.value))}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+          />
+        </div>
+        <div className="flex flex-col justify-end">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(merged.rotate_accounts as boolean) ?? false}
+              onChange={e => onChange('rotate_accounts', e.target.checked)}
+              className="accent-accent"
+            />
+            <span className="text-sm text-fg">Rotacionar contas</span>
+          </label>
+          <p className="text-xs text-fg-3 mt-1">Alterna entre contas disponíveis em cada disparo.</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
+// Encurtador Section
+// ───────────────────────────────────────
+
+function ShortenerSection({
+  config,
+  localConfig,
+  onChange,
+}: {
+  config: Record<string, unknown> | undefined
+  localConfig: Record<string, unknown>
+  onChange: (key: string, value: unknown) => void
+}) {
+  const merged = { ...config, ...localConfig }
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-fg">Encurtador de links</p>
+        <p className="text-xs text-fg-3 mt-0.5">Configurações de geração de links curtos para os disparos.</p>
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={(merged.use_short_links as boolean) ?? true}
+          onChange={e => onChange('use_short_links', e.target.checked)}
+          className="accent-accent"
+        />
+        <span className="text-sm text-fg">Usar links encurtados nos disparos</span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Prefixo grupo WhatsApp</label>
+          <input
+            value={(merged.wa_group_prefix as string) ?? ''}
+            onChange={e => onChange('wa_group_prefix', e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            placeholder="wa/"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Prefixo grupo Telegram</label>
+          <input
+            value={(merged.tg_group_prefix as string) ?? ''}
+            onChange={e => onChange('tg_group_prefix', e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            placeholder="tg/"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
+// Notificações Section
+// ───────────────────────────────────────
+
+function NotificationsSection({
+  config,
+  localConfig,
+  onChange,
+}: {
+  config: Record<string, unknown> | undefined
+  localConfig: Record<string, unknown>
+  onChange: (key: string, value: unknown) => void
+}) {
+  const merged = { ...config, ...localConfig }
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-fg">Notificações</p>
+        <p className="text-xs text-fg-3 mt-0.5">Alertas de erros, novos produtos e disparos.</p>
+      </div>
+      <div className="space-y-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={(merged.notify_on_error as boolean) ?? true}
+            onChange={e => onChange('notify_on_error', e.target.checked)}
+            className="accent-accent"
+          />
+          <span className="text-sm text-fg">Notificar em erros de disparo</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={(merged.notify_on_new_product as boolean) ?? false}
+            onChange={e => onChange('notify_on_new_product', e.target.checked)}
+            className="accent-accent"
+          />
+          <span className="text-sm text-fg">Notificar ao encontrar novo produto</span>
+        </label>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Webhook de alertas (URL, opcional)</label>
+          <input
+            type="url"
+            value={(merged.alert_webhook_url as string) ?? ''}
+            onChange={e => onChange('alert_webhook_url', e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+            placeholder="https://hooks.slack.com/..."
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
+// Geral Tab — 2-col layout
 // ───────────────────────────────────────
 
 interface AppConfig {
@@ -479,10 +668,17 @@ interface AppConfig {
   wa_group_prefix?: string
   tg_group_prefix?: string
   use_short_links?: boolean
+  interval_between_groups?: number
+  interval_between_channels?: number
+  daily_limit_per_account?: number
+  rotate_accounts?: boolean
+  notify_on_error?: boolean
+  notify_on_new_product?: boolean
+  alert_webhook_url?: string
   [key: string]: unknown
 }
 
-function AdvancedTab() {
+function GeneralTab() {
   const qc = useQueryClient()
   const [localConfig, setLocalConfig] = useState<Partial<AppConfig>>({})
 
@@ -511,89 +707,87 @@ function AdvancedTab() {
   }
 
   return (
-    <div className="max-w-md space-y-4">
-      <h3 className="text-sm font-medium text-fg">Configurações avançadas</h3>
-
-      <div>
-        <label className="text-xs text-fg-2 block mb-1">Intervalo de scan (minutos)</label>
-        <input
-          type="number"
-          min={5}
-          max={1440}
-          value={merged.global_interval ?? 30}
-          onChange={(e) => updateField('global_interval', Number(e.target.value))}
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Início do envio (hora)</label>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={merged.send_start_hour ?? 8}
-            onChange={(e) => updateField('send_start_hour', Number(e.target.value))}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
+    <div className="space-y-6">
+      {/* Scan interval + horários */}
+      <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
+        <p className="text-sm font-semibold text-fg">Horários e scan</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Intervalo de scan (min)</label>
+            <input
+              type="number"
+              min={5}
+              max={1440}
+              value={merged.global_interval ?? 30}
+              onChange={e => updateField('global_interval', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Início do envio (hora)</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={merged.send_start_hour ?? 8}
+              onChange={e => updateField('send_start_hour', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Fim do envio (hora)</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={merged.send_end_hour ?? 22}
+              onChange={e => updateField('send_end_hour', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Fim do envio (hora)</label>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={merged.send_end_hour ?? 22}
-            onChange={(e) => updateField('send_end_hour', Number(e.target.value))}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
-        </div>
       </div>
 
-      <div>
-        <label className="text-xs text-fg-2 block mb-1">Prefixo grupo WhatsApp</label>
-        <input
-          value={(merged.wa_group_prefix as string) ?? ''}
-          onChange={(e) => updateField('wa_group_prefix', e.target.value)}
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+      {/* 2-col grid: linha 1 — Anti-ban + Encurtador; linha 2 — Equipe + Notificações */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Linha 1, col 1: Anti-ban */}
+        <AntiBanSection
+          config={config}
+          localConfig={localConfig}
+          onChange={updateField}
+        />
+        {/* Linha 1, col 2: Encurtador */}
+        <ShortenerSection
+          config={config}
+          localConfig={localConfig}
+          onChange={updateField}
         />
       </div>
 
-      <div>
-        <label className="text-xs text-fg-2 block mb-1">Prefixo grupo Telegram</label>
-        <input
-          value={(merged.tg_group_prefix as string) ?? ''}
-          onChange={(e) => updateField('tg_group_prefix', e.target.value)}
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-        />
+      {/* Linha 2: Notificações (full width — pode ser expandido) */}
+      <NotificationsSection
+        config={config}
+        localConfig={localConfig}
+        onChange={updateField}
+      />
+
+      <div className="flex items-center gap-3">
+        <Button
+          variant="primary"
+          size="sm"
+          loading={saveConfig.isPending}
+          onClick={() => saveConfig.mutate(localConfig)}
+        >
+          Salvar configurações
+        </Button>
+
+        {saveConfig.isSuccess && (
+          <p className="text-xs text-green-400">Configurações salvas com sucesso!</p>
+        )}
+        {saveConfig.isError && (
+          <p className="text-xs text-red-400">Erro ao salvar. Tente novamente.</p>
+        )}
       </div>
-
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={(merged.use_short_links as boolean) ?? true}
-          onChange={(e) => updateField('use_short_links', e.target.checked)}
-          className="accent-accent"
-        />
-        <span className="text-sm text-fg">Usar links encurtados nos disparos</span>
-      </label>
-
-      <Button
-        variant="primary"
-        size="sm"
-        loading={saveConfig.isPending}
-        onClick={() => saveConfig.mutate(localConfig)}
-      >
-        Salvar configurações avançadas
-      </Button>
-
-      {saveConfig.isSuccess && (
-        <p className="text-xs text-green-400">Configurações salvas com sucesso!</p>
-      )}
-      {saveConfig.isError && (
-        <p className="text-xs text-red-400">Erro ao salvar. Tente novamente.</p>
-      )}
     </div>
   )
 }
@@ -603,7 +797,7 @@ function AdvancedTab() {
 // ───────────────────────────────────────
 
 export default function Settings() {
-  const [tab, setTab] = useState('appearance')
+  const [tab, setTab] = useState('general')
 
   return (
     <div className="p-6">
@@ -613,12 +807,12 @@ export default function Settings() {
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
         <div className="p-6">
+          {tab === 'general' && <GeneralTab />}
           {tab === 'appearance' && <AppearanceTab />}
           {tab === 'team' && <TeamTab />}
           {tab === 'integrations' && <IntegrationsTab />}
           {tab === 'llm' && <LLMTab />}
           {tab === 'branding' && <BrandingTab />}
-          {tab === 'advanced' && <AdvancedTab />}
         </div>
       </div>
     </div>

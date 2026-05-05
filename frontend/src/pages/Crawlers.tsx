@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState } from '../components/ui'
+import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCard } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
@@ -23,6 +23,27 @@ interface Account {
   name?: string
   phone?: string
   role: string
+}
+
+interface SpyGroup {
+  id: number
+  group_name: string
+  platform: string
+  active: boolean
+  invite_link?: string
+  reader_wa_id?: number
+  stealth_mode?: boolean
+  categories?: string[]
+  capture_count?: number
+  last_capture_at?: string
+}
+
+interface SpyMessage {
+  id: number
+  sender?: string
+  text?: string
+  media_url?: string
+  collected_at: string
 }
 
 const SOURCES = ['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas'] as const
@@ -384,7 +405,15 @@ function relativeTime(iso?: string): string {
   return `há ${Math.round(diff / 86400)}d`
 }
 
-// ── Modal editar crawler ─────────────────────────────────────────────────────
+function fmtRange(min?: number, max?: number): string {
+  if (min == null && max == null) return '—'
+  const lo = min != null ? `R$${min}` : 'R$0'
+  const hi = max != null ? `R$${max}` : ''
+  return hi ? `${lo}–${hi}` : `${lo}+`
+}
+
+// ── Modal editar crawler ──────────────────────────────────────────────────────
+
 const SOURCES_OPTIONS = ['ml', 'amz', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas']
 
 function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: () => void }) {
@@ -395,7 +424,6 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
     if (!term) return
     let srcs: string[] = []
     try { srcs = JSON.parse(term.sources ?? '[]') } catch { srcs = (term.sources ?? 'all') === 'all' ? [] : (term.sources ?? '').split(',').map((s: string) => s.trim()).filter(Boolean) }
-    // Termos adicionais: queries do term (campo queries) excluindo o query principal
     let parsedQueries: string[] = []
     try { parsedQueries = JSON.parse(term.queries ?? '[]') } catch { parsedQueries = [] }
     const additionalQueries = parsedQueries.filter((q: string) => q !== term.query)
@@ -499,6 +527,8 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
   )
 }
 
+// ── MarketplacesTab ──────────────────────────────────────────────────────────
+
 function MarketplacesTab({ onNew }: { onNew: () => void }) {
   const qc = useQueryClient()
   const { data: terms = [], isLoading } = useQuery<SearchTerm[]>({
@@ -513,7 +543,6 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
     mutationFn: ({ id, active }: { id: number; active: boolean }) => {
       const term = terms.find(t => t.id === id)
       if (!term) return Promise.reject('term not found')
-      // Enviar apenas campos que o handler conhece (searchTermRequest)
       return apiClient.put(`/api/search-terms/${id}`, {
         query: term.query,
         queries: [],
@@ -540,7 +569,6 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
     },
   })
 
-  // WS: crawler concluiu
   useWSEvent('crawler.run_completed', () => {
     qc.invalidateQueries({ queryKey: ['search-terms'] })
   })
@@ -558,55 +586,70 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
 
   const activeTerms = terms.filter(t => t.active)
   const totalCrawlers = terms.length
+  const totalProducts = terms.reduce((s, t) => s + (t.result_count ?? 0), 0)
+
+  // Count unique sources across all terms
+  const allSources = new Set<string>()
+  for (const t of terms) {
+    try {
+      const list: string[] = JSON.parse(t.sources ?? '[]')
+      list.forEach(s => allSources.add(s))
+    } catch {
+      const raw = t.sources ?? 'all'
+      if (raw === 'all') {
+        // count as covering all known sources
+        ;['amazon','mercadolivre','magalu','shopee','aliexpress','casasbahia','kabum','americanas'].forEach(s => allSources.add(s))
+      } else {
+        raw.split(',').map((s: string) => s.trim()).filter(Boolean).forEach(s => allSources.add(s))
+      }
+    }
+  }
+
   const nextRun = activeTerms.filter(t => t.last_crawled_at).reduce((min, t) => {
     const next = new Date(t.last_crawled_at!).getTime() + (t.crawl_interval * 60_000)
     return min === 0 ? next : Math.min(min, next)
   }, 0)
   const minutesUntilNext = nextRun > 0 ? Math.max(0, Math.round((nextRun - Date.now()) / 60_000)) : null
-  const firstActive = activeTerms[0]
 
   return (
     <div className="p-4">
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-surface border border-border rounded-md p-4">
-          <p className="text-xs text-fg-3 uppercase tracking-wide font-medium">Crawlers</p>
-          <p className="text-2xl font-bold text-fg mt-1">{totalCrawlers}</p>
-          <p className="text-xs text-fg-3 mt-1">{activeTerms.length} rodando</p>
-        </div>
-        <div className="bg-surface border border-border rounded-md p-4">
-          <p className="text-xs text-fg-3 uppercase tracking-wide font-medium">Produtos coletados</p>
-          <p className="text-2xl font-bold text-fg mt-1">{terms.reduce((s, t) => s + (t.result_count ?? 0), 0).toLocaleString()}</p>
-          <p className="text-xs text-fg-3 mt-1">desde o início</p>
-        </div>
-        <div className="bg-surface border border-border rounded-md p-4">
-          <p className="text-xs text-fg-3 uppercase tracking-wide font-medium">Próxima execução</p>
-          <p className="text-2xl font-bold text-fg mt-1">
-            {minutesUntilNext != null ? `~${minutesUntilNext}min` : '—'}
-          </p>
-          {firstActive && (
-            <p className="text-xs text-fg-3 mt-1 truncate">"{firstActive.query}"</p>
-          )}
-        </div>
-        <div className="bg-surface border border-border rounded-md p-4">
-          <p className="text-xs text-fg-3 uppercase tracking-wide font-medium">Status geral</p>
-          <p className="text-2xl font-bold text-fg mt-1">{activeTerms.length}/{totalCrawlers}</p>
-          <p className="text-xs text-fg-3 mt-1">ativos</p>
-        </div>
+        <KpiCard
+          label="Crawlers ativos"
+          value={activeTerms.length}
+          subtitle={`${totalCrawlers} total`}
+        />
+        <KpiCard
+          label="Produtos coletados"
+          value={totalProducts.toLocaleString('pt-BR')}
+          subtitle="desde o início"
+        />
+        <KpiCard
+          label="Marketplaces cobertos"
+          value={allSources.size}
+          subtitle={allSources.size > 0 ? [...allSources].slice(0, 3).join(', ') + (allSources.size > 3 ? '…' : '') : '—'}
+        />
+        <KpiCard
+          label="Próxima execução"
+          value={minutesUntilNext != null ? `~${minutesUntilNext}min` : '—'}
+          subtitle={activeTerms[0] ? `"${activeTerms[0].query}"` : undefined}
+        />
       </div>
 
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-fg-2">{totalCrawlers} crawler{totalCrawlers !== 1 ? 's' : ''}</p>
         <div className="flex gap-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={runningIds.size > 0}
             onClick={() => activeTerms.forEach(t => crawlNow.mutate(t.id))}
-            className="text-sm border border-border rounded-md px-3 py-1.5 text-fg-2 hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border-accent text-accent hover:bg-accent/5"
           >
             {runningIds.size > 0 ? `▶ Rodando ${runningIds.size}...` : '▶ Rodar todos'}
-          </button>
+          </Button>
           <Button variant="primary" size="sm" onClick={onNew}>
             + Novo crawler
           </Button>
@@ -618,7 +661,7 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              {['Ativo', 'Termo', 'Fontes', 'Intervalo', '# Encontrados', 'Último crawl', 'Próxima exec', 'Ações'].map(h => (
+              {['Ativo', 'Termo', 'Fontes', 'Faixa', 'Frequência', '# Encontrados', 'Último crawl', 'Próxima exec', 'Ações'].map(h => (
                 <th key={h} className="text-left p-3 text-fg-2 font-medium">{h}</th>
               ))}
             </tr>
@@ -643,15 +686,17 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
                     })()}
                   </div>
                 </td>
-                <td className="p-3 text-fg-2">
-                  <span>⏱ {fmtInterval(t.crawl_interval)}</span>
+                <td className="p-3 text-fg-2 text-xs whitespace-nowrap">
+                  {fmtRange(t.min_val, t.max_val)}
+                </td>
+                <td className="p-3 text-fg-2 text-xs whitespace-nowrap">
+                  ⏱ {fmtInterval(t.crawl_interval)}
                 </td>
                 <td className="p-3 text-fg">{t.result_count}</td>
                 <td className="p-3 text-fg-3 text-xs">
                   {relativeTime(t.last_crawled_at)}
                 </td>
                 <td className="p-3 text-xs text-fg-2">
-                  {/* Só mostrar quando erro — rodando já está no toggle */}
                   {!t.active ? (
                     <span className="text-fg-3">pausado</span>
                   ) : t.last_crawled_at && t.result_count === 0 ? (
@@ -694,72 +739,158 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
   )
 }
 
-function SpyDetailDrawer({ spy, onClose }: { spy: Record<string, unknown>; onClose: () => void }) {
-  const { data: messages = [], isLoading } = useQuery({
+// ── SpyGroupDetail (right panel) ──────────────────────────────────────────────
+
+function SpyGroupDetail({
+  spy,
+  onClose,
+  onChangeReader,
+}: {
+  spy: SpyGroup
+  onClose: () => void
+  onChangeReader: () => void
+}) {
+  const { data: messages = [], isLoading } = useQuery<SpyMessage[]>({
     queryKey: ['spy-messages', spy.id],
-    queryFn: () => apiClient.get(`/api/crawlers/group-spy/${spy.id}/messages`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    queryFn: () =>
+      apiClient.get(`/api/crawlers/group-spy/${spy.id}/messages`).then(r =>
+        Array.isArray(r.data) ? r.data : []
+      ).catch(() => []),
     refetchInterval: 30_000,
   })
 
+  // Derive 24h message count from messages (approximate — only loaded messages)
+  const now = Date.now()
+  const msgs24h = messages.filter(m => now - new Date(m.collected_at).getTime() < 86_400_000).length
+
+  // Categories from spy data
+  const categories: string[] = spy.categories ?? []
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg w-full max-w-xl max-h-[80vh] flex flex-col shadow-modal" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-          <div>
-            <h3 className="font-semibold text-fg">{String(spy.group_name ?? '')}</h3>
-            <p className="text-xs text-fg-3">{String(spy.platform ?? '')} · {spy.active ? 'ativo' : 'parado'}</p>
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+        <div>
+          <h3 className="font-semibold text-fg">{spy.group_name}</h3>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-fg-3">{spy.platform}</p>
+            {spy.stealth_mode && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                stealth
+              </span>
+            )}
           </div>
-          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg p-1 rounded">✕</button>
         </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={spy.active ? 'success' : 'default'} size="sm">
+            {spy.active ? 'ativo' : 'parado'}
+          </Badge>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg p-1 rounded text-sm">✕</button>
+        </div>
+      </div>
 
-        {/* Mensagens coletadas */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Mensagens coletadas</p>
-          {isLoading ? (
-            <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : messages.length === 0 ? (
-            <div className="text-center py-8 space-y-1">
-              <p className="text-sm text-fg-2">Nenhuma mensagem coletada ainda.</p>
-              <p className="text-xs text-fg-3">O sistema coleta automaticamente as postagens do grupo enquanto o spy estiver ativo.</p>
-            </div>
-          ) : (
-            messages.map((m: any) => (
-              <div key={m.id} className="bg-surface-2 rounded-md p-3">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-accent">{m.sender || 'desconhecido'}</p>
-                  <p className="text-xs text-fg-3">{new Date(m.collected_at).toLocaleString('pt-BR')}</p>
-                </div>
-                {m.media_url && (
-                  <img src={m.media_url} alt="" className="w-full max-h-32 object-cover rounded mb-2"
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                )}
-                <p className="text-sm text-fg whitespace-pre-wrap break-words">{m.text}</p>
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 px-5 py-4 border-b border-border flex-shrink-0">
+        <div className="bg-surface-2 rounded-md p-3">
+          <p className="text-xs text-fg-3">Msgs 24h</p>
+          <p className="text-lg font-semibold text-fg">{msgs24h}</p>
+        </div>
+        <div className="bg-surface-2 rounded-md p-3">
+          <p className="text-xs text-fg-3">Capturas</p>
+          <p className="text-lg font-semibold text-fg">{spy.capture_count ?? messages.length}</p>
+        </div>
+        <div className="bg-surface-2 rounded-md p-3">
+          <p className="text-xs text-fg-3">Aproveitamento</p>
+          <p className="text-lg font-semibold text-fg">
+            {messages.length > 0 ? `${Math.round((msgs24h / Math.max(messages.length, 1)) * 100)}%` : '—'}
+          </p>
+        </div>
+        <div className="bg-surface-2 rounded-md p-3">
+          <p className="text-xs text-fg-3">Última captura</p>
+          <p className="text-sm font-medium text-fg">
+            {spy.last_capture_at
+              ? relativeTime(spy.last_capture_at)
+              : messages.length > 0
+                ? relativeTime(messages[0]?.collected_at)
+                : '—'}
+          </p>
+        </div>
+      </div>
+
+      {/* Categories */}
+      {categories.length > 0 && (
+        <div className="px-5 py-3 border-b border-border flex-shrink-0">
+          <p className="text-xs text-fg-3 mb-2">Categorias detectadas</p>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.map(c => (
+              <Badge key={c} variant="accent" size="sm">{c}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="px-5 py-3 border-b border-border flex-shrink-0">
+        <Button variant="secondary" size="sm" onClick={onChangeReader}>
+          Trocar conta leitora
+        </Button>
+      </div>
+
+      {/* Capturas recentes */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+        <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Capturas recentes</p>
+        {isLoading ? (
+          <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : messages.length === 0 ? (
+          <div className="text-center py-8 space-y-1">
+            <p className="text-sm text-fg-2">Nenhuma mensagem coletada ainda.</p>
+            <p className="text-xs text-fg-3">O sistema coleta automaticamente as postagens do grupo enquanto o spy estiver ativo.</p>
+          </div>
+        ) : (
+          messages.map(m => (
+            <div key={m.id} className="bg-surface-2 rounded-md p-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-medium text-accent">{m.sender || 'desconhecido'}</p>
+                <p className="text-xs text-fg-3">{new Date(m.collected_at).toLocaleString('pt-BR')}</p>
               </div>
-            ))
-          )}
-        </div>
-
-        {/* Invite link */}
-        {spy.invite_link && (
-          <div className="px-5 py-3 border-t border-border flex-shrink-0">
-            <a href={String(spy.invite_link)} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-accent hover:underline truncate block">
-              {String(spy.invite_link)}
-            </a>
-          </div>
+              {m.media_url && (
+                <img src={m.media_url} alt="" className="w-full max-h-32 object-cover rounded mb-2"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              )}
+              <p className="text-sm text-fg whitespace-pre-wrap break-words">{m.text}</p>
+            </div>
+          ))
         )}
       </div>
+
+      {/* Invite link */}
+      {spy.invite_link && (
+        <div className="px-5 py-3 border-t border-border flex-shrink-0">
+          <a href={spy.invite_link} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-accent hover:underline truncate block">
+            {spy.invite_link}
+          </a>
+        </div>
+      )}
     </div>
   )
 }
 
+// ── SpyTab (split layout) ────────────────────────────────────────────────────
+
 function SpyTab({ onNew }: { onNew: () => void }) {
-  const [selected, setSelected] = React.useState<Record<string, unknown> | null>(null)
-  const { data: spies = [], isLoading } = useQuery({
+  const [selectedId, setSelectedId] = React.useState<number | null>(null)
+  const [showChangeReaderModal, setShowChangeReaderModal] = React.useState(false)
+
+  const { data: spies = [], isLoading } = useQuery<SpyGroup[]>({
     queryKey: ['crawlers', 'group-spy'],
-    queryFn: () => apiClient.get('/api/crawlers/group-spy').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    queryFn: () =>
+      apiClient.get('/api/crawlers/group-spy').then(r =>
+        Array.isArray(r.data) ? r.data : []
+      ).catch(() => []),
   })
+
+  const selectedSpy = spies.find(s => s.id === selectedId) ?? null
 
   if (isLoading) return <div className="p-4"><Skeleton className="h-24 w-full" /></div>
   if (!spies.length) return (
@@ -773,29 +904,127 @@ function SpyTab({ onNew }: { onNew: () => void }) {
   )
 
   return (
-    <>
-      <div className="p-4">
-        {spies.map((s: Record<string, unknown>) => (
-          <div
-            key={String(s.id)}
-            className="flex items-center justify-between p-3 bg-surface border border-border rounded-md mb-2 cursor-pointer hover:border-accent transition-colors"
-            onClick={() => setSelected(s)}
+    <div className="flex h-[600px]">
+      {/* Left: compact list */}
+      <div className={`flex flex-col border-r border-border overflow-y-auto ${selectedSpy ? 'w-72 flex-shrink-0' : 'flex-1'}`}>
+        <div className="p-3 border-b border-border flex-shrink-0">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">{spies.length} grupo{spies.length !== 1 ? 's' : ''}</p>
+        </div>
+        {spies.map(s => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSelectedId(prev => prev === s.id ? null : s.id)}
+            className={`flex items-center gap-3 px-3 py-3 text-left border-b border-border last:border-0 transition-colors w-full ${
+              selectedId === s.id
+                ? 'bg-accent/5 border-l-2 border-l-accent'
+                : 'hover:bg-surface-2'
+            }`}
           >
-            <div>
-              <p className="text-sm font-medium text-fg">{String(s.group_name ?? '')}</p>
-              <p className="text-xs text-fg-3">{String(s.platform ?? '')}</p>
+            {/* Platform icon */}
+            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${s.platform === 'telegram' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400'}`}>
+              {s.platform === 'telegram' ? 'TG' : 'WA'}
             </div>
-            <div className="flex items-center gap-3">
-              <Badge variant={s.active as boolean ? 'success' : 'default'}>{s.active ? 'ativo' : 'parado'}</Badge>
-              <span className="text-xs text-accent">ver detalhes →</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-fg truncate">{s.group_name}</p>
+              <p className="text-xs text-fg-3">{s.platform}</p>
             </div>
-          </div>
+            <Badge variant={s.active ? 'success' : 'default'} size="sm">
+              {s.active ? '●' : '○'}
+            </Badge>
+          </button>
         ))}
       </div>
-      {selected && <SpyDetailDrawer spy={selected} onClose={() => setSelected(null)} />}
-    </>
+
+      {/* Right: detail panel */}
+      {selectedSpy ? (
+        <div className="flex-1 overflow-hidden flex flex-col min-w-0">
+          <SpyGroupDetail
+            spy={selectedSpy}
+            onClose={() => setSelectedId(null)}
+            onChangeReader={() => setShowChangeReaderModal(true)}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-fg-3 text-sm">
+          <p>Selecione um grupo para ver detalhes</p>
+        </div>
+      )}
+
+      {/* Change reader modal (stub — triggers modal flow) */}
+      {showChangeReaderModal && selectedSpy && (
+        <ChangeReaderModal
+          spy={selectedSpy}
+          onClose={() => setShowChangeReaderModal(false)}
+        />
+      )}
+    </div>
   )
 }
+
+// ── ChangeReaderModal ─────────────────────────────────────────────────────────
+
+function ChangeReaderModal({ spy, onClose }: { spy: SpyGroup; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [readerId, setReaderId] = React.useState<string>(String(spy.reader_wa_id ?? ''))
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['accounts', 'wa', 'reader'],
+    queryFn: () =>
+      apiClient.get('/api/accounts/wa?role=reader').then(r =>
+        Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
+      ).catch(() => []),
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      apiClient.patch(`/api/crawlers/group-spy/${spy.id}`, {
+        reader_wa_id: readerId ? Number(readerId) : null,
+      }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crawlers', 'group-spy'] })
+      onClose()
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Trocar conta leitora"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>Salvar</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-fg-2">
+          Selecione a conta que vai ler as mensagens de <strong className="text-fg">{spy.group_name}</strong>.
+        </p>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-fg-2">Conta leitora</label>
+          <select
+            value={readerId}
+            onChange={e => setReaderId(e.target.value)}
+            className="w-full h-8 px-2.5 text-sm rounded-md border bg-surface text-fg border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">Sem conta específica</option>
+            {accounts.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.name || a.phone || `Conta #${a.id}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Main Crawlers page ────────────────────────────────────────────────────────
 
 export default function Crawlers() {
   const [tab, setTab] = React.useState('marketplaces')
@@ -804,7 +1033,7 @@ export default function Crawlers() {
 
   const tabs = [
     { id: 'marketplaces', label: 'Marketplaces' },
-    { id: 'spy', label: 'Grupos concorrentes' },
+    { id: 'spy', label: 'Grupos' },
   ]
 
   return (

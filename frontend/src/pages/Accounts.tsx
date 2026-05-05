@@ -134,7 +134,6 @@ function QRModal({
   accountId: number | null
   onClose: () => void
 }) {
-  // qrData não usado — iframe carrega diretamente o HTML do QR
   const { data: statusData } = useQuery<StatusData>({
     queryKey: ['accounts', accountId, 'status'],
     queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/status`).then(r => r.data),
@@ -142,8 +141,6 @@ function QRModal({
     enabled: !!accountId,
   })
 
-  // Fechar automaticamente quando conectado
-  // Backend mapeia Evolution "open" → "WORKING"; também aceitar "connected" do DB
   const connected = statusData?.status === 'WORKING' || statusData?.status === 'connected'
 
   useEffect(() => {
@@ -167,7 +164,6 @@ function QRModal({
               Escaneie o QR Code com o WhatsApp para conectar a conta.
               Atualizando automaticamente…
             </p>
-            {/* Backend retorna HTML com <img> do QR — usar iframe diretamente */}
             <iframe
               src={`/api/accounts/wa/${accountId}/qr`}
               className="w-72 rounded-md border border-border bg-white"
@@ -230,7 +226,6 @@ function CreateAccountModal({
   const [errors, setErrors] = useState<Partial<Record<keyof CreateForm, string>>>({})
   const qc = useQueryClient()
 
-
   const set = (field: keyof CreateForm, value: string | number) =>
     setForm(f => ({ ...f, [field]: value }))
 
@@ -271,7 +266,6 @@ function CreateAccountModal({
       setForm(emptyForm)
       setErrors({})
       if (tab === 'wa') {
-        // Dispara session start em background (ignora erro)
         apiClient.post(`/api/accounts/wa/${data.id}/session/start`).catch(() => {})
         onWACreated(data.id)
       } else {
@@ -456,6 +450,82 @@ function AccountCard({
   )
 }
 
+// ── Painel lateral "Como conectar" ────────────────────────────────────────────
+function ConnectHelpPanel({ activePlatformTab }: { activePlatformTab: string }) {
+  if (activePlatformTab === 'tg') {
+    return (
+      <div className="bg-surface border border-border rounded-lg p-5 h-fit">
+        <p className="text-sm font-semibold text-fg mb-4">Como conectar — Telegram</p>
+        <ol className="space-y-4 text-sm text-fg-2">
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">1</span>
+            <div>
+              <p className="font-medium text-fg">Crie um Bot</p>
+              <p className="text-xs text-fg-3 mt-0.5">Acesse <strong>@BotFather</strong> no Telegram e envie <code className="bg-surface-2 px-1 rounded">/newbot</code>.</p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">2</span>
+            <div>
+              <p className="font-medium text-fg">Copie o Token</p>
+              <p className="text-xs text-fg-3 mt-0.5">O BotFather fornece um token no formato <code className="bg-surface-2 px-1 rounded">123456:ABC-DEF...</code></p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">3</span>
+            <div>
+              <p className="font-medium text-fg">Adicione aqui</p>
+              <p className="text-xs text-fg-3 mt-0.5">Cole o token no formulário e salve. O bot estará pronto para enviar disparos.</p>
+            </div>
+          </li>
+          {/* Placeholder imagem */}
+          <li className="mt-2">
+            <div className="w-full h-28 bg-surface-2 border border-dashed border-border rounded-md flex items-center justify-center text-xs text-fg-3">
+              [imagem: BotFather screenshot]
+            </div>
+          </li>
+        </ol>
+      </div>
+    )
+  }
+
+  // WhatsApp (default)
+  return (
+    <div className="bg-surface border border-border rounded-lg p-5 h-fit">
+      <p className="text-sm font-semibold text-fg mb-4">Como conectar — WhatsApp</p>
+      <ol className="space-y-4 text-sm text-fg-2">
+        <li className="flex gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">1</span>
+          <div>
+            <p className="font-medium text-fg">Adicione a conta</p>
+            <p className="text-xs text-fg-3 mt-0.5">Clique em "+ Adicionar conta", escolha WhatsApp e informe um nome.</p>
+          </div>
+        </li>
+        <li className="flex gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">2</span>
+          <div>
+            <p className="font-medium text-fg">Escaneie o QR Code</p>
+            <p className="text-xs text-fg-3 mt-0.5">No WhatsApp: <em>Dispositivos Conectados → Conectar Dispositivo</em> e aponte para o QR.</p>
+          </div>
+        </li>
+        <li className="flex gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center">3</span>
+          <div>
+            <p className="font-medium text-fg">Pronto!</p>
+            <p className="text-xs text-fg-3 mt-0.5">O status mudará para <Badge variant="success" size="sm">connected</Badge> automaticamente.</p>
+          </div>
+        </li>
+        {/* Placeholder imagem QR */}
+        <li className="mt-2">
+          <div className="w-full h-28 bg-surface-2 border border-dashed border-border rounded-md flex items-center justify-center text-xs text-fg-3">
+            [imagem: QR Code exemplo]
+          </div>
+        </li>
+      </ol>
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Accounts() {
   const qc = useQueryClient()
@@ -466,6 +536,7 @@ export default function Accounts() {
     name: string
     platform: 'wa' | 'tg'
   } | null>(null)
+  const [platformTab, setPlatformTab] = useState('all')
 
   const { data: waAccounts = [], isLoading: waLoading } = useQuery<WAAccount[]>({
     queryKey: ['accounts', 'wa'],
@@ -494,7 +565,6 @@ export default function Accounts() {
     },
   })
 
-  // WS: status changed — invalidate accounts queries
   useWSEvent('account.status_changed', () => {
     qc.invalidateQueries({ queryKey: ['accounts'] })
   })
@@ -511,6 +581,17 @@ export default function Accounts() {
     setQrAccountId(id)
   }
 
+  // Tabs with counts
+  const platformTabs = [
+    { id: 'all', label: `Todas (${waAccounts.length + tgAccounts.length})` },
+    { id: 'wa', label: `WhatsApp (${waAccounts.length})` },
+    { id: 'tg', label: `Telegram (${tgAccounts.length})` },
+  ]
+
+  const visibleWA = platformTab === 'tg' ? [] : waAccounts
+  const visibleTG = platformTab === 'wa' ? [] : tgAccounts
+  const hasAny = waAccounts.length > 0 || tgAccounts.length > 0
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -520,37 +601,56 @@ export default function Accounts() {
         </Button>
       </div>
 
+      {/* Tabs de plataforma */}
+      <Tabs
+        tabs={platformTabs}
+        active={platformTab}
+        onChange={setPlatformTab}
+        className="mb-5"
+      />
+
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} variant="card" className="h-32" />
           ))}
         </div>
-      ) : waAccounts.length === 0 && tgAccounts.length === 0 ? (
+      ) : !hasAny ? (
         <EmptyState
           title="Nenhuma conta"
           description="Conecte uma conta WhatsApp ou Telegram para enviar promacoes."
           cta={{ label: 'Adicionar conta', onClick: () => setShowCreate(true) }}
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {waAccounts.map(a => (
-            <AccountCard
-              key={`wa-${a.id}`}
-              account={a}
-              platform="WhatsApp"
-              onReconnect={() => handleReconnect(a.id)}
-              onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'wa' })}
-            />
-          ))}
-          {tgAccounts.map(a => (
-            <AccountCard
-              key={`tg-${a.id}`}
-              account={a}
-              platform="Telegram"
-              onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'tg' })}
-            />
-          ))}
+        /* 2-col layout: lista + painel lateral */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Cards — 2/3 da largura */}
+          <div className="lg:col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {visibleWA.map(a => (
+                <AccountCard
+                  key={`wa-${a.id}`}
+                  account={a}
+                  platform="WhatsApp"
+                  onReconnect={() => handleReconnect(a.id)}
+                  onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'wa' })}
+                />
+              ))}
+              {visibleTG.map(a => (
+                <AccountCard
+                  key={`tg-${a.id}`}
+                  account={a}
+                  platform="Telegram"
+                  onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'tg' })}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Painel lateral "Como conectar" — 1/3 */}
+          <div className="lg:col-span-1">
+            <ConnectHelpPanel activePlatformTab={platformTab === 'all' ? 'wa' : platformTab} />
+          </div>
         </div>
       )}
 

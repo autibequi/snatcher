@@ -423,6 +423,35 @@ func (h *ChannelsHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rule)
 }
 
+// ListRules retorna todas as regras de um canal.
+//
+//	@Summary      Listar regras do canal
+//	@Description  Retorna todas as regras (ChannelRule) do canal especificado.
+//	@Tags         channels
+//	@Produce      json
+//	@Param        id   path      int  true  "Channel ID"
+//	@Success      200  {array}   models.ChannelRule
+//	@Failure      400  {object}  object{error=string}
+//	@Failure      500  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/channels/{id}/rules [get]
+func (h *ChannelsHandler) ListRules(w http.ResponseWriter, r *http.Request) {
+	channelID, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	rules, err := h.store.ListChannelRules(channelID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rules == nil {
+		rules = []models.ChannelRule{}
+	}
+	writeJSON(w, http.StatusOK, rules)
+}
+
 func (h *ChannelsHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	ruleID, ok := pathInt(r, "rule_id")
 	if !ok {

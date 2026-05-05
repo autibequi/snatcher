@@ -87,6 +87,57 @@ func (h *AffiliateProgramsHandler) Delete(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Stats retorna estatísticas agregadas por programa de afiliado.
+//
+// TODO: as colunas clicks_30d, conversions_30d, revenue_30d e last_sync_at
+// não existem na tabela affiliate_programs. Quando forem adicionadas, substituir
+// os zeros abaixo por queries reais.
+//
+//	@Summary      Stats por programa de afiliado
+//	@Description  Retorna clicks_30d, conversions_30d, revenue_30d e last_sync_at por programa.
+//	@Tags         affiliates
+//	@Produce      json
+//	@Success      200  {array}   object{id=int,name=string,marketplace=string,clicks_30d=int,conversions_30d=int,revenue_30d=number,last_sync_at=string}
+//	@Security     BearerAuth
+//	@Router       /api/affiliates/programs/stats [get]
+func (h *AffiliateProgramsHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	programs, err := h.store.ListAffiliatePrograms(nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao listar programas")
+		return
+	}
+
+	type programStats struct {
+		ID             int64   `json:"id"`
+		Name           string  `json:"name"`
+		Marketplace    string  `json:"marketplace"`
+		Active         bool    `json:"active"`
+		Clicks30d      int     `json:"clicks_30d"`
+		Conversions30d int     `json:"conversions_30d"`
+		Revenue30d     float64 `json:"revenue_30d"`
+		LastSyncAt     *string `json:"last_sync_at"`
+	}
+
+	out := make([]programStats, 0, len(programs))
+	for _, p := range programs {
+		// TODO: calcular clicks_30d, conversions_30d e revenue_30d quando
+		// tabela affiliate_stats (ou colunas equivalentes) estiver disponível.
+		// TODO: popular last_sync_at quando campo last_sync_at for adicionado à tabela affiliate_programs.
+		out = append(out, programStats{
+			ID:             p.ID,
+			Name:           p.Name,
+			Marketplace:    p.Marketplace,
+			Active:         p.Active,
+			Clicks30d:      0,
+			Conversions30d: 0,
+			Revenue30d:     0.0,
+			LastSyncAt:     nil,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
 // BuildLink constrói o link de afiliado para um produto.
 //
 // POST /api/affiliates/build-link

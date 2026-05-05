@@ -3,19 +3,27 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jmoiron/sqlx"
 )
 
 type PublicLinksHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
 func NewPublicLinksHandler(st store.Store) *PublicLinksHandler {
 	return &PublicLinksHandler{store: st}
+}
+
+// NewPublicLinksHandlerDB cria o handler com acesso direto ao DB para queries analíticas.
+func NewPublicLinksHandlerDB(st store.Store, db *sqlx.DB) *PublicLinksHandler {
+	return &PublicLinksHandler{store: st, db: db}
 }
 
 // List godoc
@@ -184,4 +192,98 @@ func (h *PublicLinksHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, group.InviteLink.String, http.StatusFound)
+}
+
+// Analytics retorna métricas analíticas de um public link nos últimos 7 dias.
+//
+//	@Summary      Analíticas de public link
+//	@Description  Retorna clicks diários, total de clicks, CTR e receita dos últimos 7 dias.
+//	@Tags         public-links
+//	@Produce      json
+//	@Param        id   path      int  true  "PublicLink ID"
+//	@Success      200  {object}  object{clicks_daily_7d=[]int,clicks_total_7d=int,ctr_7d=number,revenue_7d=number}
+//	@Failure      400  {object}  object{error=string}
+//	@Failure      404  {object}  object{error=string}
+//	@Security     BearerAuth
+//	@Router       /api/public-links/{id}/analytics [get]
+func (h *PublicLinksHandler) Analytics(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	link, err := h.store.GetPublicLink(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "link nao encontrado")
+		return
+	}
+
+	// clicksDaily: clicks por dia dos últimos 7 dias agrupados via dispatch_targets
+	// Estratégia: agrupar click_count de dispatch_targets cujo group_id está na fallback_chain do link,
+	// por dia (D-6 a D-0). Se DB não disponível ou sem dados → retorna zeros.
+	clicksDaily := [7]int{}
+	var clicksTotal int
+	var revenue float64
+
+	if h.db != nil {
+		// Desserializa fallback_chain para obter group IDs associados
+		var chainIDs []int64
+		_ = json.Unmarshal(link.FallbackChain, &chainIDs)
+
+		if len(chainIDs) > 0 {
+			// Agregar clicks por dia dos últimos 7 dias
+			// TODO: quando houver tabela link_clicks com timestamps por link, usar essa tabela.
+			// Por ora, agrega click_count de dispatch_targets por group_id e dia de entrega.
+			type dayAgg struct {
+				DayOffset int     `db:"day_offset"`
+				Clicks    int     `db:"clicks"`
+				Revenue   float64 `db:"revenue"`
+			}
+
+			// Gera série de 0-6 dias e agrega — compatível com Postgres; SQLite usa CTE recursivo mas
+			// generate_series não está disponível: retorna zeros com TODO.
+			now := time.Now()
+			for i := 0; i < 7; i++ {
+				dayStart := now.Add(-time.Duration(6-i) * 24 * time.Hour).Truncate(24 * time.Hour)
+				dayEnd := dayStart.Add(24 * time.Hour)
+				var dayClicks int
+				var dayRevenue float64
+				// TODO: filtrar por link_id quando tabela link_clicks existir.
+				// Atualmente agrega por group_id da fallback_chain no intervalo do dia.
+				_ = h.db.GetContext(r.Context(), &dayClicks,
+					`SELECT COALESCE(SUM(dt.click_count), 0)
+					 FROM dispatch_targets dt
+					 WHERE dt.group_id = ANY($1)
+					   AND dt.delivered_at >= $2 AND dt.delivered_at < $3`,
+					chainIDs, dayStart, dayEnd)
+				_ = h.db.GetContext(r.Context(), &dayRevenue,
+					`SELECT COALESCE(SUM(dt.revenue), 0.0)
+					 FROM dispatch_targets dt
+					 WHERE dt.group_id = ANY($1)
+					   AND dt.delivered_at >= $2 AND dt.delivered_at < $3`,
+					chainIDs, dayStart, dayEnd)
+				clicksDaily[i] = dayClicks
+				clicksTotal += dayClicks
+				revenue += dayRevenue
+			}
+		}
+	}
+
+	// CTR: clicks / link.Clicks30d (proxy para impressões) — se sem impressões retorna 0.0
+	// TODO: substituir por impressões reais quando rastreamento de views estiver disponível.
+	ctr7d := 0.0
+	if link.Clicks30d > 0 {
+		// Aproximação: clicks_7d / (clicks_30d / 30 * 7) = clicks_total_7d * 30 / (clicks_30d * 7)
+		impressions7d := float64(link.Clicks30d) / 30.0 * 7.0
+		if impressions7d > 0 {
+			ctr7d = float64(clicksTotal) / impressions7d
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"clicks_daily_7d": clicksDaily[:],
+		"clicks_total_7d": clicksTotal,
+		"ctr_7d":          ctr7d,
+		"revenue_7d":      revenue,
+	})
 }

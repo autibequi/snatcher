@@ -5,14 +5,23 @@ import (
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 	"strconv"
+	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type CatalogHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
 func NewCatalog(st store.Store) *CatalogHandler {
 	return &CatalogHandler{store: st}
+}
+
+// NewCatalogDB cria o handler com acesso direto ao DB para queries agregadas.
+func NewCatalogDB(st store.Store, db *sqlx.DB) *CatalogHandler {
+	return &CatalogHandler{store: st, db: db}
 }
 
 // List retorna produtos do catálogo com paginação.
@@ -45,12 +54,69 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, _ := h.store.CountCatalogProducts()
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"items":  products,
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
-	})
+	}
+
+	// ?grouped_counts=1 — adiciona contagens por estado ao response.
+	if q.Get("grouped_counts") == "1" {
+		resp["counts"] = h.groupedCounts(r)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// groupedCounts retorna contagens agrupadas por estado do catálogo.
+//
+// Definições:
+//   - novos:         produtos criados nos últimos 7 dias (proxy para "recém descobertos")
+//   - curados:       produtos com brand preenchido (proxy para "revisados/curados")
+//   - disparados_7d: produtos que apareceram em pelo menos 1 dispatch nos últimos 7 dias
+//   - tudo:          total de produtos
+//
+// TODO: quando catalogproduct tiver coluna status (pending_curation|approved|rejected),
+// substituir proxies pelas contagens diretas.
+func (h *CatalogHandler) groupedCounts(r *http.Request) map[string]int64 {
+	counts := map[string]int64{
+		"novos":        0,
+		"curados":      0,
+		"disparados_7d": 0,
+		"tudo":         0,
+	}
+
+	total, _ := h.store.CountCatalogProducts()
+	counts["tudo"] = total
+
+	if h.db == nil {
+		return counts
+	}
+
+	ctx := r.Context()
+	since7d := time.Now().Add(-7 * 24 * time.Hour)
+
+	// novos: criados nos últimos 7 dias
+	var novos int64
+	_ = h.db.GetContext(ctx, &novos,
+		`SELECT COUNT(*) FROM catalogproduct WHERE created_at >= $1`, since7d)
+	counts["novos"] = novos
+
+	// curados: com brand preenchido (proxy — TODO: substituir por status='approved')
+	var curados int64
+	_ = h.db.GetContext(ctx, &curados,
+		`SELECT COUNT(*) FROM catalogproduct WHERE brand IS NOT NULL AND brand != ''`)
+	counts["curados"] = curados
+
+	// disparados_7d: produtos vinculados a dispatches nos últimos 7 dias
+	var disparados int64
+	_ = h.db.GetContext(ctx, &disparados,
+		`SELECT COUNT(DISTINCT d.product_id) FROM dispatches d
+		 WHERE d.created_at >= $1 AND d.product_id IS NOT NULL`, since7d)
+	counts["disparados_7d"] = disparados
+
+	return counts
 }
 
 // Get retorna um produto do catálogo pelo ID.

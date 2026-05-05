@@ -51,12 +51,27 @@ function PriceHistoryChart({ productId }: { productId: number }) {
   )
 }
 
-const TABS = [
-  { id: 'new', label: 'Novos' },
-  { id: 'curated', label: 'Curados' },
-  { id: 'sent', label: 'Disparados 7d' },
-  { id: 'all', label: 'Tudo' },
-]
+interface TabCounts {
+  new?: number
+  curated?: number
+  sent?: number
+  all?: number
+}
+
+interface TabDef {
+  id: string
+  label: string
+}
+
+function buildTabs(counts: TabCounts): TabDef[] {
+  const fmt = (n?: number) => n !== undefined ? ` (${n})` : ''
+  return [
+    { id: 'new', label: `Novos${fmt(counts.new)}` },
+    { id: 'curated', label: `Curados${fmt(counts.curated)}` },
+    { id: 'sent', label: `Disparados 7d${fmt(counts.sent)}` },
+    { id: 'all', label: `Tudo${fmt(counts.all)}` },
+  ]
+}
 
 interface Product {
   id: number
@@ -69,6 +84,7 @@ interface Product {
   created_at?: string
 }
 
+// ── PriceSparkline — inline na coluna da tabela ───────────────────────────────
 function PriceSparkline({ productId }: { productId: number }) {
   const { data: history = [] } = useQuery({
     queryKey: ['catalog', 'history', productId],
@@ -81,7 +97,7 @@ function PriceSparkline({ productId }: { productId: number }) {
     enabled: !!productId,
   })
 
-  if (history.length < 2) return null
+  if (history.length < 2) return <span className="text-xs text-fg-3">—</span>
 
   const data = history.map((h: any) => ({ v: h.price ?? h.value ?? 0 }))
   const prices = data.map((d: any) => d.v)
@@ -266,12 +282,26 @@ export default function Catalog() {
   const [showAddModal, setShowAddModal] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
 
+  // ── 1 fetch inicial para grouped_counts ──────────────────────────────────
+  const { data: countsData } = useQuery<{ counts?: TabCounts }>({
+    queryKey: ['catalog', 'grouped-counts'],
+    queryFn: () =>
+      apiClient
+        .get('/api/catalog?grouped_counts=1')
+        .then(r => r.data)
+        .catch(() => ({})),
+    staleTime: 60_000,
+  })
+  const counts: TabCounts = countsData?.counts ?? {}
+  const TABS = buildTabs(counts)
+
   const { data: rawProducts = [], isLoading } = useQuery<Product[]>({
     queryKey: ['catalog', tab, search, source],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
+      if (tab !== 'all') params.set('status', tab)
       return apiClient.get(`/api/catalog?${params}`).then(r => {
         const d = r.data
         return Array.isArray(d) ? d : (d?.items ?? d?.products ?? [])
@@ -335,7 +365,7 @@ export default function Catalog() {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs com contagem */}
         <Tabs
           tabs={TABS}
           active={tab}
@@ -426,6 +456,9 @@ export default function Catalog() {
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
                   Produto
                 </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
+                  Histórico
+                </th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-fg-2 uppercase tracking-wide">
                   Preco
                 </th>
@@ -442,7 +475,7 @@ export default function Catalog() {
               {products.map(p => {
                 const title = p.canonical_name ?? 'Produto'
                 const price = p.lowest_price ?? 0
-                const source = p.lowest_price_source ?? ''
+                const src = p.lowest_price_source ?? ''
                 const isSelected = selected.has(p.id)
 
                 const isExpanded = expandedId === p.id
@@ -477,21 +510,22 @@ export default function Catalog() {
                           {p.brand && (
                             <p className="text-xs text-fg-3">
                               {p.brand}
-                              {source ? ` · ${source}` : ''}
+                              {src ? ` · ${src}` : ''}
                             </p>
                           )}
                         </div>
                       </div>
                     </td>
+                    {/* Sparkline column — inline */}
+                    <td className="px-4 py-3">
+                      <PriceSparkline productId={p.id} />
+                    </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <PriceSparkline productId={p.id} />
-                        {price > 0 ? (
-                          <span className="font-semibold text-fg">R$ {price.toFixed(2)}</span>
-                        ) : (
-                          '—'
-                        )}
-                      </div>
+                      {price > 0 ? (
+                        <span className="font-semibold text-fg">R$ {price.toFixed(2)}</span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge variant="success" size="sm">
@@ -520,7 +554,7 @@ export default function Catalog() {
                   </tr>
                   {isExpanded && (
                     <tr className="border-b border-border bg-surface-2">
-                      <td colSpan={6} className="px-2 pt-2">
+                      <td colSpan={7} className="px-2 pt-2">
                         <PriceHistoryChart productId={p.id} />
                       </td>
                     </tr>

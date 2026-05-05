@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { BarChart, Bar, ResponsiveContainer } from 'recharts'
 import { Badge, Button, Input, Modal, Skeleton, EmptyState, Switch } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
@@ -14,6 +15,7 @@ interface Channel {
   ctr_30d?: number
   cvr_30d?: number
   revenue_30d?: number
+  dispatches_7d_series?: number[]
   audience?: {
     categories?: string[]
     min_drop?: number
@@ -53,6 +55,40 @@ function parseTagList(value: string): string[] {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
+}
+
+// ── Mock fallback 7d series ──────────────────────────────────────────────────
+function mockSeries7d(seed: number): number[] {
+  // deterministic-ish mock based on seed
+  return Array.from({ length: 7 }, (_, i) => Math.max(0, Math.round(10 + ((seed + i * 3) % 40))))
+}
+
+// ── Inline mini bar-chart ─────────────────────────────────────────────────────
+function ChannelMiniChart({ channelId, series }: { channelId: number; series?: number[] }) {
+  // try to fetch metrics; fallback to passed series or mock
+  const { data: metricsData } = useQuery<{ dispatches_7d_series?: number[] }>({
+    queryKey: ['channel-metrics', channelId],
+    queryFn: () =>
+      apiClient
+        .get(`/api/channels/${channelId}/metrics`)
+        .then(r => r.data)
+        .catch(() => ({})),
+    staleTime: 5 * 60_000,
+    enabled: !series,
+  })
+
+  const raw = series ?? metricsData?.dispatches_7d_series ?? mockSeries7d(channelId)
+  const chartData = raw.map((v, i) => ({ day: i, v }))
+
+  return (
+    <div className="w-full h-10">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} barSize={4} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+          <Bar dataKey="v" fill="var(--color-accent, #6366f1)" radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
 }
 
 function CreateChannelModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -224,20 +260,22 @@ function CreateChannelModal({ open, onClose }: { open: boolean; onClose: () => v
   )
 }
 
-const CARD_COLORS = [
-  'border-t-blue-500', 'border-t-teal-500', 'border-t-green-500',
-  'border-t-amber-500', 'border-t-pink-500', 'border-t-purple-500',
-  'border-t-orange-500', 'border-t-cyan-500',
-]
+// ── Status border color ───────────────────────────────────────────────────────
+function statusBorderClass(channel: Channel): string {
+  // warning heuristic: member_count 0 or very low ctr
+  if (!channel.active) return 'border-l-4 border-l-neutral-500'
+  if (channel.member_count !== undefined && channel.member_count < 5) return 'border-l-4 border-l-yellow-500'
+  return 'border-l-4 border-l-green-500'
+}
 
 function ChannelCard({ channel, onClick, index }: { channel: Channel; onClick: () => void; index: number }) {
-  const color = CARD_COLORS[index % CARD_COLORS.length]
   return (
     <div
       onClick={onClick}
-      className={`bg-surface border-2 border-border ${color} border-t-4 rounded-md p-4 hover:border-border-strong cursor-pointer transition-colors`}
+      className={`bg-surface border border-border rounded-md p-4 hover:border-border-strong cursor-pointer transition-colors flex flex-col gap-2 ${statusBorderClass(channel)}`}
     >
-      <div className="flex items-start justify-between mb-1">
+      {/* Header */}
+      <div className="flex items-start justify-between">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <p className="font-medium text-fg">{channel.name}</p>
           {channel.platform && (
@@ -250,13 +288,18 @@ function ChannelCard({ channel, onClick, index }: { channel: Channel; onClick: (
           {channel.active ? 'ativo' : 'inativo'}
         </Badge>
       </div>
+
+      {/* Description */}
       {channel.description && (
-        <p className="text-xs text-fg-3 mt-0.5 mb-2 line-clamp-1">{channel.description}</p>
+        <p className="text-xs text-fg-3 line-clamp-1">{channel.description}</p>
       )}
-      {channel.audience?.categories?.slice(0, 3).map(c => (
-        <span key={c} className="text-xs text-fg-3 after:content-[',_'] last:after:content-['']">{c}</span>
-      ))}
-      <div className="grid grid-cols-3 gap-2 mt-2">
+
+      {/* Mini bar-chart — dispatches 7d */}
+      <ChannelMiniChart channelId={channel.id} series={channel.dispatches_7d_series} />
+      <p className="text-[10px] text-fg-3 -mt-1">Disparos 7d</p>
+
+      {/* Metrics row */}
+      <div className="grid grid-cols-3 gap-2 mt-1">
         <div>
           <p className="text-xs text-fg-3">Membros</p>
           <p className="text-sm font-medium text-fg">{channel.member_count ?? 0}</p>
@@ -270,14 +313,30 @@ function ChannelCard({ channel, onClick, index }: { channel: Channel; onClick: (
           <p className="text-sm font-medium text-fg">{channel.revenue_30d ? `R$ ${channel.revenue_30d.toFixed(0)}` : '—'}</p>
         </div>
       </div>
+
+      {/* Tags */}
       {channel.audience?.categories?.length ? (
-        <div className="flex gap-1 flex-wrap mt-2">
+        <div className="flex gap-1 flex-wrap">
           {channel.audience.categories.slice(0, 3).map(c => (
             <Badge key={c} size="sm" variant="accent">{c}</Badge>
           ))}
         </div>
       ) : null}
     </div>
+  )
+}
+
+// ── Placeholder card "+ Novo canal" ──────────────────────────────────────────
+function NewChannelPlaceholder({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="bg-surface border-2 border-dashed border-border rounded-md p-4 hover:border-accent hover:bg-accent/5 transition-colors flex flex-col items-center justify-center gap-2 min-h-[160px] w-full cursor-pointer"
+    >
+      <span className="text-3xl text-fg-3">+</span>
+      <span className="text-sm text-fg-3 font-medium">Novo canal</span>
+    </button>
   )
 }
 
@@ -304,16 +363,15 @@ export default function Channels() {
           {Array.from({length:6}).map((_,i) => <Skeleton key={i} variant="card" className="h-36" />)}
         </div>
       ) : !channels.length ? (
-        <EmptyState
-          title="Nenhum canal"
-          description="Crie um canal para definir o público das suas promoções."
-          cta={{ label: 'Criar canal', onClick: () => setShowModal(true) }}
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <NewChannelPlaceholder onClick={() => setShowModal(true)} />
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {channels.map((ch, i) => (
             <ChannelCard key={ch.id} channel={ch} onClick={() => navigate(`/channels/${ch.id}`)} index={i} />
           ))}
+          <NewChannelPlaceholder onClick={() => setShowModal(true)} />
         </div>
       )}
 

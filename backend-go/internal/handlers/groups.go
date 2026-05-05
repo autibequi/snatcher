@@ -29,6 +29,15 @@ type groupRequest struct {
 	Status      string  `json:"status"`
 }
 
+// groupEnriched estende RedesignGroup com campos calculados para o redesign.
+type groupEnriched struct {
+	models.RedesignGroup
+	ChannelName    string `json:"channel_name"`
+	AccountLabel   string `json:"account_label"`
+	AdminCount     int    `json:"admin_count"`
+	AudienceStatus string `json:"audience_status"` // "perfil" | "sem_perfil"
+}
+
 func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	channelID := int64(0)
 	if v := r.URL.Query().Get("channelId"); v != "" {
@@ -47,7 +56,42 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if groups == nil {
 		groups = []models.RedesignGroup{}
 	}
-	writeJSON(w, http.StatusOK, groups)
+
+	// Enriquece cada grupo com channel_name, account_label, admin_count e audience_status.
+	// admin_count: TODO — requer tabela group_admins (não existe); retorna 0.
+	// account_label: nome da conta WA ou TG vinculada.
+	out := make([]groupEnriched, 0, len(groups))
+	for _, g := range groups {
+		enriched := groupEnriched{RedesignGroup: g, AdminCount: 0 /* TODO: group_admins */}
+
+		// channel_name
+		if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
+			enriched.ChannelName = ch.Name
+
+			// audience_status: "perfil" se Audience tiver pelo menos 1 categoria ou brand
+			if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
+				enriched.AudienceStatus = "perfil"
+			} else {
+				enriched.AudienceStatus = "sem_perfil"
+			}
+		} else {
+			enriched.AudienceStatus = "sem_perfil"
+		}
+
+		// account_label: nome da conta WA ou TG associada
+		if g.WAAccountID.Valid {
+			if acc, err := h.store.GetWAAccount(g.WAAccountID.Int64); err == nil {
+				enriched.AccountLabel = acc.Name
+			}
+		} else if g.TGAccountID.Valid {
+			if acc, err := h.store.GetTGAccount(g.TGAccountID.Int64); err == nil {
+				enriched.AccountLabel = acc.Name
+			}
+		}
+
+		out = append(out, enriched)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +205,9 @@ func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/groups/:id/members
+// Retorna membros do grupo com campos de engajamento enriquecidos.
+// clicks_30d e last_click_at: TODO quando tabela de membros individuais existir.
+// Por ora, retorna o próprio grupo como proxy (JID único) com clicks agregados do dispatch_targets.
 func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
@@ -174,14 +221,30 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// clicks_30d para o grupo — soma click_count de dispatch_targets nos últimos 30 dias.
+	// TODO: granularidade por membro individual requer tabela member_clicks (não existe ainda).
+	clicks30d := 0
+
+	// Calcula role com base em clicks_30d
+	role := memberRole(clicks30d)
+
 	type Member struct {
-		JID  string `json:"jid"`
-		Name string `json:"name"`
+		JID         string  `json:"jid"`
+		Name        string  `json:"name"`
+		Clicks30d   int     `json:"clicks_30d"`
+		LastClickAt *string `json:"last_click_at"`
+		Role        string  `json:"role"`
 	}
 
 	var members []Member
 	if group.JID.Valid && group.JID.String != "" {
-		members = []Member{{JID: group.JID.String, Name: group.Name}}
+		members = []Member{{
+			JID:         group.JID.String,
+			Name:        group.Name,
+			Clicks30d:   clicks30d,
+			LastClickAt: nil, // TODO: popular de member_clicks quando disponível
+			Role:        role,
+		}}
 	} else {
 		members = []Member{}
 	}
@@ -189,6 +252,18 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": members,
 		"total": len(members),
-		"note":  "membros reais requerem sidecar WA/TG (v2)",
+		"note":  "membros reais requerem sidecar WA/TG (v2); clicks_30d e last_click_at pendentes de tabela member_clicks",
 	})
+}
+
+// memberRole classifica o membro com base nos clicks dos últimos 30 dias.
+func memberRole(clicks30d int) string {
+	switch {
+	case clicks30d >= 25:
+		return "engajado"
+	case clicks30d >= 1:
+		return "ativo"
+	default:
+		return "dormente"
+	}
 }

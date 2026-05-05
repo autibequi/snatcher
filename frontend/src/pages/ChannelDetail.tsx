@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Badge, Button, Tabs, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
@@ -308,11 +309,340 @@ function AccountGroupsPicker({
   )
 }
 
+// ── Aba: Regras (QUANDO X ENTÃO Y) ───────────────────────────────────────────
+
+interface ChannelRule {
+  id: number
+  trigger: string
+  action: string
+  created_at?: string
+}
+
+const RULE_TRIGGERS = [
+  { value: 'ctr_below_1pct', label: 'CTR abaixo de 1%' },
+  { value: 'ctr_below_2pct', label: 'CTR abaixo de 2%' },
+  { value: 'no_dispatch_3d', label: 'Sem disparo há 3 dias' },
+  { value: 'no_dispatch_7d', label: 'Sem disparo há 7 dias' },
+  { value: 'member_drop_10pct', label: 'Queda de membros ≥ 10%' },
+  { value: 'engagement_drop', label: 'Queda de engajamento' },
+]
+
+const RULE_ACTIONS = [
+  { value: 'notify_admin', label: 'Notificar administrador' },
+  { value: 'pause_channel', label: 'Pausar canal' },
+  { value: 'reduce_frequency', label: 'Reduzir frequência de disparos' },
+  { value: 'increase_frequency', label: 'Aumentar frequência de disparos' },
+  { value: 'flag_review', label: 'Marcar para revisão manual' },
+]
+
+function ChannelRules({ channelId }: { channelId: string }) {
+  const qc = useQueryClient()
+  const [showModal, setShowModal] = React.useState(false)
+  const [form, setForm] = React.useState({ trigger: '', action: '' })
+
+  const { data: rules = [], isLoading } = useQuery<ChannelRule[]>({
+    queryKey: ['channels', channelId, 'rules'],
+    queryFn: () =>
+      apiClient
+        .get(`/api/channels/${channelId}/rules`)
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
+    staleTime: 30_000,
+  })
+
+  const addMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/channels/${channelId}/rules`, {
+          trigger: form.trigger,
+          action: form.action,
+        })
+        .then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', channelId, 'rules'] })
+      setShowModal(false)
+      setForm({ trigger: '', action: '' })
+    },
+    onError: (err: any) =>
+      alert(err?.response?.data?.error ?? 'Erro ao criar regra'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (ruleId: number) =>
+      apiClient.delete(`/api/channels/${channelId}/rules/${ruleId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['channels', channelId, 'rules'] }),
+    onError: (err: any) =>
+      alert(err?.response?.data?.error ?? 'Erro ao remover regra'),
+  })
+
+  const triggerLabel = (v: string) =>
+    RULE_TRIGGERS.find(t => t.value === v)?.label ?? v
+  const actionLabel = (v: string) =>
+    RULE_ACTIONS.find(a => a.value === v)?.label ?? v
+
+  return (
+    <>
+      {showModal && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-semibold text-fg mb-4">Adicionar regra</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">
+                  QUANDO (gatilho)
+                </label>
+                <select
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                  value={form.trigger}
+                  onChange={e => setForm(f => ({ ...f, trigger: e.target.value }))}
+                >
+                  <option value="">Selecione...</option>
+                  {RULE_TRIGGERS.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">
+                  ENTÃO (ação)
+                </label>
+                <select
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                  value={form.action}
+                  onChange={e => setForm(f => ({ ...f, action: e.target.value }))}
+                >
+                  <option value="">Selecione...</option>
+                  {RULE_ACTIONS.map(a => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-5">
+              <Button variant="secondary" size="sm" onClick={() => setShowModal(false)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={addMut.isPending}
+                disabled={!form.trigger || !form.action}
+                onClick={() => addMut.mutate()}
+              >
+                Criar regra
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-fg-2">
+            Regras automáticas de resposta a eventos do canal
+          </p>
+          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+            + Adicionar regra
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+          </div>
+        ) : rules.length === 0 ? (
+          <div className="border border-border rounded-md p-6 text-center">
+            <p className="text-sm text-fg-3 mb-1">Nenhuma regra configurada.</p>
+            <p className="text-xs text-fg-3">
+              Regras permitem automatizar ações quando condições são detectadas.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rules.map(rule => (
+              <div
+                key={rule.id}
+                className="border border-border rounded-md p-4 flex items-start justify-between gap-4 bg-surface"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded">
+                      QUANDO
+                    </span>
+                    <span className="text-sm text-fg">{triggerLabel(rule.trigger)}</span>
+                    <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded">
+                      ENTÃO
+                    </span>
+                    <span className="text-sm text-fg">{actionLabel(rule.action)}</span>
+                  </div>
+                  {rule.created_at && (
+                    <p className="text-xs text-fg-3 mt-1">
+                      Criada em {new Date(rule.created_at).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-danger hover:underline shrink-0"
+                  onClick={() => {
+                    if (confirm('Remover esta regra?')) deleteMut.mutate(rule.id)
+                  }}
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ── Aba: Demografia (stub) ────────────────────────────────────────────────────
+
+function ChannelDemographics() {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-fg-2">Distribuição demográfica estimada da audiência do canal.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Gênero */}
+        <div className="border border-border rounded-md p-4 bg-surface">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Gênero</p>
+          <div className="space-y-2">
+            {[{ label: 'Feminino', pct: 58 }, { label: 'Masculino', pct: 38 }, { label: 'Outro', pct: 4 }].map(g => (
+              <div key={g.label}>
+                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
+                  <span>{g.label}</span>
+                  <span>{g.pct}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                  <div className="h-full bg-accent rounded-full" style={{ width: `${g.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
+        </div>
+        {/* Faixa etária */}
+        <div className="border border-border rounded-md p-4 bg-surface">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Faixa etária</p>
+          <div className="space-y-2">
+            {[{ label: '18–24', pct: 22 }, { label: '25–34', pct: 40 }, { label: '35–44', pct: 25 }, { label: '45+', pct: 13 }].map(a => (
+              <div key={a.label}>
+                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
+                  <span>{a.label}</span>
+                  <span>{a.pct}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                  <div className="h-full bg-accent rounded-full" style={{ width: `${a.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
+        </div>
+        {/* Região */}
+        <div className="border border-border rounded-md p-4 bg-surface">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Região</p>
+          <div className="space-y-2">
+            {[{ label: 'Sudeste', pct: 45 }, { label: 'Sul', pct: 20 }, { label: 'Nordeste', pct: 18 }, { label: 'Outros', pct: 17 }].map(r => (
+              <div key={r.label}>
+                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
+                  <span>{r.label}</span>
+                  <span>{r.pct}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                  <div className="h-full bg-accent rounded-full" style={{ width: `${r.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Aba: Link público (placeholder) ──────────────────────────────────────────
+
+function ChannelPublicLink({ channelId }: { channelId: string }) {
+  return (
+    <div className="max-w-lg">
+      <p className="text-sm text-fg-2 mb-4">
+        Link público de afiliado para este canal. Compartilhe para rastrear conversões
+        atribuídas a este canal de forma independente.
+      </p>
+      <div className="border border-border rounded-md p-6 bg-surface-2 text-center">
+        <p className="text-sm font-medium text-fg mb-1">Em breve</p>
+        <p className="text-xs text-fg-3">
+          A geração de links públicos de afiliado por canal está em desenvolvimento.
+        </p>
+        <p className="text-xs text-fg-3 mt-1">
+          ID do canal: <span className="font-mono text-accent">{channelId}</span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Bar chart 7 dias ──────────────────────────────────────────────────────────
+
+interface DayPoint { day: string; value: number }
+
+function buildMock7d(): DayPoint[] {
+  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+  return days.map((day, i) => ({ day, value: 20 + Math.round(Math.sin(i * 0.9) * 15 + Math.random() * 10) }))
+}
+
+function DisparoChart({ metrics }: { metrics: any }) {
+  const data: DayPoint[] = React.useMemo(() => {
+    if (metrics?.dispatches_7d_series && Array.isArray(metrics.dispatches_7d_series)) {
+      return (metrics.dispatches_7d_series as { day: string; value: number }[]).map(p => ({
+        day: p.day,
+        value: p.value,
+      }))
+    }
+    return buildMock7d()
+  }, [metrics])
+
+  return (
+    <div className="border border-border rounded-md p-4 bg-surface">
+      <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">
+        Disparos — últimos 7 dias
+      </p>
+      <ResponsiveContainer width="100%" height={120}>
+        <BarChart data={data} margin={{ top: 2, right: 4, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #e5e7eb)" vertical={false} />
+          <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
+          <Tooltip
+            contentStyle={{ background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 6, fontSize: 12 }}
+            cursor={{ fill: 'var(--color-surface-2, #f3f4f6)' }}
+          />
+          <Bar dataKey="value" name="Disparos" fill="var(--color-accent, #6366f1)" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 const TABS = [
   { id: 'overview', label: 'Visão geral' },
   { id: 'audience', label: 'Audiência' },
+  { id: 'demographics', label: 'Demografia' },
   { id: 'groups', label: 'Grupos' },
+  { id: 'rules', label: 'Regras' },
   { id: 'history', label: 'Histórico' },
+  { id: 'publiclink', label: 'Link público' },
 ]
 
 export default function ChannelDetail() {
@@ -466,11 +796,30 @@ export default function ChannelDetail() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'overview' && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard label="Membros" value={metrics?.member_count ?? channel.member_count ?? 0} />
-            <KpiCard label="CTR 30d" value={metrics?.ctr ? `${(metrics.ctr * 100).toFixed(1)}%` : '—'} />
-            <KpiCard label="CVR 30d" value={metrics?.cvr ? `${(metrics.cvr * 100).toFixed(1)}%` : '—'} />
-            <KpiCard label="Receita 30d" value={metrics?.revenue ? `R$ ${Number(metrics.revenue).toFixed(0)}` : '—'} />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard
+                label="Disparos 7D"
+                value={metrics?.dispatches_7d ?? metrics?.dispatches_last_7d ?? '—'}
+              />
+              <KpiCard
+                label="CTR"
+                value={metrics?.ctr ? `${(metrics.ctr * 100).toFixed(1)}%` : '—'}
+              />
+              <KpiCard
+                label="Produtos"
+                value={metrics?.product_count ?? metrics?.products ?? '—'}
+              />
+              <KpiCard
+                label="Cliques estimados"
+                value={
+                  metrics?.estimated_clicks != null
+                    ? Number(metrics.estimated_clicks).toLocaleString('pt-BR')
+                    : '—'
+                }
+              />
+            </div>
+            <DisparoChart metrics={metrics} />
           </div>
         )}
 
@@ -574,8 +923,20 @@ export default function ChannelDetail() {
           </div>
         )}
 
+        {tab === 'demographics' && (
+          <ChannelDemographics />
+        )}
+
+        {tab === 'rules' && (
+          <ChannelRules channelId={id!} />
+        )}
+
         {tab === 'history' && (
           <ChannelHistory channelId={id!} />
+        )}
+
+        {tab === 'publiclink' && (
+          <ChannelPublicLink channelId={id!} />
         )}
       </div>
     </div>

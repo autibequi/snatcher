@@ -52,7 +52,7 @@ func Build(
 	terms := handlers.NewSearchTerms(st, scrapers)
 	sources := handlers.NewSources(st)
 	affiliates := handlers.NewAffiliates(st)
-	catalog := handlers.NewCatalog(st)
+	catalog := handlers.NewCatalogDB(st, db)
 	channels := handlers.NewChannels(st, adapters)
 	config := handlers.NewConfig(st)
 	canal := handlers.NewCanal(st)
@@ -66,7 +66,7 @@ func Build(
 	// ReDesign handlers
 	groups      := handlers.NewGroupsHandler(st)
 	matchH      := handlers.NewMatchHandler(st)
-	publLinks   := handlers.NewPublicLinksHandler(st)
+	publLinks   := handlers.NewPublicLinksHandlerDB(st, db)
 	affPrograms := handlers.NewAffiliateProgramsHandler(st)
 	groupSpies  := handlers.NewGroupSpiesHandler(st)
 	clustersH   := handlers.NewClustersHandler(st)
@@ -225,6 +225,7 @@ func Build(
 		r.Post("/api/channels/{id}/targets", channels.CreateTarget)
 		r.Patch("/api/channels/{id}/targets/{target_id}", channels.UpdateTarget)
 		r.Delete("/api/channels/{id}/targets/{target_id}", channels.DeleteTarget)
+		r.Get("/api/channels/{id}/rules", channels.ListRules)
 		r.Post("/api/channels/{id}/rules", channels.CreateRule)
 		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
 		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
@@ -310,10 +311,12 @@ func Build(
 		r.Get("/api/public-links/{id}", publLinks.Get)
 		r.Patch("/api/public-links/{id}", publLinks.Update)
 		r.Delete("/api/public-links/{id}", publLinks.Delete)
+		r.Get("/api/public-links/{id}/analytics", publLinks.Analytics)
 
 		// ReDesign: Affiliate Programs
 		r.Get("/api/affiliates/programs", affPrograms.List)
 		r.Post("/api/affiliates/programs", affPrograms.Create)
+		r.Get("/api/affiliates/programs/stats", affPrograms.Stats) // antes de /{id} — evita colisão
 		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
 		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
 		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)

@@ -1,15 +1,11 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Badge, Skeleton, EmptyState } from '../components/ui'
+import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
-const LOG_TABS = [
-  { id: 'dispatches', label: 'Disparos' },
-  { id: 'scheduled', label: 'Agendados' },
-  { id: 'crawlers', label: 'Crawlers' },
-]
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CrawlLogEntry {
   id: number
@@ -22,6 +18,97 @@ interface CrawlLogEntry {
   source_counts?: string
   error_msg?: { String: string; Valid: boolean }
 }
+
+interface Dispatch {
+  id: number
+  short_id?: string
+  status: string
+  composed_by?: string
+  message?: { text?: string; media_url?: string }
+  target_count?: number
+  delivered_count?: number
+  created_at: string
+  product_id?: number
+  scheduled_for?: string
+  // optional fields that may come from API
+  channel_name?: string
+  group_name?: string
+}
+
+// ── Unified log row for "Tudo" tab ────────────────────────────────────────────
+
+type LogType = 'dispatch' | 'crawl' | 'scheduled'
+
+interface UnifiedRow {
+  id: string
+  type: LogType
+  label: string
+  status: string
+  date: string
+  channel?: string
+  group?: string
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'> = {
+  completed: 'success',
+  queued: 'warning',
+  sending: 'warning',
+  failed: 'danger',
+  draft: 'default',
+  done: 'success',
+  running: 'warning',
+  error: 'danger',
+}
+
+function TypeBadge({ type }: { type: LogType }) {
+  if (type === 'dispatch') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        <span aria-hidden>●</span> Disparo
+      </span>
+    )
+  }
+  if (type === 'crawl') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+        <span aria-hidden>●</span> Crawl
+      </span>
+    )
+  }
+  // scheduled
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+      <span aria-hidden>●</span> Agenda
+    </span>
+  )
+}
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+
+function exportCsv(rows: UnifiedRow[], filename = 'logs.csv') {
+  const header = ['ID', 'Tipo', 'Descrição', 'Status', 'Canal', 'Grupo', 'Data']
+  const lines = rows.map(r => [
+    r.id,
+    r.type,
+    `"${r.label.replace(/"/g, '""')}"`,
+    r.status,
+    r.channel ?? '',
+    r.group ?? '',
+    r.date,
+  ].join(','))
+  const csv = [header.join(','), ...lines].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── CrawlerLogs subcomponent ──────────────────────────────────────────────────
 
 function CrawlerLogs() {
   const { data: logs = [], isLoading } = useQuery<CrawlLogEntry[]>({
@@ -37,12 +124,6 @@ function CrawlerLogs() {
 
   const termMap: Record<number, string> = {}
   for (const t of terms as any[]) termMap[t.id] = t.query
-
-  const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
-    done: 'success',
-    running: 'warning',
-    error: 'danger',
-  }
 
   const parseCounts = (log: CrawlLogEntry) => {
     try {
@@ -103,26 +184,7 @@ function CrawlerLogs() {
   )
 }
 
-interface Dispatch {
-  id: number
-  short_id?: string
-  status: string
-  composed_by?: string
-  message?: { text?: string; media_url?: string }
-  target_count?: number
-  delivered_count?: number
-  created_at: string
-  product_id?: number
-  scheduled_for?: string
-}
-
-const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'> = {
-  completed: 'success',
-  queued: 'warning',
-  sending: 'warning',
-  failed: 'danger',
-  draft: 'default',
-}
+// ── DispatchDrawer ────────────────────────────────────────────────────────────
 
 function DispatchDrawer({
   dispatch,
@@ -179,6 +241,23 @@ function DispatchDrawer({
           </div>
         )}
 
+        {(dispatch.channel_name || dispatch.group_name) && (
+          <div className="grid grid-cols-2 gap-3">
+            {dispatch.channel_name && (
+              <div className="bg-surface-2 rounded-md p-3">
+                <p className="text-xs text-fg-3">Canal</p>
+                <p className="text-sm font-medium text-fg">{dispatch.channel_name}</p>
+              </div>
+            )}
+            {dispatch.group_name && (
+              <div className="bg-surface-2 rounded-md p-3">
+                <p className="text-xs text-fg-3">Grupo</p>
+                <p className="text-sm font-medium text-fg">{dispatch.group_name}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {dispatch.target_count != null && (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-surface-2 rounded-md p-3">
@@ -212,7 +291,8 @@ function DispatchDrawer({
   )
 }
 
-// ── Agendados ────────────────────────────────────────────────────────────────
+// ── ScheduledDispatches ───────────────────────────────────────────────────────
+
 function ScheduledDispatches() {
   const qc = useQueryClient()
   const [previewText, setPreviewText] = React.useState<string | null>(null)
@@ -268,7 +348,6 @@ function ScheduledDispatches() {
           </thead>
           <tbody>
             {items.map((d: any) => {
-              // message pode ser objeto ou string JSON
               const msg = typeof d.message === 'string' ? (() => { try { return JSON.parse(d.message) } catch { return {} } })() : (d.message ?? {})
               const text = msg?.text ?? ''
               const displayText = text.slice(0, 60) || `Disparo agendado #${d.id}`
@@ -319,9 +398,67 @@ function ScheduledDispatches() {
   )
 }
 
+// ── ErrorsTab ─────────────────────────────────────────────────────────────────
+
+function ErrorsTab({ dispatches, crawlLogs }: { dispatches: Dispatch[]; crawlLogs: CrawlLogEntry[] }) {
+  const failedDispatches = dispatches.filter(d => d.status === 'failed')
+  const errorCrawls = crawlLogs.filter(l => l.status === 'error')
+
+  if (failedDispatches.length === 0 && errorCrawls.length === 0) {
+    return <EmptyState title="Nenhum erro" description="Nenhum disparo ou crawl com erro encontrado." />
+  }
+
+  return (
+    <div className="space-y-4">
+      {failedDispatches.length > 0 && (
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Disparos com falha ({failedDispatches.length})</p>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {failedDispatches.map(d => (
+                <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-4 py-2.5 text-fg font-mono text-xs">{d.short_id ?? `#${d.id}`}</td>
+                  <td className="px-4 py-2.5 text-fg-2 text-xs">{d.message?.text?.slice(0, 60) ?? '(sem texto)'}</td>
+                  <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(d.created_at).toLocaleString('pt-BR')}</td>
+                  <td className="px-4 py-2.5"><Badge variant="danger" size="sm">falhou</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {errorCrawls.length > 0 && (
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Crawlers com erro ({errorCrawls.length})</p>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {errorCrawls.map(l => (
+                <tr key={l.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-4 py-2.5 text-fg text-xs">{`#${l.search_term_id}`}</td>
+                  <td className="px-4 py-2.5 text-xs text-danger truncate max-w-xs">{l.error_msg?.Valid ? l.error_msg.String : 'erro desconhecido'}</td>
+                  <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(l.started_at).toLocaleString('pt-BR')}</td>
+                  <td className="px-4 py-2.5"><Badge variant="danger" size="sm">erro</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main Logs page ────────────────────────────────────────────────────────────
+
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors'
+
 export default function Logs() {
   const navigate = useNavigate()
-  const [logTab, setLogTab] = React.useState('dispatches')
+  const [logTab, setLogTab] = React.useState<LogTab>('dispatches')
   const [params] = useSearchParams()
   const statusFilter = params.get('status') ?? ''
   const [status, setStatus] = React.useState(statusFilter)
@@ -336,16 +473,16 @@ export default function Logs() {
     queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
   })
 
-  const { isLoading } = useQuery<Dispatch[]>({
+  const { isLoading: dispatchLoading } = useQuery<Dispatch[]>({
     queryKey: ['dispatches', status, dateFrom, dateTo, accountId],
     queryFn: () => {
-      const params = new URLSearchParams()
-      if (status) params.set('status', status)
-      if (dateFrom) params.set('date_from', dateFrom)
-      if (dateTo) params.set('date_to', dateTo)
-      if (accountId) params.set('account_id', accountId)
+      const qp = new URLSearchParams()
+      if (status) qp.set('status', status)
+      if (dateFrom) qp.set('date_from', dateFrom)
+      if (dateTo) qp.set('date_to', dateTo)
+      if (accountId) qp.set('account_id', accountId)
       return apiClient
-        .get(`/api/dispatches${params.toString() ? '?' + params : ''}`)
+        .get(`/api/dispatches${qp.toString() ? '?' + qp : ''}`)
         .then((r) => {
           const data = Array.isArray(r.data) ? r.data : []
           setItems(data)
@@ -355,168 +492,330 @@ export default function Logs() {
     refetchInterval: 30_000,
   })
 
+  const { data: crawlLogs = [] } = useQuery<CrawlLogEntry[]>({
+    queryKey: ['crawl-logs'],
+    queryFn: () => apiClient.get('/api/crawl-logs?limit=100').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 15_000,
+  })
+
+  const { data: scheduledItems = [] } = useQuery({
+    queryKey: ['dispatches', 'scheduled'],
+    queryFn: () =>
+      apiClient.get('/api/dispatches?status=queued&limit=100').then(r =>
+        (Array.isArray(r.data) ? r.data : []).filter((d: any) => d.scheduled_for)
+      ).catch(() => []),
+    refetchInterval: 30_000,
+  })
+
   // WS: atualizar dispatch status em tempo real
-  useWSEvent('dispatch.target_updated', (data) => {
+  useWSEvent('dispatch.target_updated', (data: any) => {
     setItems((prev) =>
       prev.map((d) =>
         d.id === data.dispatchId ? { ...d, status: 'sending' } : d
       )
     )
     setSelected((prev) =>
-      prev?.id === data.dispatchId ? { ...prev, status: 'sending' } : prev
+      prev?.id === data.dispatchId ? ({ ...prev, status: 'sending' } as Dispatch) : prev
     )
   })
 
-  useWSEvent('dispatch.completed', (data) => {
+  useWSEvent('dispatch.completed', (data: any) => {
     setItems((prev) =>
       prev.map((d) =>
         d.id === data.dispatchId ? { ...d, status: 'completed' } : d
       )
     )
     setSelected((prev) =>
-      prev?.id === data.dispatchId ? { ...prev, status: 'completed' } : prev
+      prev?.id === data.dispatchId ? ({ ...prev, status: 'completed' } as Dispatch) : prev
     )
   })
+
+  // ── Badge counts ──────────────────────────────────────────────────────────
+
+  const errorCount = items.filter(d => d.status === 'failed').length + crawlLogs.filter(l => l.status === 'error').length
+  const allCount = items.length + crawlLogs.length + scheduledItems.length
+
+  const TAB_DEFS: { id: LogTab; label: string; count?: number }[] = [
+    { id: 'all', label: 'Tudo', count: allCount },
+    { id: 'dispatches', label: 'Disparos', count: items.length },
+    { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length },
+    { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
+    { id: 'errors', label: 'Erros', count: errorCount },
+  ]
+
+  // ── Unified rows for "Tudo" tab ────────────────────────────────────────────
+
+  const unifiedRows: UnifiedRow[] = React.useMemo(() => {
+    const rows: UnifiedRow[] = []
+    for (const d of items) {
+      rows.push({
+        id: String(d.short_id ?? d.id),
+        type: d.scheduled_for ? 'scheduled' : 'dispatch',
+        label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
+        status: d.status,
+        date: d.created_at,
+        channel: d.channel_name,
+        group: d.group_name,
+      })
+    }
+    for (const l of crawlLogs) {
+      rows.push({
+        id: String(l.id),
+        type: 'crawl',
+        label: `Crawler #${l.search_term_id}`,
+        status: l.status,
+        date: l.started_at,
+      })
+    }
+    return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  }, [items, crawlLogs])
+
+  // ── Export CSV ─────────────────────────────────────────────────────────────
+
+  function handleExport() {
+    const rows = logTab === 'all' ? unifiedRows
+      : logTab === 'dispatches' ? items.map<UnifiedRow>(d => ({
+          id: String(d.short_id ?? d.id),
+          type: 'dispatch',
+          label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
+          status: d.status,
+          date: d.created_at,
+          channel: d.channel_name,
+          group: d.group_name,
+        }))
+      : logTab === 'crawlers' ? crawlLogs.map<UnifiedRow>(l => ({
+          id: String(l.id),
+          type: 'crawl',
+          label: `Crawler #${l.search_term_id}`,
+          status: l.status,
+          date: l.started_at,
+        }))
+      : logTab === 'scheduled' ? (scheduledItems as any[]).map<UnifiedRow>(d => ({
+          id: String(d.short_id ?? d.id),
+          type: 'scheduled',
+          label: d.message?.text?.slice(0, 80) ?? `Agendado #${d.id}`,
+          status: d.status,
+          date: d.scheduled_for ?? d.created_at,
+        }))
+      : /* errors */ [
+          ...items.filter(d => d.status === 'failed').map<UnifiedRow>(d => ({
+            id: String(d.short_id ?? d.id),
+            type: 'dispatch' as LogType,
+            label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
+            status: d.status,
+            date: d.created_at,
+          })),
+          ...crawlLogs.filter(l => l.status === 'error').map<UnifiedRow>(l => ({
+            id: String(l.id),
+            type: 'crawl' as LogType,
+            label: `Crawler #${l.search_term_id}`,
+            status: l.status,
+            date: l.started_at,
+          })),
+        ]
+    exportCsv(rows, `logs-${logTab}-${new Date().toISOString().slice(0,10)}.csv`)
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold text-fg">Logs</h1>
+        <Button variant="secondary" size="sm" onClick={handleExport}>
+          Exportar CSV
+        </Button>
       </div>
-      <div className="flex gap-4 border-b border-border mb-6">
-        {LOG_TABS.map(t => (
+
+      {/* Tabs with badge counts */}
+      <div className="flex gap-4 border-b border-border mb-6 overflow-x-auto">
+        {TAB_DEFS.map(t => (
           <button key={t.id} type="button"
             onClick={() => setLogTab(t.id)}
-            className={`pb-2 text-sm font-medium border-b-2 transition-colors -mb-px ${logTab === t.id ? 'border-accent text-accent' : 'border-transparent text-fg-2 hover:text-fg'}`}>
+            className={`pb-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 whitespace-nowrap ${logTab === t.id ? 'border-accent text-accent' : 'border-transparent text-fg-2 hover:text-fg'}`}>
             {t.label}
+            {t.count !== undefined && t.count > 0 && (
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full ${
+                t.id === 'errors' ? 'bg-danger/10 text-danger' : 'bg-surface-2 text-fg-3'
+              }`}>
+                {t.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {logTab === 'crawlers' ? <CrawlerLogs /> : logTab === 'scheduled' ? <ScheduledDispatches /> : (<div>
+      {/* Tab content */}
+      {logTab === 'crawlers' && <CrawlerLogs />}
+      {logTab === 'scheduled' && <ScheduledDispatches />}
+      {logTab === 'errors' && <ErrorsTab dispatches={items} crawlLogs={crawlLogs} />}
 
-      {/* Filtros */}
-      <div className="flex gap-3 mb-4 flex-wrap items-end">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-fg-2">Status</label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-          >
-            <option value="">Todos</option>
-            <option value="queued">Agendado</option>
-            <option value="sending">Enviando</option>
-            <option value="completed">Concluído</option>
-            <option value="failed">Falhou</option>
-            <option value="draft">Rascunho</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-fg-2">De</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-fg-2">Até</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-            className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
-        </div>
-        {accounts.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-fg-2">Conta</label>
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
-              className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg">
-              <option value="">Todas</option>
-              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
-        )}
-        <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); setAccountId(''); setStatus('') }}
-          className="text-xs text-fg-3 hover:text-fg self-end pb-1.5">Limpar</button>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState
-          title="Nenhum disparo ainda"
-          description="Crie um disparo no Composer para ver os logs aqui."
-        />
-      ) : (
+      {/* "Tudo" tab — unified table */}
+      {logTab === 'all' && (
         <div className="bg-surface border border-border rounded-md overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
-                <th className="text-left p-3 text-fg-2 font-medium">ID</th>
-                <th className="text-left p-3 text-fg-2 font-medium">Origem</th>
-                <th className="text-left p-3 text-fg-2 font-medium">Status</th>
-                <th className="text-left p-3 text-fg-2 font-medium hidden sm:table-cell">
-                  Destinos
-                </th>
-                <th className="text-left p-3 text-fg-2 font-medium">Data</th>
+              <tr className="border-b border-border bg-surface-2">
+                {['Tipo', 'Descrição', 'Canal', 'Grupo', 'Status', 'Data'].map(h => (
+                  <th key={h} className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {items.map((d) => {
-                const msgText = d.message?.text ?? ''
-                const isDraft = d.status === 'draft'
-                return (
-                  <tr
-                    key={d.id}
-                    className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${isDraft ? 'opacity-80' : ''}`}
-                    onClick={() => isDraft
-                      ? navigate(`/compose?draftId=${d.id}${d.product_id ? `&productId=${d.product_id}` : ''}`)
-                      : setSelected(d)
-                    }
-                    title={isDraft ? 'Clique para continuar editando este rascunho' : undefined}
-                  >
-                    <td className="p-3">
-                      <div>
-                        {/* Texto da mensagem como título */}
-                        {msgText ? (
-                          <>
-                            <p className="text-sm text-fg line-clamp-2">{msgText.slice(0, 100)}</p>
-                            <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-xs text-fg-3 italic">(sem texto)</p>
-                            <p className="text-xs text-fg-3 font-mono">{d.short_id ?? d.id}</p>
-                          </>
-                        )}
-                        {isDraft && <span className="text-xs text-accent mt-0.5 block">→ clique para continuar edição</span>}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={statusVariant[d.status] ?? 'default'}>
-                        {d.status}
-                      </Badge>
-                    </td>
-                    <td className="p-3 text-fg-3 text-xs hidden sm:table-cell">
-                      {d.target_count != null
-                        ? `${d.delivered_count ?? 0}/${d.target_count} entregues`
-                        : '—'}
-                    </td>
-                    <td className="p-3 text-fg-3 text-xs whitespace-nowrap">
-                      {new Date(d.created_at).toLocaleString('pt-BR')}
-                    </td>
-                  </tr>
-                )
-              })}
+              {unifiedRows.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-fg-3 text-sm">Nenhum registro encontrado.</td></tr>
+              ) : unifiedRows.map(row => (
+                <tr key={`${row.type}-${row.id}`} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-4 py-2.5"><TypeBadge type={row.type} /></td>
+                  <td className="px-4 py-2.5 text-fg text-sm max-w-xs truncate">{row.label}</td>
+                  <td className="px-4 py-2.5 text-fg-3 text-xs">{row.channel ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-fg-3 text-xs">{row.group ?? '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge variant={statusVariant[row.status] ?? 'default'} size="sm">{row.status}</Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-fg-3 text-xs whitespace-nowrap">
+                    {new Date(row.date).toLocaleString('pt-BR')}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {selected && (
-        <DispatchDrawer dispatch={selected} onClose={() => setSelected(null)} />
+      {/* "Disparos" tab */}
+      {logTab === 'dispatches' && (
+        <div>
+          {/* Filtros */}
+          <div className="flex gap-3 mb-4 flex-wrap items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-fg-2">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
+              >
+                <option value="">Todos</option>
+                <option value="queued">Agendado</option>
+                <option value="sending">Enviando</option>
+                <option value="completed">Concluído</option>
+                <option value="failed">Falhou</option>
+                <option value="draft">Rascunho</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-fg-2">De</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-fg-2">Até</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg" />
+            </div>
+            {accounts.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-fg-2">Conta</label>
+                <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
+                  className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg">
+                  <option value="">Todas</option>
+                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+            )}
+            <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); setAccountId(''); setStatus('') }}
+              className="text-xs text-fg-3 hover:text-fg self-end pb-1.5">Limpar</button>
+          </div>
+
+          {dispatchLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState
+              title="Nenhum disparo ainda"
+              description="Crie um disparo no Composer para ver os logs aqui."
+            />
+          ) : (
+            <div className="bg-surface border border-border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-surface-2">
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">ID</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Tipo</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Origem</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Canal</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Grupo</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Status</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide hidden sm:table-cell">Destinos</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((d) => {
+                    const msgText = d.message?.text ?? ''
+                    const isDraft = d.status === 'draft'
+                    const rowType: LogType = d.scheduled_for ? 'scheduled' : 'dispatch'
+                    return (
+                      <tr
+                        key={d.id}
+                        className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${isDraft ? 'opacity-80' : ''}`}
+                        onClick={() => isDraft
+                          ? navigate(`/compose?draftId=${d.id}${d.product_id ? `&productId=${d.product_id}` : ''}`)
+                          : setSelected(d)
+                        }
+                        title={isDraft ? 'Clique para continuar editando este rascunho' : undefined}
+                      >
+                        <td className="p-3">
+                          {msgText ? (
+                            <>
+                              <p className="text-sm text-fg line-clamp-2">{msgText.slice(0, 100)}</p>
+                              <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs text-fg-3 italic">(sem texto)</p>
+                              <p className="text-xs text-fg-3 font-mono">{d.short_id ?? d.id}</p>
+                            </>
+                          )}
+                          {isDraft && <span className="text-xs text-accent mt-0.5 block">→ clique para continuar edição</span>}
+                        </td>
+                        <td className="p-3"><TypeBadge type={rowType} /></td>
+                        <td className="p-3">
+                          <Badge variant={statusVariant[d.status] ?? 'default'}>
+                            {d.status}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-fg-2 text-xs">{d.channel_name ?? '—'}</td>
+                        <td className="p-3 text-fg-2 text-xs">{d.group_name ?? '—'}</td>
+                        <td className="p-3">
+                          <Badge variant={statusVariant[d.status] ?? 'default'} size="sm">
+                            {d.status}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-fg-3 text-xs hidden sm:table-cell">
+                          {d.target_count != null
+                            ? `${d.delivered_count ?? 0}/${d.target_count} entregues`
+                            : '—'}
+                        </td>
+                        <td className="p-3 text-fg-3 text-xs whitespace-nowrap">
+                          {new Date(d.created_at).toLocaleString('pt-BR')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selected && (
+            <DispatchDrawer dispatch={selected} onClose={() => setSelected(null)} />
+          )}
+        </div>
       )}
-      </div>)}
     </div>
   )
 }
