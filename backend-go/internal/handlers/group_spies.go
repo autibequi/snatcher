@@ -149,3 +149,47 @@ func (h *GroupSpiesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// UpdateReader godoc
+//
+//	@Summary     Trocar conta leitora do spy
+//	@Tags        crawlers
+//	@Param       id path int true "ID do spy"
+//	@Param       body body object true "{reader_wa_id?, reader_tg_id?}"
+//	@Success     200 {object} models.GroupSpy
+//	@Router      /api/crawlers/group-spy/{id} [patch]
+func (h *GroupSpiesHandler) UpdateReader(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body struct {
+		ReaderWAID *int64 `json:"reader_wa_id"`
+		ReaderTGID *int64 `json:"reader_tg_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	waID := models.NullInt64{}
+	tgID := models.NullInt64{}
+	if body.ReaderWAID != nil && *body.ReaderWAID > 0 {
+		waID.NullInt64.Int64 = *body.ReaderWAID
+		waID.NullInt64.Valid = true
+	}
+	if body.ReaderTGID != nil && *body.ReaderTGID > 0 {
+		tgID.NullInt64.Int64 = *body.ReaderTGID
+		tgID.NullInt64.Valid = true
+	}
+	if err := h.store.UpdateGroupSpyReader(id, waID, tgID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao atualizar leitor: "+err.Error())
+		return
+	}
+	spy, err := h.store.GetGroupSpy(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "spy nao encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, spy)
+}

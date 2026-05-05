@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -321,7 +322,8 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 
 	dispatchID, err := dispatchPairToStore(h.store, *targetProduct, targetScore)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "erro ao criar dispatch")
+		slog.Error("dispatch-one", "err", err, "product_id", req.ProductID, "channel_id", req.ChannelID)
+		writeErr(w, http.StatusInternalServerError, "erro ao criar dispatch: "+err.Error())
 		return
 	}
 
@@ -338,11 +340,17 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 }
 
 // dispatchPairToStore cria um Dispatch para o par produto/canal e retorna o ID.
-// Busca os grupos ativos do canal e cria um dispatch com todos eles como targets.
+// Busca os grupos do canal e cria um dispatch com todos eles como targets.
 func dispatchPairToStore(st store.Store, p models.CatalogProduct, s match.Score) (int64, error) {
-	groups, err := st.ListRedesignGroups(s.ChannelID, "", "active")
+	if s.ChannelID == 0 {
+		return 0, fmt.Errorf("channel_id zero — score nao mapeou ao canal informado")
+	}
+	groups, err := st.ListRedesignGroups(s.ChannelID, "", "")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("ListRedesignGroups: %w", err)
+	}
+	if len(groups) == 0 {
+		return 0, fmt.Errorf("canal %d sem grupos cadastrados", s.ChannelID)
 	}
 
 	targets := make([]models.DispatchTarget, 0, len(groups))

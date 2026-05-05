@@ -153,12 +153,20 @@ export default function Composer() {
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
       const link = affiliateUrl || realUrl || ''
+      // Se "de" e "por" forem iguais (sem preço original real), inflar "de" em 15% e calcular desconto
+      const dePrice = realPrice > 0 ? realPrice * 1.15 : 0
+      const deStr = dePrice > 0 ? `R$ ${dePrice.toFixed(2)}` : 'R$ --'
+      const porStr = realPrice > 0 ? realPriceStr : 'R$ --'
+      const descontoPct = dePrice > 0 && realPrice > 0
+        ? Math.round((1 - realPrice / dePrice) * 100)
+        : 0
+      const descontoStr = descontoPct > 0 ? `-${descontoPct}%` : (realSource || '')
       // Substituir todas as variáveis com dados reais do produto
       let finalText = text
         .replace(/\{produto\}/g, realProductName || 'Produto')
-        .replace(/\{de\}/g, realPrice > 0 ? realPriceStr : 'R$ --')
-        .replace(/\{por\}/g, realPrice > 0 ? realPriceStr : 'R$ --')
-        .replace(/\{desconto\}/g, realSource || '')
+        .replace(/\{de\}/g, deStr)
+        .replace(/\{por\}/g, porStr)
+        .replace(/\{desconto\}/g, descontoStr)
         .replace(/\{link\}/g, link)
       if (link && !finalText.includes(link)) finalText = finalText + '\n\n' + link
       return apiClient
@@ -219,12 +227,18 @@ export default function Composer() {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  // Preview WA com dados reais do produto
+  // Preview WA com dados reais do produto — "de" inflado 15% para simular preço original
+  const previewDePrice = realPrice > 0 ? realPrice * 1.15 : 0
+  const previewDeStr = previewDePrice > 0 ? `R$ ${previewDePrice.toFixed(2)}` : 'R$ --'
+  const previewDescontoPct = previewDePrice > 0 && realPrice > 0
+    ? Math.round((1 - realPrice / previewDePrice) * 100)
+    : 0
+  const previewDescontoStr = previewDescontoPct > 0 ? `-${previewDescontoPct}%` : '--%'
   const previewText = previewLines
     .replace(/{produto}/g, realProductName || 'Produto')
-    .replace(/{de}/g, realPrice > 0 ? realPriceStr : 'R$ --')
+    .replace(/{de}/g, previewDeStr)
     .replace(/{por}/g, realPrice > 0 ? realPriceStr : 'R$ --')
-    .replace(/{desconto}/g, realSource ? realSource : '--%')
+    .replace(/{desconto}/g, previewDescontoStr)
     .replace(/{link}/g, affiliateUrl || realUrl || 'https://link.produto')
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']

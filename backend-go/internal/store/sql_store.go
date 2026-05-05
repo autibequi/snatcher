@@ -1548,6 +1548,14 @@ func (s *SQLStore) SoftDeleteGroupSpy(id int64) error {
 	return err
 }
 
+func (s *SQLStore) UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error {
+	_, err := s.db.Exec(
+		`UPDATE group_spies SET reader_wa_id = $1, reader_tg_id = $2 WHERE id = $3 AND deleted_at IS NULL`,
+		readerWAID, readerTGID, id,
+	)
+	return err
+}
+
 func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error) {
 	if limit <= 0 { limit = 50 }
 	var out []models.SpyMessage

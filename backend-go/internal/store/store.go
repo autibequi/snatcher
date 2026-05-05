@@ -165,6 +165,7 @@ type Store interface {
 	GetGroupSpy(id int64) (models.GroupSpy, error)
 	CreateGroupSpy(g models.GroupSpy) (int64, error)
 	SoftDeleteGroupSpy(id int64) error
+	UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error
 	ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error)
 	CreateSpyMessage(m models.SpyMessage) error
 

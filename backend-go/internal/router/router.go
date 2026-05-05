@@ -339,6 +339,7 @@ func Build(
 		r.Get("/api/crawlers/group-spy/{id}", groupSpies.Get)
 		r.Get("/api/crawlers/group-spy/{id}/messages", groupSpies.Messages)
 		r.Delete("/api/crawlers/group-spy/{id}", groupSpies.Delete)
+		r.Patch("/api/crawlers/group-spy/{id}", groupSpies.UpdateReader)
 
 		// Clusters analíticos
 		r.Get("/api/clusters", clustersH.List)
