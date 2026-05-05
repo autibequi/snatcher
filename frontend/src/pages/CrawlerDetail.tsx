@@ -106,7 +106,7 @@ const CrawlerDetail: FC = () => {
   })
   const del = useMutation({
     mutationFn: () => deleteSearchTerm(id || ''),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['searchTerms'] }); navigate('/admin/crawlers') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['searchTerms'] }); navigate('/crawlers') },
   })
   const crawl = useMutation({
     mutationFn: () => crawlSearchTerm(id || ''),
@@ -123,7 +123,7 @@ const CrawlerDetail: FC = () => {
   if (!term) {
     return (
       <div>
-        <Link to="/admin/crawlers" className="text-gray-400 hover:text-white text-sm">← Crawlers</Link>
+        <Link to="/crawlers" className="text-gray-400 hover:text-white text-sm">← Crawlers</Link>
         <p className="text-gray-500 mt-8 text-center">Crawler não encontrado.</p>
       </div>
     )
@@ -133,7 +133,7 @@ const CrawlerDetail: FC = () => {
     <div>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link to="/admin/crawlers" className="text-gray-400 hover:text-white text-sm">← Crawlers</Link>
+        <Link to="/crawlers" className="text-gray-400 hover:text-white text-sm">← Crawlers</Link>
         <span className={`${badge} ${term.active ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
           {term.active ? 'ativo' : 'pauso'}
         </span>

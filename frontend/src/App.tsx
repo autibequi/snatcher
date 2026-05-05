@@ -146,7 +146,6 @@ export default function App() {
           <SetupGuard>
           <Routes>
             <Route path="/setup" element={<Setup />} />
-            <Route path="/admin" element={<Login />} />
             <Route path="/login" element={<Login />} />
             <Route
               element={

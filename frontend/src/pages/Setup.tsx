@@ -26,7 +26,7 @@ export default function Setup() {
         email: form.email,
         password: form.password,
       })
-      navigate('/admin', { state: { message: 'Conta criada! Faça login para continuar.' } })
+      navigate('/login', { state: { message: 'Conta criada! Faça login para continuar.' } })
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Erro ao criar conta.')
     } finally {
