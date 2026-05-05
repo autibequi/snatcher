@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
 
 interface SidebarProps {
   onClose?: () => void
@@ -63,15 +64,36 @@ const navGroups: NavGroup[] = [
 ]
 
 export function Sidebar({ onClose }: SidebarProps) {
+  const { user } = useAuth()
+
+  const displayName = user?.name ?? 'Rafael C.'
+  const displayEmail = user?.email ?? 'operador · estrategia.com'
+  const roleLabel = user?.role === 'admin' ? 'Admin' : 'Operador'
+  const initials = displayName
+    .split(' ')
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
+
   return (
     <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="flex items-center justify-between h-12 px-4 border-b border-border flex-shrink-0">
-        <span className="text-sm font-semibold text-fg">Snatcher</span>
+      {/* Logo / Header */}
+      <div className="flex items-center justify-between h-14 px-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Avatar quadrado "S" */}
+          <div className="flex-shrink-0 w-8 h-8 rounded-md bg-accent flex items-center justify-center">
+            <span className="text-sm font-bold text-white leading-none">S</span>
+          </div>
+          {/* Título + workspace */}
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-fg leading-tight">Snatcher</p>
+            <p className="text-xs text-fg-3 leading-tight">v3 · workspace</p>
+          </div>
+        </div>
         <button
           type="button"
           onClick={onClose}
-          className="lg:hidden text-fg-3 hover:text-fg p-1 rounded"
+          className="lg:hidden text-fg-3 hover:text-fg p-1 rounded flex-shrink-0"
           aria-label="Fechar menu"
         >
           ✕
@@ -107,9 +129,21 @@ export function Sidebar({ onClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-3 border-t border-border">
-        <p className="text-xs text-fg-3">v0.1.0-redesign</p>
+      {/* Footer — user card */}
+      <div className="px-3 py-3 border-t border-border flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          {/* Avatar circular com iniciais */}
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+            <span className="text-xs font-semibold text-accent leading-none">{initials || 'RC'}</span>
+          </div>
+          {/* Nome + role */}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-fg leading-tight truncate">{displayName}</p>
+            <p className="text-xs text-fg-3 leading-tight truncate">
+              {roleLabel} · {displayEmail}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )

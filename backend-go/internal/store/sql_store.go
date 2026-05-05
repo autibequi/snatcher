@@ -349,6 +349,36 @@ func (s *SQLStore) GetShortIDByURL(url string) string {
 	return shortID
 }
 
+// GetOrCreateShortLink retorna short_id para destURL, criando se não existir.
+func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) {
+	var sid string
+	err := s.db.Get(&sid, `SELECT short_id FROM short_links WHERE dest_url = $1 LIMIT 1`, destURL)
+	if err == nil {
+		return sid, nil
+	}
+	sid = genShortID()
+	_, _ = s.db.Exec(`INSERT INTO short_links (short_id, dest_url, source) VALUES ($1, $2, $3) ON CONFLICT (dest_url) DO NOTHING`,
+		sid, destURL, source)
+	// Re-busca para pegar o sid real (pode ter perdido a corrida)
+	_ = s.db.Get(&sid, `SELECT short_id FROM short_links WHERE dest_url = $1 LIMIT 1`, destURL)
+	if sid == "" {
+		return "", fmt.Errorf("short link not found after insert")
+	}
+	return sid, nil
+}
+
+func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	var row struct {
+		DestURL string `db:"dest_url"`
+		Source  string `db:"source"`
+	}
+	if err := s.db.Get(&row, `SELECT dest_url, source FROM short_links WHERE short_id = $1`, shortID); err != nil {
+		return "", "", false
+	}
+	_, _ = s.db.Exec(`UPDATE short_links SET click_count = click_count + 1 WHERE short_id = $1`, shortID)
+	return row.DestURL, row.Source, true
+}
+
 func (s *SQLStore) GetVariantByShortID(shortID string) (models.CatalogVariant, bool, error) {
 	var v models.CatalogVariant
 	err := s.db.Get(&v, `SELECT * FROM catalogvariant WHERE short_id = $1 LIMIT 1`, shortID)

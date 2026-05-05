@@ -157,7 +157,7 @@ function ProductMatchRow({ product }: { product: Product }) {
             {topChannels.map(s => {
               const color = s.score >= 70 ? 'bg-success/10 text-success' : s.score >= 40 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'
               return (
-                <div key={s.channel_id} className="flex items-center gap-0.5">
+                <div key={s.channel_id} className="flex items-center">
                   <button
                     type="button"
                     onClick={() => navigate(`/compose?productId=${product.id}&targets=${s.channel_id}`)}

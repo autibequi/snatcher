@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	_ "snatcher/backendv2/internal/docs" // swagger docs
@@ -75,6 +74,7 @@ func Build(
 	team        := handlers.NewTeamHandler(db)
 	brand       := handlers.NewBrandHandler(st)
 	autoMatch   := handlers.NewAutoMatchHandler(st)
+	linksH      := handlers.NewLinksHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *handlers.ComposeHandler
@@ -119,37 +119,8 @@ func Build(
 	r.Post("/api/auth/refresh", auth.Refresh)
 	r.Post("/api/auth/logout", auth.Logout)
 
-	// Redirect routes: 60 req/min per IP (burst 60) — light DoS protection
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	// Redirect para variantes do catálogo v2
-	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/v/{shortID}", func(w http.ResponseWriter, r *http.Request) {
-		shortID := r.PathValue("shortID")
-		v, found, err := st.GetVariantByShortID(shortID)
-		if err != nil || !found {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
-		// Affiliate URL
-		finalURL := v.URL
-		switch v.Source {
-		case "amazon":
-			aff, found, _ := st.GetAffiliateBySource("amz")
-			if found && aff.TrackingID != "" {
-				finalURL = v.URL + "?tag=" + aff.TrackingID
-			}
-		case "mercadolivre":
-			aff, found, _ := st.GetAffiliateBySource("ml")
-			if found && aff.TrackingID != "" {
-				sep := "?"
-				if strings.Contains(v.URL, "?") {
-					sep = "&"
-				}
-				finalURL = v.URL + sep + "matt_tool=" + aff.TrackingID + "&matt_source=affiliate"
-			}
-		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		http.Redirect(w, r, finalURL, http.StatusFound)
-	})
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st))
 
 	r.Get("/canal/{slug}", canal.GroupPicker)
 	r.Get("/canal/{slug}/preview", canal.Preview)
@@ -317,6 +288,9 @@ func Build(
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)
 		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
+
+		// Short Links
+		r.Post("/api/links/shorten", linksH.Shorten)
 
 		// ReDesign: Compose
 		r.Post("/api/compose/preview", composeH.Preview)

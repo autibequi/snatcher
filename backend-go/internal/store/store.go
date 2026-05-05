@@ -173,4 +173,8 @@ type Store interface {
 	// Auto Match
 	CreateAutoMatchLog(log models.AutoMatchLog) error
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
+
+	// Short Links
+	GetOrCreateShortLink(destURL, source string) (string, error)
+	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
 }

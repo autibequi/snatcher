@@ -176,14 +176,14 @@ export default function Composer() {
     onSuccess: () => alert('Rascunho salvo! Acesse em Logs > Rascunhos.'),
   })
 
-  // Buscar URL com tag de afiliado automaticamente quando o produto é carregado
+  // Gerar short link rastreável com domínio próprio e tag de afiliado no redirect
   const { data: affiliateUrl = '' } = useQuery<string>({
-    queryKey: ['affiliate-link', productId, realUrl, realSource],
+    queryKey: ['short-link', productId, realUrl, realSource],
     queryFn: () =>
-      apiClient.post('/api/affiliates/build-link', {
-        product_url: realUrl,
-        marketplace: realSource.toLowerCase() || 'amazon',
-      }).then(r => r.data?.url || realUrl).catch(() => realUrl),
+      apiClient.post('/api/links/shorten', {
+        url: realUrl,
+        source: realSource || 'amazon',
+      }).then(r => r.data?.short_url || realUrl).catch(() => realUrl),
     enabled: !!realUrl,
     staleTime: Infinity,
   })

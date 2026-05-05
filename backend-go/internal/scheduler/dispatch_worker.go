@@ -53,13 +53,13 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		return
 	}
 
-	// Extrair texto da mensagem
-	var msg struct{ Text string `json:"text"` }
+	// Extrair texto e media_url da mensagem
+	var msg struct {
+		Text     string `json:"text"`
+		MediaURL string `json:"media_url"`
+	}
 	_ = json.Unmarshal(dispatch.Message, &msg)
 	text := msg.Text
-	if t.GroupID > 0 {
-		text += "\n\n" + dispatch.AffiliateLink
-	}
 
 	// Buscar JID do grupo
 	group, err := st.GetRedesignGroup(t.GroupID)
@@ -70,8 +70,13 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	}
 	jid := group.JID.String
 
-	// Enviar via Evolution API
-	errMsg := sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, text)
+	// Enviar imagem + texto OU só texto
+	var errMsg string
+	if msg.MediaURL != "" {
+		errMsg = sendEvolutionMedia(ctx, baseURL, apiKey, instance, jid, msg.MediaURL, text)
+	} else {
+		errMsg = sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, text)
+	}
 	if errMsg != "" {
 		slog.Warn("dispatch worker: send failed", "target_id", t.ID, "group", jid, "err", errMsg)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", errMsg)
@@ -80,6 +85,31 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		_ = st.UpdateDispatchTargetStatus(t.ID, "delivered", "")
 	}
 	checkAllFinished(st, t.DispatchID)
+}
+
+func sendEvolutionMedia(ctx context.Context, baseURL, apiKey, instance, jid, mediaURL, caption string) string {
+	body := fmt.Sprintf(`{"number":%q,"mediatype":"image","media":%q,"caption":%q}`,
+		jid, mediaURL, caption)
+	url := strings.TrimRight(baseURL, "/") + "/message/sendMedia/" + instance
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(body))
+	if err != nil {
+		return err.Error()
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apiKey", apiKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		// Fallback para texto se media falhar
+		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
+	}
+	return ""
 }
 
 func sendEvolutionMessage(ctx context.Context, baseURL, apiKey, instance, jid, text string) string {
