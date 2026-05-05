@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { Badge, Skeleton, EmptyState } from '../ui'
 import { apiClient } from '../../lib/apiClient'
 
-// TODO: endpoint GET /api/dashboard/inbox — currently returns 502
-
 export type InboxItem = {
   id: string
   severity: 'critico' | 'atencao'
@@ -130,7 +128,6 @@ interface OperationInboxProps {
 export function OperationInbox({ externalDismissed, onDismiss }: OperationInboxProps) {
   const [dismissed, setDismissed] = React.useState<Set<string>>(new Set())
 
-  // TODO: endpoint GET /api/dashboard/inbox — retornando 502, usar mock como fallback
   const { data: rawItems = [], isLoading } = useQuery<InboxItem[]>({
     queryKey: ['dashboard', 'inbox-v2'],
     queryFn: () =>

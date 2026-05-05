@@ -67,9 +67,9 @@ func Build(
 	groups      := handlers.NewGroupsHandler(st)
 	matchH      := handlers.NewMatchHandler(st)
 	publLinks   := handlers.NewPublicLinksHandlerDB(st, db)
-	affPrograms := handlers.NewAffiliateProgramsHandler(st)
+	affPrograms := handlers.NewAffiliateProgramsHandlerDB(st, db)
 	groupSpies  := handlers.NewGroupSpiesHandler(st)
-	clustersH   := handlers.NewClustersHandler(st)
+	clustersH   := handlers.NewClustersHandlerDB(st, db)
 	dash        := handlers.NewDashboardHandler(st, db)
 	team        := handlers.NewTeamHandler(db)
 	brand       := handlers.NewBrandHandler(st)
@@ -108,7 +108,7 @@ func Build(
 	// ---------------------------------------------------------------------------
 	// Rotas públicas
 	// ---------------------------------------------------------------------------
-	postbackH := handlers.NewAffiliatePostbackHandler(db)
+	postbackH := handlers.NewAffiliatePostbackHandlerStore(db, st)
 	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
 	evoWebhook := handlers.NewEvolutionWebhookHandler(st)
 	r.Post("/webhooks/evolution", evoWebhook.Handle)
@@ -208,6 +208,7 @@ func Build(
 		r.Get("/api/catalog/", catalog.List)
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
+		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
 		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
 		r.Get("/api/catalog/variants/{variant_id}/history", catalog.ListVariantHistory)
@@ -284,6 +285,10 @@ func Build(
 		r.Patch("/api/groups/{id}", groups.Update)
 		r.Delete("/api/groups/{id}", groups.Delete)
 		r.Get("/api/groups/{id}/members", groups.Members)
+		r.Post("/api/groups/{id}/archive", groups.Archive)
+		r.Get("/api/groups/{id}/admins", groups.ListAdmins)
+		r.Post("/api/groups/{id}/admins", groups.AddAdmin)
+		r.Delete("/api/groups/{id}/admins/{adminId}", groups.DeleteAdmin)
 
 		// ReDesign: Match
 		r.Post("/api/match", matchH.Match)
@@ -292,6 +297,8 @@ func Build(
 		r.Get("/api/auto-match", autoMatch.Status)
 		r.Get("/api/auto-match/preview", autoMatch.Preview)
 		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
+		r.Post("/api/auto-match/run-now", autoMatch.RunNow)
+		r.Post("/api/auto-match/dispatch-one", autoMatch.DispatchOne)
 
 		// Short Links
 		r.Post("/api/links/shorten", linksH.Shorten)
@@ -335,6 +342,7 @@ func Build(
 
 		// Clusters analíticos
 		r.Get("/api/clusters", clustersH.List)
+		r.Get("/api/clusters/{id}", clustersH.Get)
 		r.Post("/api/clusters/recompute", clustersH.Recompute)
 
 		// Dashboard

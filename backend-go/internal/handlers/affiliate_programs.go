@@ -2,18 +2,27 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type AffiliateProgramsHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
 func NewAffiliateProgramsHandler(st store.Store) *AffiliateProgramsHandler {
 	return &AffiliateProgramsHandler{store: st}
+}
+
+// NewAffiliateProgramsHandlerDB cria o handler com acesso direto ao DB para queries analíticas.
+func NewAffiliateProgramsHandlerDB(st store.Store, db *sqlx.DB) *AffiliateProgramsHandler {
+	return &AffiliateProgramsHandler{store: st, db: db}
 }
 
 // List retorna todos os programas de afiliado.
@@ -89,10 +98,6 @@ func (h *AffiliateProgramsHandler) Delete(w http.ResponseWriter, r *http.Request
 
 // Stats retorna estatísticas agregadas por programa de afiliado.
 //
-// TODO: as colunas clicks_30d, conversions_30d, revenue_30d e last_sync_at
-// não existem na tabela affiliate_programs. Quando forem adicionadas, substituir
-// os zeros abaixo por queries reais.
-//
 //	@Summary      Stats por programa de afiliado
 //	@Description  Retorna clicks_30d, conversions_30d, revenue_30d e last_sync_at por programa.
 //	@Tags         affiliates
@@ -118,21 +123,49 @@ func (h *AffiliateProgramsHandler) Stats(w http.ResponseWriter, r *http.Request)
 		LastSyncAt     *string `json:"last_sync_at"`
 	}
 
+	since30d := time.Now().Add(-30 * 24 * time.Hour)
+
 	out := make([]programStats, 0, len(programs))
 	for _, p := range programs {
-		// TODO: calcular clicks_30d, conversions_30d e revenue_30d quando
-		// tabela affiliate_stats (ou colunas equivalentes) estiver disponível.
-		// TODO: popular last_sync_at quando campo last_sync_at for adicionado à tabela affiliate_programs.
-		out = append(out, programStats{
-			ID:             p.ID,
-			Name:           p.Name,
-			Marketplace:    p.Marketplace,
-			Active:         p.Active,
-			Clicks30d:      0,
-			Conversions30d: 0,
-			Revenue30d:     0.0,
-			LastSyncAt:     nil,
-		})
+		stats := programStats{
+			ID:          p.ID,
+			Name:        p.Name,
+			Marketplace: p.Marketplace,
+			Active:      p.Active,
+		}
+
+		if h.db != nil {
+			// clicks_30d: clicks do clicklog para produtos cujo source == marketplace do programa
+			_ = h.db.GetContext(r.Context(), &stats.Clicks30d,
+				`SELECT COUNT(*) FROM clicklog cl
+				 JOIN product pr ON pr.id = cl.product_id
+				 WHERE pr.source = $1 AND cl.clicked_at >= $2`,
+				p.Marketplace, since30d)
+
+			// conversions_30d: conversões registradas na tabela affiliate_conversions
+			_ = h.db.GetContext(r.Context(), &stats.Conversions30d,
+				`SELECT COUNT(*) FROM affiliate_conversions
+				 WHERE program_id = $1 AND created_at >= $2`, p.ID, since30d)
+
+			// revenue_30d: soma de revenue das conversões aprovadas
+			_ = h.db.GetContext(r.Context(), &stats.Revenue30d,
+				`SELECT COALESCE(SUM(revenue), 0.0) FROM affiliate_conversions
+				 WHERE program_id = $1 AND status = 'approved' AND created_at >= $2`, p.ID, since30d)
+
+			// last_sync_at: MAX(created_at) das conversões do programa
+			var lastSync *string
+			type lastSyncRow struct {
+				LastSync *string `db:"last_sync"`
+			}
+			var row lastSyncRow
+			_ = h.db.GetContext(r.Context(), &row,
+				`SELECT to_char(MAX(created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_sync
+				 FROM affiliate_conversions WHERE program_id = $1`, p.ID)
+			lastSync = row.LastSync
+			stats.LastSyncAt = lastSync
+		}
+
+		out = append(out, stats)
 	}
 
 	writeJSON(w, http.StatusOK, out)

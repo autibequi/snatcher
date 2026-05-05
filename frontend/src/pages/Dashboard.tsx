@@ -24,10 +24,6 @@ interface KPIs {
   accounts_normal_count?: number
 }
 
-// ── Mock fallback para KPIs (enquanto backend não expõe os novos campos) ───────
-// TODO: backend deve expor dispatches_delta_pct, ctr_avg_pp_delta, unique_clicks,
-//       health_score, accounts_normal_count em GET /api/dashboard/kpis
-
 const KPI_MOCK_FALLBACK = {
   dispatches_delta_pct: 12,
   ctr_avg_pp_delta: 0.6,

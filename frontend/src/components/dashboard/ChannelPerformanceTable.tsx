@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Skeleton } from '../ui'
 import { apiClient } from '../../lib/apiClient'
 
-// TODO: endpoint GET /api/dashboard/channel-performance?window=7d — provavelmente não existe ainda
-
 export interface ChannelPerf {
   channel_id: string | number
   channel_name: string

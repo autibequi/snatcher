@@ -25,10 +25,6 @@ interface DispatchResponse {
   id: number
 }
 
-interface ComposePreviewResponse {
-  text?: string
-}
-
 export default function Composer() {
   const [params, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -111,38 +107,46 @@ export default function Composer() {
   const realUrl = nullStr(productData?.lowest_price_url) || ''
   const realSource = nullStr(productData?.lowest_price_source) || ''
 
-  // Buscar preview gerado pelo LLM — onSuccess nao existe em RQ5, usar useEffect
-  const { data: previewData, isLoading: loadingPreview } = useQuery<ComposePreviewResponse>({
-    queryKey: ['compose', 'preview', productId],
-    queryFn: () =>
-      apiClient
-        .post('/api/compose/preview', {
-          product_id: productId ? Number(productId) : undefined,
-        })
-        .then((r) => r.data),
-    enabled: !!productId,
-    staleTime: Infinity,
-  })
+  // Template default genérico com variáveis — só preenche se vazio e sem draft
+  const DEFAULT_TEMPLATE = `🔥 OFERTA RELÂMPAGO
+
+*{produto}*
+
+💰 De ~{de}~ por *{por}*
+🏷️ {desconto} OFF
+
+👉 {link}`
 
   React.useEffect(() => {
-    if (previewData?.text && !text) {
-      setText(previewData.text)
+    if (!text && !draftId) {
+      setText(DEFAULT_TEMPLATE)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewData])
+  }, [draftId])
 
-  // Buscar detalhes dos canais selecionados
-  const { data: channels = [] } = useQuery<Channel[]>({
-    queryKey: ['channels', targetIds],
+  const loadingPreview = false
+
+  // Lista completa de canais disponíveis (sempre carregada para seletor inline)
+  const { data: allChannels = [] } = useQuery<Channel[]>({
+    queryKey: ['channels', 'all'],
     queryFn: () =>
       apiClient.get('/api/channels').then((r) => {
-        const all: Channel[] = Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
-        return targetIds.length > 0
-          ? all.filter((c) => targetIds.includes(c.id))
-          : all
+        return Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
       }),
-    enabled: targetIds.length > 0,
+    staleTime: 60_000,
   })
+
+  // Seleção local sincronizada com query string ?targets=
+  const [selectedTargets, setSelectedTargets] = React.useState<number[]>(targetIds)
+  React.useEffect(() => { setSelectedTargets(targetIds) }, [targetsParam])
+
+  const channels = allChannels.filter((c) => selectedTargets.includes(c.id))
+
+  const toggleChannel = (id: number) => {
+    setSelectedTargets((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
 
   const affiliateLink = params.get('affiliateLink') ?? undefined
 
@@ -202,10 +206,7 @@ export default function Composer() {
   })
 
   const handleDispatch = () => {
-    const targets: DispatchTarget[] =
-      targetIds.length > 0
-        ? targetIds.map((id) => ({ channel_id: id }))
-        : channels.map((c) => ({ channel_id: c.id }))
+    const targets: DispatchTarget[] = selectedTargets.map((id) => ({ channel_id: id }))
     dispatch.mutate(targets)
   }
 
@@ -329,10 +330,10 @@ export default function Composer() {
                   </div>
                   {/* Card 02: summary footer */}
                   <p className="text-xs text-fg-3 mt-3">
-                    {productIds.length} mensagem{productIds.length !== 1 ? 's' : ''} × {targetIds.length > 0 ? targetIds.length : '?'} grupo{targetIds.length !== 1 ? 's' : ''} = {' '}
-                    {targetIds.length > 0
-                      ? <strong className="text-fg font-bold">{productIds.length * targetIds.length} envios</strong>
-                      : <span className="italic">selecione canais via Match</span>
+                    {productIds.length} mensagem{productIds.length !== 1 ? 's' : ''} × {selectedTargets.length > 0 ? selectedTargets.length : '?'} canal{selectedTargets.length !== 1 ? 'is' : ''} = {' '}
+                    {selectedTargets.length > 0
+                      ? <strong className="text-fg font-bold">{productIds.length * selectedTargets.length} envios</strong>
+                      : <span className="italic">selecione canais abaixo</span>
                     }
                   </p>
                 </>
@@ -432,21 +433,64 @@ export default function Composer() {
                 )}
               </div>
             </div>
-            <div className="p-4">
-              {channels.length === 0 ? (
+            <div className="p-4 space-y-3">
+              {allChannels.length === 0 ? (
                 <p className="text-sm text-fg-3">
-                  Selecione canais no{' '}
-                  <button type="button" className="text-accent hover:underline" onClick={() => navigate(productId ? `/match?productId=${productId}` : '/match')}>Match</button>.
+                  Nenhum canal disponível.{' '}
+                  <button type="button" className="text-accent hover:underline" onClick={() => navigate('/channels')}>
+                    Criar canal
+                  </button>
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {channels.map(ch => (
-                    <div key={ch.id} className="flex items-center gap-2 text-sm">
-                      <span className="text-fg font-medium">{ch.name}</span>
-                      <Badge size="sm">{ch.platform ?? 'WA'}</Badge>
+                <>
+                  <div className="flex items-center justify-between text-xs text-fg-3">
+                    <span>{selectedTargets.length} de {allChannels.length} selecionado(s)</span>
+                    <div className="flex gap-2">
+                      <button type="button" className="text-accent hover:underline"
+                        onClick={() => setSelectedTargets(allChannels.map(c => c.id))}>
+                        Selecionar todos
+                      </button>
+                      {selectedTargets.length > 0 && (
+                        <button type="button" className="text-fg-3 hover:text-fg"
+                          onClick={() => setSelectedTargets([])}>
+                          Limpar
+                        </button>
+                      )}
+                      <button type="button" className="text-accent hover:underline"
+                        onClick={() => navigate(productId ? `/match?productId=${productId}` : '/match')}>
+                        Sugerir via Match
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                    {allChannels.map((ch) => {
+                      const isSelected = selectedTargets.includes(ch.id)
+                      return (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => toggleChannel(ch.id)}
+                          className={`flex items-center gap-2 p-2 rounded-md border text-left transition-colors ${
+                            isSelected
+                              ? 'border-accent bg-accent/5'
+                              : 'border-border bg-surface-2 hover:border-border-strong'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            readOnly
+                            className="accent-accent flex-shrink-0"
+                          />
+                          <span className="flex-1 min-w-0 truncate text-sm text-fg font-medium">
+                            {ch.name}
+                          </span>
+                          <Badge size="sm">{ch.platform ?? 'WA'}</Badge>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>

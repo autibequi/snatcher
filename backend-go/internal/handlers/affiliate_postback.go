@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -96,10 +97,10 @@ func (h *AffiliatePostbackHandler) Handle(w http.ResponseWriter, r *http.Request
 			Status:    convPayload.Status,
 		}
 		if convPayload.ExternalOrderID != "" {
-			conv.ExternalOrderID = models.NullString{NullString: sqlNullStr(convPayload.ExternalOrderID)}
+			conv.ExternalOrderID = models.NullString{NullString: sql.NullString{String: convPayload.ExternalOrderID, Valid: true}}
 		}
 		if convPayload.Revenue != 0 {
-			conv.Revenue = models.NullFloat64{NullFloat64: sqlNullF64(convPayload.Revenue)}
+			conv.Revenue = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: convPayload.Revenue, Valid: true}}
 		}
 		_, _ = h.store.InsertAffiliateConversion(conv)
 	}

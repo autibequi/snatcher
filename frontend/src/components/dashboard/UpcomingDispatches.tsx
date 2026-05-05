@@ -2,8 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Skeleton } from '../ui'
 import { apiClient } from '../../lib/apiClient'
 
-// TODO: endpoint GET /api/dashboard/upcoming-dispatches?limit=5 — implementar no backend
-
 export interface UpcomingDispatch {
   id: string
   name: string
