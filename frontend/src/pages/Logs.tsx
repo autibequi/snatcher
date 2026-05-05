@@ -201,6 +201,16 @@ function DispatchDrawer({
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
+  // Buscar detalhes com targets e erros
+  const { data: detail } = useQuery({
+    queryKey: ['dispatch-detail', dispatch.id],
+    queryFn: () => apiClient.get(`/api/dispatches/${dispatch.id}`).then(r => r.data).catch(() => null),
+    enabled: !!dispatch.id,
+  })
+  const targets: any[] = detail?.targets ?? []
+  const failedTargets = targets.filter((t: any) => t.status === 'failed' && t.error_reason)
+  const deliveredTargets = targets.filter((t: any) => t.status === 'delivered')
+
   return (
     <div className="fixed inset-0 z-40 flex" role="dialog" aria-modal="true">
       {/* Backdrop */}
@@ -258,7 +268,42 @@ function DispatchDrawer({
           </div>
         )}
 
-        {dispatch.target_count != null && (
+        {targets.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-surface-2 rounded-md p-3">
+              <p className="text-xs text-fg-3">Total</p>
+              <p className="text-lg font-semibold text-fg">{targets.length}</p>
+            </div>
+            <div className="bg-surface-2 rounded-md p-3">
+              <p className="text-xs text-fg-3">Entregues</p>
+              <p className={`text-lg font-semibold ${deliveredTargets.length > 0 ? 'text-success' : 'text-fg'}`}>{deliveredTargets.length}</p>
+            </div>
+            <div className="bg-surface-2 rounded-md p-3">
+              <p className="text-xs text-fg-3">Falharam</p>
+              <p className={`text-lg font-semibold ${failedTargets.length > 0 ? 'text-danger' : 'text-fg'}`}>{failedTargets.length}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Erros detalhados por target */}
+        {failedTargets.length > 0 && (
+          <div>
+            <p className="text-xs text-fg-3 font-medium mb-2">❌ Erros de envio</p>
+            <div className="space-y-2">
+              {failedTargets.map((t: any) => (
+                <div key={t.id} className="bg-danger/5 border border-danger/20 rounded-md p-3">
+                  <p className="text-xs font-medium text-danger mb-1">
+                    Grupo #{t.group_id}
+                    {t.attempted_at && <span className="text-fg-3 font-normal ml-2">{new Date(t.attempted_at).toLocaleString('pt-BR')}</span>}
+                  </p>
+                  <p className="text-xs text-fg-2 font-mono break-all">{t.error_reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {dispatch.target_count != null && targets.length === 0 && (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-surface-2 rounded-md p-3">
               <p className="text-xs text-fg-3">Destinos</p>
@@ -266,9 +311,7 @@ function DispatchDrawer({
             </div>
             <div className="bg-surface-2 rounded-md p-3">
               <p className="text-xs text-fg-3">Entregues</p>
-              <p className="text-lg font-semibold text-fg">
-                {dispatch.delivered_count ?? 0}
-              </p>
+              <p className="text-lg font-semibold text-fg">{dispatch.delivered_count ?? 0}</p>
             </div>
           </div>
         )}
