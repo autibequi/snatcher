@@ -107,6 +107,8 @@ CLOUDFLARE_TOKEN=<seu-token>
 make start-tunnel
 ```
 
+Veja [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) para configuração detalhada dos hostnames `admin.jon.promo` e `jon.promo`.
+
 ## Raspberry Pi
 
 ```bash

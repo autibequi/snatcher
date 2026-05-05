@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, Component, ErrorInfo, ReactNode, useEffect } from 'react'
+import { Suspense, lazy, Component, ErrorInfo, ReactNode, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { AppShell } from './shell'
 import { RequireAuth } from './components/RequireAuth'
@@ -47,17 +47,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 // --- Placeholders ---
 
-function PagePlaceholder({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-full min-h-64">
-      <div className="text-center">
-        <p className="text-lg font-medium text-fg">{title}</p>
-        <p className="text-sm text-fg-3 mt-1">Em construção</p>
-      </div>
-    </div>
-  )
-}
-
 function NotFound() {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-64 gap-3">
@@ -87,43 +76,18 @@ const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
 const Logs = lazy(() => import('./pages/Logs'))
 const Settings = lazy(() => import('./pages/Settings'))
 
-// --- Páginas novas (placeholders — serão implementadas na Fase 16) ---
+// --- Páginas novas (lazy) ---
 
-// Lazy import com fallback para módulos ainda não criados
-function lazyPage(importer: () => Promise<{ default: React.ComponentType }>, title: string) {
-  return lazy(() => importer().catch(() => ({ default: () => <PagePlaceholder title={title} /> })))
-}
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — páginas serão criadas na Fase 16
-const Match = lazyPage(() => import('./pages/Match'), 'Match')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const Composer = lazyPage(() => import('./pages/Composer'), 'Compor disparo')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const Accounts = lazyPage(() => import('./pages/Accounts'), 'Contas conectadas')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const Affiliates = lazyPage(() => import('./pages/Affiliates'), 'Afiliados')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const PublicLinks = lazyPage(() => import('./pages/PublicLinks'), 'Links públicos')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const Clusters = lazyPage(() => import('./pages/Clusters'), 'Clusters')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const GroupDetail = lazyPage(() => import('./pages/GroupDetail'), 'Detalhe do grupo')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const DevAtoms = lazyPage(() => import('./pages/DevAtoms'), 'Dev — Atoms')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const AutoMatch = lazyPage(() => import('./pages/AutoMatch'), 'Auto Match')
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-const Setup = lazyPage(() => import('./pages/Setup'), 'Configuração inicial')
+const Match = lazy(() => import('./pages/Match'))
+const Composer = lazy(() => import('./pages/Composer'))
+const Accounts = lazy(() => import('./pages/Accounts'))
+const Affiliates = lazy(() => import('./pages/Affiliates'))
+const PublicLinks = lazy(() => import('./pages/PublicLinks'))
+const Clusters = lazy(() => import('./pages/Clusters'))
+const GroupDetail = lazy(() => import('./pages/GroupDetail'))
+const DevAtoms = lazy(() => import('./pages/DevAtoms'))
+const AutoMatch = lazy(() => import('./pages/AutoMatch'))
+const Setup = lazy(() => import('./pages/Setup'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
 function SetupGuard({ children }: { children: ReactNode }) {

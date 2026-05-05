@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
@@ -20,6 +21,14 @@ export default defineConfig({
       '/r/': {
         target: 'http://promo-snatcher-backend:8000',
         changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        admin: path.resolve(__dirname, 'index.html'),
+        public: path.resolve(__dirname, 'public.html'),
       },
     },
   },

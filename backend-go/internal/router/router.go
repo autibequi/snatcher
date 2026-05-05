@@ -11,6 +11,8 @@ import (
 	_ "snatcher/backendv2/internal/docs" // swagger docs
 	"snatcher/backendv2/internal/compose"
 	"snatcher/backendv2/internal/handlers"
+	adminhnd "snatcher/backendv2/internal/handlers/admin"
+	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/pipeline"
@@ -47,41 +49,42 @@ func Build(
 	r.Use(middleware.BodyLimit(1 << 20))                // global 1 MB body limit
 	r.Use(middleware.MetricsMiddleware)
 
-	auth := handlers.NewAuthHandler(db, jwtSecret)
-	scan := handlers.NewScan(st, runner, sched)
-	terms := handlers.NewSearchTerms(st, scrapers)
-	sources := handlers.NewSources(st)
-	affiliates := handlers.NewAffiliates(st)
-	catalog := handlers.NewCatalogDB(st, db)
-	channels := handlers.NewChannels(st, adapters)
-	config := handlers.NewConfig(st)
+	auth := adminhnd.NewAuthHandler(db, jwtSecret)
+	scan := adminhnd.NewScan(st, runner, sched)
+	terms := adminhnd.NewSearchTerms(st, scrapers)
+	sources := adminhnd.NewSources(st)
+	affiliates := adminhnd.NewAffiliates(st)
+	catalog := adminhnd.NewCatalogDB(st, db)
+	channels := adminhnd.NewChannels(st, adapters)
+	config := adminhnd.NewConfig(st)
 	canal := handlers.NewCanal(st)
-	accounts := handlers.NewAccounts(st)
-	crawlLogs := handlers.NewCrawlLogs(st)
-	broadcast := handlers.NewBroadcast(st)
-	analytics := handlers.NewAnalytics(st)
-	coverage := handlers.NewCoverageHandler(st)
-	dispatches := handlers.NewDispatchHandler(st)
+	accounts := adminhnd.NewAccounts(st)
+	crawlLogs := adminhnd.NewCrawlLogs(st)
+	broadcast := adminhnd.NewBroadcast(st)
+	analytics := adminhnd.NewAnalytics(st)
+	coverage := adminhnd.NewCoverageHandler(st)
+	dispatches := adminhnd.NewDispatchHandler(st)
 
 	// ReDesign handlers
-	groups      := handlers.NewGroupsHandler(st)
-	matchH      := handlers.NewMatchHandler(st)
-	publLinks   := handlers.NewPublicLinksHandlerDB(st, db)
-	affPrograms := handlers.NewAffiliateProgramsHandlerDB(st, db)
-	groupSpies  := handlers.NewGroupSpiesHandler(st)
-	clustersH   := handlers.NewClustersHandlerDB(st, db)
-	dash        := handlers.NewDashboardHandler(st, db)
-	team        := handlers.NewTeamHandler(db)
-	brand       := handlers.NewBrandHandler(st)
-	autoMatch   := handlers.NewAutoMatchHandler(st)
-	linksH      := handlers.NewLinksHandler(st)
+	groups      := adminhnd.NewGroupsHandler(st)
+	matchH      := adminhnd.NewMatchHandler(st)
+	publLinks   := adminhnd.NewPublicLinksHandlerDB(st, db)
+	publLinksResolver := publichnd.NewPublicLinksResolver(st)
+	affPrograms := adminhnd.NewAffiliateProgramsHandlerDB(st, db)
+	groupSpies  := adminhnd.NewGroupSpiesHandler(st)
+	clustersH   := adminhnd.NewClustersHandlerDB(st, db)
+	dash        := adminhnd.NewDashboardHandler(st, db)
+	team        := adminhnd.NewTeamHandler(db)
+	brand       := adminhnd.NewBrandHandler(st)
+	autoMatch   := adminhnd.NewAutoMatchHandler(st)
+	linksH      := adminhnd.NewLinksHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
-	var composeH *handlers.ComposeHandler
+	var composeH *adminhnd.ComposeHandler
 	{
 		var llmCli llm.Client = &nopLLMClient{}
 		svc := compose.NewService(llmCli)
-		composeH = handlers.NewComposeHandler(st, svc)
+		composeH = adminhnd.NewComposeHandler(st, svc)
 	}
 
 	// WebSocket hub + handler
@@ -108,16 +111,16 @@ func Build(
 	// ---------------------------------------------------------------------------
 	// Rotas públicas
 	// ---------------------------------------------------------------------------
-	postbackH := handlers.NewAffiliatePostbackHandlerStore(db, st)
+	postbackH := adminhnd.NewAffiliatePostbackHandlerStore(db, st)
 	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
-	evoWebhook := handlers.NewEvolutionWebhookHandler(st)
+	evoWebhook := adminhnd.NewEvolutionWebhookHandler(st)
 	r.Post("/webhooks/evolution", evoWebhook.Handle)
 
 	r.Get("/api/health", healthHandler)
 	r.Get("/api/brand", brand.Get) // white-label public config
 
 	// Setup (first-run): cria o primeiro admin se nenhum usuário existir
-	setup := handlers.NewSetupHandler(db)
+	setup := adminhnd.NewSetupHandler(db)
 	r.Get("/api/setup/status", setup.Status)
 	r.Post("/api/setup/create-admin", setup.CreateAdmin)
 
@@ -127,14 +130,14 @@ func Build(
 	r.Post("/api/auth/logout", auth.Logout)
 
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", handlers.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
 
 	r.Get("/canal/{slug}", canal.GroupPicker)
 	r.Get("/canal/{slug}/preview", canal.Preview)
 	r.Get("/join/{slug}", canal.JoinRedirect)
 
 	// ReDesign: public link resolve + WebSocket (auth via query param token)
-	r.Get("/g/{slug}", publLinks.Resolve)
+	r.Get("/g/{slug}", publLinksResolver.Resolve)
 	r.Get("/ws", wsHandler.ServeHTTP)
 
 	r.Get("/api/public/channels", func(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +370,7 @@ func Build(
 		r.Delete("/api/team/{id}", team.Remove)
 
 		// Admin: LLM observability
-		llmAdmin := handlers.NewLLMAdminHandler(db)
+		llmAdmin := adminhnd.NewLLMAdminHandler(db)
 		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
 		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
 		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)

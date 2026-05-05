@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"snatcher/backendv2/internal/handlers"
+	adminhnd "snatcher/backendv2/internal/handlers/admin"
 )
 
-// RequireAuth valida o Bearer JWT e injeta user_id no context via handlers.CtxWithUserID.
+// RequireAuth valida o Bearer JWT e injeta user_id no context via adminhnd.CtxWithUserID.
 // Retorna 401 se o token for ausente, inválido ou expirado.
 func RequireAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -38,14 +38,14 @@ func RequireAuth(secret string) func(http.Handler) http.Handler {
 				return
 			}
 			sub, _ := claims["sub"].(float64)
-			ctx := handlers.CtxWithUserID(r.Context(), int64(sub))
+			ctx := adminhnd.CtxWithUserID(r.Context(), int64(sub))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 // JWTMiddleware é o middleware legado — mantido para compatibilidade durante migração.
-// Novos handlers devem usar RequireAuth que injeta user_id via handlers.CtxWithUserID.
+// Novos handlers devem usar RequireAuth que injeta user_id via adminhnd.CtxWithUserID.
 func JWTMiddleware(secret string) func(http.Handler) http.Handler {
 	return RequireAuth(secret)
 }

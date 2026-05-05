@@ -6,6 +6,7 @@ services:
     build:
       context: ./backend-go
       dockerfile: Dockerfile
+      target: server
     volumes:
       - ./backend-go/data:/app/data
     environment:
@@ -42,9 +43,11 @@ services:
     image: snatcher-public-local
     build:
       context: ./backend-go
-      dockerfile: Dockerfile.public
+      dockerfile: Dockerfile
+      target: public
     environment:
       - DATABASE_URL=postgres://snatcher:${SNATCHER_DB_PASS:-devpass}@snatcher-app-postgres:5432/snatcher?sslmode=disable
+      - PUBLIC_DATABASE_URL=postgres://snatcher_public_app:${SNATCHER_PUBLIC_DB_PASS:-publicpass}@snatcher-app-postgres:5432/snatcher?sslmode=disable
       - PUBLIC_PORT=8001
       - GOMAXPROCS=1
     depends_on:
