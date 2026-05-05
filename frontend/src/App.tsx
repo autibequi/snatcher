@@ -1,7 +1,8 @@
-import React, { Suspense, lazy, Component, ErrorInfo, ReactNode } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import React, { Suspense, lazy, Component, ErrorInfo, ReactNode, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { AppShell } from './shell'
 import { RequireAuth } from './components/RequireAuth'
+import { apiClient } from './lib/apiClient'
 
 // --- Error Boundary ---
 
@@ -120,6 +121,20 @@ const DevAtoms = lazyPage(() => import('./pages/DevAtoms'), 'Dev — Atoms')
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 const AutoMatch = lazyPage(() => import('./pages/AutoMatch'), 'Auto Match')
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const Setup = lazyPage(() => import('./pages/Setup'), 'Configuração inicial')
+
+// Redireciona para /setup se nenhum usuário existir ainda
+function SetupGuard({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
+  useEffect(() => {
+    apiClient.get('/api/setup/status').then(r => {
+      if (r.data?.needs_setup) navigate('/setup', { replace: true })
+    }).catch(() => {})
+  }, [navigate])
+  return <>{children}</>
+}
 
 // --- App ---
 
@@ -128,7 +143,9 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <Suspense fallback={<Fallback />}>
+          <SetupGuard>
           <Routes>
+            <Route path="/setup" element={<Setup />} />
             <Route path="/login" element={<Login />} />
             <Route
               element={
@@ -158,6 +175,7 @@ export default function App() {
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
+          </SetupGuard>
         </Suspense>
       </BrowserRouter>
     </ErrorBoundary>
