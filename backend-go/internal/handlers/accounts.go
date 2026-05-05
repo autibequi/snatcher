@@ -356,20 +356,11 @@ func (h *AccountsHandler) WAStartSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Se a conta não tem URL própria, usa o AppConfig global
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	if !acc.BaseURL.Valid || baseURL == "" {
-		cfg, _ := h.store.GetConfig()
-		if cfg.WABaseURL.Valid {
-			baseURL = cfg.WABaseURL.String
-		}
-		if cfg.WAApiKey.Valid && apiKey == "" {
-			apiKey = cfg.WAApiKey.String
-		}
-		if cfg.WAInstance.Valid && instance == "" {
-			instance = cfg.WAInstance.String
-		}
-	}
+	cfgGlobal, _ := h.store.GetConfig()
+	if baseURL == "" && cfgGlobal.WABaseURL.Valid  { baseURL  = cfgGlobal.WABaseURL.String  }
+	if apiKey  == "" && cfgGlobal.WAApiKey.Valid   { apiKey   = cfgGlobal.WAApiKey.String   }
+	if instance == "" && cfgGlobal.WAInstance.Valid { instance = cfgGlobal.WAInstance.String }
 
 	if baseURL == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "Evolution URL não configurada")
@@ -399,15 +390,18 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	if !acc.BaseURL.Valid || baseURL == "" {
-		cfg, _ := h.store.GetConfig()
-		if cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
-		if cfg.WAApiKey.Valid  { apiKey   = cfg.WAApiKey.String  }
-		if cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
-	}
+	// Fallback independente por campo — sempre usa AppConfig quando o campo está vazio
+	cfg, _ := h.store.GetConfig()
+	if baseURL == "" && cfg.WABaseURL.Valid  { baseURL  = cfg.WABaseURL.String  }
+	if apiKey  == "" && cfg.WAApiKey.Valid   { apiKey   = cfg.WAApiKey.String   }
+	if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
 
 	if baseURL == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured"})
+		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a URL da Evolution API em Configurações → Integrações"})
+		return
+	}
+	if apiKey == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a API Key da Evolution em Configurações → Integrações"})
 		return
 	}
 
