@@ -268,20 +268,6 @@ function IntegrationsTab() {
         </div>
       </div>
 
-      {/* LLM */}
-      <div>
-        <p className="text-sm font-medium text-fg mb-3">LLM (OpenRouter)</p>
-        <div className="space-y-2">
-          <Input
-            label="API Key"
-            value={get('openrouter_api_key')}
-            onChange={(e) => set('openrouter_api_key', e.target.value)}
-            type="password"
-            placeholder="sk-or-..."
-          />
-        </div>
-      </div>
-
       {/* Salvar */}
       <Button
         variant="primary"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -54,6 +55,15 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProductID != nil {
 		d.ProductID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.ProductID, Valid: true}}
+	}
+	if req.ScheduledFor != nil && *req.ScheduledFor != "" {
+		formats := []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02T15:04:05"}
+		for _, f := range formats {
+			if t, err := time.ParseInLocation(f, *req.ScheduledFor, time.Local); err == nil {
+				d.ScheduledFor = models.NullTime{NullTime: sql.NullTime{Time: t, Valid: true}}
+				break
+			}
+		}
 	}
 
 	// Resolve targets: GroupID direto OU expandir ChannelID -> grupos ativos.

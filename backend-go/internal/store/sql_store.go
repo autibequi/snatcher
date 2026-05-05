@@ -1261,10 +1261,14 @@ func (s *SQLStore) CreateDispatch(d models.Dispatch, targets []models.DispatchTa
 	if status == "" {
 		status = "queued"
 	}
+	var scheduledFor interface{}
+	if d.ScheduledFor.Valid {
+		scheduledFor = d.ScheduledFor.Time
+	}
 	err = tx.QueryRow(`
-		INSERT INTO dispatches (product_id, composed_by, message, affiliate_link, status)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink, status,
+		INSERT INTO dispatches (product_id, composed_by, message, affiliate_link, status, scheduled_for)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink, status, scheduledFor,
 	).Scan(&id)
 	if err != nil {
 		return 0, err

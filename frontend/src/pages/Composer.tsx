@@ -145,16 +145,19 @@ export default function Composer() {
   const affiliateLink = params.get('affiliateLink') ?? undefined
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
-    mutationFn: (targets) =>
-      apiClient
+    mutationFn: (targets) => {
+      // Substituir {link} com URL afiliada antes de enviar
+      const finalText = text.replace(/{link}/g, affiliateUrl || realUrl || '')
+      return apiClient
         .post<DispatchResponse>('/api/dispatches', {
           product_id: productId ? Number(productId) : undefined,
-          message: { text, media_url: productImage || undefined },
+          message: { text: finalText, media_url: productImage || undefined },
           affiliate_link: affiliateLink,
           scheduled_for: scheduledFor || undefined,
           targets,
         } as DispatchPayload & { scheduled_for?: string })
-        .then((r) => r.data),
+        .then((r) => r.data)
+    },
     onSuccess: (data) => navigate(`/logs?dispatchId=${data.id}`),
   })
 
@@ -170,23 +173,16 @@ export default function Composer() {
     onSuccess: () => alert('Rascunho salvo! Acesse em Logs > Rascunhos.'),
   })
 
-  const encurtar = useMutation({
-    mutationFn: () => {
-      // Usar URL e marketplace reais do produto
-      const productUrl = productData?.lowest_price_url?.String || productData?.lowest_price_url || ''
-      const marketplace = productData?.lowest_price_source?.String || productData?.lowest_price_source || 'amazon'
-      if (productUrl) {
-        return apiClient.post('/api/affiliates/build-link', {
-          product_url: productUrl,
-          marketplace: marketplace.toLowerCase(),
-        }).then((r) => r.data.url || productUrl)
-      }
-      return Promise.resolve('https://snatcher.link/' + Math.random().toString(36).slice(2, 8))
-    },
-    onSuccess: (url: string) => {
-      setText((t) => t.includes('{link}') ? t.replace('{link}', url) : t + '\n' + url)
-    },
-    onError: () => alert('Nenhum programa de afiliado configurado para este marketplace. Configure em Afiliados.'),
+  // Buscar URL com tag de afiliado automaticamente quando o produto é carregado
+  const { data: affiliateUrl = '' } = useQuery<string>({
+    queryKey: ['affiliate-link', productId, realUrl, realSource],
+    queryFn: () =>
+      apiClient.post('/api/affiliates/build-link', {
+        product_url: realUrl,
+        marketplace: realSource.toLowerCase() || 'amazon',
+      }).then(r => r.data?.url || realUrl).catch(() => realUrl),
+    enabled: !!realUrl,
+    staleTime: Infinity,
   })
 
   const rewriteMut = useMutation({
@@ -219,7 +215,7 @@ export default function Composer() {
     .replace(/{de}/g, realPrice > 0 ? realPriceStr : 'R$ --')
     .replace(/{por}/g, realPrice > 0 ? realPriceStr : 'R$ --')
     .replace(/{desconto}/g, realSource ? realSource : '--%')
-    .replace(/{link}/g, realUrl || 'https://link.produto')
+    .replace(/{link}/g, affiliateUrl || realUrl || 'https://link.produto')
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
 
@@ -328,14 +324,6 @@ export default function Composer() {
                   onClick={() => setShowImageInput((prev) => !prev)}
                 >
                   📷 Imagem do produto
-                </button>
-                <button
-                  type="button"
-                  className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:bg-surface-2 disabled:opacity-50"
-                  disabled={encurtar.isPending}
-                  onClick={() => encurtar.mutate()}
-                >
-                  {encurtar.isPending ? '⏳ Encurtando...' : '🔗 Encurtador'}
                 </button>
                 <button
                   type="button"
