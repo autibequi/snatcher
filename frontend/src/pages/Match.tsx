@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
@@ -358,41 +358,120 @@ function ProductDetailMatch({ productId }: { productId: string }) {
   )
 }
 
-// ── Página principal (sem productId → lista compacta c/ 1º produto auto) ──────
+// ── Página principal (sem productId → melhores matches do sistema) ──────────────
+
+function BestMatchesView() {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const { data, isLoading, refetch, isFetching } = useQuery<{
+    items: Array<{ product_id: number; channel_id: number; product_name: string; channel_name: string; score: number; already_sent: boolean }>
+    threshold: number
+  }>({
+    queryKey: ['auto-match-preview'],
+    queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data),
+    staleTime: 30_000,
+  })
+
+  const items = data?.items ?? []
+  const threshold = data?.threshold ?? 50
+
+  const dispatchMut = useMutation({
+    mutationFn: (item: { product_id: number; channel_id: number }) =>
+      apiClient.post('/api/auto-match/dispatch-one', item).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auto-match-preview'] }),
+    onError: (err: any) => alert('Erro: ' + (err?.response?.data?.error ?? err.message)),
+  })
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-fg">Melhores Matches</h1>
+            <p className="text-sm text-fg-3 mt-0.5">
+              Produtos com score ≥ {threshold} prontos para disparar. Para roteamento manual, acesse o <button type="button" className="text-accent hover:underline" onClick={() => navigate('/catalog')}>Catálogo</button>.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-xs text-accent hover:underline mt-1"
+          >
+            {isFetching ? '⏳' : '↻ recalcular'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="p-6 space-y-3">
+            {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 w-full" />)}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center p-12">
+            <EmptyState
+              title="Nenhum match com score suficiente"
+              description={`Não há produtos com score ≥ ${threshold}. Configure canais com audiência ou adicione mais produtos.`}
+              cta={{ label: 'Configurar Auto Match', onClick: () => navigate('/auto-match') }}
+            />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="text-left px-6 py-3 text-xs text-fg-2 font-medium uppercase">Produto</th>
+                <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium uppercase">Canal</th>
+                <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium uppercase">Score</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, i) => (
+                <tr key={i} className={`border-b border-border last:border-0 hover:bg-surface-2 ${item.already_sent ? 'opacity-60' : ''}`}>
+                  <td className="px-6 py-3">
+                    <p className="text-sm text-fg font-medium truncate max-w-xs">{item.product_name}</p>
+                    {item.already_sent && <p className="text-xs text-fg-3">enviado nas últimas 6h</p>}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-fg">{item.channel_name}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-sm font-semibold ${item.score >= 70 ? 'text-success' : 'text-warning'}`}>
+                      {item.score.toFixed(0)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {!item.already_sent && (
+                      <button
+                        type="button"
+                        onClick={() => dispatchMut.mutate({ product_id: item.product_id, channel_id: item.channel_id })}
+                        disabled={dispatchMut.isPending}
+                        className="text-xs bg-accent text-white px-3 py-1.5 rounded-md hover:bg-accent-hover disabled:opacity-50"
+                      >
+                        ✈ Disparar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function Match() {
   const [params] = useSearchParams()
-  const navigate = useNavigate()
   const productId = params.get('productId')
-  const [search, setSearch] = React.useState('')
 
-  // Com productId → detail 2-col
+  // Com productId → detail 2-col (acessado a partir do catálogo)
   if (productId) {
     return <ProductDetailMatch productId={productId} />
   }
 
-  // Sem productId → lista de produtos com link pra detail
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-        <h1 className="text-lg font-semibold text-fg">Match</h1>
-        <p className="text-sm text-fg-3 mt-0.5">
-          Produtos do catálogo — clique em um produto para ver grupos compatíveis.
-        </p>
-      </div>
-
-      <div className="px-6 py-3 border-b border-border flex-shrink-0">
-        <input
-          className="w-72 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          placeholder="Buscar produto..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-      </div>
-
-      <ProductListNav search={search} navigate={navigate} />
-    </div>
-  )
+  // Sem productId → melhores matches do sistema
+  return <BestMatchesView />
 }
 
 function ProductListNav({
