@@ -13,40 +13,6 @@ export type InboxItem = {
   cta: { label: string; href: string }
 }
 
-const MOCK_INBOX: InboxItem[] = [
-  {
-    id: 'wa-tech-conta-03',
-    severity: 'critico',
-    category: 'wa_disconnect',
-    title: 'WhatsApp "Tech Conta 03" desconectada',
-    subtitle: 'sem atividade · escaneie o QR para reconectar',
-    cta: { label: 'Reconectar via QR', href: '/whatsapp' },
-  },
-  {
-    id: 'cr-rtx-4060',
-    severity: 'critico',
-    category: 'crawler_fail',
-    title: 'Crawler "rtx 4060" falhou',
-    subtitle: 'Erro desconhecido · marketplace mercadolivre',
-    cta: { label: 'Ver detalhes', href: '/crawlers' },
-  },
-  {
-    id: 'curation-pending',
-    severity: 'atencao',
-    category: 'curation_pending',
-    title: '32 produtos novos esperando curadoria',
-    subtitle: 'Coletados desde ontem · maior queda −43%',
-    cta: { label: 'Curar agora', href: '/catalog' },
-  },
-  {
-    id: 'group-fail',
-    severity: 'atencao',
-    category: 'group_fail',
-    title: 'Falha: grupo arquivado no disparo anterior',
-    subtitle: 'Canal Eletrônicos · grupo "Tech Fãs BR" não encontrado',
-    cta: { label: 'Ver no log', href: '/logs' },
-  },
-]
 
 const categoryIcon: Record<string, string> = {
   wa_disconnect: '📵',
@@ -133,8 +99,8 @@ export function OperationInbox({ externalDismissed, onDismiss }: OperationInboxP
     queryFn: () =>
       apiClient
         .get('/api/dashboard/inbox')
-        .then(r => (Array.isArray(r.data) ? (r.data as InboxItem[]) : MOCK_INBOX))
-        .catch(() => MOCK_INBOX),
+        .then(r => (Array.isArray(r.data) ? (r.data as InboxItem[]) : []))
+        .catch(() => []),
     refetchInterval: 30_000,
   })
 

@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, KpiCard, Skeleton, Tabs } from '../components/ui'
+import { Badge, Button, KpiCard, Skeleton, Tabs, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ---------------------------------------------------------------------------
@@ -275,12 +275,11 @@ function TabPrograms({ programs, statsMap, isLoading }: TabProgramsProps) {
 
 function TabRules() {
   return (
-    <div className="p-6 flex flex-col items-center justify-center gap-3 text-center min-h-[200px]">
-      <p className="text-fg font-medium">Regras de mapeamento</p>
-      <p className="text-sm text-fg-3 max-w-sm">
-        Configure regras para mapear domínios de origem a programas de afiliados automaticamente.
-        Em breve.
-      </p>
+    <div className="p-6">
+      <EmptyState
+        title="Regras de mapeamento"
+        description="Configure regras para mapear domínios de origem a programas de afiliados automaticamente. Disponível em fase 2."
+      />
     </div>
   )
 }
@@ -291,13 +290,11 @@ function TabRules() {
 
 function TabPostbacks() {
   return (
-    <div className="p-6 flex flex-col items-center justify-center gap-3 text-center min-h-[200px]">
-      <p className="text-fg font-medium">Postbacks (S2S)</p>
-      <p className="text-sm text-fg-3 max-w-sm">
-        Receba conversões em tempo real via Server-to-Server postback.
-        Configure a URL de postback por programa.
-        Em breve.
-      </p>
+    <div className="p-6">
+      <EmptyState
+        title="Postbacks (S2S)"
+        description="Receba conversões em tempo real via Server-to-Server postback. Configure a URL de postback por programa. Disponível em fase 2."
+      />
     </div>
   )
 }
@@ -308,12 +305,11 @@ function TabPostbacks() {
 
 function TabAttribution() {
   return (
-    <div className="p-6 flex flex-col items-center justify-center gap-3 text-center min-h-[200px]">
-      <p className="text-fg font-medium">Atribuição & auditoria</p>
-      <p className="text-sm text-fg-3 max-w-sm">
-        Histórico de atribuições de cliques e conversões por usuário, programa e janela de cookie.
-        Em breve.
-      </p>
+    <div className="p-6">
+      <EmptyState
+        title="Atribuição & auditoria"
+        description="Histórico de atribuições de cliques e conversões por usuário, programa e janela de cookie. Disponível em fase 2."
+      />
     </div>
   )
 }

@@ -294,15 +294,6 @@ function ProductDetailMatch({ productId }: { productId: string }) {
               Grupos rankeados · {filtered.length} de {scores.length}
             </span>
 
-            {/* Botão "+ IA" placeholder */}
-            <button
-              type="button"
-              onClick={() => console.log('[IA placeholder] clicked')}
-              className="text-xs font-medium px-2.5 py-1 rounded-full border border-accent text-accent hover:bg-accent/10 transition-colors"
-            >
-              + IA
-            </button>
-
             {/* Score slider reposicionado */}
             <label className="flex items-center gap-1.5 text-xs text-fg-2 flex-shrink-0">
               Score ≥ <span className="font-bold text-fg w-5 text-right">{minScore}</span>

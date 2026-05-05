@@ -78,7 +78,7 @@ services:
     build:
       context: ../backend-go
       dockerfile: Dockerfile
-    shm_size: 128mb
+      target: server
     volumes:
       - snatcher-data:/app/data
     environment:

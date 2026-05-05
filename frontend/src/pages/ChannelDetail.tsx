@@ -529,7 +529,6 @@ function ChannelDemographics() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
         </div>
         {/* Faixa etária */}
         <div className="border border-border rounded-md p-4 bg-surface">
@@ -547,7 +546,6 @@ function ChannelDemographics() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
         </div>
         {/* Região */}
         <div className="border border-border rounded-md p-4 bg-surface">
@@ -565,7 +563,6 @@ function ChannelDemographics() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-fg-3 mt-3 italic">Dados simulados · Em breve</p>
         </div>
       </div>
     </div>

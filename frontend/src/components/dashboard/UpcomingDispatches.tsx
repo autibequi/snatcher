@@ -9,26 +9,6 @@ export interface UpcomingDispatch {
   scheduled_at: string // ISO-8601
 }
 
-const MOCK_UPCOMING: UpcomingDispatch[] = [
-  {
-    id: 'disp-suplementos',
-    name: 'Suplementos',
-    subtitle: '4 grupos · 1 produto destaque',
-    scheduled_at: new Date(Date.now() + 12 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'disp-eletronicos',
-    name: 'Eletrônicos',
-    subtitle: '2 grupos · digest top 5',
-    scheduled_at: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'disp-casa',
-    name: 'Casa & Cozinha',
-    subtitle: '1 grupo · 3 produtos',
-    scheduled_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-  },
-]
 
 // ── ETA formatter — sem date-fns ──────────────────────────────────────────────
 
@@ -87,8 +67,8 @@ export function UpcomingDispatches() {
     queryFn: () =>
       apiClient
         .get('/api/dashboard/upcoming-dispatches?limit=5')
-        .then(r => (Array.isArray(r.data) ? (r.data as UpcomingDispatch[]) : MOCK_UPCOMING))
-        .catch(() => MOCK_UPCOMING),
+        .then(r => (Array.isArray(r.data) ? (r.data as UpcomingDispatch[]) : []))
+        .catch(() => []),
     refetchInterval: 60_000,
   })
 

@@ -12,36 +12,6 @@ export interface ChannelPerf {
   daily_dispatches: number[]
 }
 
-const MOCK_CHANNEL_PERF: ChannelPerf[] = [
-  {
-    channel_id: 'suplementos',
-    channel_name: 'Suplementos',
-    dispatches: 142,
-    ctr: 8.4,
-    daily_dispatches: [18, 22, 19, 25, 21, 17, 20],
-  },
-  {
-    channel_id: 'eletronicos',
-    channel_name: 'Eletrônicos',
-    dispatches: 96,
-    ctr: 5.2,
-    daily_dispatches: [12, 14, 13, 15, 14, 14, 14],
-  },
-  {
-    channel_id: 'casa-cozinha',
-    channel_name: 'Casa & Cozinha',
-    dispatches: 74,
-    ctr: 4.1,
-    daily_dispatches: [8, 11, 10, 12, 11, 10, 12],
-  },
-  {
-    channel_id: 'moda',
-    channel_name: 'Moda',
-    dispatches: 58,
-    ctr: 3.7,
-    daily_dispatches: [6, 9, 8, 10, 9, 8, 8],
-  },
-]
 
 // ── Sparkline SVG inline — sem dependências externas ──────────────────────────
 
@@ -100,8 +70,8 @@ export function ChannelPerformanceTable() {
     queryFn: () =>
       apiClient
         .get('/api/dashboard/channel-performance?window=7d')
-        .then(r => (Array.isArray(r.data) ? (r.data as ChannelPerf[]) : MOCK_CHANNEL_PERF))
-        .catch(() => MOCK_CHANNEL_PERF),
+        .then(r => (Array.isArray(r.data) ? (r.data as ChannelPerf[]) : []))
+        .catch(() => []),
     refetchInterval: 120_000,
   })
 

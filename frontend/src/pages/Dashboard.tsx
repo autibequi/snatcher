@@ -24,13 +24,6 @@ interface KPIs {
   accounts_normal_count?: number
 }
 
-const KPI_MOCK_FALLBACK = {
-  dispatches_delta_pct: 12,
-  ctr_avg_pp_delta: 0.6,
-  unique_clicks: 2184,
-  health_score: 87,
-  accounts_normal_count: 2,
-}
 
 // ── Health score color helper ──────────────────────────────────────────────────
 
@@ -107,24 +100,24 @@ export default function Dashboard() {
   })
 
 
-  // Merge backend KPIs com fallback mock para campos ausentes
-  const resolvedKpis = { ...KPI_MOCK_FALLBACK, ...kpis }
+  // Use backend KPIs or null if not available
+  const resolvedKpis = kpis ?? null
 
   // Disparos 7D
-  const dispatches7d = resolvedKpis.dispatches_24h ?? '—'
-  const dispatchesDelta = resolvedKpis.dispatches_delta_pct
+  const dispatches7d = resolvedKpis?.dispatches_24h ?? '—'
+  const dispatchesDelta = resolvedKpis?.dispatches_delta_pct
 
   // CTR médio
-  const ctrAvg = resolvedKpis.conversion_pct
-  const ctrDelta = resolvedKpis.ctr_avg_pp_delta
+  const ctrAvg = resolvedKpis?.conversion_pct
+  const ctrDelta = resolvedKpis?.ctr_avg_pp_delta
 
   // Cliques 7D
-  const clicks7d = resolvedKpis.clicks_24h ?? '—'
-  const uniqueClicks = resolvedKpis.unique_clicks
+  const clicks7d = resolvedKpis?.clicks_24h ?? '—'
+  const uniqueClicks = resolvedKpis?.unique_clicks
 
   // Saúde anti-ban
-  const healthScore = resolvedKpis.health_score
-  const accountsNormal = resolvedKpis.accounts_normal_count
+  const healthScore = resolvedKpis?.health_score
+  const accountsNormal = resolvedKpis?.accounts_normal_count
 
   const healthValue =
     healthScore !== undefined

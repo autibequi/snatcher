@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Input, Modal, Skeleton, EmptyState, Switch } from '../components/ui'
+import { Badge, Button, Input, Modal, Skeleton, Switch } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -57,11 +57,6 @@ function parseTagList(value: string): string[] {
     .filter(Boolean)
 }
 
-// ── Mock fallback 7d series ──────────────────────────────────────────────────
-function mockSeries7d(seed: number): number[] {
-  // deterministic-ish mock based on seed
-  return Array.from({ length: 7 }, (_, i) => Math.max(0, Math.round(10 + ((seed + i * 3) % 40))))
-}
 
 // ── Inline mini bar-chart ─────────────────────────────────────────────────────
 function ChannelMiniChart({ channelId, series }: { channelId: number; series?: number[] }) {
@@ -77,7 +72,7 @@ function ChannelMiniChart({ channelId, series }: { channelId: number; series?: n
     enabled: !series,
   })
 
-  const raw = series ?? metricsData?.dispatches_7d_series ?? mockSeries7d(channelId)
+  const raw = series ?? metricsData?.dispatches_7d_series ?? []
   const chartData = raw.map((v, i) => ({ day: i, v }))
 
   return (
