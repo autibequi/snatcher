@@ -442,13 +442,11 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	var qrBody map[string]any
 	_ = json.Unmarshal([]byte(qrJSON), &qrBody)
 
-	// Instância não existe ou connect retorna 404 → deletar se existir e recriar com qrcode:true
+	// Instância não existe (404) → criar sem deletar (deletar corrompe o DB do Evolution)
 	if status, _ := qrBody["status"].(float64); status == 404 {
-		// Deletar instância existente (pode estar em estado inconsistente)
-		_ = evo.deleteInstance(r.Context())
 		b64, err := evo.createInstanceWithQR(r.Context())
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]string{"state": "error", "message": err.Error()})
+			writeJSON(w, http.StatusOK, map[string]string{"state": "error", "message": "Instância não existe. Recrie a conta WA. Detalhe: " + err.Error()})
 			return
 		}
 		if b64 != "" {

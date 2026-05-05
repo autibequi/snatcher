@@ -139,7 +139,15 @@ func sendEvolutionMessage(ctx context.Context, baseURL, apiKey, instance, jid, t
 func checkAllFinished(st store.Store, dispatchID int64) {
 	done, err := st.AllDispatchTargetsFinished(dispatchID)
 	if err == nil && done {
-		_ = st.UpdateDispatchStatus(dispatchID, "completed")
-		slog.Info("dispatch worker: dispatch completed", "dispatch_id", dispatchID)
+		// Verificar se pelo menos 1 target foi entregue; senão marcar como failed
+		hasDelivered, _ := st.HasDeliveredTarget(dispatchID)
+		finalStatus := "completed"
+		if !hasDelivered {
+			finalStatus = "failed"
+			slog.Warn("dispatch worker: todos os targets falharam", "dispatch_id", dispatchID)
+		} else {
+			slog.Info("dispatch worker: dispatch completed", "dispatch_id", dispatchID)
+		}
+		_ = st.UpdateDispatchStatus(dispatchID, finalStatus)
 	}
 }

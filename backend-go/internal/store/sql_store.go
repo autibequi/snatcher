@@ -1508,6 +1508,13 @@ func (s *SQLStore) AllDispatchTargetsFinished(dispatchID int64) (bool, error) {
 	return count == 0, err
 }
 
+func (s *SQLStore) HasDeliveredTarget(dispatchID int64) (bool, error) {
+	var count int
+	err := s.db.Get(&count,
+		`SELECT COUNT(*) FROM dispatch_targets WHERE dispatch_id = $1 AND status = 'delivered'`, dispatchID)
+	return count > 0, err
+}
+
 func (s *SQLStore) ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error) {
 	if limit == 0 { limit = 50 }
 	var out []models.ChannelHistoryEntry
