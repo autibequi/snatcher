@@ -122,8 +122,35 @@ func (h *AccountsHandler) CreateWA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.ID = id
-	slog.Info("conta WA criada", "id", id, "name", a.Name, "provider", a.Provider)
+
+	// Auto-gerar nome de instância único se não foi fornecido
+	if !a.Instance.Valid || a.Instance.String == "" {
+		slug := slugify(a.Name)
+		if slug == "" { slug = "conta" }
+		instance := fmt.Sprintf("snatcher-%s-%d", slug, id)
+		a.Instance = models.NullString{NullString: sql.NullString{String: instance, Valid: true}}
+		_ = h.store.UpdateWAAccount(a)
+	}
+
+	slog.Info("conta WA criada", "id", id, "name", a.Name, "instance", a.Instance.String)
 	writeJSON(w, http.StatusCreated, a)
+}
+
+// slugify transforma um nome em slug para uso como nome de instância.
+func slugify(s string) string {
+	var result []byte
+	for _, c := range strings.ToLower(s) {
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' {
+			result = append(result, byte(c))
+		} else if len(result) > 0 && result[len(result)-1] != '-' {
+			result = append(result, '-')
+		}
+	}
+	// Trim trailing dash
+	for len(result) > 0 && result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+	return string(result)
 }
 
 func (h *AccountsHandler) UpdateWA(w http.ResponseWriter, r *http.Request) {
