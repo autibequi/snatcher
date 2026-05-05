@@ -153,8 +153,13 @@ export default function Composer() {
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
       const link = affiliateUrl || realUrl || ''
-      // Substituir {link} com URL afiliada; se não tiver {link} e tiver URL, anexar
-      let finalText = link ? text.replace(/{link}/g, link) : text
+      // Substituir todas as variáveis com dados reais do produto
+      let finalText = text
+        .replace(/\{produto\}/g, realProductName || 'Produto')
+        .replace(/\{de\}/g, realPrice > 0 ? realPriceStr : 'R$ --')
+        .replace(/\{por\}/g, realPrice > 0 ? realPriceStr : 'R$ --')
+        .replace(/\{desconto\}/g, realSource || '')
+        .replace(/\{link\}/g, link)
       if (link && !finalText.includes(link)) finalText = finalText + '\n\n' + link
       return apiClient
         .post<DispatchResponse>('/api/dispatches', {
