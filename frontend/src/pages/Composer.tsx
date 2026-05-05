@@ -430,10 +430,10 @@ export default function Composer() {
               <div className="flex items-center gap-2 mt-2">
                 <button
                   type="button"
-                  className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:bg-surface-2"
+                  className={`text-xs border rounded px-2 py-1 hover:bg-surface-2 ${imageUrl ? 'border-success text-success' : 'border-border text-fg-2'}`}
                   onClick={() => setShowImageInput((prev) => !prev)}
                 >
-                  📷 Imagem do produto
+                  {imageUrl ? '🖼 Imagem carregada ✓' : '📷 Imagem do produto'}
                 </button>
                 <button
                   type="button"
@@ -447,24 +447,37 @@ export default function Composer() {
                 <span className="ml-auto text-xs text-fg-3">{text.length} caracteres</span>
               </div>
               {showImageInput && (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    className="flex-1 text-xs border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent"
-                    placeholder="URL da imagem..."
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setText((t) => t + (imageUrl ? `\n\n🖼 ${imageUrl}` : ''))
-                      setShowImageInput(false)
-                      setImageUrl('')
-                    }}
-                    className="text-xs bg-accent text-white px-2 py-1 rounded"
-                  >
-                    OK
-                  </button>
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 flex items-center gap-2 text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg cursor-pointer hover:border-accent">
+                      <span>📁</span>
+                      <span className="text-fg-3">{imageUrl ? 'Imagem selecionada — clique para trocar' : 'Selecionar imagem do computador...'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = () => setImageUrl(reader.result as string)
+                          reader.readAsDataURL(file)
+                        }}
+                      />
+                    </label>
+                    {imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl('')}
+                        className="text-xs text-danger hover:text-danger/80"
+                      >
+                        remover
+                      </button>
+                    )}
+                  </div>
+                  {imageUrl && (
+                    <img src={imageUrl} alt="Preview" className="h-20 rounded-md object-cover border border-border" />
+                  )}
                 </div>
               )}
             </div>
