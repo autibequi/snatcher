@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
+	"strings"
 
 	"snatcher/backendv2/internal/compose"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
@@ -46,17 +49,21 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hidratar campos do produto a partir do catálogo se product_id fornecido.
+	// Tenta CatalogProduct primeiro (ID do frontend), depois CatalogVariant (legado).
 	if req.ProductID != nil {
-		if variant, err := h.store.GetCatalogVariant(*req.ProductID); err == nil {
-			if req.Title == "" {
-				req.Title = variant.Title
+		if p, err := h.store.GetCatalogProduct(*req.ProductID); err == nil {
+			if req.Title == "" { req.Title = p.CanonicalName }
+			if req.Price == 0 && p.LowestPrice.Valid { req.Price = p.LowestPrice.Float64 }
+			if req.Marketplace == "" && p.LowestPriceSource.Valid { req.Marketplace = p.LowestPriceSource.String }
+			if req.Brand == "" && p.Brand.Valid { req.Brand = p.Brand.String }
+			if req.Category == "" {
+				tags := p.GetTags()
+				if len(tags) > 0 { req.Category = tags[0] }
 			}
-			if req.Price == 0 {
-				req.Price = variant.Price
-			}
-			if req.Marketplace == "" {
-				req.Marketplace = variant.Source
-			}
+		} else if variant, err := h.store.GetCatalogVariant(*req.ProductID); err == nil {
+			if req.Title == "" { req.Title = variant.Title }
+			if req.Price == 0 { req.Price = variant.Price }
+			if req.Marketplace == "" { req.Marketplace = variant.Source }
 		}
 	}
 
@@ -84,10 +91,64 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		Brand:       req.Brand,
 	}
 
-	suggestion, err := h.svc.Preview(r.Context(), prod, ch)
+	// Usar cliente LLM dinâmico baseado na config atual do banco
+	svc := h.svc
+	if dynClient := h.buildDynamicLLMClient(); dynClient != nil {
+		svc = compose.NewService(dynClient)
+	}
+
+	suggestion, err := svc.Preview(r.Context(), prod, ch)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao gerar preview")
 		return
 	}
 	writeJSON(w, http.StatusOK, suggestion)
+}
+
+// buildDynamicLLMClient lê a config do banco e cria o cliente LLM adequado.
+// Retorna nil se não houver config válida (handler usa o svc padrão / fallback).
+func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		return nil
+	}
+	provider := cfg.LLMProvider.String
+	if provider == "" { provider = "openrouter" }
+	apiKey  := cfg.LLMApiKey.String
+	baseURL := cfg.LLMBaseURL.String
+	model   := cfg.LLMModel.String
+
+	switch strings.ToLower(provider) {
+	case "ollama":
+		if baseURL == "" { baseURL = "http://ollama:11434/v1" }
+		// Ollama não precisa de API key
+		cli := llm.NewOpenAICompat(baseURL, "")
+		if model != "" {
+			return &modelOverrideClient{inner: cli, model: model}
+		}
+		return cli
+	case "openrouter":
+		if apiKey == "" { return nil }
+		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey)
+		if model != "" {
+			return &modelOverrideClient{inner: cli, model: model}
+		}
+		return cli
+	default:
+		if baseURL != "" {
+			return llm.NewOpenAICompat(baseURL, apiKey)
+		}
+		return nil
+	}
+}
+
+// modelOverrideClient injeta o model em cada chamada sem mudar a interface.
+type modelOverrideClient struct {
+	inner llm.Client
+	model string
+}
+
+func (m *modelOverrideClient) Complete(ctx context.Context, prompt string, opts llm.Options) (string, error) {
+	opts.Model = m.model
+	return m.inner.Complete(ctx, prompt, opts)
 }
