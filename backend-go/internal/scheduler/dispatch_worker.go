@@ -26,15 +26,35 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 	}
 	slog.Info("dispatch worker: processing", "targets", len(targets))
 
-	// Buscar config para credenciais Evolution
-	cfg, err := st.GetConfig()
-	if err != nil || !cfg.WABaseURL.Valid || cfg.WABaseURL.String == "" {
+	// Resolver credenciais Evolution:
+	// Prioridade: WA account ativo com instância > AppConfig global
+	cfg, _ := st.GetConfig()
+	waAccounts, _ := st.ListWAAccounts()
+
+	baseURL  := cfg.WABaseURL.String
+	apiKey   := cfg.WAApiKey.String
+	instance := cfg.WAInstance.String
+
+	for _, acc := range waAccounts {
+		if !acc.Active { continue }
+		// Pegar URL do account ou fallback para global
+		accURL := baseURL
+		if acc.BaseURL.Valid && acc.BaseURL.String != "" { accURL = acc.BaseURL.String }
+		accKey := apiKey
+		if acc.APIKey.Valid && acc.APIKey.String != "" { accKey = acc.APIKey.String }
+		// SEMPRE usar a instância per-account se definida (evita "default")
+		if acc.Instance.Valid && acc.Instance.String != "" {
+			baseURL  = accURL
+			apiKey   = accKey
+			instance = acc.Instance.String
+			break
+		}
+	}
+
+	if baseURL == "" {
 		slog.Warn("dispatch worker: Evolution não configurada — disparos ignorados")
 		return
 	}
-	baseURL := cfg.WABaseURL.String
-	apiKey := cfg.WAApiKey.String
-	instance := cfg.WAInstance.String
 
 	for _, t := range targets {
 		processTarget(ctx, st, t, baseURL, apiKey, instance)
@@ -99,14 +119,17 @@ func sendEvolutionMedia(ctx context.Context, baseURL, apiKey, instance, jid, med
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apiKey", apiKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Timeout maior para media (base64 pode ser grande)
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err.Error()
+		// Timeout ou erro de rede → tentar só texto
+		slog.Warn("sendMedia falhou, fallback para texto", "err", err)
+		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		// Fallback para texto se media falhar
+		// HTTP error → fallback para texto
 		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	return ""

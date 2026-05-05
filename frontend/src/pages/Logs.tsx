@@ -788,7 +788,6 @@ export default function Logs() {
                   <tr className="border-b border-border bg-surface-2">
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">ID</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Tipo</th>
-                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Origem</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Canal</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Grupo</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Status</th>
@@ -826,11 +825,6 @@ export default function Logs() {
                           {isDraft && <span className="text-xs text-accent mt-0.5 block">→ clique para continuar edição</span>}
                         </td>
                         <td className="p-3"><TypeBadge type={rowType} /></td>
-                        <td className="p-3">
-                          <Badge variant={statusVariant[d.status] ?? 'default'}>
-                            {d.status}
-                          </Badge>
-                        </td>
                         <td className="p-3 text-fg-2 text-xs">{d.channel_name ?? '—'}</td>
                         <td className="p-3 text-fg-2 text-xs">{d.group_name ?? '—'}</td>
                         <td className="p-3">

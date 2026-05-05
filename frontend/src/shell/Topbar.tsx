@@ -186,14 +186,13 @@ function AccountsBadge() {
   const { data } = useQuery({
     queryKey: ['accounts-stats'],
     queryFn: fetchAccountsStats,
-    staleTime: 30_000,
+    staleTime: 8_000,
+    refetchInterval: 10_000,
     retry: false,
   })
 
-  // Fallback mockado enquanto o backend não responde ou ainda está carregando
-  // TODO: remover hardcode quando /api/accounts/wa e /api/accounts/tg retornarem dados reais
-  const connected = data?.connected ?? 3
-  const total = data?.total ?? 4
+  const connected = data?.connected ?? 0
+  const total = data?.total ?? 0
 
   let colorClass: string
   if (connected === 0) {
