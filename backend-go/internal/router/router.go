@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -139,32 +138,6 @@ func Build(
 	// ReDesign: public link resolve + WebSocket (auth via query param token)
 	r.Get("/g/{slug}", publLinksResolver.Resolve)
 	r.Get("/ws", wsHandler.ServeHTTP)
-
-	r.Get("/api/public/channels", func(w http.ResponseWriter, r *http.Request) {
-		chs, _ := st.ListChannels()
-		type channelSummary struct {
-			ID           int64  `json:"id"`
-			Name         string `json:"name"`
-			Slug         any    `json:"slug"`
-			TargetsCount int    `json:"targets_count"`
-		}
-		var out []channelSummary
-		for _, c := range chs {
-			if !c.Active {
-				continue
-			}
-			targets, _ := st.ListChannelTargets(c.ID)
-			var slug any
-			if c.Slug.Valid {
-				slug = c.Slug.String
-			}
-			out = append(out, channelSummary{
-				ID: c.ID, Name: c.Name, Slug: slug, TargetsCount: len(targets),
-			})
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
-	})
 
 	// QR + health públicos
 	r.Get("/api/accounts/wa/{id}/qr", accounts.WAQR)

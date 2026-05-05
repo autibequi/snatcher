@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
-
-// Cliente público sem auth — aponta para cmd/public (porta 8001)
-const publicApi = axios.create({
-  baseURL: '/api/public',
-  timeout: 10_000,
-})
+import { publicApi } from '../../lib/publicApi'
 
 interface Channel {
   id: number

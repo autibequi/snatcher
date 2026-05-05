@@ -98,6 +98,10 @@ func main() {
 		fmt.Fprint(w, `{"status":"ok"}`)
 	})
 
+	// ── API Public: Channels ──────────────────────────────────────────────────
+	r.Get("/api/public/channels", publichnd.ListChannels(st))
+	r.Get("/api/public/channels/{slug}", publichnd.GetChannelBySlug(st))
+
 	slog.Info("public server starting", "port", port)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		slog.Error("listen", "err", err)
