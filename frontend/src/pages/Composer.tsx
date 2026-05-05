@@ -65,6 +65,8 @@ export default function Composer() {
   const [showConfirm, setShowConfirm] = React.useState(false)
   const [showImageInput, setShowImageInput] = React.useState(false)
   const [imageUrl, setImageUrl] = React.useState('')
+  const [tone, setTone] = React.useState('promocional')
+  const [customContext, setCustomContext] = React.useState('')
 
   // Extrair campos NullString do Go (pode vir como {String:"...",Valid:true} ou string direta)
   const nullStr = (v: any): string => (typeof v === 'string' ? v : v?.String || v?.string || '')
@@ -211,6 +213,8 @@ export default function Composer() {
       apiClient
         .post('/api/compose/preview', {
           product_id: productIds[0] ?? undefined,
+          tone,
+          custom_context: customContext || undefined,
         })
         .then((r) => r.data),
     onSuccess: (data: { text?: string }) => {
@@ -398,7 +402,32 @@ export default function Composer() {
                   placeholder={'🔥 OFERTA RELÂMPAGO\n\n*{produto}*\n\nDe ~{de}~ por *{por}*\n{desconto} OFF\n{link}'}
                 />
               )}
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+              {/* Tom da mensagem */}
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border flex-wrap">
+                <select
+                  value={tone}
+                  onChange={e => setTone(e.target.value)}
+                  className="text-xs border border-border rounded px-2 py-1 bg-surface text-fg focus:border-accent outline-none"
+                >
+                  <option value="promocional">🔥 Promocional</option>
+                  <option value="animada">🎉 Animada</option>
+                  <option value="chamativa">⚡ Chamativa</option>
+                  <option value="urgente">⏰ Urgente</option>
+                  <option value="casual">😊 Casual</option>
+                  <option value="formal">🎩 Formal</option>
+                  <option value="personalizado">✏️ Personalizado</option>
+                </select>
+                {tone === 'personalizado' && (
+                  <input
+                    type="text"
+                    value={customContext}
+                    onChange={e => setCustomContext(e.target.value)}
+                    placeholder="Descreva o tom desejado..."
+                    className="flex-1 text-xs border border-border rounded px-2 py-1 bg-surface text-fg focus:border-accent outline-none min-w-0"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
                 <button
                   type="button"
                   className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:bg-surface-2"

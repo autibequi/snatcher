@@ -26,13 +26,16 @@ type composePreviewRequest struct {
 	ProductID *int64 `json:"product_id"`
 	ChannelID *int64 `json:"channel_id"`
 	// Campos manuais (usados quando product_id não é fornecido)
-	Title       string  `json:"title"`
-	Marketplace string  `json:"marketplace"`
-	Price       float64 `json:"price"`
-	PriceOrig   float64 `json:"price_original"`
-	Drop        float64 `json:"drop"`
-	Category    string  `json:"category"`
-	Brand       string  `json:"brand"`
+	Title         string  `json:"title"`
+	Marketplace   string  `json:"marketplace"`
+	Price         float64 `json:"price"`
+	PriceOrig     float64 `json:"price_original"`
+	Drop          float64 `json:"drop"`
+	Category      string  `json:"category"`
+	Brand         string  `json:"brand"`
+	// Tom da mensagem e contexto customizado
+	Tone          string  `json:"tone"`
+	CustomContext string  `json:"custom_context"`
 }
 
 // Preview godoc
@@ -82,13 +85,15 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	prod := compose.ProductInput{
-		Title:       req.Title,
-		Marketplace: req.Marketplace,
-		Price:       req.Price,
-		PriceOrig:   req.PriceOrig,
-		Drop:        req.Drop,
-		Category:    req.Category,
-		Brand:       req.Brand,
+		Title:         req.Title,
+		Marketplace:   req.Marketplace,
+		Price:         req.Price,
+		PriceOrig:     req.PriceOrig,
+		Drop:          req.Drop,
+		Category:      req.Category,
+		Brand:         req.Brand,
+		Tone:          req.Tone,
+		CustomContext: req.CustomContext,
 	}
 
 	// Usar cliente LLM dinâmico baseado na config atual do banco

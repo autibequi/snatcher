@@ -23,13 +23,15 @@ type Suggestion struct {
 
 // ProductInput agrega os dados necessários para gerar o prompt.
 type ProductInput struct {
-	Title       string
-	Marketplace string
-	Price       float64
-	PriceOrig   float64
-	Drop        float64
-	Category    string
-	Brand       string
+	Title         string
+	Marketplace   string
+	Price         float64
+	PriceOrig     float64
+	Drop          float64
+	Category      string
+	Brand         string
+	Tone          string // ex: "promocional", "animada", "urgente", "personalizado"
+	CustomContext string // texto livre quando Tone == "personalizado"
 }
 
 // Service encapsula a lógica de geração de copy via LLM.
@@ -71,6 +73,9 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 		return s.fallback(product), nil
 	}
 
+	// Injetar instrução de tom no prompt
+	rendered = injectToneInstruction(rendered, product.Tone, product.CustomContext)
+
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
@@ -89,6 +94,29 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 	}
 
 	return parseResponse(resp, product), nil
+}
+
+// injectToneInstruction adiciona instrução de tom ao final do prompt.
+func injectToneInstruction(prompt, tone, customContext string) string {
+	toneMap := map[string]string{
+		"promocional": "Use um tom promocional direto, destacando economia e urgência moderada.",
+		"animada":     "Use um tom animado e entusiasmado com emojis e exclamações, transmitindo empolgação.",
+		"chamativa":   "Use um tom chamativo e impactante, com linguagem forte e call-to-action agressivo.",
+		"urgente":     "Use um tom de urgência extrema — estoque limitado, tempo acabando, ação imediata.",
+		"casual":      "Use um tom casual e descontraído, como se estivesse indicando para um amigo.",
+		"formal":      "Use um tom formal e profissional, sem gírias ou emojis excessivos.",
+		"personalizado": "Tom personalizado: " + customContext,
+	}
+
+	instruction := toneMap[strings.ToLower(tone)]
+	if instruction == "" {
+		instruction = toneMap["promocional"]
+	}
+	if tone == "personalizado" && customContext != "" {
+		instruction = "Tom personalizado: " + customContext
+	}
+
+	return fmt.Sprintf("%s\n\n[INSTRUÇÃO DE TOM] %s\n[FORMATO] Texto para grupo de WhatsApp. Máximo 200 caracteres. Emojis são bem-vindos. Sem links nem hashtags no texto.", prompt, instruction)
 }
 
 // fallback retorna copy formulaico quando o LLM falha.
