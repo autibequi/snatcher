@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/db"
+	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/store"
 
@@ -79,7 +80,7 @@ func main() {
 	})
 
 	// ── Redirects ─────────────────────────────────────────────────────────────
-	r.With(chimw.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
+	r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
 	r.Get("/g/{slug}", publicLinkHandler(st))
 	r.Get("/canal/{slug}", canalHandler(st))
 	r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
@@ -283,20 +284,4 @@ func renderChannel(w http.ResponseWriter, channel interface{}, targets interface
 	})
 }
 
-// ListPublicLinks stub — helper para não depender do store diretamente
-type publicLink struct {
-	ID               int64  `db:"id"`
-	Slug             string `db:"slug"`
-	ChannelID        int64  `db:"channel_id"`
-	FallbackChain    []byte `db:"fallback_chain"`
-	RedirectStrategy string `db:"redirect_strategy"`
-	Active           bool   `db:"active"`
-}
-
-// Store interface subset para publicLinkHandler
-type publicStore interface {
-	ListPublicLinks() ([]publicLink, error)
-}
-
-// Garantir que strings está importado
 var _ = strings.TrimSpace
