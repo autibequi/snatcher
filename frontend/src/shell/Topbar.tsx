@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { useAuth } from '../lib/auth'
 
 interface WAAccount {
   id: number
@@ -41,41 +42,49 @@ interface TopbarProps {
 
 export function Topbar({ onMenuClick }: TopbarProps) {
   const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const initials = (user?.name ?? 'U')
+    .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('')
 
   return (
-    <header className="flex items-center h-12 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
+    <header className="flex items-center h-14 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
       {/* Hamburger mobile */}
       <button
         type="button"
         onClick={onMenuClick}
-        className="lg:hidden text-fg-2 hover:text-fg p-1 rounded"
+        className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded"
         aria-label="Abrir menu"
       >
         ☰
       </button>
 
-      {/* Search bar — centro */}
-      <SearchBar />
+      {/* Search bar — ocupa o centro */}
+      <div className="flex-1">
+        <SearchBar />
+      </div>
 
       {/* Accounts badge */}
       <AccountsBadge />
 
-      {/* CTA principal */}
+      {/* CTA Disparar */}
       <Button
         variant="primary"
         size="sm"
         onClick={() => navigate('/compose')}
+        className="hidden sm:flex"
       >
-        Disparar
+        ✈ Disparar
       </Button>
 
-      {/* User menu placeholder */}
+      {/* Avatar com inicial do usuário */}
       <button
         type="button"
-        className="w-7 h-7 rounded-full bg-accent/20 text-accent text-xs font-semibold flex items-center justify-center hover:bg-accent/30"
-        aria-label="Menu do usuário"
+        onClick={() => navigate('/settings')}
+        className="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center hover:bg-accent/30 transition-colors flex-shrink-0"
+        title={user?.name ?? 'Configurações'}
       >
-        U
+        {initials || 'U'}
       </button>
     </header>
   )
