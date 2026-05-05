@@ -56,7 +56,10 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			wa_group_prefix=:wa_group_prefix, alert_phone=:alert_phone,
 			use_short_links=:use_short_links, tg_enabled=:tg_enabled,
 			tg_bot_token=:tg_bot_token, tg_bot_username=:tg_bot_username,
-			tg_group_prefix=:tg_group_prefix, tg_last_update_id=:tg_last_update_id
+			tg_group_prefix=:tg_group_prefix, tg_last_update_id=:tg_last_update_id,
+			llm_provider=:llm_provider, llm_api_key=:llm_api_key,
+			llm_base_url=:llm_base_url, llm_model=:llm_model,
+			app_name=:app_name, app_domain=:app_domain
 		WHERE id = 1`, cfg)
 	return err
 }
@@ -1254,10 +1257,14 @@ func (s *SQLStore) CreateDispatch(d models.Dispatch, targets []models.DispatchTa
 	}
 
 	var id int64
+	status := d.Status
+	if status == "" {
+		status = "queued"
+	}
 	err = tx.QueryRow(`
 		INSERT INTO dispatches (product_id, composed_by, message, affiliate_link, status)
-		VALUES ($1, $2, $3, $4, 'queued') RETURNING id`,
-		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink,
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		d.ProductID, d.ComposedBy, d.Message, d.AffiliateLink, status,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -1344,6 +1351,23 @@ func (s *SQLStore) AllDispatchTargetsFinished(dispatchID int64) (bool, error) {
 	err := s.db.Get(&count,
 		`SELECT COUNT(*) FROM dispatch_targets WHERE dispatch_id = $1 AND status IN ('pending','sending')`, dispatchID)
 	return count == 0, err
+}
+
+func (s *SQLStore) ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error) {
+	if limit == 0 { limit = 50 }
+	var out []models.ChannelHistoryEntry
+	err := s.db.Select(&out, `
+		SELECT dt.dispatch_id, g.id as group_id, g.name as group_name,
+		       dt.status, dt.delivered_at,
+		       COALESCE((d.message->>'text')::text, '') as message_text,
+		       d.created_at
+		FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		JOIN groups g ON g.id = dt.group_id
+		WHERE g.channel_id = $1
+		ORDER BY d.created_at DESC
+		LIMIT $2`, channelID, limit)
+	return out, err
 }
 
 // ---------------------------------------------------------------------------

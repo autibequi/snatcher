@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
-import React from 'react'
 
 interface WAAccount { id: number; name: string; status: string; active: boolean }
 interface TGAccount { id: number; name: string; bot_username?: any; active: boolean; role: string }
@@ -61,10 +60,20 @@ function WAAccountSection({ account, search }: { account: WAAccount; search: str
         {!isLoading && <span className="text-xs text-fg-3">{filtered.length} grupos</span>}
       </div>
       {isLoading ? (
-        <div className="space-y-1">{[1,2,3].map(i => <Skeleton key={i} className="h-9 w-full" />)}</div>
+        <div className="space-y-1.5">
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-9 w-full" />)}
+          <p className="text-xs text-fg-3 px-1 pt-1 flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            Carregando grupos da Evolution API...
+          </p>
+        </div>
       ) : filtered.length === 0 ? (
         <p className="text-xs text-fg-3 px-1 py-2">
-          {account.status !== 'connected' ? 'Conta desconectada.' : groups.length === 0 ? 'Aguardando sync...' : 'Nenhum grupo encontrado.'}
+          {account.status !== 'connected'
+            ? 'Conta desconectada — conecte via QR para ver os grupos.'
+            : groups.length === 0
+            ? '⟳ Aguardando sincronização com a Evolution... (pode levar alguns segundos)'
+            : 'Nenhum grupo encontrado com esse filtro.'}
         </p>
       ) : (
         <div className="border border-border rounded-md overflow-hidden">

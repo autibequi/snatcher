@@ -95,6 +95,16 @@ type AppConfig struct {
 	TGBotUsername  NullString `db:"tg_bot_username" json:"tg_bot_username,omitempty"`
 	TGGroupPrefix  NullString `db:"tg_group_prefix" json:"tg_group_prefix,omitempty"`
 	TGLastUpdateID NullInt64  `db:"tg_last_update_id" json:"tg_last_update_id,omitempty"`
+
+	// LLM provider
+	LLMProvider NullString `db:"llm_provider" json:"llm_provider,omitempty"`
+	LLMApiKey   NullString `db:"llm_api_key" json:"llm_api_key,omitempty"`
+	LLMBaseURL  NullString `db:"llm_base_url" json:"llm_base_url,omitempty"`
+	LLMModel    NullString `db:"llm_model" json:"llm_model,omitempty"`
+
+	// White-label
+	AppName   NullString `db:"app_name" json:"app_name,omitempty"`
+	AppDomain NullString `db:"app_domain" json:"app_domain,omitempty"`
 }
 
 type WAAccount struct {
@@ -538,4 +548,16 @@ type TelegramChat struct {
 	LastSeenAt      time.Time      `db:"last_seen_at" json:"last_seen_at"`
 	LinkedGroupID   NullInt64  `db:"linked_group_id" json:"linked_group_id,omitempty"`
 	LinkedChannelID NullInt64  `db:"linked_channel_id" json:"linked_channel_id,omitempty"`
+}
+
+
+// ChannelHistoryEntry representa um disparo associado a um grupo de um canal.
+type ChannelHistoryEntry struct {
+	DispatchID  int64     `db:"dispatch_id"  json:"dispatch_id"`
+	GroupID     int64     `db:"group_id"     json:"group_id"`
+	GroupName   string    `db:"group_name"   json:"group_name"`
+	Status      string    `db:"status"       json:"status"`
+	DeliveredAt NullTime  `db:"delivered_at" json:"delivered_at,omitempty"`
+	MessageText string    `db:"message_text" json:"message_text"`
+	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
 }

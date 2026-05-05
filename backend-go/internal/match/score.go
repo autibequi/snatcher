@@ -3,9 +3,34 @@ package match
 import (
 	"math"
 	"strings"
+	"unicode"
 
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 	"snatcher/backendv2/internal/models"
 )
+
+// normalize converte string para minúsculo sem acentos para comparação robusta.
+func normalize(s string) string {
+	t := transform.Chain(norm.NFD, transform.RemoveFunc(func(r rune) bool {
+		return unicode.Is(unicode.Mn, r) // remove combining marks (acentos)
+	}), norm.NFC)
+	result, _, err := transform.String(t, strings.ToLower(s))
+	if err != nil {
+		return strings.ToLower(s)
+	}
+	return result
+}
+
+// containsKeyword verifica se keyword aparece em text (normalizado, sem acento).
+func containsKeyword(text, keyword string) bool {
+	t := normalize(text)
+	k := normalize(keyword)
+	if k == "" {
+		return false
+	}
+	return strings.Contains(t, k)
+}
 
 // defaultWeights define os pesos padrão para composição do score.
 var defaultWeights = Weights{
@@ -35,6 +60,7 @@ type Score struct {
 
 // ProductInput agrupa os dados do produto usados no scoring.
 type ProductInput struct {
+	Name     string  // título completo — usado para match parcial
 	Category string
 	Brand    string
 	Price    float64
@@ -56,13 +82,21 @@ func ScoreChannel(product ProductInput, channel models.Channel, w Weights) Score
 	var total float64
 	var reasons []string
 
-	// Componente: category_match
+	// matchInProduct verifica se keyword bate na categoria, nome ou brand do produto (parcial + normalizado)
+	matchInProduct := func(keyword string) bool {
+		if containsKeyword(product.Category, keyword) { return true }
+		if containsKeyword(product.Name, keyword) { return true }
+		if containsKeyword(product.Brand, keyword) { return true }
+		return false
+	}
+
+	// Componente: category_match — parcial no título/categoria/marca
 	catScore := 0.0
-	if len(aud.Categories) == 0 || product.Category == "" {
+	if len(aud.Categories) == 0 {
 		catScore = 0.5 // sem filtro = neutro
 	} else {
 		for _, c := range aud.Categories {
-			if strings.EqualFold(c, product.Category) {
+			if matchInProduct(c) {
 				catScore = 1.0
 				reasons = append(reasons, "categoria match")
 				break
@@ -71,12 +105,12 @@ func ScoreChannel(product ProductInput, channel models.Channel, w Weights) Score
 	}
 	total += catScore * w.Category
 
-	// Componente: brand_match
+	// Componente: brand_match — parcial no título/marca
 	brandScore := 0.3 // default quando audience não filtra por brand
-	if len(aud.Brands) > 0 && product.Brand != "" {
+	if len(aud.Brands) > 0 {
 		brandScore = 0.0
 		for _, b := range aud.Brands {
-			if strings.EqualFold(b, product.Brand) {
+			if matchInProduct(b) {
 				brandScore = 1.0
 				reasons = append(reasons, "marca presente no perfil")
 				break

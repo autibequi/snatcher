@@ -4,6 +4,73 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
+// Fatores de score com peso e como chegar ao 100%
+const SCORE_FACTORS = [
+  { key: 'categoria match',     weight: 30, label: 'Categoria',          fix: 'Adicione a categoria deste produto ao perfil do canal em Canais → Audiência' },
+  { key: 'brand presente',      weight: 20, label: 'Marca',              fix: 'Adicione a marca deste produto ao perfil do canal em Canais → Audiência' },
+  { key: 'drop acima minimo',   weight: 20, label: 'Desconto mínimo',    fix: 'Reduza o desconto mínimo do canal ou aguarde promoção maior' },
+  { key: 'ticket dentro faixa', weight: 15, label: 'Faixa de preço',     fix: 'Ajuste a faixa de preço do canal para incluir R$ deste produto' },
+  { key: 'historico',           weight: 15, label: 'Histórico de cliques', fix: 'Faça os primeiros disparos — o histórico de conversão se constrói automaticamente' },
+]
+
+function ScoreBreakdown({ score, reasons, onClose }: { score: number; reasons: string[]; onClose: () => void }) {
+  const lowerReasons = reasons.map(r => r.toLowerCase())
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-5 w-full max-w-sm shadow-modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-fg">Como o score {score} foi calculado</h3>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+        </div>
+
+        {/* Barra total */}
+        <div className="mb-4">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-fg-2">Score total</span>
+            <span className={`font-bold ${score >= 70 ? 'text-success' : score >= 40 ? 'text-warning' : 'text-danger'}`}>{score}/100</span>
+          </div>
+          <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${score >= 70 ? 'bg-success' : score >= 40 ? 'bg-warning' : 'bg-danger'}`} style={{ width: `${score}%` }} />
+          </div>
+        </div>
+
+        {/* Breakdown por fator */}
+        <div className="space-y-2.5">
+          {SCORE_FACTORS.map(factor => {
+            const matched = lowerReasons.some(r => r.includes(factor.key.split(' ')[0]))
+            const earned = matched ? factor.weight : 0
+            return (
+              <div key={factor.key}>
+                <div className="flex items-center justify-between mb-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className={matched ? 'text-success' : 'text-danger'}>{matched ? '✓' : '✗'}</span>
+                    <span className="text-sm text-fg">{factor.label}</span>
+                  </div>
+                  <span className={`text-xs font-medium ${matched ? 'text-success' : 'text-danger'}`}>
+                    {earned}/{factor.weight} pts
+                  </span>
+                </div>
+                <div className="h-1 bg-surface-2 rounded-full overflow-hidden ml-5">
+                  <div className={`h-full rounded-full ${matched ? 'bg-success' : 'bg-danger/30'}`}
+                    style={{ width: matched ? '100%' : '0%' }} />
+                </div>
+                {!matched && (
+                  <p className="text-xs text-fg-3 ml-5 mt-0.5">→ {factor.fix}</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <p className="text-xs text-fg-3 mt-4 border-t border-border pt-3">
+          Para chegar a 100, configure o perfil do canal em <a href="/channels" className="text-accent hover:underline">Canais → Audiência</a>.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 interface Product {
@@ -29,6 +96,7 @@ interface MatchScore {
 
 function ProductMatchRow({ product }: { product: Product }) {
   const navigate = useNavigate()
+  const [breakdown, setBreakdown] = React.useState<{ score: number; reasons: string[] } | null>(null)
   const title = product.canonical_name ?? 'Produto'
   const price = product.lowest_price ?? 0
   const source = product.lowest_price_source ?? ''
@@ -83,18 +151,29 @@ function ProductMatchRow({ product }: { product: Product }) {
         ) : (
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-xs text-fg-3">Canais com fit:</span>
+            {breakdown && (
+              <ScoreBreakdown score={breakdown.score} reasons={breakdown.reasons} onClose={() => setBreakdown(null)} />
+            )}
             {topChannels.map(s => {
               const color = s.score >= 70 ? 'bg-success/10 text-success' : s.score >= 40 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'
               return (
-                <button
-                  key={s.channel_id}
-                  type="button"
-                  onClick={() => navigate(`/compose?productId=${product.id}&targets=${s.channel_id}`)}
-                  className={`text-xs px-2 py-0.5 rounded-sm font-medium ${color} hover:opacity-80`}
-                  title={`Score ${s.score} · ${s.reasons?.join(', ')}`}
-                >
-                  {s.channel_name} ({s.score})
-                </button>
+                <div key={s.channel_id} className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/compose?productId=${product.id}&targets=${s.channel_id}`)}
+                    className={`text-xs px-2 py-0.5 rounded-l-sm font-medium ${color} hover:opacity-80`}
+                  >
+                    {s.channel_name} ({s.score})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBreakdown({ score: s.score, reasons: s.reasons ?? [] })}
+                    className={`text-xs px-1 py-0.5 rounded-r-sm ${color} hover:opacity-80 border-l border-current/20`}
+                    title="Ver breakdown do score"
+                  >
+                    ?
+                  </button>
+                </div>
               )
             })}
             {(scores?.length ?? 0) > 3 && (
@@ -188,10 +267,21 @@ function ProductDetailMatch({ productId }: { productId: string }) {
                     {(s.reasons ?? []).map((r, i) => (
                       <span key={i} className="text-xs px-1.5 py-0.5 rounded-sm bg-success/10 text-success">+ {r}</span>
                     ))}
+                    {/* Mostrar o que falta */}
+                    {SCORE_FACTORS.filter(f => !(s.reasons ?? []).some((r: string) => r.toLowerCase().includes(f.key.split(' ')[0]))).slice(0, 2).map(f => (
+                      <span key={f.key} className="text-xs px-1.5 py-0.5 rounded-sm bg-danger/10 text-danger" title={f.fix}>− {f.label}</span>
+                    ))}
                   </div>
                 </div>
-                <div className="w-20 flex-shrink-0">
-                  <span className={`text-lg font-bold ${textColor}`}>{pct}</span>
+                <div className="w-24 flex-shrink-0 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <span className={`text-lg font-bold ${textColor}`}>{pct}</span>
+                    <button type="button"
+                      className="text-xs text-fg-3 hover:text-fg"
+                      title="Ver breakdown"
+                      onClick={e => { e.stopPropagation(); /* mostrar breakdown */ }}
+                    >/100</button>
+                  </div>
                   <div className="h-1 bg-surface-2 rounded-full mt-1">
                     <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}} />
                   </div>

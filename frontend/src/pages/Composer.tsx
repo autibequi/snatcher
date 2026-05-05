@@ -33,6 +33,12 @@ export default function Composer() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const productId = params.get('productId')
+  // Suporte a múltiplos produtos: ?productIds=1,2,3 ou ?productId=1
+  const productIdsParam = params.get('productIds')
+  const productIds: number[] = productIdsParam
+    ? productIdsParam.split(',').map(Number).filter(n => !isNaN(n) && n > 0)
+    : productId ? [Number(productId)] : []
+  const draftId = params.get('draftId')
   const targetsParam = params.get('targets') ?? ''
   const targetIds = React.useMemo(
     () =>
@@ -44,10 +50,64 @@ export default function Composer() {
   )
 
   const [text, setText] = React.useState('')
+
+  // Carregar rascunho se draftId presente
+  useQuery({
+    queryKey: ['draft', draftId],
+    queryFn: () => apiClient.get(`/api/dispatches/${draftId}`).then(r => r.data),
+    enabled: !!draftId,
+    staleTime: Infinity,
+    select: (data: any) => {
+      if (data?.dispatch?.message?.text && !text) {
+        setText(data.dispatch.message.text)
+      }
+      return data
+    },
+  })
   const [scheduledFor, setScheduledFor] = React.useState('')
   const [showConfirm, setShowConfirm] = React.useState(false)
   const [showImageInput, setShowImageInput] = React.useState(false)
   const [imageUrl, setImageUrl] = React.useState('')
+
+  // Extrair campos NullString do Go (pode vir como {String:"...",Valid:true} ou string direta)
+  const nullStr = (v: any): string => (typeof v === 'string' ? v : v?.String || v?.string || '')
+
+  // Buscar dados de TODOS os produtos
+  const { data: productsData = [] } = useQuery({
+    queryKey: ['catalog-multi', productIds],
+    queryFn: async () => {
+      const results = await Promise.all(
+        productIds.map(id => apiClient.get(`/api/catalog/${id}`).then(r => r.data).catch(() => null))
+      )
+      return results.filter(Boolean)
+    },
+    enabled: productIds.length > 0,
+    staleTime: 5 * 60_000,
+    retry: 2,
+  })
+
+  // Produto principal (primeiro)
+  const productData = productsData[0] ?? null
+
+  // Imagens de todos os produtos para mosaico
+  const productImages: string[] = productsData
+    .map((p: any) => nullStr(p?.image_url))
+    .filter(Boolean)
+
+  // Imagem final: manual > foto crawleada do produto principal
+  const rawImg = productData?.image_url
+  const productImage = imageUrl
+    || nullStr(rawImg)
+    || (productImages[0] ?? null)
+
+  // Dados reais do produto para substituição de variáveis
+  const realProductName = nullStr(productData?.canonical_name) || productData?.canonical_name || ''
+  const realPrice = productData?.lowest_price?.Valid !== undefined
+    ? productData?.lowest_price?.Float64 ?? 0
+    : (productData?.lowest_price ?? 0)
+  const realPriceStr = realPrice > 0 ? `R$ ${Number(realPrice).toFixed(2)}` : 'R$ --'
+  const realUrl = nullStr(productData?.lowest_price_url) || ''
+  const realSource = nullStr(productData?.lowest_price_source) || ''
 
   // Buscar preview gerado pelo LLM — onSuccess nao existe em RQ5, usar useEffect
   const { data: previewData, isLoading: loadingPreview } = useQuery<ComposePreviewResponse>({
@@ -89,7 +149,7 @@ export default function Composer() {
       apiClient
         .post<DispatchResponse>('/api/dispatches', {
           product_id: productId ? Number(productId) : undefined,
-          message: { text },
+          message: { text, media_url: productImage || undefined },
           affiliate_link: affiliateLink,
           scheduled_for: scheduledFor || undefined,
           targets,
@@ -111,19 +171,22 @@ export default function Composer() {
   })
 
   const encurtar = useMutation({
-    mutationFn: () =>
-      productId
-        ? apiClient
-            .post('/api/affiliates/build-link', {
-              product_url: `https://example.com/produto/${productId}`,
-              marketplace: 'amazon',
-            })
-            .then((r) => r.data.url)
-        : Promise.resolve('https://snatcher.link/' + Math.random().toString(36).slice(2, 8)),
-    onSuccess: (url: string) => {
-      setText((t) => t.replace('{link}', url))
-      setImageUrl('')
+    mutationFn: () => {
+      // Usar URL e marketplace reais do produto
+      const productUrl = productData?.lowest_price_url?.String || productData?.lowest_price_url || ''
+      const marketplace = productData?.lowest_price_source?.String || productData?.lowest_price_source || 'amazon'
+      if (productUrl) {
+        return apiClient.post('/api/affiliates/build-link', {
+          product_url: productUrl,
+          marketplace: marketplace.toLowerCase(),
+        }).then((r) => r.data.url || productUrl)
+      }
+      return Promise.resolve('https://snatcher.link/' + Math.random().toString(36).slice(2, 8))
     },
+    onSuccess: (url: string) => {
+      setText((t) => t.includes('{link}') ? t.replace('{link}', url) : t + '\n' + url)
+    },
+    onError: () => alert('Nenhum programa de afiliado configurado para este marketplace. Configure em Afiliados.'),
   })
 
   const rewriteMut = useMutation({
@@ -150,12 +213,13 @@ export default function Composer() {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
+  // Preview WA com dados reais do produto
   const previewText = previewLines
-    .replace(/{produto}/g, 'Produto')
-    .replace(/{de}/g, '149,90')
-    .replace(/{por}/g, '89,90')
-    .replace(/{desconto}/g, '-40%')
-    .replace(/{link}/g, 'https://snatcher.link/1')
+    .replace(/{produto}/g, realProductName || 'Produto')
+    .replace(/{de}/g, realPrice > 0 ? realPriceStr : 'R$ --')
+    .replace(/{por}/g, realPrice > 0 ? realPriceStr : 'R$ --')
+    .replace(/{desconto}/g, realSource ? realSource : '--%')
+    .replace(/{link}/g, realUrl || 'https://link.produto')
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
 
@@ -166,13 +230,18 @@ export default function Composer() {
           <h1 className="text-lg font-semibold text-fg">Compor disparo</h1>
           <p className="text-sm text-fg-3">Selecione produtos, canais, edite a mensagem e envie ou agende</p>
         </div>
-        <button
-          className="text-sm text-fg-2 border border-border rounded-md px-3 py-1.5 disabled:opacity-50"
-          disabled={!text || saveRascunho.isPending}
-          onClick={() => saveRascunho.mutate()}
-        >
-          {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="text-sm text-fg-2 border border-border rounded-md px-3 py-1.5 disabled:opacity-50"
+            disabled={!text || saveRascunho.isPending}
+            onClick={() => saveRascunho.mutate()}
+          >
+            {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
+          </button>
+          <a href="/logs?status=draft" className="text-xs text-accent hover:underline">
+            Ver rascunhos
+          </a>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -184,17 +253,36 @@ export default function Composer() {
             <div className="px-4 py-3 flex items-center justify-between border-b border-border">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">1</span>
-                <p className="font-medium text-fg">Produtos ({productId ? 1 : 0})</p>
+                <p className="font-medium text-fg">Produtos ({productIds.length})</p>
               </div>
               <button type="button" onClick={() => navigate('/catalog')} className="text-xs text-accent hover:underline">
                 + Selecionar do catálogo
               </button>
             </div>
             <div className="p-4">
-              {productId ? (
-                <div className="flex items-center gap-3 p-2 bg-surface-2 rounded-md">
-                  <span className="text-fg font-mono text-xs">Produto #{productId}</span>
-                  <button type="button" onClick={() => navigate('/match')} className="text-xs text-accent hover:underline ml-auto">Trocar</button>
+              {productIds.length > 0 ? (
+                <div className="space-y-2">
+                  {productIds.map((pid, i) => {
+                    const pd = productsData[i]
+                    const img = pd ? nullStr(pd?.image_url) : null
+                    const name = pd ? (nullStr(pd?.canonical_name) || pd?.canonical_name || '') : null
+                    const price = pd?.lowest_price?.Float64 ?? pd?.lowest_price ?? 0
+                    return (
+                      <div key={pid} className="flex items-center gap-2.5 p-2 bg-surface-2 rounded-md">
+                        {img ? (
+                          <img src={img} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0"
+                            onError={e => { (e.target as HTMLImageElement).src = '' }} />
+                        ) : (
+                          <div className="w-10 h-10 rounded bg-surface flex items-center justify-center text-lg flex-shrink-0">📦</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-fg truncate">{name || `Produto #${pid}`}</p>
+                          {price > 0 && <p className="text-xs text-success">R$ {Number(price).toFixed(2)}</p>}
+                        </div>
+                        {i === 0 && <button type="button" onClick={() => navigate('/match')} className="text-xs text-accent hover:underline flex-shrink-0">Trocar</button>}
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-fg-3">
@@ -321,12 +409,27 @@ export default function Composer() {
           {/* Preview WA */}
           <div className="bg-surface border border-border rounded-md p-4">
             <p className="text-xs font-medium text-fg-2 mb-3 uppercase tracking-wide">Preview WhatsApp</p>
-            <div className="bg-[#0b141a] rounded-lg p-3 min-h-32">
-              <div className="bg-[#005c4b] rounded-lg p-3 max-w-xs ml-auto shadow">
-                <p className="text-sm text-white whitespace-pre-wrap break-words">
-                  {previewText || '...'}
-                </p>
-                <p className="text-xs text-green-300 mt-1 text-right opacity-60">agora ✓✓</p>
+            <div className="bg-[#0b141a] rounded-lg p-2 min-h-32">
+              <div className="bg-[#005c4b] rounded-lg max-w-xs ml-auto shadow overflow-hidden">
+                {/* Imagem/mosaico do(s) produto(s) */}
+                {productImages.length > 1 ? (
+                  // Mosaico 2x2 para múltiplos produtos
+                  <div className={`grid gap-0.5 ${productImages.length >= 4 ? 'grid-cols-2' : productImages.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    {productImages.slice(0, 4).map((img, i) => (
+                      <img key={i} src={img} alt="" className="w-full h-24 object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    ))}
+                  </div>
+                ) : productImage ? (
+                  <img src={productImage} alt="Produto" className="w-full max-h-48 object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                ) : null}
+                <div className="p-3">
+                  <p className="text-sm text-white whitespace-pre-wrap break-words">
+                    {previewText || '...'}
+                  </p>
+                  <p className="text-xs text-green-300 mt-1 text-right opacity-60">agora ✓✓</p>
+                </div>
               </div>
             </div>
           </div>

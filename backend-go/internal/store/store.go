@@ -145,6 +145,9 @@ type Store interface {
 	DeletePublicLink(id int64) error
 	IncrementRoundRobinIdx(id int64, newIdx int) error
 
+	// Channel history
+	ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error)
+
 	// Clusters
 	ListClusters() ([]models.Cluster, error)
 	GetCluster(id int64) (models.Cluster, error)

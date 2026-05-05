@@ -43,15 +43,26 @@ func (h *MatchHandler) Match(w http.ResponseWriter, r *http.Request) {
 		Drop:     req.Drop,
 	}
 
-	// Se productID fornecido, hidratar campos faltantes a partir do catálogo.
+	// Se productID fornecido, hidratar a partir do CatalogProduct (nome, marca, preço).
 	if req.ProductID > 0 {
-		variant, err := h.store.GetCatalogVariant(req.ProductID)
+		cp, err := h.store.GetCatalogProduct(req.ProductID)
 		if err != nil {
 			writeErr(w, http.StatusNotFound, "produto não encontrado")
 			return
 		}
-		if product.Price == 0 {
-			product.Price = variant.Price
+		product.Name = cp.CanonicalName // título completo para match parcial
+		if product.Brand == "" && cp.Brand.Valid {
+			product.Brand = cp.Brand.String
+		}
+		if product.Price == 0 && cp.LowestPrice.Valid {
+			product.Price = cp.LowestPrice.Float64
+		}
+		// Tags do produto como categorias adicionais
+		if product.Category == "" {
+			tags := cp.GetTags()
+			if len(tags) > 0 {
+				product.Category = tags[0]
+			}
 		}
 	}
 

@@ -73,6 +73,7 @@ func Build(
 	clustersH   := handlers.NewClustersHandler(st)
 	dash        := handlers.NewDashboardHandler(st, db)
 	team        := handlers.NewTeamHandler(db)
+	brand       := handlers.NewBrandHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *handlers.ComposeHandler
@@ -110,6 +111,7 @@ func Build(
 	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
 
 	r.Get("/api/health", healthHandler)
+	r.Get("/api/brand", brand.Get) // white-label public config
 
 	// /api/auth/login: 5 req/min per IP (burst 5) — brute-force protection
 	r.With(middleware.RateLimit(5.0/60.0, 5)).Post("/api/auth/login", auth.Login)
@@ -337,6 +339,7 @@ func Build(
 		// ReDesign: Channels extras (audience + metrics)
 		r.Get("/api/channels/{id}/audience", channels.GetAudience)
 		r.Get("/api/channels/{id}/metrics", channels.GetMetrics)
+		r.Get("/api/channels/{id}/history", channels.GetHistory)
 
 		// Crawlers: Group Spies
 		r.Get("/api/crawlers/group-spy", groupSpies.List)

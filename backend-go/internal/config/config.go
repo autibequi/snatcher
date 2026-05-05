@@ -14,9 +14,14 @@ type Config struct {
 	AdminUser     string
 	AdminPass     string
 	ScanInterval  int
-	PublicBaseURL string // ex: https://snatcher.com (para links curtos)
+	PublicBaseURL string // ex: https://jon.promo (domínio público dos links)
 	GOMAXPROCS    int
 	ENV           string // "dev" (default) | "prod" | "staging" etc.
+
+	// White-label / SaaS
+	AppName    string // nome da aplicação (ex: "Jon Promo")
+	AppDomain  string // domínio público sem protocolo (ex: "jon.promo")
+	AppLogoURL string // URL do logo (opcional)
 
 	// LLM
 	OpenRouterAPIKey  string
@@ -42,6 +47,11 @@ func Load() (Config, error) {
 		PublicBaseURL: env("PUBLIC_BASE_URL", "http://localhost:8000"),
 		GOMAXPROCS:    envInt("GOMAXPROCS", 2),
 		ENV:           env("ENV", "dev"),
+
+		// White-label
+		AppName:    env("APP_NAME", "Snatcher"),
+		AppDomain:  env("APP_DOMAIN", ""),
+		AppLogoURL: env("APP_LOGO_URL", ""),
 
 		// LLM
 		OpenRouterAPIKey:  env("OPENROUTER_API_KEY", ""),

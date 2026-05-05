@@ -8,6 +8,8 @@ const TABS = [
   { id: 'appearance', label: 'Aparência' },
   { id: 'team', label: 'Equipe' },
   { id: 'integrations', label: 'Integrações' },
+  { id: 'llm', label: 'LLM / IA' },
+  { id: 'branding', label: 'Domínio' },
   { id: 'advanced', label: 'Avançado' },
 ]
 
@@ -310,6 +312,177 @@ function IntegrationsTab() {
 }
 
 // ───────────────────────────────────────
+// LLM / IA Tab
+// ───────────────────────────────────────
+
+function LLMTab() {
+  const qc = useQueryClient()
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => apiClient.get('/api/config').then(r => r.data),
+  })
+
+  const get = (key: string) => {
+    const v = config?.[key]
+    return typeof v === 'object' ? v?.String || '' : v || ''
+  }
+
+  const [form, setForm] = useState<Record<string, string>>({})
+  const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
+
+  const saveMut = useMutation({
+    mutationFn: () => apiClient.put('/api/config', { ...config, ...form }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['config'] }); setForm({}) },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  const provider = form.llm_provider ?? get('llm_provider') ?? 'openrouter'
+
+  if (isLoading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-surface-2 rounded animate-pulse" />)}</div>
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <p className="text-sm font-semibold text-fg mb-1">Provider de IA</p>
+        <p className="text-xs text-fg-3 mb-3">Usado para gerar copy de disparos, categorizar produtos e labels de clusters.</p>
+        <div className="flex gap-3">
+          {[
+            { id: 'openrouter', label: 'OpenRouter', desc: 'API cloud — vários modelos (GPT-4o-mini, Claude, etc.)' },
+            { id: 'ollama', label: 'Ollama', desc: 'Self-hosted — roda localmente no seu servidor' },
+          ].map(p => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => set('llm_provider', p.id)}
+              className={`flex-1 p-3 rounded-md border text-left transition-colors ${provider === p.id ? 'border-accent bg-accent/5' : 'border-border bg-surface hover:border-border-strong'}`}
+            >
+              <p className="text-sm font-medium text-fg">{p.label}</p>
+              <p className="text-xs text-fg-3 mt-0.5">{p.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {provider === 'openrouter' && (
+        <div className="space-y-3">
+          <Input
+            label="API Key OpenRouter"
+            placeholder="sk-or-v1-..."
+            type="password"
+            value={form.llm_api_key ?? get('llm_api_key')}
+            onChange={e => set('llm_api_key', e.target.value)}
+          />
+          <Input
+            label="Modelo padrão (opcional)"
+            placeholder="openai/gpt-4o-mini"
+            value={form.llm_model ?? get('llm_model')}
+            onChange={e => set('llm_model', e.target.value)}
+          />
+          <p className="text-xs text-fg-3">
+            Obtenha sua chave em <a href="https://openrouter.ai" target="_blank" rel="noopener" className="text-accent hover:underline">openrouter.ai</a>
+          </p>
+        </div>
+      )}
+
+      {provider === 'ollama' && (
+        <div className="space-y-3">
+          <Input
+            label="URL base do Ollama"
+            placeholder="http://localhost:11434"
+            value={form.llm_base_url ?? get('llm_base_url')}
+            onChange={e => set('llm_base_url', e.target.value)}
+          />
+          <Input
+            label="Modelo"
+            placeholder="llama3:8b"
+            value={form.llm_model ?? get('llm_model')}
+            onChange={e => set('llm_model', e.target.value)}
+          />
+          <p className="text-xs text-fg-3">
+            Certifique-se que o Ollama está rodando e o modelo baixado: <code className="bg-surface-2 px-1 rounded">ollama pull llama3</code>
+          </p>
+        </div>
+      )}
+
+      <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+        Salvar configuração LLM
+      </Button>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
+// Domínio / Branding Tab
+// ───────────────────────────────────────
+
+function BrandingTab() {
+  const qc = useQueryClient()
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => apiClient.get('/api/config').then(r => r.data),
+  })
+
+  const get = (key: string) => {
+    const v = config?.[key]
+    return typeof v === 'object' ? v?.String || '' : v || ''
+  }
+
+  const [form, setForm] = useState<Record<string, string>>({})
+  const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
+
+  const saveMut = useMutation({
+    mutationFn: () => apiClient.put('/api/config', { ...config, ...form }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['config'] }); qc.invalidateQueries({ queryKey: ['brand'] }); setForm({}) },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  const currentDomain = form.app_domain ?? get('app_domain')
+  const currentName = form.app_name ?? get('app_name')
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <p className="text-sm font-semibold text-fg mb-1">White-label</p>
+        <p className="text-xs text-fg-3 mb-4">Configure o domínio e nome para personalizar os links públicos e a identidade da aplicação.</p>
+      </div>
+
+      <div className="space-y-4">
+        <Input
+          label="Nome da aplicação"
+          placeholder="Jon Promo"
+          value={currentName}
+          onChange={e => set('app_name', e.target.value)}
+        />
+        <div>
+          <Input
+            label="Domínio público (sem https://)"
+            placeholder="jon.promo"
+            value={currentDomain}
+            onChange={e => set('app_domain', e.target.value)}
+          />
+          {currentDomain && (
+            <p className="text-xs text-fg-3 mt-1">
+              Links públicos: <code className="bg-surface-2 px-1 rounded">https://{currentDomain}/g/{'<slug>'}</code>
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-surface-2 rounded-md p-4 text-xs text-fg-2 space-y-1">
+        <p className="font-medium text-fg">Como configurar:</p>
+        <p>1. Aponte <code>jon.promo</code> para o seu IP via DNS (registro A)</p>
+        <p>2. Configure o Cloudflare Tunnel com este domínio</p>
+        <p>3. Salve aqui — os links gerados usarão o novo domínio</p>
+      </div>
+
+      <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+        Salvar domínio
+      </Button>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
 // Avançado Tab
 // ───────────────────────────────────────
 
@@ -457,6 +630,8 @@ export default function Settings() {
           {tab === 'appearance' && <AppearanceTab />}
           {tab === 'team' && <TeamTab />}
           {tab === 'integrations' && <IntegrationsTab />}
+          {tab === 'llm' && <LLMTab />}
+          {tab === 'branding' && <BrandingTab />}
           {tab === 'advanced' && <AdvancedTab />}
         </div>
       </div>

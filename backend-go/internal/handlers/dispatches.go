@@ -40,10 +40,7 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if len(req.Targets) == 0 {
-		writeErr(w, http.StatusBadRequest, "targets obrigatorio")
-		return
-	}
+	isDraft := len(req.Targets) == 0
 
 	msgBytes, _ := json.Marshal(req.Message)
 	if msgBytes == nil {
@@ -73,8 +70,18 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if len(targets) == 0 {
-		writeErr(w, http.StatusBadRequest, "nenhum grupo encontrado para os targets")
+	// Se não há targets → salvar como rascunho (sem envio)
+	if isDraft || len(targets) == 0 {
+		d.Status = "draft"
+		id, err := h.store.CreateDispatch(d, nil)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "erro ao salvar rascunho")
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"id":     id,
+			"status": "draft",
+		})
 		return
 	}
 

@@ -1,19 +1,119 @@
 import React from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Badge, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
+
+const LOG_TABS = [
+  { id: 'dispatches', label: 'Disparos' },
+  { id: 'scheduled', label: 'Agendados' },
+  { id: 'crawlers', label: 'Crawlers' },
+]
+
+interface CrawlLogEntry {
+  id: number
+  search_term_id: number
+  started_at: string
+  finished_at?: { Time: string; Valid: boolean }
+  status: string
+  ml_count: number
+  amz_count: number
+  source_counts?: string
+  error_msg?: { String: string; Valid: boolean }
+}
+
+function CrawlerLogs() {
+  const { data: logs = [], isLoading } = useQuery<CrawlLogEntry[]>({
+    queryKey: ['crawl-logs'],
+    queryFn: () => apiClient.get('/api/crawl-logs?limit=100').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 15_000,
+  })
+
+  const { data: terms = [] } = useQuery({
+    queryKey: ['search-terms'],
+    queryFn: () => apiClient.get('/api/search-terms').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+  })
+
+  const termMap: Record<number, string> = {}
+  for (const t of terms as any[]) termMap[t.id] = t.query
+
+  const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
+    done: 'success',
+    running: 'warning',
+    error: 'danger',
+  }
+
+  const parseCounts = (log: CrawlLogEntry) => {
+    try {
+      if (log.source_counts) {
+        const parsed = JSON.parse(typeof log.source_counts === 'string' ? log.source_counts : JSON.stringify(log.source_counts))
+        return Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join(' · ')
+      }
+    } catch {}
+    const parts = []
+    if (log.ml_count > 0) parts.push(`ml: ${log.ml_count}`)
+    if (log.amz_count > 0) parts.push(`amz: ${log.amz_count}`)
+    return parts.join(' · ') || '0 encontrados'
+  }
+
+  const calcDuration = (log: CrawlLogEntry) => {
+    if (!log.finished_at?.Valid) return '—'
+    const ms = new Date(log.finished_at.Time).getTime() - new Date(log.started_at).getTime()
+    return ms < 60_000 ? `${(ms/1000).toFixed(0)}s` : `${(ms/60_000).toFixed(1)}min`
+  }
+
+  if (isLoading) return <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+  if (!logs.length) return <EmptyState title="Nenhum log de crawler" description="Os logs aparecem após rodar um crawler." />
+
+  return (
+    <div className="bg-surface border border-border rounded-md overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border bg-surface-2">
+            {['Crawler', 'Início', 'Duração', 'Encontrados', 'Status', 'Erro'].map(h => (
+              <th key={h} className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {logs.map(log => (
+            <tr key={log.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+              <td className="px-4 py-2.5 font-medium text-fg">
+                "{termMap[log.search_term_id] ?? `#${log.search_term_id}`}"
+              </td>
+              <td className="px-4 py-2.5 text-fg-3 text-xs">
+                {new Date(log.started_at).toLocaleString('pt-BR')}
+              </td>
+              <td className="px-4 py-2.5 text-fg-2 text-xs">{calcDuration(log)}</td>
+              <td className="px-4 py-2.5 text-fg text-xs">{parseCounts(log)}</td>
+              <td className="px-4 py-2.5">
+                <Badge variant={statusVariant[log.status] ?? 'default'} size="sm">
+                  {log.status}
+                </Badge>
+              </td>
+              <td className="px-4 py-2.5 text-xs text-danger truncate max-w-xs">
+                {log.error_msg?.Valid ? log.error_msg.String : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 interface Dispatch {
   id: number
   short_id?: string
   status: string
   composed_by?: string
-  message?: { text?: string }
+  message?: { text?: string; media_url?: string }
   target_count?: number
   delivered_count?: number
   created_at: string
+  product_id?: number
+  scheduled_for?: string
 }
 
 const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'> = {
@@ -96,25 +196,129 @@ function DispatchDrawer({
 
         {dispatch.message?.text && (
           <div>
-            <p className="text-xs text-fg-3 mb-1">Mensagem</p>
-            <pre className="text-sm text-fg bg-surface-2 rounded-md p-3 whitespace-pre-wrap break-words font-sans">
-              {dispatch.message.text}
-            </pre>
+            <p className="text-xs text-fg-3 mb-2">Preview WhatsApp</p>
+            <div className="bg-[#0b141a] rounded-lg p-3">
+              <div className="bg-[#005c4b] rounded-lg p-3 max-w-xs ml-auto shadow">
+                <p className="text-sm text-white whitespace-pre-wrap break-words">{dispatch.message.text}</p>
+                <p className="text-xs text-green-300 mt-1 text-right opacity-60">
+                  {new Date(dispatch.created_at).toLocaleString('pt-BR')} ✓✓
+                </p>
+              </div>
+            </div>
           </div>
         )}
-
-        <div>
-          <p className="text-xs text-fg-3 mb-1">Payload</p>
-          <pre className="text-xs text-fg-2 bg-surface-2 rounded-md p-3 overflow-x-auto">
-            {JSON.stringify(dispatch, null, 2)}
-          </pre>
-        </div>
       </div>
     </div>
   )
 }
 
+// ── Agendados ────────────────────────────────────────────────────────────────
+function ScheduledDispatches() {
+  const qc = useQueryClient()
+  const [previewText, setPreviewText] = React.useState<string | null>(null)
+
+  const { data: items = [], isLoading, refetch } = useQuery({
+    queryKey: ['dispatches', 'scheduled'],
+    queryFn: () =>
+      apiClient.get('/api/dispatches?status=queued&limit=100').then(r =>
+        (Array.isArray(r.data) ? r.data : []).filter((d: any) => d.scheduled_for)
+      ).catch(() => []),
+    refetchInterval: 30_000,
+  })
+
+  const cancelMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/dispatches/${id}/cancel`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dispatches', 'scheduled'] }) },
+  })
+
+  if (isLoading) return <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+
+  if (!items.length) return (
+    <div className="text-center py-12 space-y-2">
+      <p className="text-sm text-fg-2">Nenhum disparo agendado</p>
+      <p className="text-xs text-fg-3">Use o Composer para agendar um disparo escolhendo data e hora.</p>
+      <a href="/compose" className="inline-block mt-2 text-xs text-accent hover:underline">→ Ir para Compor disparo</a>
+    </div>
+  )
+
+  return (
+    <>
+      {previewText !== null && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setPreviewText(null)}>
+          <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <p className="text-xs text-center text-white/60 mb-3">Preview · clique fora para fechar</p>
+            <div className="bg-[#0b141a] rounded-xl p-4">
+              <div className="bg-[#005c4b] rounded-xl p-3 ml-auto max-w-[90%] shadow">
+                <p className="text-sm text-white whitespace-pre-wrap break-words">{previewText}</p>
+                <p className="text-xs text-green-300 mt-1 text-right opacity-60">agendado ✓</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-surface-2 border-b border-border">
+              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Mensagem</th>
+              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Agendado para</th>
+              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Status</th>
+              <th className="px-4 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((d: any) => {
+              const text = d.message?.text ?? ''
+              const scheduledAt = d.scheduled_for ? new Date(d.scheduled_for) : null
+              const isPast = scheduledAt && scheduledAt < new Date()
+              return (
+                <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                  <td className="px-4 py-3 cursor-pointer" onClick={() => setPreviewText(text)}>
+                    <p className="text-sm text-fg truncate max-w-xs">{text.slice(0, 60) || `#${d.short_id ?? d.id}`}</p>
+                    <p className="text-xs text-accent hover:underline mt-0.5">ver preview →</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    {scheduledAt ? (
+                      <div>
+                        <p className="text-sm text-fg">{scheduledAt.toLocaleString('pt-BR')}</p>
+                        {isPast ? (
+                          <p className="text-xs text-warning">⏳ aguardando worker...</p>
+                        ) : (
+                          <p className="text-xs text-fg-3">em {Math.round((scheduledAt.getTime() - Date.now()) / 60000)} min</p>
+                        )}
+                      </div>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="warning" size="sm">agendado</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      className="text-xs text-danger hover:underline disabled:opacity-50"
+                      disabled={cancelMut.isPending}
+                      onClick={() => { if (confirm('Cancelar este agendamento?')) cancelMut.mutate(d.id) }}
+                    >
+                      Cancelar
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-fg-3 mt-2">
+        Disparos agendados são processados automaticamente pelo worker a cada 15s.{' '}
+        <button type="button" className="text-accent hover:underline" onClick={() => refetch()}>↻ Atualizar</button>
+      </p>
+    </>
+  )
+}
+
 export default function Logs() {
+  const navigate = useNavigate()
+  const [logTab, setLogTab] = React.useState('dispatches')
   const [params] = useSearchParams()
   const statusFilter = params.get('status') ?? ''
   const [status, setStatus] = React.useState(statusFilter)
@@ -173,7 +377,20 @@ export default function Logs() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-lg font-semibold text-fg mb-6">Logs de disparo</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-lg font-semibold text-fg">Logs</h1>
+      </div>
+      <div className="flex gap-4 border-b border-border mb-6">
+        {LOG_TABS.map(t => (
+          <button key={t.id} type="button"
+            onClick={() => setLogTab(t.id)}
+            className={`pb-2 text-sm font-medium border-b-2 transition-colors -mb-px ${logTab === t.id ? 'border-accent text-accent' : 'border-transparent text-fg-2 hover:text-fg'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {logTab === 'crawlers' ? <CrawlerLogs /> : logTab === 'scheduled' ? <ScheduledDispatches /> : (<div>
 
       {/* Filtros */}
       <div className="flex gap-3 mb-4 flex-wrap items-end">
@@ -242,36 +459,52 @@ export default function Logs() {
               </tr>
             </thead>
             <tbody>
-              {items.map((d) => (
-                <tr
-                  key={d.id}
-                  className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                  onClick={() => setSelected(d)}
-                >
-                  <td className="p-3">
-                    <div>
-                      {/* Preview da mensagem */}
-                      <p className="text-xs text-fg line-clamp-1">
-                        {d.message?.text?.slice(0, 80) ?? `#${d.short_id ?? d.id}`}
-                      </p>
-                      <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant={statusVariant[d.status] ?? 'default'}>
-                      {d.status}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-fg-3 text-xs hidden sm:table-cell">
-                    {d.target_count != null
-                      ? `${d.delivered_count ?? 0}/${d.target_count} entregues`
-                      : '—'}
-                  </td>
-                  <td className="p-3 text-fg-3 text-xs whitespace-nowrap">
-                    {new Date(d.created_at).toLocaleString('pt-BR')}
-                  </td>
-                </tr>
-              ))}
+              {items.map((d) => {
+                const msgText = d.message?.text ?? ''
+                const isDraft = d.status === 'draft'
+                return (
+                  <tr
+                    key={d.id}
+                    className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${isDraft ? 'opacity-80' : ''}`}
+                    onClick={() => isDraft
+                      ? navigate(`/compose?draftId=${d.id}${d.product_id ? `&productId=${d.product_id}` : ''}`)
+                      : setSelected(d)
+                    }
+                    title={isDraft ? 'Clique para continuar editando este rascunho' : undefined}
+                  >
+                    <td className="p-3">
+                      <div>
+                        {/* Texto da mensagem como título */}
+                        {msgText ? (
+                          <>
+                            <p className="text-sm text-fg line-clamp-2">{msgText.slice(0, 100)}</p>
+                            <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs text-fg-3 italic">(sem texto)</p>
+                            <p className="text-xs text-fg-3 font-mono">{d.short_id ?? d.id}</p>
+                          </>
+                        )}
+                        {isDraft && <span className="text-xs text-accent mt-0.5 block">→ clique para continuar edição</span>}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <Badge variant={statusVariant[d.status] ?? 'default'}>
+                        {d.status}
+                      </Badge>
+                    </td>
+                    <td className="p-3 text-fg-3 text-xs hidden sm:table-cell">
+                      {d.target_count != null
+                        ? `${d.delivered_count ?? 0}/${d.target_count} entregues`
+                        : '—'}
+                    </td>
+                    <td className="p-3 text-fg-3 text-xs whitespace-nowrap">
+                      {new Date(d.created_at).toLocaleString('pt-BR')}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -280,6 +513,7 @@ export default function Logs() {
       {selected && (
         <DispatchDrawer dispatch={selected} onClose={() => setSelected(null)} />
       )}
+      </div>)}
     </div>
   )
 }

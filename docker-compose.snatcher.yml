@@ -19,6 +19,8 @@ services:
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
       - PUBLIC_BASE_URL=${PUBLIC_URL:-http://localhost:8000}
+      - APP_DOMAIN=${APP_DOMAIN:-}
+      - APP_NAME=${APP_NAME:-Snatcher}
     depends_on:
       app-postgres:
         condition: service_healthy

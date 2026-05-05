@@ -722,3 +722,21 @@ func (h *ChannelsHandler) resolveAdapter(target models.ChannelTarget, cfg models
 	}
 	return nil
 }
+
+// GetHistory retorna os disparos recentes do canal (via grupos associados).
+func (h *ChannelsHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	entries, err := h.store.ListChannelDispatchHistory(id, 50)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar histórico")
+		return
+	}
+	if entries == nil {
+		entries = []models.ChannelHistoryEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
+}

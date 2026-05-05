@@ -7,11 +7,15 @@ import { useWSEvent } from '../lib/useWS'
 interface SearchTerm {
   id: number
   query: string
+  queries?: string
   sources?: string
   active: boolean
   crawl_interval: number
   last_crawled_at?: string
   result_count: number
+  min_val?: number
+  max_val?: number
+  category?: string
 }
 
 interface Account {
@@ -232,7 +236,7 @@ interface SpyFormData {
 
 const defaultSpyForm: SpyFormData = {
   group_name: '',
-  platform: 'wa',
+  platform: 'whatsapp',
   invite_link: '',
   reader_account_id: '',
 }
@@ -270,6 +274,7 @@ function CreateSpyModal({ open, onClose }: { open: boolean; onClose: () => void 
     const errs: Record<string, string> = {}
     if (!form.group_name.trim()) errs.group_name = 'Nome do grupo é obrigatório'
     if (!form.platform) errs.platform = 'Plataforma é obrigatória'
+    if (!form.invite_link.trim()) errs.invite_link = 'Link de convite é obrigatório'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -281,8 +286,8 @@ function CreateSpyModal({ open, onClose }: { open: boolean; onClose: () => void 
     const payload: Record<string, unknown> = {
       group_name: form.group_name.trim(),
       platform: form.platform,
-      invite_link: form.invite_link.trim() || undefined,
-      reader_account_id: form.reader_account_id ? Number(form.reader_account_id) : undefined,
+      invite_link: form.invite_link.trim() || '',
+      reader_wa_id: form.reader_account_id ? Number(form.reader_account_id) : null,
     }
 
     createMut.mutate(payload)
@@ -331,8 +336,8 @@ function CreateSpyModal({ open, onClose }: { open: boolean; onClose: () => void 
             onChange={e => setForm(f => ({ ...f, platform: e.target.value }))}
             className={`w-full h-8 px-2.5 text-sm rounded-md border bg-surface text-fg border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent ${errors.platform ? 'border-danger' : ''}`}
           >
-            <option value="wa">WhatsApp</option>
-            <option value="tg">Telegram</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="telegram">Telegram</option>
           </select>
           {errors.platform && <p className="text-xs text-danger">{errors.platform}</p>}
         </div>
@@ -379,12 +384,86 @@ function relativeTime(iso?: string): string {
   return `há ${Math.round(diff / 86400)}d`
 }
 
-function StatusBadge({ term }: { term: SearchTerm }) {
-  if (!term.active) return <Badge variant="default" size="sm">● pausado</Badge>
-  if (term.last_crawled_at && term.result_count === 0) {
-    return <Badge variant="danger" size="sm">● erro</Badge>
-  }
-  return <Badge variant="success" size="sm">● rodando</Badge>
+// ── Modal editar crawler ─────────────────────────────────────────────────────
+const SOURCES_OPTIONS = ['ml', 'amz', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas']
+
+function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [form, setForm] = React.useState({ query: '', min_val: '', max_val: '', crawl_interval: 30, sources: [] as string[] })
+
+  React.useEffect(() => {
+    if (!term) return
+    let srcs: string[] = []
+    try { srcs = JSON.parse(term.sources ?? '[]') } catch { srcs = (term.sources ?? 'all').split(',').map((s: string) => s.trim()) }
+    setForm({ query: term.query, min_val: String(term.min_val ?? ''), max_val: String(term.max_val ?? ''), crawl_interval: term.crawl_interval ?? 30, sources: srcs })
+  }, [term])
+
+  const saveMut = useMutation({
+    mutationFn: () => apiClient.put(`/api/search-terms/${term!.id}`, {
+      query: form.query,
+      queries: [],
+      min_val: Number(form.min_val) || 0,
+      max_val: Number(form.max_val) || 9999,
+      crawl_interval: Number(form.crawl_interval),
+      sources: form.sources.length > 0 ? form.sources.join(',') : 'all',
+      category: term!.category ?? 'ecommerce',
+      active: term!.active,
+    }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['search-terms'] }); onClose() },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  if (!term) return null
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-5 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-medium text-fg mb-4">Editar crawler</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Termo de busca *</label>
+            <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              value={form.query} onChange={e => setForm(f => ({...f, query: e.target.value}))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-fg-2 block mb-1">Preço mín (R$)</label>
+              <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                value={form.min_val} onChange={e => setForm(f => ({...f, min_val: e.target.value}))} />
+            </div>
+            <div>
+              <label className="text-xs text-fg-2 block mb-1">Preço máx (R$)</label>
+              <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                value={form.max_val} onChange={e => setForm(f => ({...f, max_val: e.target.value}))} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Intervalo (minutos)</label>
+            <select className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+              value={form.crawl_interval} onChange={e => setForm(f => ({...f, crawl_interval: Number(e.target.value)}))}>
+              {[15,30,60,120,240,480,1440].map(v => <option key={v} value={v}>{v < 60 ? `${v}min` : `${v/60}h`}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Fontes</label>
+            <div className="flex flex-wrap gap-2">
+              {SOURCES_OPTIONS.map(s => (
+                <label key={s} className="flex items-center gap-1 cursor-pointer text-sm">
+                  <input type="checkbox" className="accent-accent"
+                    checked={form.sources.includes(s)}
+                    onChange={e => setForm(f => ({...f, sources: e.target.checked ? [...f.sources, s] : f.sources.filter(x => x !== s)}))} />
+                  {s}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end mt-4">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" size="sm" loading={saveMut.isPending} disabled={!form.query.trim()} onClick={() => saveMut.mutate()}>Salvar</Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function MarketplacesTab({ onNew }: { onNew: () => void }) {
@@ -394,15 +473,38 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
     queryFn: () => apiClient.get('/api/search-terms').then(r => Array.isArray(r.data) ? r.data : (r.data?.items ?? [])),
   })
 
+  const [runningIds, setRunningIds] = React.useState<Set<number>>(new Set())
+  const [editingTerm, setEditingTerm] = React.useState<SearchTerm | null>(null)
+
   const toggleMut = useMutation({
-    mutationFn: ({ id, active }: { id: number; active: boolean }) =>
-      apiClient.patch(`/api/search-terms/${id}`, { active }).then(r => r.data),
+    mutationFn: ({ id, active }: { id: number; active: boolean }) => {
+      const term = terms.find(t => t.id === id)
+      if (!term) return Promise.reject('term not found')
+      // Enviar apenas campos que o handler conhece (searchTermRequest)
+      return apiClient.put(`/api/search-terms/${id}`, {
+        query: term.query,
+        queries: [],
+        min_val: term.min_val ?? 0,
+        max_val: term.max_val ?? 9999,
+        sources: term.sources ?? 'all',
+        category: term.category ?? 'ecommerce',
+        crawl_interval: term.crawl_interval ?? 30,
+        active,
+      }).then(r => r.data)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['search-terms'] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao atualizar'),
   })
 
   const crawlNow = useMutation({
-    mutationFn: (id: number) => apiClient.post(`/api/search-terms/${id}/crawl`).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['search-terms'] }),
+    mutationFn: (id: number) => {
+      setRunningIds(prev => new Set([...prev, id]))
+      return apiClient.post(`/api/search-terms/${id}/crawl`).then(r => r.data)
+    },
+    onSettled: (_: any, __: any, id: number) => {
+      setRunningIds(prev => { const n = new Set(prev); n.delete(id); return n })
+      qc.invalidateQueries({ queryKey: ['search-terms'] })
+    },
   })
 
   // WS: crawler concluiu
@@ -466,10 +568,11 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
         <div className="flex gap-2">
           <button
             type="button"
+            disabled={runningIds.size > 0}
             onClick={() => activeTerms.forEach(t => crawlNow.mutate(t.id))}
-            className="text-sm border border-border rounded-md px-3 py-1.5 text-fg-2 hover:bg-surface-2"
+            className="text-sm border border-border rounded-md px-3 py-1.5 text-fg-2 hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            ▶ Rodar todos
+            {runningIds.size > 0 ? `▶ Rodando ${runningIds.size}...` : '▶ Rodar todos'}
           </button>
           <Button variant="primary" size="sm" onClick={onNew}>
             + Novo crawler
@@ -482,7 +585,7 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              {['Ativo', 'Termo', 'Fontes', 'Intervalo', '# Encontrados', 'Último crawl', 'Status', 'Ações'].map(h => (
+              {['Ativo', 'Termo', 'Fontes', 'Intervalo', '# Encontrados', 'Último crawl', 'Próxima exec', 'Ações'].map(h => (
                 <th key={h} className="text-left p-3 text-fg-2 font-medium">{h}</th>
               ))}
             </tr>
@@ -499,9 +602,12 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
                 <td className="p-3 font-medium text-fg">"{t.query}"</td>
                 <td className="p-3">
                   <div className="flex flex-wrap gap-1">
-                    {(t.sources ?? 'all').split(',').map(s => (
-                      <Badge key={s} size="sm" variant="default">{s.trim()}</Badge>
-                    ))}
+                    {(() => {
+                      const raw = t.sources ?? 'all'
+                      let list: string[] = []
+                      try { list = JSON.parse(raw) } catch { list = raw.split(',').map((s: string) => s.trim()) }
+                      return list.map((s: string) => <Badge key={s} size="sm" variant="default">{s}</Badge>)
+                    })()}
                   </div>
                 </td>
                 <td className="p-3 text-fg-2">
@@ -511,24 +617,46 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
                 <td className="p-3 text-fg-3 text-xs">
                   {relativeTime(t.last_crawled_at)}
                 </td>
-                <td className="p-3">
-                  <StatusBadge term={t} />
+                <td className="p-3 text-xs text-fg-2">
+                  {/* Só mostrar quando erro — rodando já está no toggle */}
+                  {!t.active ? (
+                    <span className="text-fg-3">pausado</span>
+                  ) : t.last_crawled_at && t.result_count === 0 ? (
+                    <Badge variant="danger" size="sm">erro</Badge>
+                  ) : t.last_crawled_at ? (
+                    <span className="text-fg-3">
+                      {(() => {
+                        const next = new Date(t.last_crawled_at).getTime() + (t.crawl_interval * 60_000)
+                        const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
+                        return diff === 0 ? 'agora' : `em ~${diff}min`
+                      })()}
+                    </span>
+                  ) : (
+                    <span className="text-fg-3">—</span>
+                  )}
                 </td>
                 <td className="p-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => crawlNow.mutate(t.id)}
-                    loading={crawlNow.isPending}
-                  >
-                    Rodar agora
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => crawlNow.mutate(t.id)}
+                      loading={runningIds.has(t.id)}
+                      disabled={runningIds.size > 0}
+                    >
+                      {runningIds.has(t.id) ? 'Rodando...' : 'Rodar agora'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setEditingTerm(t)}>
+                      Editar
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <EditTermModal term={editingTerm} onClose={() => setEditingTerm(null)} />
     </div>
   )
 }
