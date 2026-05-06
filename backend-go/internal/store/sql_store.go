@@ -440,9 +440,9 @@ func (s *SQLStore) GetCatalogProduct(id int64) (models.CatalogProduct, error) {
 func (s *SQLStore) CreateCatalogProduct(p models.CatalogProduct) (int64, error) {
 	return insertReturningID(s.db, `
 		INSERT INTO catalogproduct (canonical_name, brand, weight, image_url, lowest_price,
-			lowest_price_url, lowest_price_source, tags)
+			lowest_price_url, lowest_price_source, tags, quantity)
 		VALUES (:canonical_name, :brand, :weight, :image_url, :lowest_price,
-			:lowest_price_url, :lowest_price_source, :tags)`, p)
+			:lowest_price_url, :lowest_price_source, :tags, :quantity)`, p)
 }
 
 func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
@@ -451,7 +451,7 @@ func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
 		UPDATE catalogproduct SET canonical_name=:canonical_name, brand=:brand, weight=:weight,
 			image_url=:image_url, lowest_price=:lowest_price, lowest_price_url=:lowest_price_url,
 			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at,
-			curation_status=:curation_status
+			curation_status=:curation_status, quantity=:quantity
 		WHERE id = :id`, p)
 	return err
 }

@@ -108,6 +108,7 @@ func processResult(
 		p := models.CatalogProduct{
 			CanonicalName: canonical,
 			Tags:          "[]",
+			Quantity:      ExtractQuantity(r.Title),
 		}
 		if weight != "" {
 			p.Weight = models.NullString{NullString: sql.NullString{String: weight, Valid: true}}

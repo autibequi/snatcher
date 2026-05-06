@@ -16,6 +16,22 @@ var (
 	reWeights   = regexp.MustCompile(`\b\d+\s*(kg|g|ml|l|lbs?)\b`)
 	reSizes     = regexp.MustCompile(`\b(p|m|g|gg|xg|xxg|pp|xs|s|xl|xxl|xxxl)\b`)
 
+	// BeautifyTitle — padrões de lixo a remover
+	reBracketed   = regexp.MustCompile(`\[[^\]]{0,40}\]`)
+	reParenJunk   = regexp.MustCompile(`(?i)\s*[\(\[]?(produto nacional|com\s+nf|sem\s+juros|importado|original|garantia|c\/nf|s\/juros|parcelado)[\)\]]?\s*`)
+	rePipeVariant = regexp.MustCompile(`\s*\|.*$`)
+	reTrailPunct  = regexp.MustCompile(`[\s,\-–—:;/|]+$`)
+	reMultiSpace  = regexp.MustCompile(`\s{2,}`)
+
+	// palavras que ficam minúsculas em Title Case (artigos/prep em PT-BR e EN)
+	titleLower = map[string]bool{
+		"de": true, "da": true, "do": true, "das": true, "dos": true,
+		"e": true, "ou": true, "com": true, "em": true, "para": true,
+		"por": true, "a": true, "o": true, "no": true, "na": true,
+		"nos": true, "nas": true, "the": true, "of": true, "and": true,
+		"for": true, "in": true, "with": true, "to": true, "at": true,
+	}
+
 	stopWords = map[string]bool{
 		"de": true, "da": true, "do": true, "das": true, "dos": true,
 		"e": true, "ou": true, "com": true, "em": true, "para": true,
@@ -32,6 +48,56 @@ func Deaccent(s string) string {
 	}), norm.NFC)
 	result, _, _ := transform.String(t, s)
 	return result
+}
+
+// BeautifyTitle limpa e formata um título de produto para exibição em anúncios.
+// Remove lixo de marketplace, aplica Title Case inteligente e limita comprimento.
+func BeautifyTitle(title string, maxLen int) string {
+	s := title
+
+	// 1. Remove códigos entre colchetes ex: [ABC-123]
+	s = reBracketed.ReplaceAllString(s, "")
+
+	// 2. Remove badges comuns de marketplace ex: (Produto Nacional)
+	s = reParenJunk.ReplaceAllString(s, "")
+
+	// 3. Remove tudo depois de " | " (variante/subtítulo extra)
+	s = rePipeVariant.ReplaceAllString(s, "")
+
+	// 4. Limpa pontuação/espaços no final
+	s = reTrailPunct.ReplaceAllString(s, "")
+	s = reMultiSpace.ReplaceAllString(s, " ")
+	s = strings.TrimSpace(s)
+
+	// 5. Title Case inteligente — lowercasa tudo, depois capitaliza a 1ª letra
+	//    exceto artigos/preposições (que ficam minúsculos no meio)
+	words := strings.Fields(s)
+	for i, w := range words {
+		lower := strings.ToLower(w)
+		if i == 0 || !titleLower[lower] {
+			r := []rune(lower)
+			if len(r) > 0 {
+				r[0] = unicode.ToUpper(r[0])
+				words[i] = string(r)
+			}
+		} else {
+			words[i] = lower
+		}
+	}
+	s = strings.Join(words, " ")
+
+	// 6. Trunca em maxLen (palavra inteira)
+	if maxLen > 0 && len([]rune(s)) > maxLen {
+		runes := []rune(s)
+		s = string(runes[:maxLen])
+		// Recua até último espaço para não cortar no meio de palavra
+		if idx := strings.LastIndex(s, " "); idx > maxLen/2 {
+			s = s[:idx]
+		}
+		s = strings.TrimRight(s, " ,.-") + "…"
+	}
+
+	return s
 }
 
 // NormalizeTitle normaliza um título de produto para comparação.
@@ -108,6 +174,16 @@ func min3(a, b, c int) int {
 		return b
 	}
 	return c
+}
+
+// reQuantity captura tamanhos, pesos, volumes e contagens de produtos.
+var reQuantity = regexp.MustCompile(`(?i)\b(\d+(?:[.,]\d+)?)\s*(kg|g|mg|ml|l|lts?|litros?|lb|lbs|oz|caps?|cáps?|cápsulas?|comprimidos?|tabs?|sachê|sachês|unid|unidades?|pares?|pçs?|packs?|pack|kits?|peças?|pcs?|metros?|m2|cm|mm)\b`)
+
+// ExtractQuantity extrai tamanho/medida/quantidade de um título de produto.
+// Retorna a primeira ocorrência normalizada (ex: "900g", "2kg", "30 cáps").
+func ExtractQuantity(title string) string {
+	m := reQuantity.FindString(title)
+	return strings.TrimSpace(m)
 }
 
 // ExtractWeight extrai o peso de um título (ex: "900g", "1.5kg").

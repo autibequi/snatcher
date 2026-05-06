@@ -113,6 +113,11 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 // buildDynamicLLMClient lê a config do banco e cria o cliente LLM adequado.
 // Retorna nil se não houver config válida (handler usa o svc padrão / fallback).
+// BuildLLMClient retorna o LLM client configurado no banco (exportado para reuso no CurationHandler).
+func (h *ComposeHandler) BuildLLMClient() llm.Client {
+	return h.buildDynamicLLMClient()
+}
+
 func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 	cfg, err := h.store.GetConfig()
 	if err != nil {

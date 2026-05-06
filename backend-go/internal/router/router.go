@@ -76,7 +76,7 @@ func Build(
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy    := adminhnd.NewTaxonomyHandler(st)
-	curation    := adminhnd.NewCurationHandler(st, db)
+	curation    := adminhnd.NewCurationHandler(st, db, nil) // llmFn preenchido abaixo após composeH
 	autoMatch   := adminhnd.NewAutoMatchHandler(st)
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
@@ -88,6 +88,8 @@ func Build(
 		svc := compose.NewService(llmCli)
 		composeH = adminhnd.NewComposeHandler(st, svc)
 	}
+	// Injeta factory LLM no curation handler (precisa do composeH já criado)
+	curation.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
@@ -298,6 +300,8 @@ func Build(
 		r.Get("/api/curation/stats", curation.Stats)
 		r.Patch("/api/curation/{id}/taxonomy", curation.AssignTaxonomy)
 		r.Post("/api/curation/{id}/reject", curation.Reject)
+		r.Post("/api/curation/auto-heuristic", curation.AutoHeuristic)
+		r.Post("/api/curation/auto-llm", curation.AutoLLM)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)

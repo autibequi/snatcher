@@ -242,6 +242,8 @@ type CatalogProduct struct {
 	// migration 0091 — purge 404/3-strikes
 	ConsecutiveFailures int  `db:"consecutive_failures" json:"consecutive_failures"`
 	Inactive            bool `db:"inactive" json:"inactive"`
+	// migration 0095 — tamanho/quantidade para dedup e agrupamento
+	Quantity string `db:"quantity" json:"quantity"`
 }
 
 func (p *CatalogProduct) GetTags() []string {

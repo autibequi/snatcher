@@ -222,8 +222,9 @@ func formatMessage(ch models.Channel, p models.CatalogProduct, variants []models
 		badge = "🏆 "
 	}
 
+	cleanTitle := BeautifyTitle(p.CanonicalName, 60)
 	msg := tpl
-	msg = strings.ReplaceAll(msg, "{title}", badge+p.CanonicalName)
+	msg = strings.ReplaceAll(msg, "{title}", badge+cleanTitle)
 	msg = strings.ReplaceAll(msg, "{price:.2f}", fmt.Sprintf("%.2f", price))
 	msg = strings.ReplaceAll(msg, "{price}", fmt.Sprintf("%.2f", price))
 	msg = strings.ReplaceAll(msg, "{url}", bestURL)

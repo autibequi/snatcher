@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { Badge, Button, KpiCard, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { usePublicLinkPrefix, usePublicLinkBaseURL } from '../hooks/useBrand'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ function QrImage({ url }: { url: string }) {
 
 function CreateLinkModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
+  const linkPrefix = usePublicLinkPrefix()
   const [form, setForm] = React.useState({
     slug: '',
     channel_id: '',
@@ -113,7 +115,7 @@ function CreateLinkModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="text-xs text-fg-2 block mb-1">Slug (a-z, números, hífen) *</label>
             <div className="flex items-center border border-border rounded-md overflow-hidden focus-within:border-accent">
-              <span className="px-2.5 py-1.5 text-sm text-fg-3 bg-surface-2">snatcher.link/</span>
+              <span className="px-2.5 py-1.5 text-sm text-fg-3 bg-surface-2 whitespace-nowrap">{linkPrefix}</span>
               <input
                 required
                 value={form.slug}
@@ -261,7 +263,8 @@ function FallbackChainPanel({ link, channels }: { link: PublicLink; channels: Ch
 function LinkDetailPanel({ link, channels, onClose }: { link: PublicLink; channels: Channel[]; onClose: () => void }) {
   const [showQr, setShowQr] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
-  const fullUrl = `https://snatcher.link/${link.slug}`
+  const baseURL = usePublicLinkBaseURL()
+  const fullUrl = `${baseURL}/${link.slug}`
 
   const copyUrl = () => {
     navigator.clipboard?.writeText(fullUrl).then(() => {
@@ -404,6 +407,8 @@ function ClicksChart({ links }: { links: PublicLink[] }) {
 
 export default function PublicLinks() {
   const qc = useQueryClient()
+  const linkPrefix = usePublicLinkPrefix()
+  const linkBaseURL = usePublicLinkBaseURL()
   const [showCreateModal, setShowCreateModal] = React.useState(false)
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
 
@@ -439,8 +444,8 @@ export default function PublicLinks() {
   return (
     <div className="p-6 space-y-5">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold text-fg">Links públicos</h1>
           <p className="text-xs text-fg-3 mt-0.5">
             URL estável que <strong>sempre</strong> resolve para um grupo válido. Quando o grupo
@@ -448,7 +453,7 @@ export default function PublicLinks() {
             como <em>referência</em>, não cola num grupo específico.
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>
+        <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)} className="flex-shrink-0 whitespace-nowrap">
           + Novo link público
         </Button>
       </div>
@@ -511,7 +516,7 @@ export default function PublicLinks() {
                     }`}
                   >
                     <td className="px-3 py-2.5">
-                      <p className="font-medium text-fg">snatcher.link/{l.slug}</p>
+                      <p className="font-medium text-fg">{linkPrefix}{l.slug}</p>
                       {l.channel_name && (
                         <p className="text-xs text-fg-3 mt-0.5">
                           canal <span className="font-medium text-fg-2">{l.channel_name}</span>
@@ -534,7 +539,7 @@ export default function PublicLinks() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigator.clipboard?.writeText(`https://snatcher.link/${l.slug}`)}
+                          onClick={() => navigator.clipboard?.writeText(`${linkBaseURL}/${l.slug}`)}
                           title="Copiar URL"
                         >
                           Copiar

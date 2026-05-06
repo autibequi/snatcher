@@ -10,6 +10,7 @@ interface Product {
   brand?: string | null
   image_url?: string | null
   lowest_price?: number | null
+  quantity?: string
   tags: string
   curation_status: string
   created_at: string
@@ -51,18 +52,60 @@ export default function Curation() {
 
   const rejectMut = useMutation({
     mutationFn: (id: number) => apiClient.post(`/api/curation/${id}/reject`),
-    onSuccess: () => {
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['curation'] }),
+  })
+
+  const autoHeuristicMut = useMutation({
+    mutationFn: () => apiClient.post('/api/curation/auto-heuristic').then(r => r.data as { processed: number; categorized: number }),
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
+      alert(`Heurísticas: ${data.categorized} de ${data.processed} produtos categorizados automaticamente.`)
     },
+    onError: () => alert('Erro ao rodar heurísticas'),
+  })
+
+  const autoLLMMut = useMutation({
+    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; message?: string }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['curation'] })
+      if (data.message) {
+        alert(data.message)
+      } else {
+        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.`)
+      }
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao rodar LLM'),
   })
 
   return (
     <div className="p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-fg">Curadoria</h1>
-        <p className="text-sm text-fg-3 mt-0.5">
-          Produtos do crawl que não foram inferidos automaticamente — cadastre categoria e marca pra entrar no Match.
-        </p>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-fg">Curadoria</h1>
+          <p className="text-sm text-fg-3 mt-0.5">
+            Produtos do crawl que não foram inferidos automaticamente — cadastre categoria e marca pra entrar no Match.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => autoHeuristicMut.mutate()}
+            loading={autoHeuristicMut.isPending}
+            title="Roda taxonomy matching nos produtos pendentes"
+          >
+            ⚡ Auto (heurísticas)
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => autoLLMMut.mutate()}
+            loading={autoLLMMut.isPending}
+            title="Usa LLM para inferir categoria, marca e quantidade (até 20 por rodada)"
+          >
+            🤖 Auto (LLM)
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -174,11 +217,18 @@ function ProductRow({
           <p className="text-sm font-medium text-fg truncate" title={product.canonical_name}>
             {product.canonical_name}
           </p>
-          {product.lowest_price && (
-            <span className="text-xs text-fg-2 font-mono whitespace-nowrap">
-              R$ {product.lowest_price.toFixed(2)}
-            </span>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {product.quantity && (
+              <span className="text-xs px-1.5 py-0.5 bg-surface-2 border border-border rounded text-fg-2">
+                {product.quantity}
+              </span>
+            )}
+            {product.lowest_price && (
+              <span className="text-xs text-fg-2 font-mono">
+                R$ {product.lowest_price.toFixed(2)}
+              </span>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
