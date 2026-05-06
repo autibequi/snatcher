@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
@@ -14,11 +16,12 @@ import (
 // DispatchHandler handles POST/GET /api/dispatches.
 type DispatchHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
 // NewDispatchHandler cria um DispatchHandler.
-func NewDispatchHandler(st store.Store) *DispatchHandler {
-	return &DispatchHandler{store: st}
+func NewDispatchHandler(st store.Store, db *sqlx.DB) *DispatchHandler {
+	return &DispatchHandler{store: st, db: db}
 }
 
 type dispatchTargetReq struct {
@@ -170,4 +173,90 @@ func (h *DispatchHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "failed"})
+}
+
+// ListPendingApproval GET /api/dispatches/pending-approval
+// Retorna dispatches aguardando aprovação humana (full_auto_mode=false).
+func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Request) {
+	var rows []struct {
+		ID            int64   `db:"id" json:"id"`
+		Status        string  `db:"status" json:"status"`
+		ComposedBy    string  `db:"composed_by" json:"composed_by"`
+		AffiliateLink string  `db:"affiliate_link" json:"affiliate_link"`
+		ProductID     *int64  `db:"product_id" json:"product_id,omitempty"`
+		ChannelID     *int64  `db:"channel_id" json:"channel_id,omitempty"`
+		ChannelName   *string `db:"channel_name" json:"channel_name,omitempty"`
+		ProductName   *string `db:"product_name" json:"product_name,omitempty"`
+		Score         *float64 `db:"score" json:"score,omitempty"`
+		CreatedAt     string  `db:"created_at" json:"created_at"`
+	}
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT d.id, d.status, d.composed_by, d.affiliate_link,
+		       d.product_id, d.channel_id,
+		       ch.name AS channel_name,
+		       cp.canonical_name AS product_name,
+		       aml.score,
+		       to_char(d.created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS created_at
+		FROM dispatches d
+		LEFT JOIN channel ch ON ch.id = d.channel_id
+		LEFT JOIN catalogproduct cp ON cp.id = d.product_id
+		LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
+		WHERE d.status = 'pending_approval'
+		ORDER BY d.created_at DESC
+		LIMIT 50`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = rows[:0]
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// ApproveDispatch POST /api/dispatches/{id}/approve
+// Muda status de pending_approval → queued para envio imediato.
+func (h *DispatchHandler) ApproveDispatch(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	_, err := h.db.ExecContext(r.Context(), `
+		UPDATE dispatches SET status = 'queued' WHERE id = $1 AND status = 'pending_approval'`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// RejectDispatch POST /api/dispatches/{id}/reject
+// Descarta dispatch pendente de aprovação.
+func (h *DispatchHandler) RejectDispatch(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	_, err := h.db.ExecContext(r.Context(), `
+		UPDATE dispatches SET status = 'failed' WHERE id = $1 AND status = 'pending_approval'`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ApproveAllDispatch POST /api/dispatches/approve-all
+// Aprova todos os dispatches pendentes de uma vez.
+func (h *DispatchHandler) ApproveAllDispatch(w http.ResponseWriter, r *http.Request) {
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	writeJSON(w, http.StatusOK, map[string]any{"approved": n})
 }

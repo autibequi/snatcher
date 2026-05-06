@@ -62,7 +62,7 @@ func Build(
 	broadcast := adminhnd.NewBroadcast(st)
 	analytics := adminhnd.NewAnalytics(st)
 	coverage := adminhnd.NewCoverageHandler(st)
-	dispatches := adminhnd.NewDispatchHandler(st)
+	dispatches := adminhnd.NewDispatchHandler(st, db)
 
 	// ReDesign handlers
 	groups      := adminhnd.NewGroupsHandler(st)
@@ -321,6 +321,10 @@ func Build(
 		r.Post("/api/dispatches", dispatches.Create)
 		r.Get("/api/dispatches/{id}", dispatches.Get)
 		r.Post("/api/dispatches/{id}/cancel", dispatches.Cancel)
+		r.Get("/api/dispatches/pending-approval", dispatches.ListPendingApproval)
+		r.Post("/api/dispatches/approve-all", dispatches.ApproveAllDispatch)
+		r.Post("/api/dispatches/{id}/approve", dispatches.ApproveDispatch)
+		r.Post("/api/dispatches/{id}/reject", dispatches.RejectDispatch)
 
 		// ReDesign: Public Links (autenticado — gestão)
 		r.Get("/api/public-links", publLinks.List)

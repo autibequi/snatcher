@@ -171,6 +171,33 @@ export default function AutoMatch() {
   const lastRunAt = data?.last_run_at ?? null
   const intervalSeconds = data?.interval_seconds ?? 60
 
+  // Aprovações pendentes
+  const { data: pendingApprovals = [], refetch: refetchPending } = useQuery<Array<{
+    id: number
+    channel_name?: string
+    product_name?: string
+    score?: number
+    affiliate_link: string
+    created_at: string
+  }>>({
+    queryKey: ['dispatches', 'pending-approval'],
+    queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 30_000,
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/dispatches/${id}/approve`),
+    onSuccess: () => { refetchPending(); qc.invalidateQueries({ queryKey: ['dispatches'] }) },
+  })
+  const rejectMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/dispatches/${id}/reject`),
+    onSuccess: () => refetchPending(),
+  })
+  const approveAllMut = useMutation({
+    mutationFn: () => apiClient.post('/api/dispatches/approve-all').then(r => r.data as { approved: number }),
+    onSuccess: (res) => { alert(`${res.approved} disparo(s) aprovado(s).`); refetchPending() },
+  })
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
       {/* Header */}
@@ -180,6 +207,62 @@ export default function AutoMatch() {
           Dispara automaticamente produtos que batem com canais, a cada 1 minuto.
         </p>
       </div>
+
+      {/* Painel de Aprovações Pendentes */}
+      {pendingApprovals.length > 0 && (
+        <div className="bg-warning/5 border border-warning/30 rounded-md overflow-hidden">
+          <div className="px-4 py-3 border-b border-warning/20 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-warning">⏳ Aguardando aprovação</span>
+              <span className="text-xs bg-warning/20 text-warning px-1.5 py-0.5 rounded-full font-mono">
+                {pendingApprovals.length}
+              </span>
+            </div>
+            <button
+              onClick={() => approveAllMut.mutate()}
+              disabled={approveAllMut.isPending}
+              className="text-xs px-3 py-1.5 rounded bg-success text-white hover:bg-success/90 disabled:opacity-50"
+            >
+              ✓ Aprovar todos
+            </button>
+          </div>
+          <div className="divide-y divide-border">
+            {pendingApprovals.map(d => (
+              <div key={d.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-fg truncate">
+                    {d.product_name || `Dispatch #${d.id}`}
+                  </p>
+                  <p className="text-xs text-fg-3">
+                    {d.channel_name && <span className="mr-2">→ {d.channel_name}</span>}
+                    {d.score !== undefined && (
+                      <span className={`font-mono ${d.score >= 70 ? 'text-success' : 'text-warning'}`}>
+                        score {d.score.toFixed(0)}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => approveMut.mutate(d.id)}
+                    disabled={approveMut.isPending}
+                    className="text-xs px-2.5 py-1 rounded bg-success/10 text-success border border-success/30 hover:bg-success/20"
+                  >
+                    ✓ Aprovar
+                  </button>
+                  <button
+                    onClick={() => rejectMut.mutate(d.id)}
+                    disabled={rejectMut.isPending}
+                    className="text-xs px-2.5 py-1 rounded bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20"
+                  >
+                    ✗
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Timer countdown */}
       {enabled && (

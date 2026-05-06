@@ -364,6 +364,22 @@ function LLMTab() {
         </div>
       )}
 
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <p className="text-sm font-medium text-fg">Automação com IA</p>
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div>
+            <p className="text-sm text-fg">Auto-curar produtos com LLM</p>
+            <p className="text-xs text-fg-3">A cada 15 min, categoriza automaticamente produtos pendentes de curadoria usando IA.</p>
+          </div>
+          <input
+            type="checkbox"
+            className="accent-accent w-4 h-4"
+            checked={!!form.auto_curate_llm}
+            onChange={e => set('auto_curate_llm', String(e.target.checked))}
+          />
+        </label>
+      </div>
+
       <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
         Salvar configuração LLM
       </Button>
@@ -719,6 +735,33 @@ function GeneralTab() {
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Modo de automação */}
+      <div className="border border-border rounded-md p-4 space-y-3">
+        <p className="text-sm font-medium text-fg">Modo de Automação</p>
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div>
+            <p className="text-sm text-fg">Full-auto</p>
+            <p className="text-xs text-fg-3">Envia sem aprovação humana. Desligado = man-in-the-middle (aprovação antes de cada envio).</p>
+          </div>
+          <input
+            type="checkbox"
+            className="accent-accent w-4 h-4"
+            checked={merged.full_auto_mode === true}
+            onChange={e => updateField('full_auto_mode', e.target.checked)}
+          />
+        </label>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Webhook de notificação de aprovações pendentes (opcional)</label>
+          <input
+            type="url"
+            placeholder="https://hooks.slack.com/..."
+            value={merged.notify_approval_webhook ?? ''}
+            onChange={e => updateField('notify_approval_webhook', e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+          />
         </div>
       </div>
 

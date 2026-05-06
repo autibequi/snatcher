@@ -8,8 +8,10 @@ import (
 // ChannelStats agrega métricas reais de um canal.
 type ChannelStats struct {
 	TotalClicks  int64              `json:"total_clicks"`
+	Clicks24h    int64              `json:"clicks_24h"`
 	Dispatches7d int64              `json:"dispatches_7d"`
 	ProductCount int64              `json:"product_count"`
+	DeliveryRate float64            `json:"delivery_rate"` // % de targets delivered
 	Series       []ChannelDayStat   `json:"dispatches_7d_series"`
 }
 
@@ -235,6 +237,7 @@ type Store interface {
 
 	// Catalog com filtros
 	FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error)
+	ListPendingCurationProducts(limit int) ([]models.CatalogProduct, error)
 
 	// Product failures (purge 404)
 	IncrementProductFailures(id int64) error

@@ -102,6 +102,42 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Job de auto-curate LLM — categoriza produtos pending a cada 15min se habilitado
+	if sc.storeRef != nil && sc.llmCli != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(15*time.Minute),
+			gocron.NewTask(func() {
+				cfg, cfgErr := sc.storeRef.GetConfig()
+				if cfgErr != nil || !cfg.AutoCurateLLM {
+					return
+				}
+				slog.Info("scheduler: auto-curate LLM started")
+				if err := RunLLMCurationWorker(ctx, sc.storeRef, sc.llmCli); err != nil {
+					slog.Error("scheduler: auto-curate LLM error", "err", err)
+				}
+			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Job de sync de grupos WA — atualiza member_count a cada 30min
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(30*time.Minute),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: group sync started")
+				RunGroupSyncWorker(ctx, sc.storeRef)
+			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	sc.s.Start()
 	return nil
 }

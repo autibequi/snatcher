@@ -67,6 +67,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       {/* Accounts badge */}
       <AccountsBadge />
 
+      {/* Badge de aprovações pendentes */}
+      <PendingApprovalsBadge />
+
       {/* CTA Disparar */}
       <Button
         variant="primary"
@@ -188,6 +191,28 @@ function SearchBar() {
         </div>
       )}
     </div>
+  )
+}
+
+function PendingApprovalsBadge() {
+  const navigate = useNavigate()
+  const { data: pending = [] } = useQuery<unknown[]>({
+    queryKey: ['dispatches', 'pending-approval'],
+    queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  if (pending.length === 0) return null
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/auto-match')}
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning/10 text-warning text-xs font-medium hover:bg-warning/20 transition-colors"
+      title={`${pending.length} dispatch${pending.length !== 1 ? 'es' : ''} aguardando aprovação`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+      {pending.length} pendente{pending.length !== 1 ? 's' : ''}
+    </button>
   )
 }
 

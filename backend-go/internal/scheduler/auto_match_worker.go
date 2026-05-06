@@ -183,11 +183,16 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				}
 			}
 
+			// full_auto_mode=true → envia direto; false → aguarda aprovação humana
+			dispatchStatus := "queued"
+			if !cfg.FullAutoMode {
+				dispatchStatus = "pending_approval"
+			}
 			d := models.Dispatch{
 				ComposedBy:    "auto-match",
 				Message:       msgBytes,
 				AffiliateLink: affiliateLink,
-				Status:        "queued",
+				Status:        dispatchStatus,
 			}
 			if p.ID > 0 {
 				d.ProductID = models.NullInt64{}

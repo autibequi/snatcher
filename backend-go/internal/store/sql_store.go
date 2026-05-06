@@ -110,6 +110,22 @@ func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
 		WHERE dt.group_id = ANY($1)
 		  AND d.product_id IS NOT NULL`, arr)
 
+	// Cliques últimas 24h
+	_ = s.db.Get(&stats.Clicks24h, `
+		SELECT COALESCE(SUM(dt.click_count), 0)
+		FROM dispatch_targets dt
+		WHERE dt.group_id = ANY($1)
+		  AND dt.delivered_at >= now() - interval '24 hours'`, arr)
+
+	// Taxa de entrega (% targets delivered)
+	_ = s.db.Get(&stats.DeliveryRate, `
+		SELECT COALESCE(
+			COUNT(*) FILTER (WHERE dt.status = 'delivered') * 100.0 / NULLIF(COUNT(*), 0),
+			0
+		)
+		FROM dispatch_targets dt
+		WHERE dt.group_id = ANY($1)`, arr)
+
 	// Série diária
 	_ = s.db.Select(&stats.Series, `
 		SELECT to_char(d.created_at::date, 'Dy') AS day,
@@ -2013,4 +2029,15 @@ func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProd
 		return nil, 0, err
 	}
 	return out, total, nil
+}
+
+// ListPendingCurationProducts retorna produtos com curation_status='pending' (aguardando categorização).
+func (s *SQLStore) ListPendingCurationProducts(limit int) ([]models.CatalogProduct, error) {
+	var out []models.CatalogProduct
+	err := s.db.Select(&out, `
+		SELECT * FROM catalogproduct
+		WHERE curation_status = 'pending'
+		ORDER BY created_at DESC
+		LIMIT $1`, limit)
+	return out, err
 }
