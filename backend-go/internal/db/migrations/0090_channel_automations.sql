@@ -30,19 +30,3 @@ CREATE INDEX IF NOT EXISTS ix_channel_automations_enabled
 CREATE INDEX IF NOT EXISTS ix_auto_match_logs_channel
     ON auto_match_logs(channel_id, created_at DESC);
 
--- Populate from channel_rules (1ª regra ativa por canal vence)
-INSERT INTO channel_automations (
-    channel_id, enabled, events_enabled,
-    notify_new, notify_drop, notify_lowest, drop_threshold,
-    match_type, match_value, max_price
-)
-SELECT DISTINCT ON (cr.channel_id)
-    cr.channel_id,
-    FALSE AS enabled,             -- opt-in manual após migração
-    TRUE  AS events_enabled,      -- preserva intent original (eventos ativos)
-    cr.notify_new, cr.notify_drop, cr.notify_lowest, cr.drop_threshold,
-    cr.match_type, cr.match_value, cr.max_price
-FROM channel_rules cr
-WHERE cr.active = TRUE
-ORDER BY cr.channel_id, cr.id ASC
-ON CONFLICT (channel_id) DO NOTHING;
