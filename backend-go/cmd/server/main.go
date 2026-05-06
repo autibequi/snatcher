@@ -181,7 +181,11 @@ func bootstrapConfig(st store.Store) {
 		changed = true
 	}
 
-	if instance := os.Getenv("EVOLUTION_INSTANCE"); instance != "" && (!cfg.WAInstance.Valid || cfg.WAInstance.String == "") {
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if !cfg.WAInstance.Valid || cfg.WAInstance.String == "" {
 		cfg.WAInstance = models.NullString{NullString: sql.NullString{String: instance, Valid: true}}
 		changed = true
 	}
