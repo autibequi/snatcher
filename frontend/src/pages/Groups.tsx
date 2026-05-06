@@ -285,6 +285,136 @@ function GroupsTable({
   )
 }
 
+// ── Available WA groups (Evolution) — não vinculados a canal ─────────────────
+
+function AvailableWAGroupsSection({
+  account,
+  channels,
+  linkedJIDs,
+  onLinked,
+}: {
+  account: WAAccount
+  channels: Channel[]
+  linkedJIDs: Set<string>
+  onLinked: () => void
+}) {
+  const { data: waGroups = [], isLoading } = useQuery<WAGroupOption[]>({
+    queryKey: ['available-wa-groups', account.id],
+    queryFn: () =>
+      apiClient
+        .get(`/api/accounts/wa/${account.id}/groups`)
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
+    enabled: account.status === 'connected',
+    refetchInterval: 60_000,
+  })
+
+  const linkMut = useMutation({
+    mutationFn: ({ jid, name, size, channelId }: { jid: string; name: string; size: number; channelId: number }) =>
+      apiClient.post('/api/groups', {
+        channel_id: channelId,
+        name,
+        platform: 'whatsapp',
+        wa_account_id: account.id,
+        jid,
+        member_count: size,
+      }),
+    onSuccess: onLinked,
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao vincular'),
+  })
+
+  const unlinked = waGroups.filter(g => !linkedJIDs.has(g.id))
+
+  if (account.status !== 'connected') return null
+  if (isLoading) return null
+  if (waGroups.length === 0) return null
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-fg">
+          Grupos no WhatsApp · {account.name}
+        </h2>
+        <span className="text-xs text-fg-3">
+          {unlinked.length} disponíveis · {waGroups.length - unlinked.length} já vinculados
+        </span>
+      </div>
+      {unlinked.length === 0 ? (
+        <p className="text-xs text-fg-3 py-2">Todos os grupos já foram vinculados.</p>
+      ) : (
+        <div className="border border-border rounded-md overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-2 border-b border-border">
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
+                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Membros</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase w-72">Vincular a canal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unlinked.map(g => (
+                <UnlinkedRow
+                  key={g.id}
+                  group={g}
+                  channels={channels}
+                  onLink={(channelId) => linkMut.mutate({ jid: g.id, name: g.name, size: g.size, channelId })}
+                  pending={linkMut.isPending}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UnlinkedRow({
+  group,
+  channels,
+  onLink,
+  pending,
+}: {
+  group: WAGroupOption
+  channels: Channel[]
+  onLink: (channelId: number) => void
+  pending: boolean
+}) {
+  const [channelId, setChannelId] = useState<string>(channels[0] ? String(channels[0].id) : '')
+  return (
+    <tr className="border-b border-border last:border-0 hover:bg-surface-2/50">
+      <td className="px-4 py-2 text-fg">{group.name}</td>
+      <td className="px-4 py-2 text-right text-fg-2">{group.size}</td>
+      <td className="px-4 py-2">
+        <div className="flex gap-1">
+          {channels.length === 0 ? (
+            <span className="text-xs text-warning">Crie um canal primeiro</span>
+          ) : (
+            <>
+              <select
+                value={channelId}
+                onChange={e => setChannelId(e.target.value)}
+                className="text-xs border border-border rounded px-2 py-1 bg-surface text-fg flex-1"
+              >
+                {channels.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => channelId && onLink(Number(channelId))}
+                disabled={pending || !channelId}
+                className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
+              >
+                Vincular
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Groups() {
@@ -469,6 +599,17 @@ export default function Groups() {
             accountFilter={accountFilter}
             onRowClick={id => navigate(`/groups/${id}`)}
           />
+
+          {/* Grupos disponíveis no WhatsApp (não vinculados a canal) */}
+          {activeWA.map(acc => (
+            <AvailableWAGroupsSection
+              key={acc.id}
+              account={acc}
+              channels={activeChannels}
+              linkedJIDs={new Set(groups.map(g => String((g as any).jid ?? '')))}
+              onLinked={() => qc.invalidateQueries({ queryKey: ['groups'] })}
+            />
+          ))}
         </>
       )}
 
