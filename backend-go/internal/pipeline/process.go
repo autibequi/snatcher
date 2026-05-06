@@ -132,6 +132,10 @@ func processResult(
 	_ = st.UpdateCatalogProduct(refreshedProduct)
 	applyKeywords(st, &refreshedProduct, r.Title, keywords)
 
+	// Detecta taxonomias (categorias/marcas) no nome canônico — incrementa
+	// detect_count das taxonomias matchadas para fine-tuning de keywords.
+	_, _ = st.DetectAndUpsertTaxonomy(refreshedProduct.CanonicalName)
+
 	// Cria variante
 	v := models.CatalogVariant{
 		CatalogProductID: productID,

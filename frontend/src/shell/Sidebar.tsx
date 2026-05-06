@@ -66,6 +66,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Sistema',
     items: [
+      { to: '/taxonomy', label: 'Taxonomia', icon: '🏷️' },
       { to: '/settings', label: 'Configurações', icon: '⚙️' },
     ],
   },

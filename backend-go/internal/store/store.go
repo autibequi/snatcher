@@ -230,4 +230,11 @@ type Store interface {
 	// Taxonomy (categorias e marcas)
 	ListTaxonomy(taxType string) ([]models.Taxonomy, error)
 	IncrementTaxonomyDetect(id int64) error
+	CreateTaxonomy(t models.Taxonomy) (int64, error)
+	UpdateTaxonomy(t models.Taxonomy) error
+	DeleteTaxonomy(id int64) error
+	SetTaxonomyStatus(id int64, status string) error
+	ListPendingTaxonomy() ([]models.Taxonomy, error)
+	DetectAndUpsertTaxonomy(text string) ([]int64, error)
+	SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error)
 }

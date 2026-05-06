@@ -283,8 +283,14 @@ func Build(
 		// ReDesign: Match
 		r.Post("/api/match", matchH.Match)
 
-		// Taxonomy (categorias e marcas para autocomplete)
+		// Taxonomy (categorias e marcas para autocomplete + admin)
 		r.Get("/api/taxonomy", taxonomy.List)
+		r.Get("/api/taxonomy/pending", taxonomy.ListPending)
+		r.Post("/api/taxonomy", taxonomy.Create)
+		r.Patch("/api/taxonomy/{id}", taxonomy.Update)
+		r.Delete("/api/taxonomy/{id}", taxonomy.Delete)
+		r.Post("/api/taxonomy/{id}/approve", taxonomy.Approve)
+		r.Post("/api/taxonomy/{id}/reject", taxonomy.Reject)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)

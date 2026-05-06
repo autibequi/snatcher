@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"snatcher/backendv2/internal/models"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -1847,14 +1848,14 @@ func (s *SQLStore) ListTaxonomy(taxType string) ([]models.Taxonomy, error) {
 	if taxType == "" {
 		err := s.db.Select(&out, `
 			SELECT id, type, name, slug, keywords, parent_id, detect_count,
-			       last_detected_at, active, created_at
-			FROM taxonomy WHERE active = true ORDER BY type, name`)
+			       last_detected_at, active, status, source, sample_text, created_at
+			FROM taxonomy WHERE status = 'approved' ORDER BY type, name`)
 		return out, err
 	}
 	err := s.db.Select(&out, `
 		SELECT id, type, name, slug, keywords, parent_id, detect_count,
-		       last_detected_at, active, created_at
-		FROM taxonomy WHERE type = $1 AND active = true ORDER BY name`, taxType)
+		       last_detected_at, active, status, source, sample_text, created_at
+		FROM taxonomy WHERE type = $1 AND status = 'approved' AND active = true ORDER BY name`, taxType)
 	return out, err
 }
 
@@ -1865,4 +1866,103 @@ func (s *SQLStore) IncrementTaxonomyDetect(id int64) error {
 		UPDATE taxonomy SET detect_count = detect_count + 1, last_detected_at = now()
 		WHERE id = $1`, id)
 	return err
+}
+
+// CreateTaxonomy insere nova entrada (categoria/marca).
+func (s *SQLStore) CreateTaxonomy(t models.Taxonomy) (int64, error) {
+	if t.Status == "" {
+		t.Status = "approved"
+	}
+	if t.Source == "" {
+		t.Source = "manual"
+	}
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO taxonomy (type, name, slug, keywords, parent_id, active, status, source, sample_text)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (type, slug) DO UPDATE SET
+			name = EXCLUDED.name,
+			keywords = EXCLUDED.keywords,
+			active = EXCLUDED.active
+		RETURNING id`,
+		t.Type, t.Name, t.Slug, t.Keywords, t.ParentID, t.Active, t.Status, t.Source, t.SampleText,
+	).Scan(&id)
+	return id, err
+}
+
+// UpdateTaxonomy atualiza nome, keywords e active de uma entrada.
+func (s *SQLStore) UpdateTaxonomy(t models.Taxonomy) error {
+	_, err := s.db.Exec(`
+		UPDATE taxonomy
+		SET name = $1, keywords = $2, active = $3
+		WHERE id = $4`,
+		t.Name, t.Keywords, t.Active, t.ID)
+	return err
+}
+
+// DeleteTaxonomy remove uma entrada da taxonomia.
+func (s *SQLStore) DeleteTaxonomy(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM taxonomy WHERE id = $1`, id)
+	return err
+}
+
+// SetTaxonomyStatus aprova ou rejeita uma entrada pendente.
+// status: 'approved' | 'rejected'
+func (s *SQLStore) SetTaxonomyStatus(id int64, status string) error {
+	_, err := s.db.Exec(`
+		UPDATE taxonomy SET status = $1, active = ($1 = 'approved') WHERE id = $2`,
+		status, id)
+	return err
+}
+
+// ListPendingTaxonomy retorna entradas com status='pending' (descobertas pelo crawler/LLM).
+func (s *SQLStore) ListPendingTaxonomy() ([]models.Taxonomy, error) {
+	var out []models.Taxonomy
+	err := s.db.Select(&out, `
+		SELECT id, type, name, slug, keywords, parent_id, detect_count,
+		       last_detected_at, active, status, source, sample_text, created_at
+		FROM taxonomy WHERE status = 'pending' ORDER BY detect_count DESC, created_at DESC`)
+	return out, err
+}
+
+// DetectAndUpsertTaxonomy é o ponto de integração para crawler/categorizador.
+// Recebe um texto (ex: nome de produto) e:
+//   1. Busca matches contra keywords das taxonomias aprovadas → incrementa detect_count
+//   2. Retorna IDs das taxonomias matchadas para uso em score
+// Não cria pendentes — isso fica para um job LLM separado.
+func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) {
+	if text == "" {
+		return nil, nil
+	}
+	var ids []int64
+	err := s.db.Select(&ids, `
+		WITH matched AS (
+			SELECT id FROM taxonomy
+			WHERE status = 'approved' AND active = TRUE
+			  AND EXISTS (
+			    SELECT 1 FROM unnest(keywords) AS kw
+			    WHERE position(lower(kw) IN lower($1)) > 0
+			  )
+		)
+		UPDATE taxonomy SET detect_count = detect_count + 1, last_detected_at = now()
+		WHERE id IN (SELECT id FROM matched)
+		RETURNING id`, text)
+	return ids, err
+}
+
+// SuggestTaxonomyCandidate cria entrada pending a partir de texto não-categorizado.
+// Usado pelo job LLM quando produto não bate com nenhuma taxonomia aprovada.
+func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error) {
+	slug := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), " ", "-"))
+	t := models.Taxonomy{
+		Type:       taxType,
+		Name:       name,
+		Slug:       slug,
+		Keywords:   pq.StringArray(keywords),
+		Active:     false,
+		Status:     "pending",
+		Source:     source,
+		SampleText: models.NullString{NullString: sql.NullString{String: sampleText, Valid: sampleText != ""}},
+	}
+	return s.CreateTaxonomy(t)
 }

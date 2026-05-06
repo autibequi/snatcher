@@ -652,7 +652,7 @@ type AffiliateConversion struct {
 // e para detecção pelo crawler/categorizador.
 type Taxonomy struct {
 	ID             int64          `db:"id" json:"id"`
-	Type           string         `db:"type" json:"type"` // 'category' | 'brand'
+	Type           string         `db:"type" json:"type"`     // 'category' | 'brand'
 	Name           string         `db:"name" json:"name"`
 	Slug           string         `db:"slug" json:"slug"`
 	Keywords       pq.StringArray `db:"keywords" json:"keywords"`
@@ -660,6 +660,9 @@ type Taxonomy struct {
 	DetectCount    int            `db:"detect_count" json:"detect_count"`
 	LastDetectedAt NullTime       `db:"last_detected_at" json:"last_detected_at,omitempty"`
 	Active         bool           `db:"active" json:"active"`
+	Status         string         `db:"status" json:"status"` // 'approved' | 'pending' | 'rejected'
+	Source         string         `db:"source" json:"source"` // 'manual' | 'crawler' | 'llm'
+	SampleText     NullString     `db:"sample_text" json:"sample_text,omitempty"`
 	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
 }
 
