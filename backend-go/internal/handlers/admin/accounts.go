@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"snatcher/backendv2/internal/models"
@@ -27,6 +26,24 @@ type AccountsHandler struct {
 
 func NewAccounts(st store.Store) *AccountsHandler {
 	return &AccountsHandler{store: st}
+}
+
+// waStatusEntry guarda o último status conhecido por conta e quando expira.
+type waStatusEntry struct {
+	evoStatus string    // status no formato da Evolution ("WORKING", "STOPPED", etc.)
+	expiresAt time.Time
+}
+
+var (
+	// waStatusCache evita bater na Evolution API em cada poll (TTL = 5s).
+	waStatusCache sync.Map // int64 → waStatusEntry
+	// waStatusLock serializa chamadas concurrent por conta; evita race no DB write.
+	waStatusLock sync.Map // int64 → *sync.Mutex
+)
+
+func waAccountMu(id int64) *sync.Mutex {
+	mu, _ := waStatusLock.LoadOrStore(id, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 func (h *AccountsHandler) ListWA(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +194,8 @@ func (h *AccountsHandler) DeleteWA(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	waStatusCache.Delete(id)
+	waStatusLock.Delete(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -191,6 +210,39 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "account not found")
 		return
 	}
+
+	// Cache hit: evita chamada à Evolution dentro do TTL (5s).
+	if entry, hit := waStatusCache.Load(id); hit {
+		e := entry.(waStatusEntry)
+		if time.Now().Before(e.expiresAt) {
+			writeJSON(w, http.StatusOK, map[string]string{"status": e.evoStatus})
+			return
+		}
+	}
+
+	// TryLock: se outra goroutine já está consultando a Evolution para esta conta,
+	// retorna o status atual do DB sem esperar — evita race no write.
+	mu := waAccountMu(id)
+	if !mu.TryLock() {
+		dbToEvo := map[string]string{"connected": "WORKING", "disconnected": "STOPPED"}
+		evoStatus := dbToEvo[acc.Status]
+		if evoStatus == "" {
+			evoStatus = "STOPPED"
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": evoStatus})
+		return
+	}
+	defer mu.Unlock()
+
+	// Double-check cache após adquirir o lock (outra goroutine pode ter populado).
+	if entry, hit := waStatusCache.Load(id); hit {
+		e := entry.(waStatusEntry)
+		if time.Now().Before(e.expiresAt) {
+			writeJSON(w, http.StatusOK, map[string]string{"status": e.evoStatus})
+			return
+		}
+	}
+
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
 	if !acc.BaseURL.Valid || baseURL == "" {
 		cfg, _ := h.store.GetConfig()
@@ -199,17 +251,22 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		if cfg.WAInstance.Valid && instance == "" { instance = cfg.WAInstance.String }
 	}
 	if baseURL == "" {
+		waStatusCache.Store(id, waStatusEntry{evoStatus: "STOPPED", expiresAt: time.Now().Add(5 * time.Second)})
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED"})
 		return
 	}
+
 	evo := newEvolutionClient(baseURL, apiKey, instance)
-	status, err := evo.getStatus(r.Context())
+	rawStatus, err := evo.getStatus(r.Context())
 	if err != nil {
+		// Erro de rede: mantém status atual no cache para não oscilar.
+		waStatusCache.Store(id, waStatusEntry{evoStatus: "STOPPED", expiresAt: time.Now().Add(5 * time.Second)})
 		writeJSON(w, http.StatusOK, map[string]string{"status": "STOPPED", "error": err.Error()})
 		return
 	}
-	// Mapeia estados da Evolution para o formato do frontend
-	mapped := map[string]string{
+
+	// Mapeia estados da Evolution para o formato do frontend.
+	evoMap := map[string]string{
 		"open":          "WORKING",
 		"close":         "STOPPED",
 		"connecting":    "SCAN_QR_CODE",
@@ -218,11 +275,12 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		"disconnected":  "STOPPED",
 		"disconnecting": "STOPPED",
 	}
-	if s, ok := mapped[status]; ok {
+	status := rawStatus
+	if s, ok := evoMap[rawStatus]; ok {
 		status = s
 	}
 
-	// Atualiza o campo `status` no banco para que a página Grupos detecte corretamente
+	// Atualiza o campo `status` no banco apenas quando há mudança real.
 	dbStatus := acc.Status
 	if status == "WORKING" && dbStatus != "connected" {
 		acc.Status = "connected"
@@ -234,6 +292,7 @@ func (h *AccountsHandler) WAStatus(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("conta WA desconectada", "id", acc.ID, "name", acc.Name, "evolution_status", status)
 	}
 
+	waStatusCache.Store(id, waStatusEntry{evoStatus: status, expiresAt: time.Now().Add(5 * time.Second)})
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
@@ -417,36 +476,18 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	// Fallback 1: AppConfig
+	// Fallback independente por campo — sempre usa AppConfig quando o campo está vazio
 	cfg, _ := h.store.GetConfig()
-	if baseURL == "" && cfg.WABaseURL.Valid   { baseURL  = cfg.WABaseURL.String  }
-	if apiKey  == "" && cfg.WAApiKey.Valid    { apiKey   = cfg.WAApiKey.String   }
+	if baseURL == "" && cfg.WABaseURL.Valid  { baseURL  = cfg.WABaseURL.String  }
+	if apiKey  == "" && cfg.WAApiKey.Valid   { apiKey   = cfg.WAApiKey.String   }
 	if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
-	// Fallback 2: env vars (integração nativa via docker-compose)
-	if baseURL == "" {
-		if v := os.Getenv("EVOLUTION_URL"); v != "" {
-			baseURL = v
-		} else {
-			baseURL = "http://evolution:8080"
-		}
-	}
-	if apiKey == "" {
-		apiKey = os.Getenv("EVOLUTION_API_KEY")
-	}
-	if instance == "" {
-		if v := os.Getenv("EVOLUTION_INSTANCE"); v != "" {
-			instance = v
-		} else {
-			instance = "default"
-		}
-	}
 
 	if baseURL == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a URL da Evolution API em Configurações → Integrações"})
 		return
 	}
 	if apiKey == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a variável EVOLUTION_API_KEY no ambiente"})
+		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a API Key da Evolution em Configurações → Integrações"})
 		return
 	}
 

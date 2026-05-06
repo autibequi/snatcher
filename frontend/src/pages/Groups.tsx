@@ -192,7 +192,7 @@ function GroupsTable({
     return (
       <p className="text-sm text-fg-3 py-4 text-center">
         {groups.length === 0
-          ? 'Nenhum grupo adicionado. Clique em + Adicionar grupo para vincular grupos do WhatsApp ou Telegram.'
+          ? 'Nenhum grupo encontrado. Aguarde sincronização.'
           : 'Nenhum grupo encontrado com esse filtro.'}
       </p>
     )

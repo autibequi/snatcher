@@ -152,7 +152,7 @@ function QRModal({
   const { data: statusData } = useQuery<StatusData>({
     queryKey: ['accounts', accountId, 'status'],
     queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/status`).then(r => r.data),
-    refetchInterval: 3000,
+    refetchInterval: 5000,
     enabled: !!accountId,
   })
 
@@ -430,13 +430,14 @@ function AccountCard({
   const wa = account as WAAccount
   const isWA = platform === 'WhatsApp'
 
-  // Polling de status em tempo real via Evolution API (apenas WA)
+  // Polling de status em tempo real via Evolution API (apenas WA).
+  // Intervalo maior que o TTL do cache backend (5s) para evitar piling up de requests.
   const { data: liveStatus } = useQuery<{ status: string }>({
     queryKey: ['wa-live-status', account.id],
     queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/status`).then(r => r.data),
-    refetchInterval: 8_000,
+    refetchInterval: 15_000,
     enabled: isWA,
-    staleTime: 5_000,
+    staleTime: 10_000,
   })
 
   const evoStatusMap: Record<string, string> = {
@@ -717,7 +718,7 @@ export default function Accounts() {
 
       <QRModal
         accountId={qrAccountId}
-        onClose={() => { setQrAccountId(null); qc.invalidateQueries({ queryKey: ['accounts'] }) }}
+        onClose={() => setQrAccountId(null)}
       />
 
       <ConfirmDeleteModal
