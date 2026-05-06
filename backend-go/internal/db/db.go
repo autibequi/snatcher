@@ -121,14 +121,22 @@ func RunMigrations(db *sqlx.DB) error {
 func splitStatements(sql string) []string {
 	var stmts []string
 	current := strings.Builder{}
+	inDollarQuote := false
 	for _, line := range strings.Split(sql, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "--") {
+		if !inDollarQuote && strings.HasPrefix(trimmed, "--") {
 			continue
+		}
+		// rastreia abertura/fechamento de $$ (dollar-quoting do Postgres)
+		for i := 0; i+1 < len(trimmed); i++ {
+			if trimmed[i] == '$' && trimmed[i+1] == '$' {
+				inDollarQuote = !inDollarQuote
+				i++
+			}
 		}
 		current.WriteString(line)
 		current.WriteByte('\n')
-		if strings.HasSuffix(trimmed, ";") {
+		if !inDollarQuote && strings.HasSuffix(trimmed, ";") {
 			stmts = append(stmts, current.String())
 			current.Reset()
 		}
