@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS channel_automations (
     id              BIGSERIAL PRIMARY KEY,
-    channel_id      BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    channel_id      BIGINT NOT NULL REFERENCES channel(id) ON DELETE CASCADE,
     enabled         BOOLEAN NOT NULL DEFAULT FALSE,
 
     auto_match_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
