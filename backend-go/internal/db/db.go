@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -93,8 +94,13 @@ func RunMigrations(db *sqlx.DB) error {
 				if strings.Contains(strings.ToUpper(stmt), "ALTER TABLE") {
 					continue
 				}
-				// Erros não silenciados — silent por ora (habilitar log quando necessário)
-				_ = err
+				// Logar erro real para diagnóstico — antes silenciado
+				preview := stmt
+				if len(preview) > 200 {
+					preview = preview[:200] + "..."
+				}
+				slog.Error("migration statement failed",
+					"file", entry.Name(), "err", err, "stmt_preview", preview)
 			}
 		}
 	}
