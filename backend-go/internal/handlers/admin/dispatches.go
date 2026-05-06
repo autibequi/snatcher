@@ -179,28 +179,28 @@ func (h *DispatchHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 // Retorna dispatches aguardando aprovação humana (full_auto_mode=false).
 func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Request) {
 	var rows []struct {
-		ID            int64   `db:"id" json:"id"`
-		Status        string  `db:"status" json:"status"`
-		ComposedBy    string  `db:"composed_by" json:"composed_by"`
-		AffiliateLink string  `db:"affiliate_link" json:"affiliate_link"`
-		ProductID     *int64  `db:"product_id" json:"product_id,omitempty"`
-		ChannelID     *int64  `db:"channel_id" json:"channel_id,omitempty"`
-		ChannelName   *string `db:"channel_name" json:"channel_name,omitempty"`
-		ProductName   *string `db:"product_name" json:"product_name,omitempty"`
+		ID            int64    `db:"id" json:"id"`
+		Status        string   `db:"status" json:"status"`
+		ComposedBy    string   `db:"composed_by" json:"composed_by"`
+		AffiliateLink string   `db:"affiliate_link" json:"affiliate_link"`
+		ChannelID     *int64   `db:"channel_id" json:"channel_id,omitempty"`
+		ChannelName   *string  `db:"channel_name" json:"channel_name,omitempty"`
+		ProductName   *string  `db:"product_name" json:"product_name,omitempty"`
 		Score         *float64 `db:"score" json:"score,omitempty"`
-		CreatedAt     string  `db:"created_at" json:"created_at"`
+		CreatedAt     string   `db:"created_at" json:"created_at"`
 	}
 	err := h.db.SelectContext(r.Context(), &rows, `
-		SELECT d.id, d.status, d.composed_by, d.affiliate_link,
-		       d.product_id, d.channel_id,
+		SELECT d.id, d.status, d.composed_by,
+		       COALESCE(d.affiliate_link, '') AS affiliate_link,
+		       aml.channel_id,
 		       ch.name AS channel_name,
 		       cp.canonical_name AS product_name,
 		       aml.score,
 		       to_char(d.created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS created_at
 		FROM dispatches d
-		LEFT JOIN channel ch ON ch.id = d.channel_id
-		LEFT JOIN catalogproduct cp ON cp.id = d.product_id
 		LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
+		LEFT JOIN channel ch ON ch.id = aml.channel_id
+		LEFT JOIN catalogproduct cp ON cp.id = aml.product_id
 		WHERE d.status = 'pending_approval'
 		ORDER BY d.created_at DESC
 		LIMIT 50`)
