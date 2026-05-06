@@ -560,6 +560,9 @@ function TabOverview() {
   const lastRunAt = data?.last_run_at ?? null
   const intervalSeconds = data?.interval_seconds ?? 60
 
+  // Hook deve estar no top level — chamar incondicionalmente
+  const countdownValue = useCountdown(lastRunAt, intervalSeconds)
+
   // Calcular KPIs a partir dos logs
   const now = Date.now()
   const h24ago = now - 24 * 3600 * 1000
@@ -582,7 +585,7 @@ function TabOverview() {
           <KpiCard label="Taxa entrega" value={deliveryRate} subtitle="estimado" />
           <KpiCard
             label="Proxima execucao"
-            value={useCountdown(lastRunAt, intervalSeconds)}
+            value={countdownValue}
             subtitle={enabled ? 'auto match ativo' : 'desativado'}
           />
         </div>
