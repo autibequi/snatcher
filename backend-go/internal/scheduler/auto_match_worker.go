@@ -21,15 +21,6 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
-	threshold := cfg.AutoMatchThreshold
-	if threshold <= 0 {
-		threshold = 50
-	}
-	maxPerRun := cfg.AutoMatchMaxPerRun
-	if maxPerRun <= 0 {
-		maxPerRun = 3
-	}
-
 	products, err := st.ListCatalogProducts(20, 0)
 	if err != nil {
 		slog.Error("auto match: list products", "err", err)
@@ -39,29 +30,64 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
-	channels, err := st.ListChannels()
+	automations, err := st.ListChannelAutomations(true) // só enabled=true
 	if err != nil {
-		slog.Error("auto match: list channels", "err", err)
+		slog.Error("auto match: list channel automations", "err", err)
 		return
 	}
-	if len(channels) == 0 {
+	if len(automations) == 0 {
 		return
 	}
 
-	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal
-	recentLogs, _ := st.ListAutoMatchLogs(500)
-	type pairKey struct{ productID, channelID int64 }
-	recentPairs := make(map[pairKey]bool, len(recentLogs))
-	cutoff := time.Now().Add(-6 * time.Hour)
-	for _, l := range recentLogs {
-		if l.CreatedAt.After(cutoff) {
-			recentPairs[pairKey{l.ProductID, l.ChannelID}] = true
+	// Filtrar por auto_match_enabled e paused_until
+	now := time.Now()
+	active := make([]models.ChannelAutomation, 0, len(automations))
+	for _, a := range automations {
+		if !a.AutoMatchEnabled {
+			continue
 		}
+		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
+			continue
+		}
+		active = append(active, a)
 	}
+	if len(active) == 0 {
+		return
+	}
+
+	// Buscar canais completos para alimentar match.RankChannels (que precisa de Channel.Audience)
+	channelsByID := make(map[int64]models.Channel, len(active))
+	automationsByChannelID := make(map[int64]models.ChannelAutomation, len(active))
+	for _, a := range active {
+		ch, err := st.GetChannel(a.ChannelID)
+		if err != nil {
+			slog.Warn("auto match: get channel failed, skipping", "channel_id", a.ChannelID, "err", err)
+			continue
+		}
+		channelsByID[a.ChannelID] = ch
+		automationsByChannelID[a.ChannelID] = a
+	}
+	if len(channelsByID) == 0 {
+		return
+	}
+
+	// Montar slice de Channel para RankChannels
+	channels := make([]models.Channel, 0, len(channelsByID))
+	for _, ch := range channelsByID {
+		channels = append(channels, ch)
+	}
+
+	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal (avaliado por canal com cooldown próprio)
+	recentLogs, _ := st.ListAutoMatchLogs(500)
 
 	sent := 0
 	for _, p := range products {
-		if sent >= maxPerRun {
+		// maxPerRun global é calculado por canal abaixo; usar valor global como limite superior geral
+		globalMaxPerRun := cfg.AutoMatchMaxPerRun
+		if globalMaxPerRun <= 0 {
+			globalMaxPerRun = 3
+		}
+		if sent >= globalMaxPerRun {
 			break
 		}
 
@@ -77,14 +103,50 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		scores := match.RankChannels(input, channels)
 
 		for _, s := range scores {
+			// Resolver threshold/maxPerRun/cooldown específicos do canal
+			auto, ok := automationsByChannelID[s.ChannelID]
+			if !ok {
+				continue
+			}
+
+			threshold := cfg.AutoMatchThreshold
+			if auto.Threshold.Valid {
+				threshold = auto.Threshold.Float64
+			}
+			if threshold <= 0 {
+				threshold = 50
+			}
+
+			maxPerRun := cfg.AutoMatchMaxPerRun
+			if auto.MaxPerRun.Valid {
+				maxPerRun = int(auto.MaxPerRun.Int64)
+			}
+			if maxPerRun <= 0 {
+				maxPerRun = 3
+			}
+
+			cooldown := time.Duration(auto.CooldownHours) * time.Hour
+			if cooldown <= 0 {
+				cooldown = 6 * time.Hour
+			}
+
 			if s.Value < threshold {
 				break // já ordenado desc
 			}
 			if sent >= maxPerRun {
 				break
 			}
-			// Pular se já foi disparado para este canal nas últimas 6h
-			if recentPairs[pairKey{p.ID, s.ChannelID}] {
+
+			// Pular se já foi disparado para este canal dentro do cooldown (cooldown é por canal)
+			cutoff := now.Add(-cooldown)
+			alreadySent := false
+			for _, l := range recentLogs {
+				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
+					alreadySent = true
+					break
+				}
+			}
+			if alreadySent {
 				continue
 			}
 

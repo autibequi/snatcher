@@ -111,6 +111,10 @@ type Store interface {
 	CreateChannelRule(r models.ChannelRule) (int64, error)
 	UpdateChannelRule(r models.ChannelRule) error
 	DeleteChannelRule(id int64) error
+	GetChannelAutomation(channelID int64) (*models.ChannelAutomation, error)
+	UpsertChannelAutomation(a models.ChannelAutomation) error
+	ListChannelAutomations(enabledOnly bool) ([]models.ChannelAutomation, error)
+	ListAutoMatchLogsByChannel(channelID int64, limit int) ([]models.AutoMatchLog, error)
 	WasSentRecently(productID, targetID int64, since time.Time) (bool, error)
 	RecordSent(s models.SentMessageV2) error
 

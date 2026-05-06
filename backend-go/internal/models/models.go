@@ -383,6 +383,34 @@ type ChannelRule struct {
 	Active        bool            `db:"active" json:"active"`
 }
 
+type ChannelAutomation struct {
+	ID            int64     `db:"id" json:"id"`
+	ChannelID     int64     `db:"channel_id" json:"channel_id"`
+	Enabled       bool      `db:"enabled" json:"enabled"`
+
+	AutoMatchEnabled bool         `db:"auto_match_enabled" json:"auto_match_enabled"`
+	Threshold        NullFloat64  `db:"threshold" json:"threshold,omitempty"`
+	MaxPerRun        NullInt64    `db:"max_per_run" json:"max_per_run,omitempty"`
+	CooldownHours    int          `db:"cooldown_hours" json:"cooldown_hours"`
+
+	EventsEnabled bool    `db:"events_enabled" json:"events_enabled"`
+	NotifyNew     bool    `db:"notify_new" json:"notify_new"`
+	NotifyDrop    bool    `db:"notify_drop" json:"notify_drop"`
+	NotifyLowest  bool    `db:"notify_lowest" json:"notify_lowest"`
+	DropThreshold float64 `db:"drop_threshold" json:"drop_threshold"`
+
+	MatchType  string      `db:"match_type" json:"match_type"`
+	MatchValue NullString  `db:"match_value" json:"match_value,omitempty"`
+	MaxPrice   NullFloat64 `db:"max_price" json:"max_price,omitempty"`
+
+	PausedUntil NullTime  `db:"paused_until" json:"paused_until,omitempty"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+
+	// Joinado para listagem
+	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
+}
+
 type SentMessageV2 struct {
 	ID               int64     `db:"id" json:"id"`
 	CatalogProductID int64     `db:"catalog_product_id" json:"catalog_product_id"`

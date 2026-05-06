@@ -946,6 +946,74 @@ func (s *SQLStore) DeleteChannelRule(id int64) error {
 	return err
 }
 
+func (s *SQLStore) GetChannelAutomation(channelID int64) (*models.ChannelAutomation, error) {
+	var a models.ChannelAutomation
+	err := s.db.Get(&a, `
+		SELECT ca.*, c.name AS channel_name
+		FROM channel_automations ca
+		JOIN channels c ON c.id = ca.channel_id
+		WHERE ca.channel_id = $1`, channelID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &a, err
+}
+
+func (s *SQLStore) UpsertChannelAutomation(a models.ChannelAutomation) error {
+	_, err := s.db.NamedExec(`
+		INSERT INTO channel_automations
+			(channel_id, enabled, auto_match_enabled, threshold, max_per_run, cooldown_hours,
+			 events_enabled, notify_new, notify_drop, notify_lowest, drop_threshold,
+			 match_type, match_value, max_price, paused_until)
+		VALUES
+			(:channel_id, :enabled, :auto_match_enabled, :threshold, :max_per_run, :cooldown_hours,
+			 :events_enabled, :notify_new, :notify_drop, :notify_lowest, :drop_threshold,
+			 :match_type, :match_value, :max_price, :paused_until)
+		ON CONFLICT (channel_id) DO UPDATE SET
+			enabled = EXCLUDED.enabled,
+			auto_match_enabled = EXCLUDED.auto_match_enabled,
+			threshold = EXCLUDED.threshold,
+			max_per_run = EXCLUDED.max_per_run,
+			cooldown_hours = EXCLUDED.cooldown_hours,
+			events_enabled = EXCLUDED.events_enabled,
+			notify_new = EXCLUDED.notify_new,
+			notify_drop = EXCLUDED.notify_drop,
+			notify_lowest = EXCLUDED.notify_lowest,
+			drop_threshold = EXCLUDED.drop_threshold,
+			match_type = EXCLUDED.match_type,
+			match_value = EXCLUDED.match_value,
+			max_price = EXCLUDED.max_price,
+			paused_until = EXCLUDED.paused_until,
+			updated_at = now()`, a)
+	return err
+}
+
+func (s *SQLStore) ListChannelAutomations(enabledOnly bool) ([]models.ChannelAutomation, error) {
+	var out []models.ChannelAutomation
+	q := `SELECT ca.*, c.name AS channel_name
+		  FROM channel_automations ca
+		  JOIN channels c ON c.id = ca.channel_id`
+	if enabledOnly {
+		q += ` WHERE ca.enabled = TRUE`
+	}
+	q += ` ORDER BY c.name`
+	err := s.db.Select(&out, q)
+	return out, err
+}
+
+func (s *SQLStore) ListAutoMatchLogsByChannel(channelID int64, limit int) ([]models.AutoMatchLog, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT * FROM auto_match_logs
+		WHERE channel_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2`, channelID, limit)
+	return out, err
+}
+
 func (s *SQLStore) WasSentRecently(productID, targetID int64, since time.Time) (bool, error) {
 	var count int
 	err := s.db.Get(&count,

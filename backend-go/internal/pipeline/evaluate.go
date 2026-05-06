@@ -55,8 +55,14 @@ func EvaluateAndSend(ctx context.Context, st store.Store, adapters AdapterRegist
 			continue
 		}
 
-		rules, err := st.ListChannelRules(ch.ID)
+		auto, err := st.GetChannelAutomation(ch.ID)
 		if err != nil {
+			continue
+		}
+		if auto == nil || !auto.Enabled || !auto.EventsEnabled {
+			continue
+		}
+		if auto.PausedUntil.Valid && auto.PausedUntil.Time.After(now) {
 			continue
 		}
 		targets, err := st.ListChannelTargets(ch.ID)
@@ -71,48 +77,43 @@ func EvaluateAndSend(ctx context.Context, st store.Store, adapters AdapterRegist
 				continue
 			}
 
-			for _, rule := range rules {
-				if !rule.Active {
+			if !automationMatches(*auto, p, event) {
+				continue
+			}
+
+			msg := formatMessage(ch, p, variants, event)
+
+			for _, target := range targets {
+				if target.Status != "ok" {
 					continue
 				}
-				if !ruleMatches(rule, p, event) {
+				wasSent, _ := st.WasSentRecently(p.ID, target.ID, since)
+				if wasSent {
 					continue
 				}
 
-				msg := formatMessage(ch, p, variants, event)
-
-				for _, target := range targets {
-					if target.Status != "ok" {
-						continue
-					}
-					wasSent, _ := st.WasSentRecently(p.ID, target.ID, since)
-					if wasSent {
-						continue
-					}
-
-					adapter, ok := adapters[target.Provider]
-					if !ok {
-						continue
-					}
-
-					var sendErr error
-					if p.ImageURL.Valid && p.ImageURL.String != "" {
-						sendErr = adapter.SendImage(ctx, target.ChatID, p.ImageURL.String, msg)
-					} else {
-						sendErr = adapter.SendText(ctx, target.ChatID, msg)
-					}
-
-					if sendErr != nil {
-						slog.Error("send message", "provider", target.Provider, "chat_id", target.ChatID, "err", sendErr)
-						continue
-					}
-
-					_ = st.RecordSent(models.SentMessageV2{
-						CatalogProductID: p.ID,
-						ChannelTargetID:  target.ID,
-						IsDrop:           event == eventDrop,
-					})
+				adapter, ok := adapters[target.Provider]
+				if !ok {
+					continue
 				}
+
+				var sendErr error
+				if p.ImageURL.Valid && p.ImageURL.String != "" {
+					sendErr = adapter.SendImage(ctx, target.ChatID, p.ImageURL.String, msg)
+				} else {
+					sendErr = adapter.SendText(ctx, target.ChatID, msg)
+				}
+
+				if sendErr != nil {
+					slog.Error("send message", "provider", target.Provider, "chat_id", target.ChatID, "err", sendErr)
+					continue
+				}
+
+				_ = st.RecordSent(models.SentMessageV2{
+					CatalogProductID: p.ID,
+					ChannelTargetID:  target.ID,
+					IsDrop:           event == eventDrop,
+				})
 			}
 		}
 	}
@@ -150,46 +151,49 @@ func detectEvent(st store.Store, p models.CatalogProduct, variants []models.Cata
 	return ""
 }
 
-func ruleMatches(rule models.ChannelRule, p models.CatalogProduct, event eventType) bool {
-	if rule.MaxPrice.Valid && p.LowestPrice.Valid && p.LowestPrice.Float64 > rule.MaxPrice.Float64 {
-		return false
-	}
-
+func automationMatches(auto models.ChannelAutomation, p models.CatalogProduct, event eventType) bool {
 	switch event {
 	case eventNew:
-		if !rule.NotifyNew {
+		if !auto.NotifyNew {
 			return false
 		}
 	case eventDrop:
-		if !rule.NotifyDrop {
+		if !auto.NotifyDrop {
 			return false
 		}
 	case eventLowest:
-		if !rule.NotifyLowest {
+		if !auto.NotifyLowest {
 			return false
 		}
 	}
 
-	switch rule.MatchType {
-	case "all":
-		return true
+	switch auto.MatchType {
+	case "all", "":
+		// sem filtro adicional
 	case "tag":
-		if !rule.MatchValue.Valid {
+		if !auto.MatchValue.Valid {
 			return false
 		}
 		for _, tag := range p.GetTags() {
-			if tag == rule.MatchValue.String {
+			if tag == auto.MatchValue.String {
 				return true
 			}
 		}
 		return false
 	case "brand":
-		if !rule.MatchValue.Valid || !p.Brand.Valid {
+		if !auto.MatchValue.Valid || !p.Brand.Valid {
 			return false
 		}
-		return strings.EqualFold(p.Brand.String, rule.MatchValue.String)
+		if !strings.EqualFold(p.Brand.String, auto.MatchValue.String) {
+			return false
+		}
 	}
-	return false
+
+	if auto.MaxPrice.Valid && p.LowestPrice.Valid && p.LowestPrice.Float64 > auto.MaxPrice.Float64 {
+		return false
+	}
+
+	return true
 }
 
 func formatMessage(ch models.Channel, p models.CatalogProduct, variants []models.CatalogVariant, event eventType) string {

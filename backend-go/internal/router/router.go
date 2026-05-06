@@ -77,6 +77,7 @@ func Build(
 	brand       := adminhnd.NewBrandHandler(st)
 	autoMatch   := adminhnd.NewAutoMatchHandler(st)
 	linksH      := adminhnd.NewLinksHandler(st)
+	automations := adminhnd.NewAutomationsHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *adminhnd.ComposeHandler
@@ -214,6 +215,11 @@ func Build(
 		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
 		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
 		r.Post("/api/channels/{id}/send-product", channels.SendProduct)
+
+		// Automations
+		r.Get("/api/automations", automations.List)
+		r.Get("/api/automations/{channelId}", automations.Get)
+		r.Put("/api/automations/{channelId}", automations.Upsert)
 
 		// Config
 		r.Get("/api/config", config.Get)
