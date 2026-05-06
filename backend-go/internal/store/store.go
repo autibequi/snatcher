@@ -35,6 +35,10 @@ type Store interface {
 	UpdateTGAccount(a models.TGAccount) error
 	DeleteTGAccount(id int64) error
 
+	// Throttle (check and increment daily message limits)
+	CheckAndIncrementWA(accountID int64) error
+	CheckAndIncrementTG(accountID int64) error
+
 	// SearchTerms
 	ListSearchTerms() ([]models.SearchTerm, error)
 	GetSearchTerm(id int64) (models.SearchTerm, error)

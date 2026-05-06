@@ -34,6 +34,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 	baseURL  := cfg.WABaseURL.String
 	apiKey   := cfg.WAApiKey.String
 	instance := cfg.WAInstance.String
+	var accountID int64
 
 	for _, acc := range waAccounts {
 		if !acc.Active { continue }
@@ -47,6 +48,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 			baseURL  = accURL
 			apiKey   = accKey
 			instance = acc.Instance.String
+			accountID = acc.ID
 			break
 		}
 	}
@@ -57,14 +59,24 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 	}
 
 	for _, t := range targets {
-		processTarget(ctx, st, t, baseURL, apiKey, instance)
+		processTarget(ctx, st, t, baseURL, apiKey, instance, accountID)
 	}
 }
 
-func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, baseURL, apiKey, instance string) {
+func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, baseURL, apiKey, instance string, accountID int64) {
 	// Marcar como sending
 	_ = st.UpdateDispatchTargetStatus(t.ID, "sending", "")
 	_ = st.UpdateDispatchStatus(t.DispatchID, "sending")
+
+	// Check throttle before sending
+	if accountID > 0 {
+		if err := st.CheckAndIncrementWA(accountID); err != nil {
+			slog.Warn("throttle blocked dispatch send", "account", accountID, "target_id", t.ID, "err", err)
+			_ = st.UpdateDispatchTargetStatus(t.ID, "failed", fmt.Sprintf("throttle: %v", err))
+			checkAllFinished(st, t.DispatchID)
+			return
+		}
+	}
 
 	// Buscar dados do dispatch (mensagem)
 	dispatch, err := st.GetDispatch(t.DispatchID)

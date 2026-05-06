@@ -208,7 +208,7 @@ function IntegrationsTab() {
   })
 
   const save = useMutation({
-    mutationFn: (data: Record<string, any>) => apiClient.patch('/api/config', data).then((r) => r.data),
+    mutationFn: (data: Record<string, any>) => apiClient.put('/api/config', data).then((r) => r.data),
   })
 
   const [form, setForm] = useState<Record<string, string>>({})
@@ -689,7 +689,7 @@ function GeneralTab() {
 
   const saveConfig = useMutation({
     mutationFn: (data: Partial<AppConfig>) =>
-      apiClient.patch('/api/config', data).then((r) => r.data),
+      apiClient.put('/api/config', data).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['config'] })
       setLocalConfig({})

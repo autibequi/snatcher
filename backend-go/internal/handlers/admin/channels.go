@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
@@ -596,10 +597,24 @@ func (h *ChannelsHandler) SendDigest(w http.ResponseWriter, r *http.Request) {
 		if target.Status != "ok" {
 			continue
 		}
-		adapter := h.resolveAdapter(target, cfg, waAccounts)
-		if adapter == nil {
+		adapter, accountID, platform, ok := h.resolveAdapterWithAccount(target, cfg, waAccounts)
+		if !ok || adapter == nil {
 			continue
 		}
+
+		// Check throttle before sending
+		if platform == "whatsapp" && accountID > 0 {
+			if err := h.store.CheckAndIncrementWA(accountID); err != nil {
+				slog.Warn("throttle blocked send", "account", accountID, "platform", "whatsapp", "err", err)
+				continue
+			}
+		} else if platform == "telegram" && accountID > 0 {
+			if err := h.store.CheckAndIncrementTG(accountID); err != nil {
+				slog.Warn("throttle blocked send", "account", accountID, "platform", "telegram", "err", err)
+				continue
+			}
+		}
+
 		if err := adapter.SendText(r.Context(), target.ChatID, msg); err == nil {
 			sent++
 		}
@@ -667,10 +682,24 @@ func (h *ChannelsHandler) SendProduct(w http.ResponseWriter, r *http.Request) {
 		if target.Status != "ok" {
 			continue
 		}
-		adapter := h.resolveAdapter(target, cfg, waAccounts)
-		if adapter == nil {
+		adapter, accountID, platform, ok := h.resolveAdapterWithAccount(target, cfg, waAccounts)
+		if !ok || adapter == nil {
 			continue
 		}
+
+		// Check throttle before sending
+		if platform == "whatsapp" && accountID > 0 {
+			if err := h.store.CheckAndIncrementWA(accountID); err != nil {
+				slog.Warn("throttle blocked send", "account", accountID, "platform", "whatsapp", "err", err)
+				continue
+			}
+		} else if platform == "telegram" && accountID > 0 {
+			if err := h.store.CheckAndIncrementTG(accountID); err != nil {
+				slog.Warn("throttle blocked send", "account", accountID, "platform", "telegram", "err", err)
+				continue
+			}
+		}
+
 		var sendErr error
 		if p.ImageURL.Valid && p.ImageURL.String != "" {
 			sendErr = adapter.SendImage(r.Context(), target.ChatID, p.ImageURL.String, msg)
@@ -718,6 +747,41 @@ func applyAffiliateURL(rawURL, source string, st store.Store) string {
 		}
 	}
 	return rawURL
+}
+
+// resolveAdapterWithAccount returns both the adapter and the account ID used.
+// Returns (adapter, accountID, platform, ok). For non-WA platforms, accountID is 0.
+func (h *ChannelsHandler) resolveAdapterWithAccount(target models.ChannelTarget, cfg models.AppConfig, waAccounts []models.WAAccount) (pipeline.MessageSender, int64, string, bool) {
+	if target.Provider == "whatsapp" {
+		// Usa a primeira conta WA ativa com URL configurada
+		for _, acc := range waAccounts {
+			if !acc.Active || !acc.BaseURL.Valid || acc.BaseURL.String == "" {
+				continue
+			}
+			apiKey := acc.APIKey.String
+			if !acc.APIKey.Valid {
+				apiKey = cfg.WAApiKey.String
+			}
+			instance := acc.Instance.String
+			if !acc.Instance.Valid {
+				instance = cfg.WAInstance.String
+			}
+			return newEvolutionSender(acc.BaseURL.String, apiKey, instance), acc.ID, "whatsapp", true
+		}
+		// Fallback: AppConfig global (no specific account)
+		if cfg.WABaseURL.Valid {
+			return newEvolutionSender(
+				cfg.WABaseURL.String,
+				cfg.WAApiKey.String,
+				cfg.WAInstance.String,
+			), 0, "whatsapp", true
+		}
+	}
+	// Telegram ou outros — usa adapter registrado
+	if a, ok := h.adapters[target.Provider]; ok {
+		return a, 0, target.Provider, true
+	}
+	return nil, 0, "", false
 }
 
 // resolveAdapter cria um adapter dinâmico para o target usando a conta WA correta.
