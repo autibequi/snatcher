@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"snatcher/backendv2/internal/models"
@@ -416,18 +417,36 @@ func (h *AccountsHandler) WAQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	// Fallback independente por campo — sempre usa AppConfig quando o campo está vazio
+	// Fallback 1: AppConfig
 	cfg, _ := h.store.GetConfig()
-	if baseURL == "" && cfg.WABaseURL.Valid  { baseURL  = cfg.WABaseURL.String  }
-	if apiKey  == "" && cfg.WAApiKey.Valid   { apiKey   = cfg.WAApiKey.String   }
+	if baseURL == "" && cfg.WABaseURL.Valid   { baseURL  = cfg.WABaseURL.String  }
+	if apiKey  == "" && cfg.WAApiKey.Valid    { apiKey   = cfg.WAApiKey.String   }
 	if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
+	// Fallback 2: env vars (integração nativa via docker-compose)
+	if baseURL == "" {
+		if v := os.Getenv("EVOLUTION_URL"); v != "" {
+			baseURL = v
+		} else {
+			baseURL = "http://evolution:8080"
+		}
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("EVOLUTION_API_KEY")
+	}
+	if instance == "" {
+		if v := os.Getenv("EVOLUTION_INSTANCE"); v != "" {
+			instance = v
+		} else {
+			instance = "default"
+		}
+	}
 
 	if baseURL == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a URL da Evolution API em Configurações → Integrações"})
 		return
 	}
 	if apiKey == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a API Key da Evolution em Configurações → Integrações"})
+		writeJSON(w, http.StatusOK, map[string]string{"state": "not_configured", "message": "Configure a variável EVOLUTION_API_KEY no ambiente"})
 		return
 	}
 
