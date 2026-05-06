@@ -325,31 +325,77 @@ export default function Groups() {
   const activeTG = tgAccounts.filter(a => a.active)
   const isLoading = waLoading || tgLoading || groupsLoading
 
-  // Create WA group — kept from original, uses first connected account
-  const [showCreateWA, setShowCreateWA] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', accountId: '' })
+  // Channels — necessários para vincular um grupo ao importar
+  const { data: channels = [] } = useQuery<Channel[]>({
+    queryKey: ['channels'],
+    queryFn: () => apiClient.get('/api/channels').then(r => (Array.isArray(r.data) ? r.data : [])),
+  })
+  const activeChannels = channels.filter(c => c.active)
 
-  const createMut = useMutation({
-    mutationFn: () =>
-      apiClient
-        .post(`/api/accounts/wa/${createForm.accountId}/groups`, { name: createForm.name })
-        .then(r => r.data),
+  // ── Modal de importação de grupos WA ──────────────────────────────────────
+  const [showImport, setShowImport] = useState(false)
+  const [importAccountId, setImportAccountId] = useState('')
+  const [importChannelId, setImportChannelId] = useState('')
+  const [selectedJID, setSelectedJID] = useState('')
+  const [groupSearch, setGroupSearch] = useState('')
+
+  // Busca grupos da Evolution API ao trocar de conta
+  const { data: waGroupOptions = [], isFetching: waGroupsFetching, refetch: refetchWAGroups } =
+    useQuery<WAGroupOption[]>({
+      queryKey: ['wa-groups-evo', importAccountId],
+      queryFn: () =>
+        apiClient
+          .get(`/api/accounts/wa/${importAccountId}/groups?fresh=true`)
+          .then(r => (Array.isArray(r.data) ? r.data : [])),
+      enabled: false, // dispara manualmente via refetch
+    })
+
+  useEffect(() => {
+    setSelectedJID('')
+    setGroupSearch('')
+    if (importAccountId) refetchWAGroups()
+  }, [importAccountId])
+
+  const openImport = () => {
+    const first = activeWA[0]
+    const firstCh = activeChannels[0]
+    setImportAccountId(first ? String(first.id) : '')
+    setImportChannelId(firstCh ? String(firstCh.id) : '')
+    setSelectedJID('')
+    setGroupSearch('')
+    setShowImport(true)
+  }
+
+  const selectedGroup = waGroupOptions.find(g => g.id === selectedJID)
+
+  const importMut = useMutation({
+    mutationFn: () => {
+      if (!selectedGroup) throw new Error('Selecione um grupo')
+      if (!importChannelId) throw new Error('Selecione um canal')
+      return apiClient
+        .post('/api/groups', {
+          channel_id: Number(importChannelId),
+          name: selectedGroup.name,
+          platform: 'whatsapp',
+          wa_account_id: Number(importAccountId),
+          jid: selectedGroup.id,
+          member_count: selectedGroup.size,
+        })
+        .then(r => r.data)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
-      setShowCreateWA(false)
-      setCreateForm({ name: '', accountId: '' })
+      setShowImport(false)
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao criar grupo'
+      const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao importar grupo'
       alert(msg)
     },
   })
 
-  const openCreate = () => {
-    const first = activeWA[0]
-    setCreateForm({ name: '', accountId: first ? String(first.id) : '' })
-    setShowCreateWA(true)
-  }
+  const filteredWAOptions = waGroupOptions.filter(g =>
+    !groupSearch || g.name.toLowerCase().includes(groupSearch.toLowerCase())
+  )
 
   return (
     <div className="p-6">
@@ -368,7 +414,7 @@ export default function Groups() {
             </p>
           )}
         </div>
-        <Button variant="primary" size="sm" disabled={activeWA.length === 0} onClick={openCreate}>
+        <Button variant="primary" size="sm" disabled={activeWA.length === 0} onClick={openImport}>
           + Adicionar grupo
         </Button>
       </div>
@@ -426,51 +472,103 @@ export default function Groups() {
         </>
       )}
 
-      {/* Create WA group modal */}
-      {showCreateWA && activeWA.length > 0 && (
+      {/* Modal de importação de grupos WA */}
+      {showImport && activeWA.length > 0 && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
-          onClick={() => setShowCreateWA(false)}
+          onClick={() => setShowImport(false)}
         >
           <div
-            className="bg-surface border border-border rounded-lg p-5 w-full max-w-sm shadow-modal"
+            className="bg-surface border border-border rounded-lg p-5 w-full max-w-md shadow-modal"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="font-medium text-fg mb-4">Criar grupo WhatsApp</h3>
+            <h3 className="font-medium text-fg mb-4">Importar grupo WhatsApp</h3>
             <div className="space-y-3">
-              <input
-                autoFocus
-                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                placeholder="Nome do grupo..."
-                value={createForm.name}
-                onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
-              />
+              {/* Conta WA */}
               {activeWA.length > 1 && (
-                <select
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={createForm.accountId}
-                  onChange={e => setCreateForm(f => ({ ...f, accountId: e.target.value }))}
-                >
-                  {activeWA.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="text-xs text-fg-2 mb-1 block">Conta</label>
+                  <select
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                    value={importAccountId}
+                    onChange={e => setImportAccountId(e.target.value)}
+                  >
+                    {activeWA.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
               )}
+
+              {/* Canal destino */}
+              <div>
+                <label className="text-xs text-fg-2 mb-1 block">Canal</label>
+                {activeChannels.length === 0 ? (
+                  <p className="text-xs text-warning">
+                    Nenhum canal ativo. Crie um canal antes de importar grupos.
+                  </p>
+                ) : (
+                  <select
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                    value={importChannelId}
+                    onChange={e => setImportChannelId(e.target.value)}
+                  >
+                    {activeChannels.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Lista de grupos da Evolution */}
+              <div>
+                <label className="text-xs text-fg-2 mb-1 block">Grupo</label>
+                {waGroupsFetching ? (
+                  <p className="text-xs text-fg-3 py-2">Buscando grupos da conta...</p>
+                ) : waGroupOptions.length === 0 ? (
+                  <p className="text-xs text-fg-3 py-2">
+                    Nenhum grupo encontrado na conta. A conta precisa estar conectada.
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent mb-2"
+                      placeholder="Filtrar grupos..."
+                      value={groupSearch}
+                      onChange={e => setGroupSearch(e.target.value)}
+                    />
+                    <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
+                      {filteredWAOptions.map(g => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-surface-2 transition-colors ${
+                            selectedJID === g.id ? 'bg-accent/10 text-accent' : 'text-fg'
+                          }`}
+                          onClick={() => setSelectedJID(selectedJID === g.id ? '' : g.id)}
+                        >
+                          <span className="truncate">{g.name}</span>
+                          <span className="text-xs text-fg-3 ml-2 shrink-0">{g.size} membros</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
+
             <div className="flex gap-2 justify-end mt-4">
-              <Button variant="secondary" size="sm" onClick={() => setShowCreateWA(false)}>
+              <Button variant="secondary" size="sm" onClick={() => setShowImport(false)}>
                 Cancelar
               </Button>
               <Button
                 variant="primary"
                 size="sm"
-                loading={createMut.isPending}
-                disabled={!createForm.name.trim()}
-                onClick={() => createMut.mutate()}
+                loading={importMut.isPending}
+                disabled={!selectedJID || !importChannelId || activeChannels.length === 0}
+                onClick={() => importMut.mutate()}
               >
-                Criar
+                Importar
               </Button>
             </div>
           </div>
