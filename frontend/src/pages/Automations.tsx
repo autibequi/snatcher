@@ -27,7 +27,7 @@ interface ChannelAutomation {
   updated_at?: string
 }
 
-interface ChannelRow {
+export interface ChannelRow {
   channel_id: number
   channel_name: string
   automation: ChannelAutomation | null
@@ -147,7 +147,7 @@ interface DrawerProps {
   onClose: () => void
 }
 
-function Drawer({ row, onClose }: DrawerProps) {
+export function Drawer({ row, onClose }: DrawerProps) {
   const qc = useQueryClient()
   const [drawerTab, setDrawerTab] = React.useState('config')
 
@@ -525,7 +525,7 @@ function Drawer({ row, onClose }: DrawerProps) {
 
 // ── Aba Visao Geral ──────────────────────────────────────────────────────────
 
-function TabOverview() {
+export function TabOverview() {
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery<AutoMatchStatus>({
@@ -709,7 +709,7 @@ function TabOverview() {
 
 // ── Aba Por Canal ────────────────────────────────────────────────────────────
 
-function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void }) {
+export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void }) {
   const { data: rows = [], isLoading } = useQuery<ChannelRow[]>({
     queryKey: ['automations'],
     queryFn: () => apiClient.get('/api/automations').then(r => r.data),
@@ -808,41 +808,17 @@ function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void
 
 // ── Pagina principal ─────────────────────────────────────────────────────────
 
-const MAIN_TABS = [
-  { id: 'overview', label: 'Visao geral' },
-  { id: 'channels', label: 'Por canal' },
-]
 
 export default function Automations() {
-  const [mainTab, setMainTab] = React.useState('overview')
-  const [drawerRow, setDrawerRow] = React.useState<ChannelRow | null>(null)
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 pt-6 pb-0 border-b border-border">
-        <div className="mb-4">
-          <h1 className="text-lg font-semibold text-fg">Automacoes</h1>
-          <p className="text-sm text-fg-3 mt-0.5">Controle de automacao de disparos por canal e configuracao global</p>
-        </div>
-        <Tabs tabs={MAIN_TABS} active={mainTab} onChange={setMainTab} />
+      <div className="px-6 pt-6 pb-4 border-b border-border">
+        <h1 className="text-lg font-semibold text-fg">Automações — Visão geral</h1>
+        <p className="text-sm text-fg-3 mt-0.5">Configuração global e KPIs de auto-match</p>
       </div>
-
-      {/* Conteudo */}
       <div className="flex-1 overflow-y-auto">
-        {mainTab === 'overview' && <TabOverview />}
-        {mainTab === 'channels' && (
-          <TabChannels onOpenDrawer={setDrawerRow} />
-        )}
+        <TabOverview />
       </div>
-
-      {/* Drawer */}
-      {drawerRow && (
-        <Drawer
-          row={drawerRow}
-          onClose={() => setDrawerRow(null)}
-        />
-      )}
     </div>
   )
 }
