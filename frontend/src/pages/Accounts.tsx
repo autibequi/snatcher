@@ -717,7 +717,7 @@ export default function Accounts() {
 
       <QRModal
         accountId={qrAccountId}
-        onClose={() => setQrAccountId(null)}
+        onClose={() => { setQrAccountId(null); qc.invalidateQueries({ queryKey: ['accounts'] }) }}
       />
 
       <ConfirmDeleteModal
