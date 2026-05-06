@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
@@ -19,6 +19,18 @@ interface TGAccount {
   bot_username?: string
   active: boolean
   role: string
+}
+
+interface Channel {
+  id: number
+  name: string
+  active: boolean
+}
+
+interface WAGroupOption {
+  id: string   // JID, ex: "123456@g.us"
+  name: string
+  size: number
 }
 
 /** Flat group row from /api/groups — some fields may be absent (backend enrichment in progress) */
