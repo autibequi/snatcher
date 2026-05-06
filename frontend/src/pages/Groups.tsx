@@ -323,7 +323,10 @@ export default function Groups() {
       setShowCreateWA(false)
       setCreateForm({ name: '', accountId: '' })
     },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar grupo'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao criar grupo'
+      alert(msg)
+    },
   })
 
   const openCreate = () => {

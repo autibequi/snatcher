@@ -376,9 +376,17 @@ func (h *AccountsHandler) WACreateGroup(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	evo := newEvolutionClient(baseURL, apiKey, instance)
+
+	// Verificar que a instância está conectada antes de criar grupo
+	status, err := evo.getStatus(r.Context())
+	if err != nil || status != "connected" {
+		writeErr(w, http.StatusConflict, "conta não está conectada à Evolution API — reconecte antes de criar grupos")
+		return
+	}
+
 	result, err := evo.createGroup(r.Context(), body.Name)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeErr(w, http.StatusBadGateway, "Evolution API: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)

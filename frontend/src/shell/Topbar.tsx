@@ -30,7 +30,7 @@ async function fetchAccountsStats(): Promise<AccountsStats> {
 
   const total = waRes.length + tgRes.length
   const connected =
-    waRes.filter(a => a.status === 'connected' && a.active).length +
+    waRes.filter(a => a.status === 'connected').length +
     tgRes.filter(a => a.active).length
 
   return { connected, total }
