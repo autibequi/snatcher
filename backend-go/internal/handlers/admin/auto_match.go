@@ -71,7 +71,7 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	maxPerRun := cfg.AutoMatchMaxPerRun
 	if maxPerRun <= 0 { maxPerRun = 3 }
 
-	products, _ := h.store.ListCatalogProducts(20, 0)
+	products, _ := h.store.ListCatalogProducts(20, 0, true)
 	channels, _ := h.store.ListChannels()
 
 	// Carregar pares recentes para filtrar (mesma lógica do worker)
@@ -188,7 +188,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		maxPerRun = 3
 	}
 
-	products, err := h.store.ListCatalogProducts(20, 0)
+	products, err := h.store.ListCatalogProducts(20, 0, true)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar produtos")
 		return
@@ -279,7 +279,7 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Buscar produto
-	products, err := h.store.ListCatalogProducts(200, 0)
+	products, err := h.store.ListCatalogProducts(200, 0, true)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar produto")
 		return

@@ -402,10 +402,14 @@ func (s *SQLStore) ListCrawlLogs(termID int64, limit int) ([]models.CrawlLog, er
 // Catalog
 // ---------------------------------------------------------------------------
 
-func (s *SQLStore) ListCatalogProducts(limit, offset int) ([]models.CatalogProduct, error) {
+func (s *SQLStore) ListCatalogProducts(limit, offset int, includeInactive bool) ([]models.CatalogProduct, error) {
 	var out []models.CatalogProduct
-	err := s.db.Select(&out,
-		`SELECT * FROM catalogproduct ORDER BY updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	q := `SELECT * FROM catalogproduct`
+	if !includeInactive {
+		q += ` WHERE inactive = FALSE`
+	}
+	q += ` ORDER BY updated_at DESC LIMIT $1 OFFSET $2`
+	err := s.db.Select(&out, q, limit, offset)
 	return out, err
 }
 
@@ -1812,4 +1816,26 @@ func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int6
 		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 		c.ProgramID, c.ClickID, c.ExternalOrderID, c.Revenue, c.Status).Scan(&id)
 	return id, err
+}
+
+// ---------------------------------------------------------------------------
+// Product failures (purge 404)
+// ---------------------------------------------------------------------------
+
+func (s *SQLStore) IncrementProductFailures(id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE catalogproduct
+		SET consecutive_failures = consecutive_failures + 1,
+		    inactive = (consecutive_failures + 1 >= 3)
+		WHERE id = $1`, id)
+	return err
+}
+
+func (s *SQLStore) ResetProductFailures(id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE catalogproduct
+		SET consecutive_failures = 0,
+		    inactive = FALSE
+		WHERE id = $1 AND (consecutive_failures > 0 OR inactive = TRUE)`, id)
+	return err
 }

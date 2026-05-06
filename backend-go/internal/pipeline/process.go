@@ -24,19 +24,37 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 	keywords, _ := st.ListGroupingKeywords()
 
 	// Carrega todos os produtos do catálogo para fuzzy match
-	products, err := st.ListCatalogProducts(10000, 0)
+	products, err := st.ListCatalogProducts(10000, 0, true)
 	if err != nil {
 		return err
 	}
+
+	// Track which products were successfully found in this crawl
+	successfulProductIDs := make(map[int64]bool)
 
 	for _, r := range results {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := processResult(ctx, st, r, products, keywords); err != nil {
+		if productID, err := processResult(ctx, st, r, products, keywords); err != nil {
 			slog.Error("process result", "id", r.ID, "err", err)
+		} else if productID > 0 {
+			successfulProductIDs[productID] = true
 		}
 	}
+
+	// Detect products that were expected but not found in this crawl
+	// If a product has variants but none appeared in results, increment failures
+	for _, p := range products {
+		if !successfulProductIDs[p.ID] {
+			variants, err := st.ListVariantsByProduct(p.ID)
+			if err == nil && len(variants) > 0 {
+				// Product had variants but wasn't found in this crawl — increment failure
+				_ = st.IncrementProductFailures(p.ID)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -46,11 +64,11 @@ func processResult(
 	r models.CrawlResult,
 	products []models.CatalogProduct,
 	keywords []models.GroupingKeyword,
-) error {
+) (int64, error) {
 	// Verifica se já existe por URL
 	existing, found, err := st.GetVariantByURL(r.URL)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if found {
 		// URL já no catálogo — atualiza preço se mudou
@@ -64,7 +82,9 @@ func processResult(
 			// Atualiza lowest_price no produto pai
 			updateLowestPrice(st, existing.CatalogProductID)
 		}
-		return st.MarkCrawlResultProcessed(r.ID, existing.ID)
+		// Reset failure count for successful re-crawl
+		_ = st.ResetProductFailures(existing.CatalogProductID)
+		return existing.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, existing.ID)
 	}
 
 	// Nova URL — normalizar e buscar produto matching
@@ -97,7 +117,7 @@ func processResult(
 		}
 		newID, err := st.CreateCatalogProduct(p)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		productID = newID
 		p.ID = newID
@@ -105,8 +125,11 @@ func processResult(
 		matchedProduct = &products[len(products)-1]
 	}
 
-	// Aplica grouping keywords
+	// Aplica grouping keywords e enriquece tags com categorias detectadas
 	refreshedProduct, _ := st.GetCatalogProduct(productID)
+	tags := EnrichTags(refreshedProduct.CanonicalName, refreshedProduct.GetTags())
+	refreshedProduct.SetTags(tags)
+	_ = st.UpdateCatalogProduct(refreshedProduct)
 	applyKeywords(st, &refreshedProduct, r.Title, keywords)
 
 	// Cria variante
@@ -123,7 +146,7 @@ func processResult(
 	}
 	variantID, err := st.CreateCatalogVariant(v)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Histórico de preço inicial
@@ -135,7 +158,10 @@ func processResult(
 	// Atualiza lowest_price
 	updateLowestPrice(st, productID)
 
-	return st.MarkCrawlResultProcessed(r.ID, variantID)
+	// Reset failure count for successful crawl
+	_ = st.ResetProductFailures(productID)
+
+	return productID, st.MarkCrawlResultProcessed(r.ID, variantID)
 }
 
 func applyKeywords(st store.Store, p *models.CatalogProduct, title string, keywords []models.GroupingKeyword) {

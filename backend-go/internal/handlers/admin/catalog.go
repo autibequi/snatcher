@@ -63,8 +63,9 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 	if limit == 0 {
 		limit = 30
 	}
+	includeInactive := q.Get("include_inactive") == "true"
 
-	products, err := h.store.ListCatalogProducts(limit, offset)
+	products, err := h.store.ListCatalogProducts(limit, offset, includeInactive)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

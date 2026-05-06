@@ -69,7 +69,7 @@ type Store interface {
 	ListCrawlLogs(termID int64, limit int) ([]models.CrawlLog, error)
 
 	// Catalog
-	ListCatalogProducts(limit, offset int) ([]models.CatalogProduct, error)
+	ListCatalogProducts(limit, offset int, includeInactive bool) ([]models.CatalogProduct, error)
 	SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error)
 	CountCatalogProducts() (int64, error)
 	GetCatalogProduct(id int64) (models.CatalogProduct, error)
@@ -222,4 +222,8 @@ type Store interface {
 
 	// AffiliateConversions
 	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
+
+	// Product failures (purge 404)
+	IncrementProductFailures(id int64) error
+	ResetProductFailures(id int64) error
 }

@@ -21,7 +21,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
-	products, err := st.ListCatalogProducts(20, 0)
+	products, err := st.ListCatalogProducts(20, 0, true)
 	if err != nil {
 		slog.Error("auto match: list products", "err", err)
 		return

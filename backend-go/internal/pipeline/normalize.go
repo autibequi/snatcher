@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -127,4 +128,25 @@ func ExtractVariantLabel(title string) string {
 		}
 	}
 	return ""
+}
+
+// EnrichTags adiciona categorias canônicas detectadas no título às tags originais,
+// retornando uma lista deduplicada e ordenada.
+func EnrichTags(title string, originalTags []string) []string {
+	seen := map[string]bool{}
+	for _, t := range originalTags {
+		if t == "" {
+			continue
+		}
+		seen[t] = true
+	}
+	for _, c := range MatchCategories(title) {
+		seen[c] = true
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -281,6 +281,7 @@ export default function Catalog() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [showAddModal, setShowAddModal] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
+  const [showInactive, setShowInactive] = React.useState(false)
 
   const curateMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
@@ -308,12 +309,13 @@ export default function Catalog() {
   const TABS = buildTabs(counts)
 
   const { data: rawProducts = [], isLoading } = useQuery<Product[]>({
-    queryKey: ['catalog', tab, search, source],
+    queryKey: ['catalog', tab, search, source, showInactive],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
       if (tab !== 'all') params.set('status', tab)
+      if (showInactive) params.set('include_inactive', 'true')
       return apiClient.get(`/api/catalog?${params}`).then(r => {
         const d = r.data
         return Array.isArray(d) ? d : (d?.items ?? d?.products ?? [])
@@ -428,6 +430,15 @@ export default function Catalog() {
             className="w-20 text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent h-8"
           />
         </div>
+        <label className="flex items-center gap-2 h-8 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showInactive}
+            onChange={e => setShowInactive(e.target.checked)}
+            className="accent-accent"
+          />
+          <span className="text-xs text-fg-2">Mostrar inativos</span>
+        </label>
         {(search || source || priceMin || priceMax) && (
           <button type="button" onClick={() => { setSearch(''); setSource(''); setPriceMin(''); setPriceMax('') }}
             className="text-xs text-fg-3 hover:text-danger">
@@ -483,12 +494,12 @@ export default function Catalog() {
                 const price = p.lowest_price ?? 0
                 const src = p.lowest_price_source ?? ''
                 const isSelected = selected.has(p.id)
-
+                const isInactive = (p as any).inactive === true
                 const isExpanded = expandedId === p.id
                 return (
                   <React.Fragment key={p.id}>
                   <tr
-                    className={`border-b ${isExpanded ? '' : 'border-border'} hover:bg-surface-2 transition-colors cursor-pointer ${isSelected ? 'bg-accent/5' : ''}`}
+                    className={`border-b ${isExpanded ? '' : 'border-border'} hover:bg-surface-2 transition-colors cursor-pointer ${isSelected ? 'bg-accent/5' : ''} ${isInactive ? 'opacity-60' : ''}`}
                     onClick={() => setExpandedId(isExpanded ? null : p.id)}
                   >
                     <td className="px-4 py-3">
@@ -512,7 +523,12 @@ export default function Catalog() {
                           )}
                         </div>
                         <div>
-                          <p className="font-medium text-fg line-clamp-1">{title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-fg line-clamp-1">{title}</p>
+                            {isInactive && (
+                              <Badge variant="secondary" size="xs">inativo</Badge>
+                            )}
+                          </div>
                           {p.brand && (
                             <p className="text-xs text-fg-3">
                               {p.brand}

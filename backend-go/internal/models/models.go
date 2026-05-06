@@ -237,6 +237,9 @@ type CatalogProduct struct {
 	UpdatedAt         time.Time       `db:"updated_at" json:"updated_at"`
 	// migration 0084
 	CurationStatus string `db:"curation_status" json:"curation_status"`
+	// migration 0091 — purge 404/3-strikes
+	ConsecutiveFailures int  `db:"consecutive_failures" json:"consecutive_failures"`
+	Inactive            bool `db:"inactive" json:"inactive"`
 }
 
 func (p *CatalogProduct) GetTags() []string {

@@ -591,7 +591,7 @@ func (h *ChannelsHandler) SendDigest(w http.ResponseWriter, r *http.Request) {
 		maxItems = 5
 	}
 	// Busca os produtos do catálogo ordenados por preço
-	catalog, _ := h.store.ListCatalogProducts(maxItems, 0)
+	catalog, _ := h.store.ListCatalogProducts(maxItems, 0, true)
 	if len(catalog) == 0 {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "no products"})
 		return
