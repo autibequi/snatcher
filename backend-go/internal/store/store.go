@@ -19,6 +19,16 @@ type ChannelDayStat struct {
 	Value int    `db:"value" json:"value"`
 }
 
+// CatalogFilters agrupa filtros para listagem do catálogo.
+type CatalogFilters struct {
+	Search          string
+	Source          string
+	Status          string // 'novos' | 'curados' | 'disparados_7d' | '' (all)
+	IncludeInactive bool
+	Limit           int
+	Offset          int
+}
+
 // Store é a interface central de persistência.
 type Store interface {
 	// Config
@@ -222,6 +232,9 @@ type Store interface {
 
 	// AffiliateConversions
 	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
+
+	// Catalog com filtros
+	FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error)
 
 	// Product failures (purge 404)
 	IncrementProductFailures(id int64) error

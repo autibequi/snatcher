@@ -63,9 +63,17 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 	if limit == 0 {
 		limit = 30
 	}
-	includeInactive := q.Get("include_inactive") == "true"
 
-	products, err := h.store.ListCatalogProducts(limit, offset, includeInactive)
+	filters := store.CatalogFilters{
+		Search:          q.Get("search"),
+		Source:          q.Get("source"),
+		Status:          q.Get("status"),
+		IncludeInactive: q.Get("include_inactive") == "true",
+		Limit:           limit,
+		Offset:          offset,
+	}
+
+	products, total, err := h.store.FilterCatalogProducts(filters)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -74,7 +82,6 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 		products = []models.CatalogProduct{}
 	}
 
-	total, _ := h.store.CountCatalogProducts()
 	resp := map[string]any{
 		"items":  products,
 		"total":  total,
@@ -82,7 +89,6 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 		"offset": offset,
 	}
 
-	// ?grouped_counts=1 — adiciona contagens por estado ao response.
 	if q.Get("grouped_counts") == "1" {
 		resp["counts"] = h.groupedCounts(r)
 	}

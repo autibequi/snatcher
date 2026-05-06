@@ -305,7 +305,7 @@ func (h *DashboardHandler) Performance(w http.ResponseWriter, r *http.Request) {
 		SELECT c.id as channel_id, c.name as channel_name,
 		       COUNT(DISTINCT dt.id) as dispatches,
 		       0.0 as ctr
-		FROM channels c
+		FROM channel c
 		LEFT JOIN groups g ON g.channel_id = c.id
 		LEFT JOIN dispatch_targets dt ON dt.group_id = g.id
 		    AND dt.delivered_at > now() - interval '7 days'

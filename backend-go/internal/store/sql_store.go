@@ -132,7 +132,7 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 		       p.canonical_name as product_name, c.name as channel_name
 		FROM auto_match_logs l
 		LEFT JOIN catalogproduct p ON p.id = l.product_id
-		LEFT JOIN channels c ON c.id = l.channel_id
+		LEFT JOIN channel c ON c.id = l.channel_id
 		ORDER BY l.created_at DESC LIMIT $1`, limit)
 	return out, err
 }
@@ -956,7 +956,7 @@ func (s *SQLStore) GetChannelAutomation(channelID int64) (*models.ChannelAutomat
 	err := s.db.Get(&a, `
 		SELECT ca.*, c.name AS channel_name
 		FROM channel_automations ca
-		JOIN channels c ON c.id = ca.channel_id
+		JOIN channel c ON c.id = ca.channel_id
 		WHERE ca.channel_id = $1`, channelID)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -997,7 +997,7 @@ func (s *SQLStore) ListChannelAutomations(enabledOnly bool) ([]models.ChannelAut
 	var out []models.ChannelAutomation
 	q := `SELECT ca.*, c.name AS channel_name
 		  FROM channel_automations ca
-		  JOIN channels c ON c.id = ca.channel_id`
+		  JOIN channel c ON c.id = ca.channel_id`
 	if enabledOnly {
 		q += ` WHERE ca.enabled = TRUE`
 	}
@@ -1965,4 +1965,52 @@ func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []str
 		SampleText: models.NullString{NullString: sql.NullString{String: sampleText, Valid: sampleText != ""}},
 	}
 	return s.CreateTaxonomy(t)
+}
+
+// FilterCatalogProducts executa busca com filtros combinados.
+func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error) {
+	var args []any
+	idx := 1
+
+	base := `FROM catalogproduct WHERE 1=1`
+
+	if !f.IncludeInactive {
+		base += ` AND inactive = FALSE`
+	}
+	if f.Search != "" {
+		pattern := "%" + f.Search + "%"
+		base += fmt.Sprintf(` AND (canonical_name ILIKE $%d OR tags::text ILIKE $%d OR brand ILIKE $%d)`, idx, idx, idx)
+		args = append(args, pattern)
+		idx++
+	}
+	if f.Source != "" {
+		base += fmt.Sprintf(` AND lowest_price_source = $%d`, idx)
+		args = append(args, f.Source)
+		idx++
+	}
+	switch f.Status {
+	case "novos":
+		base += ` AND curation_status = 'pending'`
+	case "curados":
+		base += ` AND curation_status IN ('curated', 'auto')`
+	}
+
+	// total
+	var total int64
+	countArgs := make([]any, len(args))
+	copy(countArgs, args)
+	if err := s.db.Get(&total, `SELECT COUNT(*) `+base, countArgs...); err != nil {
+		return nil, 0, err
+	}
+
+	// items
+	query := `SELECT * ` + base + ` ORDER BY updated_at DESC`
+	query += fmt.Sprintf(` LIMIT $%d OFFSET $%d`, idx, idx+1)
+	args = append(args, f.Limit, f.Offset)
+
+	var out []models.CatalogProduct
+	if err := s.db.Select(&out, query, args...); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
