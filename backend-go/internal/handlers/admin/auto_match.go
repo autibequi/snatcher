@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -367,15 +368,35 @@ func dispatchPairToStore(st store.Store, p models.CatalogProduct, s match.Score)
 	}
 	var msgText string
 	if price > 0 {
-		msgText = "🔥 " + p.CanonicalName + "\n\n{link}"
+		msgText = fmt.Sprintf("🔥 %s\n💰 R$ %.2f\n\n{link}", p.CanonicalName, price)
 	} else {
 		msgText = "🔥 " + p.CanonicalName + "\n\n{link}"
 	}
-	msgBytes, _ := json.Marshal(map[string]any{"text": msgText})
+	msgMap := map[string]any{"text": msgText}
+	if p.ImageURL.Valid && p.ImageURL.String != "" {
+		msgMap["media_url"] = p.ImageURL.String
+	}
+	msgBytes, _ := json.Marshal(msgMap)
+
+	// Gerar affiliate link
+	affiliateLink := ""
+	if p.LowestPriceURL.Valid && p.LowestPriceURL.String != "" {
+		src := ""
+		if p.LowestPriceSource.Valid {
+			src = p.LowestPriceSource.String
+		}
+		programs, _ := st.ListAffiliatePrograms(nil)
+		if link, _, err := affiliates.BuildLink(p.LowestPriceURL.String, src, programs); err == nil {
+			affiliateLink = link
+		} else {
+			affiliateLink = p.LowestPriceURL.String
+		}
+	}
 
 	d := models.Dispatch{
-		ComposedBy: "auto-match",
-		Message:    msgBytes,
+		ComposedBy:    "auto-match",
+		Message:       msgBytes,
+		AffiliateLink: affiliateLink,
 	}
 	if p.ID > 0 {
 		d.ProductID = models.NullInt64{NullInt64: sql.NullInt64{Int64: p.ID, Valid: true}}

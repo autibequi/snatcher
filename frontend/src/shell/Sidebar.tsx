@@ -54,6 +54,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Análise',
     items: [
+      { to: '/analytics', label: 'Insights de cliques', icon: '📊' },
       { to: '/clusters', label: 'Clusters', icon: '🧩' },
     ],
   },

@@ -87,6 +87,7 @@ const Clusters = lazy(() => import('./pages/Clusters'))
 const GroupDetail = lazy(() => import('./pages/GroupDetail'))
 const DevAtoms = lazy(() => import('./pages/DevAtoms'))
 const AutoMatch = lazy(() => import('./pages/AutoMatch'))
+const Analytics = lazy(() => import('./pages/Analytics'))
 const Setup = lazy(() => import('./pages/Setup'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
@@ -134,6 +135,7 @@ export default function App() {
               <Route path="accounts" element={<Accounts />} />
               <Route path="affiliates" element={<Affiliates />} />
               <Route path="clusters" element={<Clusters />} />
+              <Route path="analytics" element={<Analytics />} />
               <Route path="settings/*" element={<Settings />} />
               <Route path="_dev/atoms" element={<DevAtoms />} />
               <Route path="*" element={<NotFound />} />

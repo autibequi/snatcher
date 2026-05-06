@@ -93,6 +93,16 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	_ = json.Unmarshal(dispatch.Message, &msg)
 	text := msg.Text
 
+	// Resolver {link} com o affiliate link do dispatch (ou remover placeholder)
+	if strings.Contains(text, "{link}") {
+		link := dispatch.AffiliateLink
+		if link == "" {
+			text = strings.TrimSpace(strings.ReplaceAll(text, "{link}", ""))
+		} else {
+			text = strings.ReplaceAll(text, "{link}", link)
+		}
+	}
+
 	// Buscar JID do grupo
 	group, err := st.GetRedesignGroup(t.GroupID)
 	if err != nil || !group.JID.Valid || group.JID.String == "" {

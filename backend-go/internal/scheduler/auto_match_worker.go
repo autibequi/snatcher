@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -99,12 +100,32 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			}
 
 			msgText := buildAutoMatchMessage(p)
-			msgBytes, _ := json.Marshal(map[string]any{"text": msgText})
+			msgMap := map[string]any{"text": msgText}
+			if p.ImageURL.Valid && p.ImageURL.String != "" {
+				msgMap["media_url"] = p.ImageURL.String
+			}
+			msgBytes, _ := json.Marshal(msgMap)
+
+			// Gerar affiliate link a partir da URL do menor preço
+			affiliateLink := ""
+			if p.LowestPriceURL.Valid && p.LowestPriceURL.String != "" {
+				src := ""
+				if p.LowestPriceSource.Valid {
+					src = p.LowestPriceSource.String
+				}
+				programs, _ := st.ListAffiliatePrograms(nil)
+				if link, _, err := affiliates.BuildLink(p.LowestPriceURL.String, src, programs); err == nil {
+					affiliateLink = link
+				} else {
+					affiliateLink = p.LowestPriceURL.String
+				}
+			}
 
 			d := models.Dispatch{
-				ComposedBy: "auto-match",
-				Message:    msgBytes,
-				Status:     "queued",
+				ComposedBy:    "auto-match",
+				Message:       msgBytes,
+				AffiliateLink: affiliateLink,
+				Status:        "queued",
 			}
 			if p.ID > 0 {
 				d.ProductID = models.NullInt64{}
