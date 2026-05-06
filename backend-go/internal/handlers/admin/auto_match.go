@@ -378,7 +378,7 @@ func dispatchPairToStore(st store.Store, p models.CatalogProduct, s match.Score)
 	}
 	msgBytes, _ := json.Marshal(msgMap)
 
-	// Gerar affiliate link
+	// Gerar affiliate link encurtado
 	affiliateLink := ""
 	if p.LowestPriceURL.Valid && p.LowestPriceURL.String != "" {
 		src := ""
@@ -386,10 +386,19 @@ func dispatchPairToStore(st store.Store, p models.CatalogProduct, s match.Score)
 			src = p.LowestPriceSource.String
 		}
 		programs, _ := st.ListAffiliatePrograms(nil)
+		builtLink := p.LowestPriceURL.String
 		if link, _, err := affiliates.BuildLink(p.LowestPriceURL.String, src, programs); err == nil {
-			affiliateLink = link
+			builtLink = link
+		}
+		if shortID, err := st.GetOrCreateShortLink(builtLink, src); err == nil {
+			cfg, _ := st.GetConfig()
+			domain := "beta.autibequi.com"
+			if cfg.AppDomain.Valid && cfg.AppDomain.String != "" {
+				domain = cfg.AppDomain.String
+			}
+			affiliateLink = "https://" + domain + "/v/" + shortID
 		} else {
-			affiliateLink = p.LowestPriceURL.String
+			affiliateLink = builtLink
 		}
 	}
 
