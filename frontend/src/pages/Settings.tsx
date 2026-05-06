@@ -222,32 +222,6 @@ function IntegrationsTab() {
 
   return (
     <div className="space-y-6 max-w-md">
-      {/* WhatsApp */}
-      <div>
-        <p className="text-sm font-medium text-fg mb-3">WhatsApp (Evolution API)</p>
-        <div className="space-y-2">
-          <Input
-            label="Base URL"
-            value={get('wa_base_url')}
-            onChange={(e) => set('wa_base_url', e.target.value)}
-            placeholder="http://evolution:8080"
-          />
-          <Input
-            label="API Key"
-            value={get('wa_api_key')}
-            onChange={(e) => set('wa_api_key', e.target.value)}
-            type="password"
-            placeholder="••••••••••"
-          />
-          <Input
-            label="Instância"
-            value={get('wa_instance')}
-            onChange={(e) => set('wa_instance', e.target.value)}
-            placeholder="default"
-          />
-        </div>
-      </div>
-
       {/* Telegram */}
       <div>
         <p className="text-sm font-medium text-fg mb-3">Telegram Bot</p>
