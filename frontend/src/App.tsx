@@ -1,5 +1,5 @@
 import { Suspense, lazy, Component, ErrorInfo, ReactNode, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AppShell } from './shell'
 import { RequireAuth } from './components/RequireAuth'
 import { apiClient } from './lib/apiClient'
@@ -86,8 +86,8 @@ const PublicLinks = lazy(() => import('./pages/PublicLinks'))
 const Clusters = lazy(() => import('./pages/Clusters'))
 const GroupDetail = lazy(() => import('./pages/GroupDetail'))
 const DevAtoms = lazy(() => import('./pages/DevAtoms'))
-const AutoMatch = lazy(() => import('./pages/AutoMatch'))
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Automations = lazy(() => import('./pages/Automations'))
 const Setup = lazy(() => import('./pages/Setup'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
@@ -121,7 +121,8 @@ export default function App() {
             >
               <Route index element={<Dashboard />} />
               <Route path="match" element={<Match />} />
-              <Route path="auto-match" element={<AutoMatch />} />
+              <Route path="auto-match" element={<Navigate to="/automations" replace />} />
+              <Route path="automations" element={<Automations />} />
               <Route path="compose" element={<Composer />} />
               <Route path="logs" element={<Logs />} />
               <Route path="catalog" element={<Catalog />} />

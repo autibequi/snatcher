@@ -120,14 +120,25 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 		rd.cache.Delete(shortID)
 	}
 
+	amzTag, mlToolID := rd.getConfig()
+
+	// Novo sistema: tabela short_links
+	if destURL, source, ok := rd.store.GetShortLinkByID(shortID); ok {
+		dest := affiliateURL(destURL, source, amzTag, mlToolID)
+		rd.cache.Store(shortID, productEntry{
+			redirectURL: dest,
+			expiresAt:   time.Now().Add(productTTL),
+		})
+		return dest, true
+	}
+
+	// Legado: tabela product
 	p, found, err := rd.store.GetProductByShortID(shortID)
 	if err != nil || !found {
 		return "", false
 	}
 
-	amzTag, mlToolID := rd.getConfig()
 	dest := affiliateURL(p.URL, p.Source, amzTag, mlToolID)
-
 	rd.cache.Store(shortID, productEntry{
 		redirectURL: dest,
 		expiresAt:   time.Now().Add(productTTL),

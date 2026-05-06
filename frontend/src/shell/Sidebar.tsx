@@ -23,7 +23,6 @@ const navGroups: NavGroup[] = [
     label: 'Operação',
     items: [
       { to: '/', label: 'Dashboard', icon: '🏠' },
-      { to: '/match', label: 'Match', icon: '🎯' },
       { to: '/compose', label: 'Compor disparo', icon: '📤' },
       { to: '/logs', label: 'Logs', icon: '📋' },
     ],
@@ -31,7 +30,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Automações',
     items: [
-      { to: '/auto-match', label: 'Auto Match', icon: '⚡' },
+      { to: '/automations', label: 'Automações', icon: '⚡' },
     ],
   },
   {

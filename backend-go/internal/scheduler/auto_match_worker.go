@@ -80,17 +80,8 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal (avaliado por canal com cooldown próprio)
 	recentLogs, _ := st.ListAutoMatchLogs(500)
 
-	sent := 0
+	sentByChannel := make(map[int64]int, len(channelsByID))
 	for _, p := range products {
-		// maxPerRun global é calculado por canal abaixo; usar valor global como limite superior geral
-		globalMaxPerRun := cfg.AutoMatchMaxPerRun
-		if globalMaxPerRun <= 0 {
-			globalMaxPerRun = 3
-		}
-		if sent >= globalMaxPerRun {
-			break
-		}
-
 		input := match.ProductInput{
 			Name:     p.CanonicalName,
 			Category: firstTag(p),
@@ -133,8 +124,8 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			if s.Value < threshold {
 				break // já ordenado desc
 			}
-			if sent >= maxPerRun {
-				break
+			if sentByChannel[s.ChannelID] >= maxPerRun {
+				continue // canal saturado neste ciclo, mas outros canais ainda podem receber
 			}
 
 			// Pular se já foi disparado para este canal dentro do cooldown (cooldown é por canal)
@@ -218,7 +209,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			})
 
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)
-			sent++
+			sentByChannel[s.ChannelID]++
 		}
 	}
 }
