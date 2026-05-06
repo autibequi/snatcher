@@ -226,4 +226,8 @@ type Store interface {
 	// Product failures (purge 404)
 	IncrementProductFailures(id int64) error
 	ResetProductFailures(id int64) error
+
+	// Taxonomy (categorias e marcas)
+	ListTaxonomy(taxType string) ([]models.Taxonomy, error)
+	IncrementTaxonomyDetect(id int64) error
 }

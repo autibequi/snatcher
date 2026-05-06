@@ -75,6 +75,7 @@ func Build(
 	dash        := adminhnd.NewDashboardHandler(st, db)
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
+	taxonomy    := adminhnd.NewTaxonomyHandler(st)
 	autoMatch   := adminhnd.NewAutoMatchHandler(st)
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
@@ -281,6 +282,9 @@ func Build(
 
 		// ReDesign: Match
 		r.Post("/api/match", matchH.Match)
+
+		// Taxonomy (categorias e marcas para autocomplete)
+		r.Get("/api/taxonomy", taxonomy.List)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)

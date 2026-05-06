@@ -2,13 +2,14 @@ import React from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from './ui'
 import { apiClient } from '../lib/apiClient'
+import TagInput from './TagInput'
 
 // ── Editor de audiência do canal ─────────────────────────────────────────────
 export default function AudienceEditor({ channelId, audience }: { channelId: string; audience: any }) {
   const qc = useQueryClient()
   const [form, setForm] = React.useState({
-    categories: '',
-    brands: '',
+    categories: [] as string[],
+    brands: [] as string[],
     min_drop: '',
     min_price: '',
     max_price: '',
@@ -20,8 +21,8 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
   React.useEffect(() => {
     if (!audience) return
     setForm({
-      categories: (audience.categories ?? []).join(', '),
-      brands: (audience.brands ?? []).join(', '),
+      categories: audience.categories ?? [],
+      brands: audience.brands ?? [],
       min_drop: audience.min_drop ? String(audience.min_drop) : '',
       min_price: audience.min_price ? String(audience.min_price) : '',
       max_price: audience.max_price ? String(audience.max_price) : '',
@@ -32,8 +33,8 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
   const saveMut = useMutation({
     mutationFn: () => {
       const newAudience = {
-        categories: form.categories.split(',').map(s => s.trim()).filter(Boolean),
-        brands: form.brands.split(',').map(s => s.trim()).filter(Boolean),
+        categories: form.categories,
+        brands: form.brands,
         min_drop: form.min_drop ? Number(form.min_drop) : 0,
         min_price: form.min_price ? Number(form.min_price) : 0,
         max_price: form.max_price ? Number(form.max_price) : 0,
@@ -67,13 +68,13 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
       <div>
         <label className="text-xs text-fg-2 block mb-1">
           Categorias de produto
-          <span className="text-fg-3 ml-1">(separe por vírgula)</span>
+          <span className="text-fg-3 ml-1">(digite e selecione)</span>
         </label>
-        <input
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          placeholder="suplementos, proteinas, vitaminas..."
+        <TagInput
+          type="category"
           value={form.categories}
-          onChange={e => set('categories', e.target.value)}
+          onChange={next => setForm(f => ({ ...f, categories: next }))}
+          placeholder="suplementos, eletrônicos, beleza..."
         />
         <p className="text-xs text-fg-3 mt-1">
           Produtos com estas categorias ganham +30pts no score
@@ -83,13 +84,13 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
       <div>
         <label className="text-xs text-fg-2 block mb-1">
           Marcas preferidas
-          <span className="text-fg-3 ml-1">(separe por vírgula)</span>
+          <span className="text-fg-3 ml-1">(digite e selecione)</span>
         </label>
-        <input
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          placeholder="Growth, Integral Medica, Xpro..."
+        <TagInput
+          type="brand"
           value={form.brands}
-          onChange={e => set('brands', e.target.value)}
+          onChange={next => setForm(f => ({ ...f, brands: next }))}
+          placeholder="Apple, Samsung, Nike..."
         />
         <p className="text-xs text-fg-3 mt-1">
           Produtos destas marcas ganham +20pts no score
@@ -153,10 +154,10 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
       </Button>
 
       {/* Preview do impacto no score */}
-      {(form.categories || form.brands || form.min_drop) && (
+      {(form.categories.length > 0 || form.brands.length > 0 || form.min_drop) && (
         <div className="bg-surface-2 rounded-md p-3 text-xs text-fg-2">
           <p className="font-medium text-fg mb-1">Impacto no Match:</p>
-          <p>Produtos {form.categories ? `de "${form.categories.split(',')[0].trim()}"` : 'de qualquer categoria'} com {form.min_drop ? `desconto ≥ ${form.min_drop}%` : 'qualquer desconto'} e preço {form.min_price || form.max_price ? `R$ ${form.min_price || 0}–${form.max_price || '∞'}` : 'qualquer'} terão score alto.</p>
+          <p>Produtos {form.categories.length > 0 ? `de "${form.categories[0]}"` : 'de qualquer categoria'} com {form.min_drop ? `desconto ≥ ${form.min_drop}%` : 'qualquer desconto'} e preço {form.min_price || form.max_price ? `R$ ${form.min_price || 0}–${form.max_price || '∞'}` : 'qualquer'} terão score alto.</p>
         </div>
       )}
     </div>

@@ -354,7 +354,7 @@ export default function Groups() {
     setSelectedJID('')
     setGroupSearch('')
     if (importAccountId) refetchWAGroups()
-  }, [importAccountId])
+  }, [importAccountId, refetchWAGroups])
 
   const openImport = () => {
     const first = activeWA[0]

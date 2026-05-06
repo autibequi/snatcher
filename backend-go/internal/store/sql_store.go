@@ -1839,3 +1839,30 @@ func (s *SQLStore) ResetProductFailures(id int64) error {
 		WHERE id = $1 AND (consecutive_failures > 0 OR inactive = TRUE)`, id)
 	return err
 }
+
+// ListTaxonomy retorna entradas da taxonomia (categorias ou marcas).
+// Se type for vazio, retorna ambos.
+func (s *SQLStore) ListTaxonomy(taxType string) ([]models.Taxonomy, error) {
+	var out []models.Taxonomy
+	if taxType == "" {
+		err := s.db.Select(&out, `
+			SELECT id, type, name, slug, keywords, parent_id, detect_count,
+			       last_detected_at, active, created_at
+			FROM taxonomy WHERE active = true ORDER BY type, name`)
+		return out, err
+	}
+	err := s.db.Select(&out, `
+		SELECT id, type, name, slug, keywords, parent_id, detect_count,
+		       last_detected_at, active, created_at
+		FROM taxonomy WHERE type = $1 AND active = true ORDER BY name`, taxType)
+	return out, err
+}
+
+// IncrementTaxonomyDetect aumenta o contador de detecção e atualiza last_detected_at.
+// Usado pelo crawler/categorizador para tunning das keywords.
+func (s *SQLStore) IncrementTaxonomyDetect(id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE taxonomy SET detect_count = detect_count + 1, last_detected_at = now()
+		WHERE id = $1`, id)
+	return err
+}

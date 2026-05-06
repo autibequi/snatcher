@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // Source represents a marketplace data source (e.g., Mercado Livre, Amazon).
@@ -645,3 +647,19 @@ type AffiliateConversion struct {
 	Status          string     `db:"status" json:"status"`
 	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
 }
+
+// Taxonomy é categoria ou marca de produto, usada para autocomplete em audience
+// e para detecção pelo crawler/categorizador.
+type Taxonomy struct {
+	ID             int64          `db:"id" json:"id"`
+	Type           string         `db:"type" json:"type"` // 'category' | 'brand'
+	Name           string         `db:"name" json:"name"`
+	Slug           string         `db:"slug" json:"slug"`
+	Keywords       pq.StringArray `db:"keywords" json:"keywords"`
+	ParentID       NullInt64      `db:"parent_id" json:"parent_id,omitempty"`
+	DetectCount    int            `db:"detect_count" json:"detect_count"`
+	LastDetectedAt NullTime       `db:"last_detected_at" json:"last_detected_at,omitempty"`
+	Active         bool           `db:"active" json:"active"`
+	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
+}
+
