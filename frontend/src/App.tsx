@@ -76,6 +76,7 @@ const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
 const Logs = lazy(() => import('./pages/Logs'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Taxonomy = lazy(() => import('./pages/Taxonomy'))
+const Curation = lazy(() => import('./pages/Curation'))
 
 // --- Páginas novas (lazy) ---
 
@@ -142,6 +143,7 @@ export default function App() {
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings/*" element={<Settings />} />
               <Route path="taxonomy" element={<Taxonomy />} />
+              <Route path="curation" element={<Curation />} />
               <Route path="_dev/atoms" element={<DevAtoms />} />
               <Route path="*" element={<NotFound />} />
             </Route>

@@ -39,6 +39,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/crawlers', label: 'Crawlers', icon: '🔄' },
       { to: '/catalog', label: 'Catálogo', icon: '📦' },
+      { to: '/curation', label: 'Curadoria', icon: '✋' },
     ],
   },
   {

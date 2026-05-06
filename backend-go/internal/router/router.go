@@ -76,6 +76,7 @@ func Build(
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy    := adminhnd.NewTaxonomyHandler(st)
+	curation    := adminhnd.NewCurationHandler(st, db)
 	autoMatch   := adminhnd.NewAutoMatchHandler(st)
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
@@ -291,6 +292,12 @@ func Build(
 		r.Delete("/api/taxonomy/{id}", taxonomy.Delete)
 		r.Post("/api/taxonomy/{id}/approve", taxonomy.Approve)
 		r.Post("/api/taxonomy/{id}/reject", taxonomy.Reject)
+
+		// Curation — produtos sem inferência automática (cadastro manual)
+		r.Get("/api/curation/needs-taxonomy", curation.List)
+		r.Get("/api/curation/stats", curation.Stats)
+		r.Patch("/api/curation/{id}/taxonomy", curation.AssignTaxonomy)
+		r.Post("/api/curation/{id}/reject", curation.Reject)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)

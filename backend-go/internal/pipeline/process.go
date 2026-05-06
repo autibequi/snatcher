@@ -134,7 +134,16 @@ func processResult(
 
 	// Detecta taxonomias (categorias/marcas) no nome canônico — incrementa
 	// detect_count das taxonomias matchadas para fine-tuning de keywords.
-	_, _ = st.DetectAndUpsertTaxonomy(refreshedProduct.CanonicalName)
+	matchedIDs, _ := st.DetectAndUpsertTaxonomy(refreshedProduct.CanonicalName)
+	// Sem inferência automática → marcar pending para curadoria manual.
+	// Com inferência → marcar curated (auto) para não cair na fila.
+	if len(matchedIDs) == 0 && refreshedProduct.CurationStatus == "" {
+		refreshedProduct.CurationStatus = "pending"
+		_ = st.UpdateCatalogProduct(refreshedProduct)
+	} else if len(matchedIDs) > 0 && (refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "pending") {
+		refreshedProduct.CurationStatus = "auto"
+		_ = st.UpdateCatalogProduct(refreshedProduct)
+	}
 
 	// Cria variante
 	v := models.CatalogVariant{
