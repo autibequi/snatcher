@@ -49,15 +49,20 @@ func Open(dsn string) (*sqlx.DB, error) {
 }
 
 // RunMigrations executa as migrations SQL em ordem.
-// Cada arquivo .sql pode ter múltiplos statements separados por ponto-e-vírgula.
-// Erros de "already exists" / "duplicate column" são silenciados.
+// Cada arquivo .sql só é executado uma vez — a tabela schema_migrations rastreia o que já foi aplicado.
 func RunMigrations(db *sqlx.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version TEXT PRIMARY KEY,
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
 
-	// Ordena por nome
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
@@ -66,20 +71,26 @@ func RunMigrations(db *sqlx.DB) error {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
+
+		var applied bool
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, entry.Name()).Scan(&applied); err != nil {
+			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
+		}
+		if applied {
+			continue
+		}
+
 		data, err := migrationsFS.ReadFile("migrations/" + entry.Name())
 		if err != nil {
 			return fmt.Errorf("read %s: %w", entry.Name(), err)
 		}
 
-		// Remove seções "-- migrate:down" e executa só a parte "up"
 		content := string(data)
 		if idx := strings.Index(content, "-- migrate:down"); idx != -1 {
 			content = content[:idx]
 		}
-		// Remove comentários de seção
 		content = strings.ReplaceAll(content, "-- migrate:up", "")
 
-		// Executa cada statement
 		for _, stmt := range splitStatements(content) {
 			stmt = strings.TrimSpace(stmt)
 			if stmt == "" {
@@ -89,7 +100,6 @@ func RunMigrations(db *sqlx.DB) error {
 				if isIgnorableError(err) {
 					continue
 				}
-				// ALTER TABLE sempre silencia (SQLite não suporta IF NOT EXISTS)
 				if strings.Contains(strings.ToUpper(stmt), "ALTER TABLE") {
 					continue
 				}
@@ -99,6 +109,10 @@ func RunMigrations(db *sqlx.DB) error {
 				}
 				return fmt.Errorf("migration %s: %w\nstatement: %s", entry.Name(), err, preview)
 			}
+		}
+
+		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ($1)`, entry.Name()); err != nil {
+			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
 		}
 	}
 	return nil
