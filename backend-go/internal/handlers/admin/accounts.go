@@ -49,17 +49,10 @@ func (h *AccountsHandler) ListWA(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			a := &accs[i]
 			baseURL, apiKey, instance := a.BaseURL.String, a.APIKey.String, a.Instance.String
-			if !a.BaseURL.Valid || baseURL == "" {
-				if cfg.WABaseURL.Valid {
-					baseURL = cfg.WABaseURL.String
-				}
-				if cfg.WAApiKey.Valid {
-					apiKey = cfg.WAApiKey.String
-				}
-				if cfg.WAInstance.Valid {
-					instance = cfg.WAInstance.String
-				}
-			}
+			// Fallback independente por campo — preserva valores próprios da conta
+			if baseURL == "" && cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+			if apiKey == "" && cfg.WAApiKey.Valid { apiKey = cfg.WAApiKey.String }
+			if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
 			if baseURL == "" {
 				return
 			}
@@ -266,18 +259,10 @@ func (h *AccountsHandler) WAGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	if !acc.BaseURL.Valid || baseURL == "" {
-		cfg, _ := h.store.GetConfig()
-		if cfg.WABaseURL.Valid {
-			baseURL = cfg.WABaseURL.String
-		}
-		if cfg.WAApiKey.Valid {
-			apiKey = cfg.WAApiKey.String
-		}
-		if cfg.WAInstance.Valid {
-			instance = cfg.WAInstance.String
-		}
-	}
+	cfg, _ := h.store.GetConfig()
+	if baseURL == "" && cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+	if apiKey == "" && cfg.WAApiKey.Valid { apiKey = cfg.WAApiKey.String }
+	if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
 	if baseURL == "" {
 		writeJSON(w, http.StatusOK, []any{})
 		return
@@ -363,18 +348,10 @@ func (h *AccountsHandler) WACreateGroup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	if !acc.BaseURL.Valid || baseURL == "" {
-		cfg, _ := h.store.GetConfig()
-		if cfg.WABaseURL.Valid {
-			baseURL = cfg.WABaseURL.String
-		}
-		if cfg.WAApiKey.Valid {
-			apiKey = cfg.WAApiKey.String
-		}
-		if cfg.WAInstance.Valid {
-			instance = cfg.WAInstance.String
-		}
-	}
+	cfg, _ := h.store.GetConfig()
+	if baseURL == "" && cfg.WABaseURL.Valid { baseURL = cfg.WABaseURL.String }
+	if apiKey == "" && cfg.WAApiKey.Valid { apiKey = cfg.WAApiKey.String }
+	if instance == "" && cfg.WAInstance.Valid { instance = cfg.WAInstance.String }
 	evo := newEvolutionClient(baseURL, apiKey, instance)
 
 	// Verificar que a instância está conectada antes de criar grupo

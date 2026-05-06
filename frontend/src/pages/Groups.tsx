@@ -169,21 +169,24 @@ function AdminRiskBanner({ groups }: { groups: GroupRow[] }) {
 function GroupsTable({
   groups,
   search,
+  accountFilter,
   onRowClick,
 }: {
   groups: GroupRow[]
   search: string
+  accountFilter: string
   onRowClick: (id: string | number) => void
 }) {
   const lower = search.toLowerCase()
-  const filtered = search
-    ? groups.filter(
-        g =>
-          g.name?.toLowerCase().includes(lower) ||
-          g.channel_name?.toLowerCase().includes(lower) ||
-          g.account_label?.toLowerCase().includes(lower),
-      )
-    : groups
+  const filtered = groups.filter(g => {
+    if (accountFilter && g.account_label !== accountFilter) return false
+    if (!search) return true
+    return (
+      g.name?.toLowerCase().includes(lower) ||
+      g.channel_name?.toLowerCase().includes(lower) ||
+      g.account_label?.toLowerCase().includes(lower)
+    )
+  })
 
   if (filtered.length === 0) {
     return (
@@ -275,6 +278,7 @@ function GroupsTable({
 export default function Groups() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const [accountFilter, setAccountFilter] = useState('')
 
   // Load all accounts (for stats and to show connected counts)
   const { data: waAccounts = [], isLoading: waLoading } = useQuery<WAAccount[]>({
@@ -374,19 +378,37 @@ export default function Groups() {
           {/* Admin risk banner */}
           <AdminRiskBanner groups={groups} />
 
-          {/* Search */}
-          <div className="mb-4 w-72">
-            <Input
-              placeholder="Buscar grupo, canal, conta..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+          {/* Filtros */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            <div className="w-64">
+              <Input
+                placeholder="Buscar grupo, canal, conta..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            {(waAccounts.length > 0 || tgAccounts.length > 0) && (
+              <select
+                className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-9"
+                value={accountFilter}
+                onChange={e => setAccountFilter(e.target.value)}
+              >
+                <option value="">Todas as contas</option>
+                {waAccounts.map(a => (
+                  <option key={`wa-${a.id}`} value={a.name}>📱 {a.name}</option>
+                ))}
+                {tgAccounts.map(a => (
+                  <option key={`tg-${a.id}`} value={a.name}>✈️ {a.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Flat table */}
           <GroupsTable
             groups={groups}
             search={search}
+            accountFilter={accountFilter}
             onRowClick={id => navigate(`/groups/${id}`)}
           />
         </>

@@ -466,6 +466,48 @@ func (h *ChannelsHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *ChannelsHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
+	channelID, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+	ruleID, ok := pathInt(r, "rule_id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid rule id")
+		return
+	}
+	var req ruleRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeValidationErr(w, err)
+		return
+	}
+	rule := models.ChannelRule{
+		ID:            ruleID,
+		ChannelID:     channelID,
+		MatchType:     req.MatchType,
+		NotifyNew:     req.NotifyNew,
+		NotifyDrop:    req.NotifyDrop,
+		NotifyLowest:  req.NotifyLowest,
+		DropThreshold: req.DropThreshold,
+		Active:        req.Active,
+	}
+	if rule.DropThreshold == 0 {
+		rule.DropThreshold = 0.10
+	}
+	if req.MatchValue != nil {
+		rule.MatchValue = models.NullString{NullString: sql.NullString{String: *req.MatchValue, Valid: true}}
+	}
+	if req.MaxPrice != nil {
+		rule.MaxPrice = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: *req.MaxPrice, Valid: true}}
+	}
+	if err := h.store.UpdateChannelRule(rule); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
 // GetAudience retorna o perfil de audiência de um canal.
 //
 //	@Summary      Perfil de audiência

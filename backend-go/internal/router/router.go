@@ -210,6 +210,7 @@ func Build(
 		r.Delete("/api/channels/{id}/targets/{target_id}", channels.DeleteTarget)
 		r.Get("/api/channels/{id}/rules", channels.ListRules)
 		r.Post("/api/channels/{id}/rules", channels.CreateRule)
+		r.Put("/api/channels/{id}/rules/{rule_id}", channels.UpdateRule)
 		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
 		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
 		r.Post("/api/channels/{id}/send-product", channels.SendProduct)

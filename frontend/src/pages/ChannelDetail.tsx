@@ -309,36 +309,86 @@ function AccountGroupsPicker({
   )
 }
 
-// ── Aba: Regras (QUANDO X ENTÃO Y) ───────────────────────────────────────────
+// ── Aba: Regras (filtro + notificações) ──────────────────────────────────────
 
 interface ChannelRule {
   id: number
-  trigger: string
-  action: string
-  created_at?: string
+  channel_id: number
+  match_type: string
+  match_value?: string | null
+  max_price?: number | null
+  notify_new: boolean
+  notify_drop: boolean
+  notify_lowest: boolean
+  drop_threshold: number
+  active: boolean
 }
 
-const RULE_TRIGGERS = [
-  { value: 'ctr_below_1pct', label: 'CTR abaixo de 1%' },
-  { value: 'ctr_below_2pct', label: 'CTR abaixo de 2%' },
-  { value: 'no_dispatch_3d', label: 'Sem disparo há 3 dias' },
-  { value: 'no_dispatch_7d', label: 'Sem disparo há 7 dias' },
-  { value: 'member_drop_10pct', label: 'Queda de membros ≥ 10%' },
-  { value: 'engagement_drop', label: 'Queda de engajamento' },
+const MATCH_TYPES = [
+  { value: 'all',      label: 'Todos os produtos' },
+  { value: 'category', label: 'Categoria' },
+  { value: 'brand',    label: 'Marca' },
+  { value: 'keyword',  label: 'Palavra-chave' },
 ]
 
-const RULE_ACTIONS = [
-  { value: 'notify_admin', label: 'Notificar administrador' },
-  { value: 'pause_channel', label: 'Pausar canal' },
-  { value: 'reduce_frequency', label: 'Reduzir frequência de disparos' },
-  { value: 'increase_frequency', label: 'Aumentar frequência de disparos' },
-  { value: 'flag_review', label: 'Marcar para revisão manual' },
-]
+const matchTypeLabel = (v: string) => MATCH_TYPES.find(t => t.value === v)?.label ?? v
+
+interface RuleFormState {
+  match_type: string
+  match_value: string
+  max_price: string
+  notify_new: boolean
+  notify_drop: boolean
+  notify_lowest: boolean
+  drop_threshold: number
+  active: boolean
+}
+
+const emptyRuleForm: RuleFormState = {
+  match_type: 'all',
+  match_value: '',
+  max_price: '',
+  notify_new: true,
+  notify_drop: true,
+  notify_lowest: false,
+  drop_threshold: 10,
+  active: true,
+}
+
+function ruleToForm(r: ChannelRule): RuleFormState {
+  return {
+    match_type: r.match_type || 'all',
+    match_value: r.match_value ?? '',
+    max_price: r.max_price != null ? String(r.max_price) : '',
+    notify_new: !!r.notify_new,
+    notify_drop: !!r.notify_drop,
+    notify_lowest: !!r.notify_lowest,
+    drop_threshold: r.drop_threshold > 1 ? r.drop_threshold : Math.round((r.drop_threshold || 0.1) * 100),
+    active: r.active !== false,
+  }
+}
+
+function formToPayload(f: RuleFormState) {
+  const payload: Record<string, any> = {
+    match_type: f.match_type,
+    notify_new: f.notify_new,
+    notify_drop: f.notify_drop,
+    notify_lowest: f.notify_lowest,
+    drop_threshold: (f.drop_threshold || 10) / 100,
+    active: f.active,
+  }
+  if (f.match_type !== 'all' && f.match_value.trim()) {
+    payload.match_value = f.match_value.trim()
+  }
+  const mp = parseFloat(f.max_price)
+  if (!Number.isNaN(mp) && mp > 0) payload.max_price = mp
+  return payload
+}
 
 function ChannelRules({ channelId }: { channelId: string }) {
   const qc = useQueryClient()
-  const [showModal, setShowModal] = React.useState(false)
-  const [form, setForm] = React.useState({ trigger: '', action: '' })
+  const [editing, setEditing] = React.useState<ChannelRule | 'new' | null>(null)
+  const [form, setForm] = React.useState<RuleFormState>(emptyRuleForm)
 
   const { data: rules = [], isLoading } = useQuery<ChannelRule[]>({
     queryKey: ['channels', channelId, 'rules'],
@@ -350,21 +400,21 @@ function ChannelRules({ channelId }: { channelId: string }) {
     staleTime: 30_000,
   })
 
-  const addMut = useMutation({
-    mutationFn: () =>
-      apiClient
-        .post(`/api/channels/${channelId}/rules`, {
-          trigger: form.trigger,
-          action: form.action,
-        })
-        .then(r => r.data),
+  const closeModal = () => setEditing(null)
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const payload = formToPayload(form)
+      if (editing && editing !== 'new') {
+        return apiClient.put(`/api/channels/${channelId}/rules/${editing.id}`, payload).then(r => r.data)
+      }
+      return apiClient.post(`/api/channels/${channelId}/rules`, payload).then(r => r.data)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', channelId, 'rules'] })
-      setShowModal(false)
-      setForm({ trigger: '', action: '' })
+      closeModal()
     },
-    onError: (err: any) =>
-      alert(err?.response?.data?.error ?? 'Erro ao criar regra'),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar regra'),
   })
 
   const deleteMut = useMutation({
@@ -376,67 +426,112 @@ function ChannelRules({ channelId }: { channelId: string }) {
       alert(err?.response?.data?.error ?? 'Erro ao remover regra'),
   })
 
-  const triggerLabel = (v: string) =>
-    RULE_TRIGGERS.find(t => t.value === v)?.label ?? v
-  const actionLabel = (v: string) =>
-    RULE_ACTIONS.find(a => a.value === v)?.label ?? v
+  function openNew() {
+    setForm(emptyRuleForm)
+    setEditing('new')
+  }
+
+  function openEdit(rule: ChannelRule) {
+    setForm(ruleToForm(rule))
+    setEditing(rule)
+  }
+
+  const isEditing = editing && editing !== 'new'
+  const needsValue = form.match_type !== 'all'
+  const canSave = !needsValue || form.match_value.trim().length > 0
 
   return (
     <>
-      {showModal && (
+      {editing && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
+          onClick={closeModal}
         >
           <div
             className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="font-semibold text-fg mb-4">Adicionar regra</h3>
+            <h3 className="font-semibold text-fg mb-4">{isEditing ? 'Editar regra' : 'Adicionar regra'}</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-fg-2 block mb-1">
-                  QUANDO (gatilho)
-                </label>
+                <label className="text-xs text-fg-2 block mb-1">Filtro de produto</label>
                 <select
                   className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={form.trigger}
-                  onChange={e => setForm(f => ({ ...f, trigger: e.target.value }))}
+                  value={form.match_type}
+                  onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))}
                 >
-                  <option value="">Selecione...</option>
-                  {RULE_TRIGGERS.map(t => (
+                  {MATCH_TYPES.map(t => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
               </div>
+              {needsValue && (
+                <div>
+                  <label className="text-xs text-fg-2 block mb-1">
+                    Valor ({matchTypeLabel(form.match_type).toLowerCase()})
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    placeholder="Ex: suplementos / growth / whey"
+                    value={form.match_value}
+                    onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
+                  />
+                </div>
+              )}
               <div>
-                <label className="text-xs text-fg-2 block mb-1">
-                  ENTÃO (ação)
+                <label className="text-xs text-fg-2 block mb-1">Preço máximo (R$, opcional)</label>
+                <input
+                  type="number"
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                  placeholder="ex: 199.90"
+                  value={form.max_price}
+                  onChange={e => setForm(f => ({ ...f, max_price: e.target.value }))}
+                />
+              </div>
+              <div className="border-t border-border pt-3">
+                <p className="text-xs text-fg-2 font-medium mb-2">Notificações</p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
+                    <input type="checkbox" checked={form.notify_new}
+                      onChange={e => setForm(f => ({ ...f, notify_new: e.target.checked }))} />
+                    Produto novo encontrado
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
+                    <input type="checkbox" checked={form.notify_drop}
+                      onChange={e => setForm(f => ({ ...f, notify_drop: e.target.checked }))} />
+                    Queda de preço ≥
+                    <input type="number" min={1} max={99} className="w-14 text-xs border border-border rounded px-1.5 py-0.5 bg-surface text-fg"
+                      value={form.drop_threshold}
+                      onChange={e => setForm(f => ({ ...f, drop_threshold: Number(e.target.value) || 10 }))}
+                      disabled={!form.notify_drop} />
+                    %
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
+                    <input type="checkbox" checked={form.notify_lowest}
+                      onChange={e => setForm(f => ({ ...f, notify_lowest: e.target.checked }))} />
+                    Menor preço histórico
+                  </label>
+                </div>
+              </div>
+              <div className="border-t border-border pt-3">
+                <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
+                  <input type="checkbox" checked={form.active}
+                    onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+                  Regra ativa
                 </label>
-                <select
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={form.action}
-                  onChange={e => setForm(f => ({ ...f, action: e.target.value }))}
-                >
-                  <option value="">Selecione...</option>
-                  {RULE_ACTIONS.map(a => (
-                    <option key={a.value} value={a.value}>{a.label}</option>
-                  ))}
-                </select>
               </div>
             </div>
             <div className="flex gap-2 justify-end mt-5">
-              <Button variant="secondary" size="sm" onClick={() => setShowModal(false)}>
-                Cancelar
-              </Button>
+              <Button variant="secondary" size="sm" onClick={closeModal}>Cancelar</Button>
               <Button
                 variant="primary"
                 size="sm"
-                loading={addMut.isPending}
-                disabled={!form.trigger || !form.action}
-                onClick={() => addMut.mutate()}
+                loading={saveMut.isPending}
+                disabled={!canSave}
+                onClick={() => saveMut.mutate()}
               >
-                Criar regra
+                {isEditing ? 'Salvar' : 'Criar regra'}
               </Button>
             </div>
           </div>
@@ -446,11 +541,9 @@ function ChannelRules({ channelId }: { channelId: string }) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-fg-2">
-            Regras automáticas de resposta a eventos do canal
+            Filtros e notificações para produtos deste canal
           </p>
-          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-            + Adicionar regra
-          </Button>
+          <Button variant="primary" size="sm" onClick={openNew}>+ Adicionar regra</Button>
         </div>
 
         {isLoading ? (
@@ -461,44 +554,66 @@ function ChannelRules({ channelId }: { channelId: string }) {
           <div className="border border-border rounded-md p-6 text-center">
             <p className="text-sm text-fg-3 mb-1">Nenhuma regra configurada.</p>
             <p className="text-xs text-fg-3">
-              Regras permitem automatizar ações quando condições são detectadas.
+              Regras controlam quais produtos do catálogo viram disparos neste canal.
             </p>
           </div>
         ) : (
           <div className="space-y-2">
-            {rules.map(rule => (
-              <div
-                key={rule.id}
-                className="border border-border rounded-md p-4 flex items-start justify-between gap-4 bg-surface"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded">
-                      QUANDO
-                    </span>
-                    <span className="text-sm text-fg">{triggerLabel(rule.trigger)}</span>
-                    <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded">
-                      ENTÃO
-                    </span>
-                    <span className="text-sm text-fg">{actionLabel(rule.action)}</span>
-                  </div>
-                  {rule.created_at && (
-                    <p className="text-xs text-fg-3 mt-1">
-                      Criada em {new Date(rule.created_at).toLocaleDateString('pt-BR')}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="text-xs text-danger hover:underline shrink-0"
-                  onClick={() => {
-                    if (confirm('Remover esta regra?')) deleteMut.mutate(rule.id)
-                  }}
+            {rules.map(rule => {
+              const notifs: string[] = []
+              if (rule.notify_new) notifs.push('produto novo')
+              if (rule.notify_drop) notifs.push(`queda ≥ ${Math.round((rule.drop_threshold || 0.1) * 100)}%`)
+              if (rule.notify_lowest) notifs.push('menor preço histórico')
+              return (
+                <div
+                  key={rule.id}
+                  className="border border-border rounded-md p-4 flex items-start justify-between gap-4 bg-surface hover:bg-surface-2 cursor-pointer transition-colors"
+                  onClick={() => openEdit(rule)}
                 >
-                  Remover
-                </button>
-              </div>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded uppercase tracking-wide">
+                        Filtro
+                      </span>
+                      <span className="text-sm text-fg">
+                        {matchTypeLabel(rule.match_type)}
+                        {rule.match_value ? <span className="text-fg-2"> = </span> : null}
+                        {rule.match_value && <span className="font-mono text-accent">{rule.match_value}</span>}
+                      </span>
+                      {rule.max_price != null && (
+                        <span className="text-xs text-fg-3">
+                          até R$ {rule.max_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
+                      {!rule.active && (
+                        <span className="text-xs px-1.5 py-0.5 rounded border border-fg-3 text-fg-3">pausada</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-fg-3 mt-2">
+                      Notifica: {notifs.length > 0 ? notifs.join(' · ') : <span className="italic">nada</span>}
+                    </p>
+                  </div>
+                  <div className="flex gap-3 shrink-0" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="text-xs text-accent hover:underline"
+                      onClick={() => openEdit(rule)}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-danger hover:underline"
+                      onClick={() => {
+                        if (confirm('Remover esta regra?')) deleteMut.mutate(rule.id)
+                      }}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -595,20 +710,27 @@ function ChannelPublicLink({ channelId }: { channelId: string }) {
 
 interface DayPoint { day: string; value: number }
 
-function buildMock7d(): DayPoint[] {
-  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-  return days.map((day, i) => ({ day, value: 20 + Math.round(Math.sin(i * 0.9) * 15 + Math.random() * 10) }))
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+function emptyLast7Days(): DayPoint[] {
+  const today = new Date()
+  const out: DayPoint[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    out.push({ day: WEEKDAY_LABELS[d.getDay()], value: 0 })
+  }
+  return out
 }
 
 function DisparoChart({ metrics }: { metrics: any }) {
-  const data: DayPoint[] = React.useMemo(() => {
-    if (metrics?.dispatches_7d_series && Array.isArray(metrics.dispatches_7d_series)) {
-      return (metrics.dispatches_7d_series as { day: string; value: number }[]).map(p => ({
-        day: p.day,
-        value: p.value,
-      }))
+  const { data, hasData } = React.useMemo(() => {
+    const series = metrics?.dispatches_7d_series
+    if (Array.isArray(series) && series.length > 0) {
+      const mapped = (series as { day: string; value: number }[]).map(p => ({ day: p.day, value: p.value }))
+      return { data: mapped, hasData: mapped.some(p => p.value > 0) }
     }
-    return buildMock7d()
+    return { data: emptyLast7Days(), hasData: false }
   }, [metrics])
 
   return (
@@ -616,18 +738,32 @@ function DisparoChart({ metrics }: { metrics: any }) {
       <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">
         Disparos — últimos 7 dias
       </p>
-      <ResponsiveContainer width="100%" height={120}>
-        <BarChart data={data} margin={{ top: 2, right: 4, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #e5e7eb)" vertical={false} />
-          <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
-          <Tooltip
-            contentStyle={{ background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 6, fontSize: 12 }}
-            cursor={{ fill: 'var(--color-surface-2, #f3f4f6)' }}
-          />
-          <Bar dataKey="value" name="Disparos" fill="var(--color-accent, #6366f1)" radius={[3, 3, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      {hasData ? (
+        <ResponsiveContainer width="100%" height={120}>
+          <BarChart data={data} margin={{ top: 2, right: 4, left: -20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #e5e7eb)" vertical={false} />
+            <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--color-fg-3, #9ca3af)' }} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{ background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 6, fontSize: 12 }}
+              cursor={{ fill: 'var(--color-surface-2, #f3f4f6)' }}
+            />
+            <Bar dataKey="value" name="Disparos" fill="var(--color-accent, #6366f1)" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="flex items-end gap-2 h-[120px] px-2 pb-4 opacity-40">
+          {data.map((p, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+              <div className="w-full bg-fg-3/20 rounded-t-sm" style={{ height: '4px' }} />
+              <span className="text-[10px] text-fg-3">{p.day}</span>
+            </div>
+          ))}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-xs text-fg-3 italic">sem disparos no período</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

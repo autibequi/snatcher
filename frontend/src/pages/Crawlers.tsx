@@ -416,6 +416,43 @@ function fmtRange(min?: number, max?: number): string {
 
 const SOURCES_OPTIONS = ['ml', 'amz', 'magalu', 'shopee', 'aliexpress', 'casasbahia', 'kabum', 'americanas']
 
+// Aliases para mapear "amazon" → "amz", "mercadolivre" → "ml" etc
+const SOURCE_ALIAS: Record<string, string> = {
+  amazon: 'amz',
+  mercadolivre: 'ml',
+}
+
+function sourceLabel(s: string): string {
+  return SOURCE_ALIAS[s.toLowerCase()] ?? s.toLowerCase()
+}
+
+// Paleta inspirada nas cores de marca de cada marketplace
+function sourceColorClasses(s: string): string {
+  switch (sourceLabel(s)) {
+    case 'amz':        return 'bg-orange-500/10 text-orange-600 border-orange-500/30'
+    case 'ml':         return 'bg-yellow-400/15 text-yellow-700 border-yellow-500/30'
+    case 'magalu':     return 'bg-blue-500/10 text-blue-600 border-blue-500/30'
+    case 'shopee':     return 'bg-orange-600/10 text-orange-700 border-orange-600/30'
+    case 'aliexpress': return 'bg-red-500/10 text-red-600 border-red-500/30'
+    case 'casasbahia': return 'bg-rose-600/10 text-rose-700 border-rose-600/30'
+    case 'kabum':      return 'bg-amber-500/10 text-amber-700 border-amber-500/30'
+    case 'americanas': return 'bg-red-600/10 text-red-700 border-red-600/30'
+    default:           return 'bg-surface-2 text-fg-2 border-border'
+  }
+}
+
+function SourcePill({ source, active = true, onClick }: { source: string; active?: boolean; onClick?: () => void }) {
+  const baseClass = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border'
+  const colorClass = active ? sourceColorClasses(source) : 'bg-transparent text-fg-3 border-border hover:border-accent'
+  const interactive = onClick ? 'cursor-pointer transition-colors' : ''
+  const Tag: any = onClick ? 'button' : 'span'
+  return (
+    <Tag type={onClick ? 'button' : undefined} onClick={onClick} className={`${baseClass} ${colorClass} ${interactive}`}>
+      {sourceLabel(source)}
+    </Tag>
+  )
+}
+
 function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: () => void }) {
   const qc = useQueryClient()
   const [form, setForm] = React.useState<MarketplaceFormData>(defaultMarketplaceForm)
@@ -486,11 +523,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
           <label className="text-xs text-fg-2 block mb-1">Fontes</label>
           <div className="flex flex-wrap gap-2">
             {SOURCES_OPTIONS.map(s => (
-              <button key={s} type="button"
-                onClick={() => toggleSrc(s)}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${form.sources.includes(s) ? 'bg-accent text-white border-accent' : 'border-border text-fg-2 hover:border-accent'}`}>
-                {s}
-              </button>
+              <SourcePill key={s} source={s} active={form.sources.includes(s)} onClick={() => toggleSrc(s)} />
             ))}
           </div>
           <p className="text-xs text-fg-3 mt-1">Nenhuma selecionada = todas as fontes</p>
@@ -668,8 +701,12 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
           </thead>
           <tbody>
             {terms.map(t => (
-              <tr key={t.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                <td className="p-3">
+              <tr
+                key={t.id}
+                className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
+                onClick={() => setEditingTerm(t)}
+              >
+                <td className="p-3" onClick={e => e.stopPropagation()}>
                   <Switch
                     checked={t.active}
                     onChange={active => toggleMut.mutate({ id: t.id, active })}
@@ -682,7 +719,7 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
                       const raw = t.sources ?? 'all'
                       let list: string[] = []
                       try { list = JSON.parse(raw) } catch { list = raw.split(',').map((s: string) => s.trim()) }
-                      return list.map((s: string) => <Badge key={s} size="sm" variant="default">{s}</Badge>)
+                      return list.map((s: string) => <SourcePill key={s} source={s} />)
                     })()}
                   </div>
                 </td>
@@ -713,21 +750,17 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
                     <span className="text-fg-3">—</span>
                   )}
                 </td>
-                <td className="p-3">
-                  <div className="flex gap-1.5">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => crawlNow.mutate(t.id)}
-                      loading={runningIds.has(t.id)}
-                      disabled={runningIds.size > 0}
-                    >
-                      {runningIds.has(t.id) ? 'Rodando...' : 'Rodar agora'}
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setEditingTerm(t)}>
-                      Editar
-                    </Button>
-                  </div>
+                <td className="p-3" onClick={e => e.stopPropagation()}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => crawlNow.mutate(t.id)}
+                    loading={runningIds.has(t.id)}
+                    disabled={runningIds.size > 0}
+                    className="border-success/40 text-success hover:bg-success/10"
+                  >
+                    {runningIds.has(t.id) ? 'Rodando...' : '▶ Rodar agora'}
+                  </Button>
                 </td>
               </tr>
             ))}

@@ -364,18 +364,37 @@ function BestMatchesView() {
     staleTime: 30_000,
   })
 
-  const items = data?.items ?? []
+  // Score DESC — usuário espera o melhor match no topo
+  const items = React.useMemo(() => {
+    const list = data?.items ?? []
+    return [...list].sort((a, b) => b.score - a.score)
+  }, [data?.items])
   const threshold = data?.threshold ?? 50
+
+  const [toast, setToast] = React.useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
 
   const dispatchMut = useMutation({
     mutationFn: (item: { product_id: number; channel_id: number }) =>
       apiClient.post('/api/auto-match/dispatch-one', item).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['auto-match-preview'] }),
-    onError: (err: any) => alert('Erro: ' + (err?.response?.data?.error ?? err.message)),
+    onSuccess: () => {
+      setToast({ kind: 'success', msg: '✓ Disparo enfileirado' })
+      window.setTimeout(() => setToast(null), 3000)
+      qc.invalidateQueries({ queryKey: ['auto-match-preview'] })
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      setToast({ kind: 'error', msg: '✗ ' + msg })
+      window.setTimeout(() => setToast(null), 5000)
+    },
   })
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-md shadow-lg text-sm font-medium ${toast.kind === 'success' ? 'bg-success text-white' : 'bg-danger text-white'}`}>
+          {toast.msg}
+        </div>
+      )}
       <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
         <div className="flex items-start justify-between">
           <div>

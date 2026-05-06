@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	"snatcher/backendv2/internal/match"
@@ -119,6 +120,8 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		if len(items) >= 30 { break }
 	}
 	if items == nil { items = []previewItem{} }
+	// Ordena por score DESC — melhor match no topo
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Score > items[j].Score })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":      items,
 		"threshold":  threshold,
