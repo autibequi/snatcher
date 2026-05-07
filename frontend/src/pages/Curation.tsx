@@ -76,17 +76,22 @@ export default function Curation() {
   })
 
   const autoLLMMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string }),
+    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string; first_error?: string; errors?: number }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
       if (data.message) {
         alert(data.message)
       } else {
         const tax = data.new_taxonomies > 0 ? ` · ${data.new_taxonomies} novas taxonomias sugeridas (veja em Taxonomia → Pendentes)` : ''
-        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.${tax}`)
+        const errs = data.errors ? ` · ${data.errors} erros: ${data.first_error ?? ''}` : ''
+        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.${tax}${errs}`)
       }
     },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao rodar LLM'),
+    onError: (err: any) => {
+      const status = err?.response?.status ?? '?'
+      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      alert(`Erro ao rodar LLM (HTTP ${status}): ${detail}\n\nVeja /logs → tab LLM para detalhes.`)
+    },
   })
 
   return (
