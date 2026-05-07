@@ -497,7 +497,7 @@ function ErrorsTab({ dispatches, crawlLogs }: { dispatches: Dispatch[]; crawlLog
 
 // ── Main Logs page ────────────────────────────────────────────────────────────
 
-type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors'
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors' | 'llm'
 
 export default function Logs() {
   const navigate = useNavigate()
@@ -583,6 +583,7 @@ export default function Logs() {
     { id: 'dispatches', label: 'Disparos', count: items.length },
     { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length },
     { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
+    { id: 'llm', label: 'LLM' },
     { id: 'errors', label: 'Erros', count: errorCount },
   ]
 
@@ -690,6 +691,7 @@ export default function Logs() {
       {/* Tab content */}
       {logTab === 'crawlers' && <CrawlerLogs />}
       {logTab === 'scheduled' && <ScheduledDispatches />}
+      {logTab === 'llm' && <LLMLogs />}
       {logTab === 'errors' && <ErrorsTab dispatches={items} crawlLogs={crawlLogs} />}
 
       {/* "Tudo" tab — unified table */}
@@ -851,6 +853,98 @@ export default function Logs() {
             <DispatchDrawer dispatch={selected} onClose={() => setSelected(null)} />
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── LLM Logs ──────────────────────────────────────────────────────────────────
+
+interface LLMLogRow {
+  id: number
+  operation: string
+  model: string
+  status: string
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number
+  cache_hit: boolean
+  error: boolean
+  error_msg?: string
+  latency_seconds?: number
+  created_at: string
+}
+
+function LLMLogs() {
+  const [errorsOnly, setErrorsOnly] = React.useState(false)
+  const { data: rows = [], isLoading, refetch } = useQuery<LLMLogRow[]>({
+    queryKey: ['llm-logs', errorsOnly],
+    queryFn: () => apiClient.get(`/api/admin/llm/logs?limit=200${errorsOnly ? '&errors_only=true' : ''}`)
+      .then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 30_000,
+  })
+
+  return (
+    <div className="bg-surface border border-border rounded-md overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 bg-surface-2 border-b border-border">
+        <label className="flex items-center gap-2 text-xs text-fg-2 cursor-pointer">
+          <input type="checkbox" checked={errorsOnly} onChange={e => setErrorsOnly(e.target.checked)} className="accent-accent" />
+          Apenas erros
+        </label>
+        <button type="button" onClick={() => refetch()} className="text-xs text-accent hover:underline">↻ atualizar</button>
+      </div>
+      {isLoading ? (
+        <p className="text-sm text-fg-3 p-6 text-center">Carregando...</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-fg-3 p-6 text-center">Nenhum log de LLM.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-surface-2">
+              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Quando</th>
+              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Op</th>
+              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Modelo</th>
+              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Tokens</th>
+              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Custo</th>
+              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Latência</th>
+              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <React.Fragment key={r.id}>
+                <tr className={`border-b border-border last:border-0 ${r.error ? 'bg-danger/5' : ''}`}>
+                  <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap">
+                    {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-fg">{r.operation}</td>
+                  <td className="px-3 py-2 text-xs text-fg-2 font-mono truncate max-w-xs">{r.model}</td>
+                  <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">{r.tokens_in}→{r.tokens_out}</td>
+                  <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">${r.cost_usd.toFixed(4)}</td>
+                  <td className="px-3 py-2 text-xs text-fg-3 font-mono text-right">
+                    {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.error ? (
+                      <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
+                    ) : r.cache_hit ? (
+                      <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
+                    ) : (
+                      <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">{r.status || 'ok'}</span>
+                    )}
+                  </td>
+                </tr>
+                {r.error && r.error_msg && (
+                  <tr className="bg-danger/5 border-b border-border last:border-0">
+                    <td colSpan={7} className="px-4 py-2 text-xs font-mono text-danger break-all">
+                      {r.error_msg}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

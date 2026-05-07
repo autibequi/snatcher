@@ -283,6 +283,8 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	processed, categorized, newTaxonomies := 0, 0, 0
+	var firstErr string
+	var llmCallErrors, parseErrors int
 	for _, row := range products {
 		prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro de suplementos e produtos fitness.
 Dado o nome de produto abaixo, responda SOMENTE um JSON com os campos:
@@ -308,6 +310,10 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 			Operation:   "curation",
 		})
 		if err != nil {
+			llmCallErrors++
+			if firstErr == "" {
+				firstErr = err.Error()
+			}
 			continue
 		}
 
@@ -329,6 +335,10 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 			} `json:"new_taxonomies"`
 		}
 		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			parseErrors++
+			if firstErr == "" {
+				firstErr = "parse: " + err.Error() + " — resp: " + resp
+			}
 			continue
 		}
 
@@ -385,10 +395,18 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 		}
 	}
 
+	// Se nenhum produto foi processado E houve erros, retorna erro detalhado
+	if processed == 0 && (llmCallErrors > 0 || parseErrors > 0) {
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("LLM falhou em todas as %d tentativas (api_errors=%d, parse_errors=%d): %s", len(products), llmCallErrors, parseErrors, firstErr))
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"processed":      processed,
 		"categorized":    categorized,
 		"new_taxonomies": newTaxonomies,
 		"remaining":      len(products) - categorized,
+		"errors":         llmCallErrors + parseErrors,
+		"first_error":    firstErr,
 	})
 }

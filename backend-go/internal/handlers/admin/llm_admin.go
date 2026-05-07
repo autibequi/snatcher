@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -103,6 +104,55 @@ func (h *LLMAdminHandler) Usage(w http.ResponseWriter, r *http.Request) {
 		"period":     period,
 		"operations": budgets,
 	})
+}
+
+// GET /api/admin/llm/logs?limit=100&errors_only=true
+// Retorna últimos N execs de LLM (com filtro opcional de só erros).
+func (h *LLMAdminHandler) Logs(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		// best-effort parse
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		if n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	errorsOnly := r.URL.Query().Get("errors_only") == "true"
+
+	type logRow struct {
+		ID         int64     `db:"id" json:"id"`
+		Operation  string    `db:"operation" json:"operation"`
+		Model      string    `db:"model" json:"model"`
+		Status     string    `db:"status" json:"status"`
+		TokensIn   int       `db:"tokens_in" json:"tokens_in"`
+		TokensOut  int       `db:"tokens_out" json:"tokens_out"`
+		CostUSD    float64   `db:"estimated_cost_usd" json:"cost_usd"`
+		CacheHit   bool      `db:"cache_hit" json:"cache_hit"`
+		Error      bool      `db:"error" json:"error"`
+		ErrorMsg   *string   `db:"error_msg" json:"error_msg,omitempty"`
+		LatencyS   *float64  `db:"latency_seconds" json:"latency_seconds,omitempty"`
+		CreatedAt  time.Time `db:"created_at" json:"created_at"`
+	}
+
+	q := `SELECT id, operation, model, status, tokens_in, tokens_out,
+	             estimated_cost_usd, cache_hit, error, error_msg,
+	             latency_seconds, created_at
+	      FROM llm_metrics`
+	if errorsOnly {
+		q += ` WHERE error = true`
+	}
+	q += ` ORDER BY created_at DESC LIMIT $1`
+
+	var rows []logRow
+	if err := h.db.SelectContext(r.Context(), &rows, q, limit); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao consultar logs LLM: "+err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []logRow{}
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // PATCH /api/admin/llm/budgets/:op
