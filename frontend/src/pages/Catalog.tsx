@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Skeleton, EmptyState, Input, Tabs } from '../components/ui'
+import { Badge, Button, Skeleton, EmptyState, Input } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ── Gráfico de histórico de preços (expandido ao clicar na linha) ─────────────
@@ -51,27 +51,6 @@ function PriceHistoryChart({ productId }: { productId: number }) {
   )
 }
 
-interface TabCounts {
-  new?: number
-  curated?: number
-  sent?: number
-  all?: number
-}
-
-interface TabDef {
-  id: string
-  label: string
-}
-
-function buildTabs(counts: TabCounts): TabDef[] {
-  const fmt = (n?: number) => n !== undefined ? ` (${n})` : ''
-  return [
-    { id: 'new', label: `Novos${fmt(counts.new)}` },
-    { id: 'curated', label: `Curados${fmt(counts.curated)}` },
-    { id: 'sent', label: `Disparados 7d${fmt(counts.sent)}` },
-    { id: 'all', label: `Tudo${fmt(counts.all)}` },
-  ]
-}
 
 interface Product {
   id: number
@@ -308,12 +287,13 @@ function AddProductModal({
 export default function Catalog() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = React.useState('all')
   const [search, setSearch] = React.useState('')
   const [source, setSource] = React.useState('')
   const [tagFilter, setTagFilter] = React.useState('')
   const [priceMin, setPriceMin] = React.useState('')
   const [priceMax, setPriceMax] = React.useState('')
+  const [page, setPage] = React.useState(0)
+  const PAGE_SIZE = 50
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [showAddModal, setShowAddModal] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
@@ -322,27 +302,9 @@ export default function Catalog() {
   const curateMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
       apiClient.patch(`/api/catalog/${id}`, { curation_status: status }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['catalog'] })
-      try { qc.invalidateQueries({ queryKey: ['catalog-counts'] }) } catch (_) {}
-    },
-    onError: (err) => {
-      console.error('[curation] patch failed (BE may not be ready yet):', err)
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['catalog'] }),
+    onError: () => alert('Erro ao salvar'),
   })
-
-  // ── 1 fetch inicial para grouped_counts ──────────────────────────────────
-  const { data: countsData } = useQuery<{ counts?: TabCounts }>({
-    queryKey: ['catalog', 'grouped-counts'],
-    queryFn: () =>
-      apiClient
-        .get('/api/catalog?grouped_counts=1')
-        .then(r => r.data)
-        .catch(() => ({})),
-    staleTime: 60_000,
-  })
-  const counts: TabCounts = countsData?.counts ?? {}
-  const TABS = buildTabs(counts)
 
   // Categorias da taxonomia para o filtro
   const { data: categories = [] } = useQuery<TaxonomyEntry[]>({
@@ -351,22 +313,31 @@ export default function Catalog() {
     staleTime: 5 * 60_000,
   })
 
-  const { data: rawProducts = [], isLoading } = useQuery<Product[]>({
-    queryKey: ['catalog', tab, search, source, tagFilter, showInactive],
+  // Resetar página ao mudar filtros
+  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, showInactive])
+
+  const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
+    queryKey: ['catalog', search, source, tagFilter, showInactive, page],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
       if (tagFilter) params.set('tag', tagFilter)
-      if (tab !== 'all') params.set('status', tab)
       if (showInactive) params.set('include_inactive', 'true')
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String(page * PAGE_SIZE))
       return apiClient.get(`/api/catalog?${params}`).then(r => {
         const d = r.data
-        return Array.isArray(d) ? d : (d?.items ?? d?.products ?? [])
+        if (Array.isArray(d)) return { items: d, total: d.length }
+        return { items: d?.items ?? d?.products ?? [], total: d?.total ?? 0 }
       })
     },
     staleTime: 30_000,
   })
+
+  const rawProducts = catalogData?.items ?? []
+  const totalProducts = catalogData?.total ?? 0
+  const totalPages = Math.ceil(totalProducts / PAGE_SIZE)
 
   // Filtrar por preço no cliente (rápido, sem chamada extra)
   const products = rawProducts.filter(p => {
@@ -400,8 +371,7 @@ export default function Catalog() {
           <div>
             <h1 className="text-lg font-semibold text-fg">Catalogo</h1>
             <p className="text-sm text-fg-3 mt-0.5">
-              {products.length} produto{products.length !== 1 ? 's' : ''} coletado
-              {products.length !== 1 ? 's' : ''}
+              {totalProducts} produto{totalProducts !== 1 ? 's' : ''} coletado{totalProducts !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -423,15 +393,6 @@ export default function Catalog() {
           </div>
         </div>
 
-        {/* Tabs com contagem */}
-        <Tabs
-          tabs={TABS}
-          active={tab}
-          onChange={t => {
-            setTab(t)
-            setSelected(new Set())
-          }}
-        />
       </div>
 
       {/* Filtros */}
@@ -501,7 +462,10 @@ export default function Catalog() {
             × Limpar filtros
           </button>
         )}
-        <span className="text-xs text-fg-3 ml-auto">{products.length} produto{products.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-fg-3 ml-auto">
+          {totalProducts} produto{totalProducts !== 1 ? 's' : ''}
+          {totalPages > 1 && ` · pág. ${page + 1}/${totalPages}`}
+        </span>
       </div>
 
       {/* Tabela */}
@@ -639,7 +603,7 @@ export default function Catalog() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
-                        {tab === 'new' && (
+                        {p.curation_status === 'pending' && (
                           <>
                             <Button
                               variant="primary"
@@ -685,6 +649,30 @@ export default function Catalog() {
               })}
             </tbody>
           </table>
+        )}
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-3 border-t border-border bg-surface">
+            <button
+              type="button"
+              disabled={page === 0}
+              onClick={() => setPage(p => p - 1)}
+              className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              ← Anterior
+            </button>
+            <span className="text-xs text-fg-3">
+              Página {page + 1} de {totalPages} · {totalProducts} produtos
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(p => p + 1)}
+              className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              Próxima →
+            </button>
+          </div>
         )}
       </div>
 

@@ -1984,6 +1984,30 @@ func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []str
 	return s.CreateTaxonomy(t)
 }
 
+// sourceAliases mapeia nomes de display para todos os valores armazenados pelo crawler.
+func sourceAliases(s string) []string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "amazon":
+		return []string{"amazon", "amz"}
+	case "mercadolivre":
+		return []string{"mercadolivre", "ml", "mercado_livre", "mercado livre"}
+	case "magalu":
+		return []string{"magalu", "magazine_luiza", "magazineluiza"}
+	case "shopee":
+		return []string{"shopee"}
+	case "aliexpress":
+		return []string{"aliexpress", "ali"}
+	case "kabum":
+		return []string{"kabum"}
+	case "americanas":
+		return []string{"americanas", "americanas.com"}
+	case "casasbahia":
+		return []string{"casasbahia", "casas_bahia", "casas bahia"}
+	default:
+		return []string{s}
+	}
+}
+
 // FilterCatalogProducts executa busca com filtros combinados.
 func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error) {
 	var args []any
@@ -2001,9 +2025,14 @@ func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProd
 		idx++
 	}
 	if f.Source != "" {
-		base += fmt.Sprintf(` AND lowest_price_source = $%d`, idx)
-		args = append(args, f.Source)
-		idx++
+		aliases := sourceAliases(f.Source)
+		placeholders := make([]string, len(aliases))
+		for i, a := range aliases {
+			placeholders[i] = fmt.Sprintf("$%d", idx)
+			args = append(args, a)
+			idx++
+		}
+		base += ` AND lowest_price_source IN (` + strings.Join(placeholders, ",") + `)`
 	}
 	if f.Tag != "" {
 		tagJSON, _ := json.Marshal([]string{f.Tag})
