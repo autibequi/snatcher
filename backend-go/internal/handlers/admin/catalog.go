@@ -69,6 +69,7 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 		Source:          q.Get("source"),
 		Status:          q.Get("status"),
 		Tag:             q.Get("tag"),
+		Brand:           q.Get("brand"),
 		IncludeInactive: q.Get("include_inactive") == "true",
 		Limit:           limit,
 		Offset:          offset,

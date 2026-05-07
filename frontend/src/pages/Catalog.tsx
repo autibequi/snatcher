@@ -294,8 +294,8 @@ export default function Catalog() {
   const [priceMax, setPriceMax] = React.useState('')
   const [page, setPage] = React.useState(0)
   const PAGE_SIZE = 50
+  const [brandFilter, setBrandFilter] = React.useState('')
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
-  const [showAddModal, setShowAddModal] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
   const [showInactive, setShowInactive] = React.useState(false)
 
@@ -313,16 +313,24 @@ export default function Catalog() {
     staleTime: 5 * 60_000,
   })
 
+  // Buscar marcas da taxonomia
+  const { data: brands = [] } = useQuery<TaxonomyEntry[]>({
+    queryKey: ['taxonomy', 'brand'],
+    queryFn: () => apiClient.get('/api/taxonomy?type=brand').then(r => r.data ?? []).catch(() => []),
+    staleTime: 5 * 60_000,
+  })
+
   // Resetar página ao mudar filtros
-  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, showInactive])
+  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, brandFilter, showInactive])
 
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
-    queryKey: ['catalog', search, source, tagFilter, showInactive, page],
+    queryKey: ['catalog', search, source, tagFilter, brandFilter, showInactive, page],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
       if (tagFilter) params.set('tag', tagFilter)
+      if (brandFilter) params.set('brand', brandFilter)
       if (showInactive) params.set('include_inactive', 'true')
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String(page * PAGE_SIZE))
@@ -370,9 +378,6 @@ export default function Catalog() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-lg font-semibold text-fg">Catalogo</h1>
-            <p className="text-sm text-fg-3 mt-0.5">
-              {totalProducts} produto{totalProducts !== 1 ? 's' : ''} coletado{totalProducts !== 1 ? 's' : ''}
-            </p>
           </div>
           <div className="flex items-center gap-2">
             {selected.size > 0 && (
@@ -387,9 +392,6 @@ export default function Catalog() {
                 Disparar selecionados ({selected.size})
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={() => setShowAddModal(true)}>
-              + Adicionar manual
-            </Button>
           </div>
         </div>
 
@@ -431,6 +433,18 @@ export default function Catalog() {
             ))}
           </select>
         )}
+        {brands.length > 0 && (
+          <select
+            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
+            value={brandFilter}
+            onChange={e => setBrandFilter(e.target.value)}
+          >
+            <option value="">Todas as marcas</option>
+            {brands.map(b => (
+              <option key={b.id} value={b.name}>{b.name}</option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-fg-3">R$</span>
           <input
@@ -456,8 +470,8 @@ export default function Catalog() {
           />
           <span className="text-xs text-fg-2">Mostrar inativos</span>
         </label>
-        {(search || source || tagFilter || priceMin || priceMax) && (
-          <button type="button" onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setPriceMin(''); setPriceMax('') }}
+        {(search || source || tagFilter || brandFilter || priceMin || priceMax) && (
+          <button type="button" onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax('') }}
             className="text-xs text-fg-3 hover:text-danger">
             × Limpar filtros
           </button>
@@ -676,12 +690,6 @@ export default function Catalog() {
         )}
       </div>
 
-      {showAddModal && (
-        <AddProductModal
-          onClose={() => setShowAddModal(false)}
-          onSuccess={() => qc.invalidateQueries({ queryKey: ['catalog'] })}
-        />
-      )}
     </div>
   )
 }

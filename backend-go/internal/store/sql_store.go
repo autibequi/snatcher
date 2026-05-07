@@ -2040,6 +2040,11 @@ func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProd
 		args = append(args, string(tagJSON))
 		idx++
 	}
+	if f.Brand != "" {
+		base += fmt.Sprintf(` AND brand ILIKE $%d`, idx)
+		args = append(args, "%"+f.Brand+"%")
+		idx++
+	}
 	switch f.Status {
 	case "novos":
 		base += ` AND curation_status = 'pending'`

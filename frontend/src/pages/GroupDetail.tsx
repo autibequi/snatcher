@@ -8,6 +8,7 @@ import { apiClient } from '../lib/apiClient'
 
 interface GroupDetail {
   id: string | number
+  short_id?: string
   name: string
   platform: string
   status?: string
@@ -16,6 +17,7 @@ interface GroupDetail {
   channel_id?: number
   total_audience?: number
   last_sent_at?: string
+  invite_link?: string | null
   // KPI fields — may be absent (backend enrichment)
   active_members?: number
   dormant_members?: number
@@ -128,6 +130,146 @@ function EngagementBadge({ role }: { role?: string }) {
   )
 }
 
+// ── Invite Link Modal ─────────────────────────────────────────────────────────
+
+function InviteLinkModal({
+  group,
+  onClose,
+  onSaved,
+}: {
+  group: GroupDetail
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [link, setLink] = React.useState(group.invite_link ?? '')
+  const [saving, setSaving] = React.useState(false)
+  const [copied, setCopied] = React.useState(false)
+
+  const handleSave = async (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await apiClient.patch(`/api/groups/${group.id}`, { invite_link: link || null })
+      onSaved()
+      onClose()
+    } catch {
+      alert('Erro ao salvar link de convite')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCopy = () => {
+    if (!link) return
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-fg mb-1">Link de convite</h3>
+        <p className="text-xs text-fg-3 mb-4">Link para entrar neste grupo. Cole o link de convite do WhatsApp/Telegram.</p>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">URL do convite</label>
+            <div className="flex gap-2">
+              <input
+                value={link}
+                onChange={e => setLink(e.target.value)}
+                placeholder="https://chat.whatsapp.com/..."
+                className="flex-1 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={handleCopy}
+                disabled={!link}
+                className="text-xs px-3 py-1.5 rounded-md border border-border text-fg-2 hover:bg-surface-2 disabled:opacity-40 transition-colors"
+              >
+                {copied ? '✓ Copiado' : 'Copiar'}
+              </button>
+            </div>
+          </div>
+          {group.short_id && (
+            <div className="bg-surface-2 rounded-md p-3 text-xs text-fg-3">
+              <p className="font-medium text-fg-2 mb-1">Link curto do grupo</p>
+              <p className="font-mono text-accent">{window.location.origin}/g/{group.short_id}</p>
+              <p className="mt-1 text-fg-3">Use este link em materiais de divulgação — redireciona para o link de convite acima.</p>
+            </div>
+          )}
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={onClose} className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2 hover:bg-border">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving} className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50">
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Config Modal ──────────────────────────────────────────────────────────────
+
+function ConfigModal({
+  group,
+  onClose,
+  onSaved,
+}: {
+  group: GroupDetail
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [name, setName] = React.useState(group.name)
+  const [saving, setSaving] = React.useState(false)
+
+  const handleSave = async (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true)
+    try {
+      await apiClient.patch(`/api/groups/${group.id}`, { name: name.trim() })
+      onSaved()
+      onClose()
+    } catch {
+      alert('Erro ao salvar configurações')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-sm shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-fg mb-4">Configurações do grupo</h3>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Nome</label>
+            <input
+              required
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={onClose} className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2 hover:bg-border">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving || !name.trim()} className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50">
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Add Admin Modal ───────────────────────────────────────────────────────────
 
 interface AccountOption {
@@ -184,8 +326,8 @@ function AddAdminModal({
       })
       onSuccess()
       onClose()
-    } catch (err) {
-      console.error('[add-admin] POST failed (BE may not be ready yet):', err)
+    } catch (err: any) {
+      alert(err?.response?.data?.error ?? 'Erro ao adicionar admin')
     } finally {
       setSubmitting(false)
     }
@@ -559,6 +701,8 @@ export default function GroupDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [membersPage, setMembersPage] = React.useState(1)
+  const [showInviteModal, setShowInviteModal] = React.useState(false)
+  const [showConfigModal, setShowConfigModal] = React.useState(false)
 
   const { data: group, isLoading } = useQuery<GroupDetail>({
     queryKey: ['groups', id],
@@ -627,18 +771,11 @@ export default function GroupDetail() {
             ← Grupos
           </button>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => setShowInviteModal(true)}>
               Link de convite
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => setShowConfigModal(true)}>
               Configurações
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => group.channel_id && navigate(`/channels/${group.channel_id}`)}
-            >
-              Audiência do canal
             </Button>
           </div>
         </div>
@@ -721,6 +858,21 @@ export default function GroupDetail() {
           />
         </div>
       </div>
+
+      {showInviteModal && (
+        <InviteLinkModal
+          group={group}
+          onClose={() => setShowInviteModal(false)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['groups', id] })}
+        />
+      )}
+      {showConfigModal && (
+        <ConfigModal
+          group={group}
+          onClose={() => setShowConfigModal(false)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['groups', id] })}
+        />
+      )}
     </div>
   )
 }

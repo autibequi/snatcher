@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
 
@@ -69,16 +68,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
       {/* Badge de aprovações pendentes */}
       <PendingApprovalsBadge />
-
-      {/* CTA Disparar */}
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={() => navigate('/compose')}
-        className="hidden sm:flex"
-      >
-        ✈ Disparar
-      </Button>
 
       {/* Avatar com inicial do usuário */}
       <button

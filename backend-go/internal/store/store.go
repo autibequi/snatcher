@@ -27,6 +27,7 @@ type CatalogFilters struct {
 	Source          string
 	Status          string // 'novos' | 'curados' | 'disparados_7d' | '' (all)
 	Tag             string // filtro por tag exata (JSONB contains)
+	Brand           string // filtro por marca (ILIKE)
 	IncludeInactive bool
 	Limit           int
 	Offset          int
