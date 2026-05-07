@@ -80,8 +80,43 @@ interface Product {
   image_url?: string
   lowest_price?: number
   lowest_price_source?: string
-  tags?: string[]
+  tags?: string[] | string
+  inactive?: boolean
+  curation_status?: string
+  quantity?: string
+  weight?: { String: string; Valid: boolean } | string
   created_at?: string
+}
+
+interface TaxonomyEntry {
+  id: number
+  type: string
+  name: string
+  slug: string
+}
+
+// Normaliza tags — backend pode enviar string JSON ou array
+function parseTags(raw: string[] | string | undefined | null): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  try { return JSON.parse(raw as string) } catch { return [] }
+}
+
+// Title case simples + extrai peso para exibir depois
+const WEIGHT_RE = /\b(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|lb))\b/gi
+
+function formatTitle(raw: string): string {
+  return raw
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+function extractWeight(title: string): string | null {
+  const m = title.match(WEIGHT_RE)
+  return m ? m[0] : null
 }
 
 // ── PriceSparkline — inline na coluna da tabela ───────────────────────────────
@@ -276,6 +311,7 @@ export default function Catalog() {
   const [tab, setTab] = React.useState('all')
   const [search, setSearch] = React.useState('')
   const [source, setSource] = React.useState('')
+  const [tagFilter, setTagFilter] = React.useState('')
   const [priceMin, setPriceMin] = React.useState('')
   const [priceMax, setPriceMax] = React.useState('')
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
@@ -308,12 +344,20 @@ export default function Catalog() {
   const counts: TabCounts = countsData?.counts ?? {}
   const TABS = buildTabs(counts)
 
+  // Categorias da taxonomia para o filtro
+  const { data: categories = [] } = useQuery<TaxonomyEntry[]>({
+    queryKey: ['taxonomy', 'category'],
+    queryFn: () => apiClient.get('/api/taxonomy?type=category').then(r => r.data ?? []).catch(() => []),
+    staleTime: 5 * 60_000,
+  })
+
   const { data: rawProducts = [], isLoading } = useQuery<Product[]>({
-    queryKey: ['catalog', tab, search, source, showInactive],
+    queryKey: ['catalog', tab, search, source, tagFilter, showInactive],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
+      if (tagFilter) params.set('tag', tagFilter)
       if (tab !== 'all') params.set('status', tab)
       if (showInactive) params.set('include_inactive', 'true')
       return apiClient.get(`/api/catalog?${params}`).then(r => {
@@ -414,6 +458,18 @@ export default function Catalog() {
           <option value="americanas">Americanas</option>
           <option value="casasbahia">Casas Bahia</option>
         </select>
+        {categories.length > 0 && (
+          <select
+            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
+            value={tagFilter}
+            onChange={e => setTagFilter(e.target.value)}
+          >
+            <option value="">Todas as categorias</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.slug}>{c.name}</option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-fg-3">R$</span>
           <input
@@ -439,8 +495,8 @@ export default function Catalog() {
           />
           <span className="text-xs text-fg-2">Mostrar inativos</span>
         </label>
-        {(search || source || priceMin || priceMax) && (
-          <button type="button" onClick={() => { setSearch(''); setSource(''); setPriceMin(''); setPriceMax('') }}
+        {(search || source || tagFilter || priceMin || priceMax) && (
+          <button type="button" onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setPriceMin(''); setPriceMax('') }}
             className="text-xs text-fg-3 hover:text-danger">
             × Limpar filtros
           </button>
@@ -490,12 +546,15 @@ export default function Catalog() {
             </thead>
             <tbody>
               {products.map(p => {
-                const title = p.canonical_name ?? 'Produto'
+                const rawTitle = p.canonical_name ?? 'Produto'
+                const title = formatTitle(rawTitle)
+                const weight = extractWeight(rawTitle)
                 const price = p.lowest_price ?? 0
                 const src = p.lowest_price_source ?? ''
                 const isSelected = selected.has(p.id)
-                const isInactive = (p as any).inactive === true
+                const isInactive = p.inactive === true
                 const isExpanded = expandedId === p.id
+                const tags = parseTags(p.tags)
                 return (
                   <React.Fragment key={p.id}>
                   <tr
@@ -522,18 +581,47 @@ export default function Catalog() {
                             </span>
                           )}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-fg line-clamp-1">{title}</p>
-                            {isInactive && (
-                              <Badge variant="secondary" size="xs">inativo</Badge>
-                            )}
+                            {isInactive && <Badge variant="outline" size="sm">inativo</Badge>}
                           </div>
-                          {p.brand && (
-                            <p className="text-xs text-fg-3">
-                              {p.brand}
-                              {src ? ` · ${src}` : ''}
-                            </p>
+                          {/* Linha de marca + fonte */}
+                          {(p.brand || src) && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {p.brand && (
+                                <span className="text-xs bg-surface-2 border border-border text-fg-2 px-1.5 py-0.5 rounded font-medium">
+                                  {p.brand}
+                                </span>
+                              )}
+                              {src && (
+                                <span className="text-xs text-fg-3">{src}</span>
+                              )}
+                            </div>
+                          )}
+                          {/* Pills de peso + tags */}
+                          {(weight || tags.length > 0) && (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {weight && (
+                                <span className="text-xs bg-accent/10 text-accent border border-accent/20 px-1.5 py-0.5 rounded-full font-medium">
+                                  {weight}
+                                </span>
+                              )}
+                              {tags.slice(0, 4).map(tag => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); setTagFilter(tag === tagFilter ? '' : tag) }}
+                                  className={`text-xs px-1.5 py-0.5 rounded-full border transition-colors ${
+                                    tagFilter === tag
+                                      ? 'bg-accent text-white border-accent'
+                                      : 'bg-surface-2 text-fg-3 border-border hover:border-accent hover:text-accent'
+                                  }`}
+                                >
+                                  {tag}
+                                </button>
+                              ))}
+                            </div>
                           )}
                         </div>
                       </div>

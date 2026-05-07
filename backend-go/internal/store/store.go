@@ -26,6 +26,7 @@ type CatalogFilters struct {
 	Search          string
 	Source          string
 	Status          string // 'novos' | 'curados' | 'disparados_7d' | '' (all)
+	Tag             string // filtro por tag exata (JSONB contains)
 	IncludeInactive bool
 	Limit           int
 	Offset          int

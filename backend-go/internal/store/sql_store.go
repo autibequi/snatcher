@@ -3,6 +3,7 @@ package store
 import (
 	crand "crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"snatcher/backendv2/internal/models"
 	"strings"
@@ -2002,6 +2003,12 @@ func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProd
 	if f.Source != "" {
 		base += fmt.Sprintf(` AND lowest_price_source = $%d`, idx)
 		args = append(args, f.Source)
+		idx++
+	}
+	if f.Tag != "" {
+		tagJSON, _ := json.Marshal([]string{f.Tag})
+		base += fmt.Sprintf(` AND tags @> $%d::jsonb`, idx)
+		args = append(args, string(tagJSON))
 		idx++
 	}
 	switch f.Status {

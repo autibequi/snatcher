@@ -257,6 +257,35 @@ func (p *CatalogProduct) GetTags() []string {
 	return tags
 }
 
+// MarshalJSON serializa Tags como []string (em vez de string JSON) para a resposta HTTP.
+func (p CatalogProduct) MarshalJSON() ([]byte, error) {
+	type shadow struct {
+		ID                  int64       `json:"id"`
+		CanonicalName       string      `json:"canonical_name"`
+		Brand               NullString  `json:"brand,omitempty"`
+		Weight              NullString  `json:"weight,omitempty"`
+		ImageURL            NullString  `json:"image_url,omitempty"`
+		LowestPrice         NullFloat64 `json:"lowest_price,omitempty"`
+		LowestPriceURL      NullString  `json:"lowest_price_url,omitempty"`
+		LowestPriceSource   NullString  `json:"lowest_price_source,omitempty"`
+		Tags                []string    `json:"tags"`
+		CreatedAt           time.Time   `json:"created_at"`
+		UpdatedAt           time.Time   `json:"updated_at"`
+		CurationStatus      string      `json:"curation_status"`
+		ConsecutiveFailures int         `json:"consecutive_failures"`
+		Inactive            bool        `json:"inactive"`
+		Quantity            string      `json:"quantity"`
+	}
+	return json.Marshal(shadow{
+		ID: p.ID, CanonicalName: p.CanonicalName, Brand: p.Brand,
+		Weight: p.Weight, ImageURL: p.ImageURL, LowestPrice: p.LowestPrice,
+		LowestPriceURL: p.LowestPriceURL, LowestPriceSource: p.LowestPriceSource,
+		Tags: p.GetTags(), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		CurationStatus: p.CurationStatus, ConsecutiveFailures: p.ConsecutiveFailures,
+		Inactive: p.Inactive, Quantity: p.Quantity,
+	})
+}
+
 func (p *CatalogProduct) SetTags(tags []string) {
 	b, _ := json.Marshal(tags)
 	p.Tags = string(b)
