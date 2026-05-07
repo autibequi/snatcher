@@ -1,8 +1,37 @@
 import { useRef, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
+
+const PAGE_TITLES: Record<string, string> = {
+  '/': 'Dashboard',
+  '/match': 'Match',
+  '/automations': 'Automações',
+  '/automations/channels': 'Automações — Por canal',
+  '/compose': 'Compor',
+  '/logs': 'Logs',
+  '/catalog': 'Catálogo',
+  '/crawlers': 'Crawlers',
+  '/channels': 'Canais',
+  '/links': 'Links',
+  '/groups': 'Grupos',
+  '/accounts': 'Contas',
+  '/affiliates': 'Afiliados',
+  '/clusters': 'Clusters',
+  '/analytics': 'Analytics',
+  '/settings': 'Configurações',
+  '/taxonomy': 'Taxonomia',
+  '/curation': 'Curadoria',
+}
+
+function pageTitle(pathname: string): string {
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname]
+  const parts = pathname.split('/').filter(Boolean)
+  if (parts.length === 0) return 'Dashboard'
+  const prefix = '/' + parts[0]
+  return PAGE_TITLES[prefix] ?? ''
+}
 
 interface WAAccount {
   id: number
@@ -41,10 +70,12 @@ interface TopbarProps {
 
 export function Topbar({ onMenuClick }: TopbarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
 
   const initials = (user?.name ?? 'U')
     .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('')
+  const title = pageTitle(location.pathname)
 
   return (
     <header className="flex items-center h-14 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
@@ -58,7 +89,12 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         ☰
       </button>
 
-      {/* Search bar — ocupa o centro */}
+      {/* Título da página */}
+      {title && (
+        <h1 className="text-sm font-semibold text-fg flex-shrink-0 hidden md:block">{title}</h1>
+      )}
+
+      {/* Search bar */}
       <div className="flex-1">
         <SearchBar />
       </div>

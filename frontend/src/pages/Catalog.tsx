@@ -377,35 +377,23 @@ export default function Catalog() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-lg font-semibold text-fg">Catalogo</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {selected.size > 0 && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  const ids = Array.from(selected).join(',')
-                  navigate(`/compose?productIds=${ids}`)
-                }}
-              >
-                Disparar selecionados ({selected.size})
-              </Button>
-            )}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Filtros */}
-      <div className="px-6 py-3 flex gap-3 border-b border-border flex-shrink-0 flex-wrap items-end">
-        <div className="w-60">
+      {/* Filtros (título vai no topbar) */}
+      <div className="px-6 py-2 flex gap-2 border-b border-border flex-shrink-0 flex-wrap items-center">
+        {selected.size > 0 && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              const ids = Array.from(selected).join(',')
+              navigate(`/compose?productIds=${ids}`)
+            }}
+          >
+            Disparar selecionados ({selected.size})
+          </Button>
+        )}
+        <div className="w-48">
           <Input
-            placeholder="Buscar por nome, marca, tag..."
+            placeholder="Buscar..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
