@@ -100,6 +100,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           <SearchBar />
         </div>
 
+        {/* Jobs em background */}
+        <JobsBadge />
+
         {/* Accounts badge */}
         <AccountsBadge />
 
@@ -284,5 +287,122 @@ function AccountsBadge() {
       <span className={`w-2 h-2 rounded-full ${dotColor} flex-shrink-0`} />
       <span>{connected}/{total} contas</span>
     </button>
+  )
+}
+
+interface JobRow {
+  id: string
+  name: string
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  started_at: string
+  completed_at?: string
+  progress: number
+  total?: number
+  done?: number
+  message?: string
+  error?: string
+}
+
+function JobsBadge() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const { data: jobs = [], refetch } = useQuery<JobRow[]>({
+    queryKey: ['jobs'],
+    queryFn: () => apiClient.get('/api/jobs').then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 3_000,
+    retry: false,
+  })
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const running = jobs.filter(j => j.status === 'running')
+  const finished = jobs.filter(j => j.status !== 'running')
+
+  if (jobs.length === 0) return null
+
+  const cancelOne = (id: string) => {
+    apiClient.post(`/api/jobs/${id}/cancel`).then(() => refetch())
+  }
+  const cancelAll = () => {
+    if (confirm('Cancelar TODOS os jobs em execução?')) {
+      apiClient.post('/api/jobs/cancel-all').then(() => refetch())
+    }
+  }
+  const clearAll = () => {
+    apiClient.post('/api/jobs/clear').then(() => refetch())
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+          running.length > 0
+            ? 'bg-accent/10 text-accent hover:bg-accent/20'
+            : 'bg-surface-2 text-fg-3 hover:text-fg'
+        }`}
+        title={`${running.length} jobs rodando`}
+      >
+        {running.length > 0 && (
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+        )}
+        ⚙ {running.length > 0 ? `${running.length} job${running.length !== 1 ? 's' : ''}` : 'jobs'}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-96 bg-surface border border-border rounded-lg shadow-modal z-50 overflow-hidden">
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Jobs em background</p>
+            <div className="flex items-center gap-2">
+              {running.length > 0 && (
+                <button onClick={cancelAll} className="text-xs text-danger hover:underline">cancelar todos</button>
+              )}
+              {finished.length > 0 && (
+                <button onClick={clearAll} className="text-xs text-fg-3 hover:text-fg">limpar finalizados</button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {jobs.map(j => (
+              <div key={j.id} className="px-3 py-2 border-b border-border last:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-fg font-medium truncate">{j.name}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    j.status === 'running' ? 'bg-accent/10 text-accent' :
+                    j.status === 'completed' ? 'bg-success/10 text-success' :
+                    j.status === 'failed' ? 'bg-danger/10 text-danger' :
+                    'bg-fg-3/10 text-fg-3'
+                  }`}>{j.status}</span>
+                </div>
+                {j.status === 'running' && (
+                  <>
+                    <div className="mt-1 h-1 bg-surface-2 rounded-full overflow-hidden">
+                      <div className="h-full bg-accent transition-all" style={{ width: `${j.progress}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-xs text-fg-3">{j.done ?? 0}/{j.total ?? '?'} · {j.progress}%</span>
+                      <button onClick={() => cancelOne(j.id)} className="text-xs text-danger hover:underline">cancelar</button>
+                    </div>
+                  </>
+                )}
+                {j.message && (
+                  <p className="text-xs text-fg-3 mt-0.5 truncate" title={j.message}>{j.message}</p>
+                )}
+                {j.error && (
+                  <p className="text-xs text-danger mt-0.5 break-all">{j.error}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

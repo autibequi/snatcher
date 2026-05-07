@@ -9,25 +9,18 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
 
+	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 )
 
-// Mutexes pra evitar múltiplas execuções concorrentes dos jobs LLM
-var (
-	autoLLMRunning      sync.Mutex
-	inspectAllRunning   sync.Mutex
-	autoLLMInProgress   bool
-	inspectAllInProgress bool
-)
 
 type CurationHandler struct {
 	store  store.Store
@@ -287,35 +280,32 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	autoLLMRunning.Lock()
-	if autoLLMInProgress {
-		autoLLMRunning.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "AutoLLM já está rodando — aguarde"})
+	if jobs.Default().HasRunning("AutoLLM") {
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "AutoLLM já está rodando — veja em Jobs"})
 		return
 	}
-	autoLLMInProgress = true
-	autoLLMRunning.Unlock()
 
-	// Spawna goroutine — handler retorna 202 imediatamente
+	job, ctx := jobs.Default().Start(context.Background(), "AutoLLM")
 	go func() {
-		defer func() {
-			autoLLMRunning.Lock()
-			autoLLMInProgress = false
-			autoLLMRunning.Unlock()
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		jobCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		defer cancel()
-		h.runAutoLLM(ctx, cli)
+		h.runAutoLLM(jobCtx, cli, job.ID)
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"started": true,
-		"message": "AutoLLM rodando em background — acompanhe em Logs → LLM",
+		"job_id":  job.ID,
+		"message": "AutoLLM rodando em background — acompanhe em /jobs",
 	})
 }
 
 // runAutoLLM executa o trabalho de curadoria via LLM. Roda em goroutine.
-func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client) {
+func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client, jobID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			jobs.Default().Fail(jobID, fmt.Sprintf("panic: %v", r))
+		}
+	}()
 
 	var products []curationRow
 	err := h.db.SelectContext(ctx, &products, `
@@ -341,25 +331,45 @@ func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client) {
 	var firstErr string
 	var llmCallErrors, parseErrors int
 	for _, row := range products {
-		prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro de suplementos e produtos fitness.
-Responda DIRETAMENTE em JSON, sem tags de raciocínio (sem <think>...</think>), sem markdown, sem prefácio.
+		// Busca contexto adicional do produto (preço, fonte, imagem)
+		fullProduct, _ := h.store.GetCatalogProduct(row.ID)
+		extraCtx := ""
+		if fullProduct.LowestPrice.Valid && fullProduct.LowestPrice.Float64 > 0 {
+			extraCtx += fmt.Sprintf("\nPreço aproximado: R$ %.2f", fullProduct.LowestPrice.Float64)
+		}
+		if fullProduct.LowestPriceSource.Valid && fullProduct.LowestPriceSource.String != "" {
+			extraCtx += "\nFonte: " + fullProduct.LowestPriceSource.String
+		}
+		if fullProduct.LowestPriceURL.Valid && fullProduct.LowestPriceURL.String != "" {
+			extraCtx += "\nURL: " + fullProduct.LowestPriceURL.String
+		}
+		if fullProduct.ImageURL.Valid && fullProduct.ImageURL.String != "" {
+			extraCtx += "\nImagem: " + fullProduct.ImageURL.String
+		}
 
-Dado o nome de produto abaixo, responda SOMENTE um JSON com os campos:
+		prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro. Categorize o produto abaixo COM PRECISÃO. NÃO assuma que é suplemento/fitness — analise nome+contexto.
+
+DADOS:
+Nome: %s%s
+
+Responda SOMENTE em JSON (sem markdown, sem <think>...</think>, sem prefácio):
 {
-  "category": "categoria principal em português (ex: Suplementos, Smartphones, Tênis) ou null",
-  "brand": "marca do produto (ex: Growth, Black Skull, Vitafor) ou null",
-  "quantity": "tamanho/quantidade (ex: 900g, 2kg, 30 caps) ou null",
-  "flavor": "sabor se aplicável (ex: Chocolate, Baunilha, Morango) ou null",
+  "category": "categoria principal em pt-BR (ex: Suplementos, Eletrônicos, Jogos, Roupas, Beleza, Eletrodomésticos, Brinquedos) ou null",
+  "brand": "marca real do produto (ex: Apple, Nintendo, Growth) ou null",
+  "quantity": "tamanho/quantidade (ex: 900g, 2kg, 30 caps, 256GB) ou null",
+  "flavor": "sabor se aplicável (apenas comestíveis) ou null",
   "new_taxonomies": [
-    {"type": "brand|category|flavor|weight", "name": "Nome da entrada", "keywords": ["kw1", "kw2"]}
+    {"type": "brand|category|flavor|weight", "name": "Nome", "keywords": ["palavra1", "palavra2"]}
   ]
 }
 
-Inclua em new_taxonomies quaisquer marcas, categorias, sabores ou tamanhos novos que você identificar e que possam ser úteis para classificar outros produtos similares. Se nada novo, deixe array vazio.
+REGRAS:
+- Use a URL e a imagem como pistas — domínio amazon.com/loja-X indica plataforma, não marca
+- "talking flower" + nintendo = Brinquedo Nintendo, não CBD
+- "jogo X switch" = Jogos para Nintendo Switch, marca = publisher (ex: Nintendo)
+- Só sugira new_taxonomies se forem categorias/marcas RECORRENTES, não específicas de 1 produto
 
-Nome: %s
-
-JSON:`, row.CanonicalName)
+JSON:`, row.CanonicalName, extraCtx)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
 			MaxTokens:   4000, // tokens altos pra modelos thinking terminarem reasoning + emitirem JSON
@@ -447,6 +457,7 @@ JSON:`, row.CanonicalName)
 			_ = h.store.UpdateCatalogProduct(p)
 		}
 		processed++
+		jobs.Default().Update(jobID, processed, len(products), fmt.Sprintf("processado %s", row.CanonicalName))
 
 		// Salvar propostas de novas taxonomias como pending para revisão humana
 		for _, nt := range result.NewTaxonomies {
@@ -471,6 +482,7 @@ JSON:`, row.CanonicalName)
 		"new_taxonomies", newTaxonomies,
 		"errors", llmCallErrors+parseErrors,
 		"first_error", firstErr)
+	jobs.Default().Done(jobID, fmt.Sprintf("%d processados, %d categorizados, %d taxonomias novas, %d erros", processed, categorized, newTaxonomies, llmCallErrors+parseErrors))
 }
 
 // InspectAll POST /api/curation/inspect-all
@@ -483,34 +495,32 @@ func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inspectAllRunning.Lock()
-	if inspectAllInProgress {
-		inspectAllRunning.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "Inspeção já está rodando — aguarde"})
+	if jobs.Default().HasRunning("InspectAll") {
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "Inspeção já está rodando — veja em Jobs"})
 		return
 	}
-	inspectAllInProgress = true
-	inspectAllRunning.Unlock()
 
+	job, ctx := jobs.Default().Start(context.Background(), "InspectAll")
 	go func() {
-		defer func() {
-			inspectAllRunning.Lock()
-			inspectAllInProgress = false
-			inspectAllRunning.Unlock()
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+		jobCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 		defer cancel()
-		h.runInspectAll(ctx, cli)
+		h.runInspectAll(jobCtx, cli, job.ID)
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"started": true,
-		"message": "Inspeção rodando em background — acompanhe os stats",
+		"job_id":  job.ID,
+		"message": "Inspeção rodando em background — acompanhe em /jobs",
 	})
 }
 
 // runInspectAll executa a inspeção via LLM. Roda em goroutine.
-func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client) {
+func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client, jobID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			jobs.Default().Fail(jobID, fmt.Sprintf("panic: %v", r))
+		}
+	}()
 
 	type prodRow struct {
 		ID                int64    `db:"id"`
@@ -637,20 +647,26 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 		// Aplicar correções
 		p, err := h.store.GetCatalogProduct(row.ID)
 		if err != nil {
+			slog.Error("Inspect: GetCatalogProduct failed", "id", row.ID, "err", err)
 			continue
 		}
 		hadCorrection := false
+		oldName := p.CanonicalName
+		var changes []string
 		if result.Corrections.CanonicalName != nil && *result.Corrections.CanonicalName != "" && *result.Corrections.CanonicalName != p.CanonicalName {
 			p.CanonicalName = *result.Corrections.CanonicalName
+			changes = append(changes, fmt.Sprintf("name: %q→%q", oldName, p.CanonicalName))
 			hadCorrection = true
 		}
 		if result.Corrections.Brand != nil && *result.Corrections.Brand != "" && (!p.Brand.Valid || p.Brand.String == "") {
 			p.Brand.String = *result.Corrections.Brand
 			p.Brand.Valid = true
+			changes = append(changes, "brand="+*result.Corrections.Brand)
 			hadCorrection = true
 		}
 		if result.Corrections.Quantity != nil && *result.Corrections.Quantity != "" && p.Quantity == "" {
 			p.Quantity = *result.Corrections.Quantity
+			changes = append(changes, "quantity="+*result.Corrections.Quantity)
 			hadCorrection = true
 		}
 		if len(result.Corrections.AddTags) > 0 {
@@ -659,19 +675,21 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			for _, t := range tags {
 				seen[strings.ToLower(t)] = true
 			}
+			added := []string{}
 			for _, t := range result.Corrections.AddTags {
 				if t != "" && !seen[strings.ToLower(t)] {
 					tags = append(tags, t)
 					seen[strings.ToLower(t)] = true
+					added = append(added, t)
 					hadCorrection = true
 				}
 			}
-			if hadCorrection {
+			if len(added) > 0 {
 				p.SetTags(tags)
+				changes = append(changes, "tags+="+strings.Join(added, ","))
 			}
 		}
 
-		// Marcar como inspecionado
 		notes := result.Summary
 		if len(result.Issues) > 0 {
 			notes += " · Issues: " + strings.Join(result.Issues, "; ")
@@ -679,12 +697,24 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 		p.Inspected = true
 		p.InspectedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
 		p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: notes != ""}}
-		_ = h.store.UpdateCatalogProduct(p)
+		if updErr := h.store.UpdateCatalogProduct(p); updErr != nil {
+			slog.Error("Inspect: UpdateCatalogProduct failed", "id", row.ID, "err", updErr)
+			llm.RecordHandlerError("inspect", "db", "UpdateCatalogProduct: "+updErr.Error(), notes)
+			continue
+		}
+
+		slog.Info("Inspect: produto auditado",
+			"id", row.ID,
+			"name", oldName,
+			"ready_for_dispatch", result.ReadyForDispatch,
+			"changes", changes,
+			"issues_count", len(result.Issues))
 
 		inspected++
 		if hadCorrection {
 			corrected++
 		}
+		jobs.Default().Update(jobID, inspected, len(products), fmt.Sprintf("auditado %s", oldName))
 	}
 
 	slog.Info("InspectAll: concluído",
@@ -693,4 +723,5 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 		"errors", llmErrors,
 		"first_error", firstErr,
 		"remaining", len(products)-inspected)
+	jobs.Default().Done(jobID, fmt.Sprintf("%d auditados, %d corrigidos, %d erros, %d restantes", inspected, corrected, llmErrors, len(products)-inspected))
 }

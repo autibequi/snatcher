@@ -382,6 +382,13 @@ func Build(
 		r.Patch("/api/team/{id}/role", team.UpdateRole)
 		r.Delete("/api/team/{id}", team.Remove)
 
+		// Jobs (background tasks)
+		jobsHandler := adminhnd.NewJobsHandler()
+		r.Get("/api/jobs", jobsHandler.List)
+		r.Post("/api/jobs/{id}/cancel", jobsHandler.Cancel)
+		r.Post("/api/jobs/clear", jobsHandler.Clear)
+		r.Post("/api/jobs/cancel-all", jobsHandler.CancelAll)
+
 		// Admin: LLM observability
 		llmAdmin := adminhnd.NewLLMAdminHandler(db)
 		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
