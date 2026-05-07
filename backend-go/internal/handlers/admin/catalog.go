@@ -7,6 +7,7 @@ import (
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -386,6 +387,23 @@ func (h *CatalogHandler) Reprocess(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		changed := false
+		// Dedup case-insensitive das tags atuais (limpa duplicatas tipo "suplementos"/"Suplementos")
+		originalTags := p.GetTags()
+		dedupedTags := make([]string, 0, len(originalTags))
+		seenTags := map[string]bool{}
+		for _, tag := range originalTags {
+			key := strings.ToLower(strings.TrimSpace(tag))
+			if key == "" || seenTags[key] {
+				continue
+			}
+			seenTags[key] = true
+			dedupedTags = append(dedupedTags, tag)
+		}
+		if len(dedupedTags) != len(originalTags) {
+			p.SetTags(dedupedTags)
+			changed = true
+		}
+
 		for _, t := range taxEntries {
 			switch t.Type {
 			case "brand":
@@ -394,7 +412,6 @@ func (h *CatalogHandler) Reprocess(w http.ResponseWriter, r *http.Request) {
 					branded++
 					changed = true
 				}
-				// Sempre limpa duplicações da marca no título
 				cleanedName := pipeline.CleanTitle(p.CanonicalName, t.Name)
 				if cleanedName != p.CanonicalName && cleanedName != "" {
 					p.CanonicalName = cleanedName
@@ -402,16 +419,10 @@ func (h *CatalogHandler) Reprocess(w http.ResponseWriter, r *http.Request) {
 					changed = true
 				}
 			case "category":
-				tags := p.GetTags()
-				found := false
-				for _, tag := range tags {
-					if tag == t.Name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					p.SetTags(append(tags, t.Name))
+				key := strings.ToLower(t.Name)
+				if !seenTags[key] {
+					seenTags[key] = true
+					p.SetTags(append(p.GetTags(), t.Name))
 					categorized++
 					changed = true
 				}

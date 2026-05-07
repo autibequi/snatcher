@@ -143,11 +143,15 @@ func processResult(
 		}
 	}
 
-	// Sem inferência automática → marcar pending para curadoria manual.
-	// Com inferência → marcar curated (auto) para não cair na fila.
-	if len(matchedIDs) == 0 && refreshedProduct.CurationStatus == "" {
-		refreshedProduct.CurationStatus = "pending"
-	} else if len(matchedIDs) > 0 && (refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "pending") {
+	// Triagem: produto sem marca detectada → pending (precisa revisão humana ou LLM).
+	// Com marca + categoria → auto (pipeline barato cobriu).
+	hasBrand := refreshedProduct.Brand.Valid && refreshedProduct.Brand.String != ""
+	hasCategory := len(matchedIDs) > 0 || len(refreshedProduct.GetTags()) > 0
+	if !hasBrand || !hasCategory {
+		if refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "auto" {
+			refreshedProduct.CurationStatus = "pending"
+		}
+	} else if refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "pending" {
 		refreshedProduct.CurationStatus = "auto"
 	}
 	_ = st.UpdateCatalogProduct(refreshedProduct)
