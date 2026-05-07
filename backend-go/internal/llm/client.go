@@ -13,4 +13,5 @@ type Options struct {
 	MaxTokens   int
 	Temperature float64
 	Operation   string // label para telemetria e roteamento: "query_expansion", "compose", etc.
+	JSONMode    bool   // força resposta em JSON via response_format / format do Ollama (evita reasoning verboso)
 }

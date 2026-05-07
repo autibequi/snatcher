@@ -46,6 +46,12 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	if opts.MaxTokens > 0 {
 		reqBody["max_tokens"] = opts.MaxTokens
 	}
+	if opts.JSONMode {
+		// OpenAI/OpenRouter: response_format. Ollama (compat /v1) também aceita.
+		reqBody["response_format"] = map[string]string{"type": "json_object"}
+		// Ollama nativo aceita também o campo "format" — incluímos para compat
+		reqBody["format"] = "json"
+	}
 
 	b, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(b))
