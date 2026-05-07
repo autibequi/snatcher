@@ -362,10 +362,10 @@ Nome: %s
 JSON:`, row.CanonicalName)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   600, // JSONMode evita raciocínio verboso, 600 é folgado pra resposta
+			MaxTokens:   4000, // tokens altos pra modelos thinking terminarem reasoning + emitirem JSON
 			Temperature: 0.1,
 			Operation:   "curation",
-			JSONMode:    true, // força resposta JSON direta — bypassa <think> de modelos de reasoning
+			JSONMode:    true,
 		})
 		if err != nil {
 			llmCallErrors++
@@ -588,7 +588,7 @@ Responda SOMENTE em JSON:
 Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   800, // JSONMode bypassa raciocínio
+			MaxTokens:   5000, // tokens altos pra modelos thinking
 			Temperature: 0.1,
 			Operation:   "inspect",
 			JSONMode:    true,

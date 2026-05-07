@@ -19,6 +19,57 @@ type OpenAICompatClient struct {
 	httpCli *http.Client
 }
 
+// extractLastJSON procura o último bloco JSON válido (objeto `{...}`) em uma string.
+// Útil pra extrair JSON do campo `reasoning` de modelos thinking que emitem
+// o JSON dentro do raciocínio em vez do content.
+func extractLastJSON(s string) string {
+	if s == "" {
+		return ""
+	}
+	// Remove markdown fences
+	s = strings.ReplaceAll(s, "```json", "")
+	s = strings.ReplaceAll(s, "```", "")
+
+	// Procura o último '{' e tenta balancear até o '}' correspondente
+	for start := strings.LastIndex(s, "{"); start >= 0; start = strings.LastIndex(s[:start], "{") {
+		depth := 0
+		inStr := false
+		escaped := false
+		for i := start; i < len(s); i++ {
+			c := s[i]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' && inStr {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				inStr = !inStr
+				continue
+			}
+			if inStr {
+				continue
+			}
+			if c == '{' {
+				depth++
+			} else if c == '}' {
+				depth--
+				if depth == 0 {
+					candidate := s[start : i+1]
+					// validação básica — tem que ter pelo menos uma chave/valor
+					if strings.Contains(candidate, ":") {
+						return candidate
+					}
+					break
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // NewOpenAICompat cria cliente para {baseURL}/chat/completions.
 // Para Ollama: baseURL = "http://ollama:11434/v1"
 // Para OpenRouter: baseURL = "https://openrouter.ai/api/v1"
@@ -117,17 +168,24 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	reasoning := result.Choices[0].Message.Reasoning
 	finishReason := result.Choices[0].FinishReason
 
+	// Fallback: se content vazio mas reasoning existe (modelos thinking),
+	// tenta extrair o último JSON válido do reasoning.
+	// Modelos como qwen3/deepseek-r1 às vezes terminam o thinking emitindo o JSON real
+	// dentro do próprio reasoning, em vez de no content.
+	if content == "" && reasoning != "" {
+		if extracted := extractLastJSON(reasoning); extracted != "" {
+			content = extracted
+		}
+	}
+
 	// Detecta respostas problemáticas mesmo com HTTP 200
 	if content == "" {
 		var errMsg string
 		if reasoning != "" {
-			// Modelo gastou todos os tokens em reasoning sem emitir o JSON real.
-			// Comum em qwen3/deepseek-r1 mesmo com /no_think e response_format=json.
-			errMsg = "model returned only reasoning, no content (finish_reason=" + finishReason + ", completion_tokens=" + fmt.Sprintf("%d", result.Usage.CompletionTokens) + "). Modelo de thinking não respeita format=json — troque para llama3.1/qwen2.5/mistral em Configurações → LLM/IA"
+			errMsg = "model returned only reasoning, no JSON found (finish_reason=" + finishReason + ", completion_tokens=" + fmt.Sprintf("%d", result.Usage.CompletionTokens) + "). Aumente max_tokens ou troque para modelo não-thinking (llama3.1/qwen2.5/mistral)"
 		} else {
 			errMsg = "empty content (finish_reason=" + finishReason + ")"
 		}
-		// Salva o reasoning no payload pra debug
 		fullDebug := rawResponse
 		if reasoning != "" {
 			fullDebug = "REASONING:\n" + reasoning + "\n\n--- FULL RESPONSE ---\n" + rawResponse
