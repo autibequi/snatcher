@@ -31,6 +31,7 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 }
 
 func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts Options) (string, error) {
+	start := time.Now()
 	model := opts.Model
 	if model == "" {
 		model = "llama3"
@@ -48,6 +49,7 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	b, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(b))
 	if err != nil {
+		recordMetric(opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, err.Error())
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -57,13 +59,18 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 
 	resp, err := c.httpCli.Do(req)
 	if err != nil {
+		errMsg := fmt.Errorf("llm request: %w", err).Error()
+		recordMetric(opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, errMsg)
 		return "", fmt.Errorf("llm request: %w", err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	latency := time.Since(start).Seconds()
 
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("llm status %d: %s", resp.StatusCode, string(body))
+		errMsg := fmt.Sprintf("llm status %d: %s", resp.StatusCode, string(body))
+		recordMetric(opts.Operation, model, fmt.Sprintf("http_%d", resp.StatusCode), 0, 0, 0, latency, true, errMsg)
+		return "", fmt.Errorf("%s", errMsg)
 	}
 
 	var result struct {
@@ -72,9 +79,17 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
-		return "", fmt.Errorf("llm parse error: %s", string(body))
+		errMsg := fmt.Sprintf("llm parse error: %s", string(body))
+		recordMetric(opts.Operation, model, "parse_error", 0, 0, 0, latency, true, errMsg)
+		return "", fmt.Errorf("%s", errMsg)
 	}
+
+	recordMetric(opts.Operation, model, "ok", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, false, "")
 	return result.Choices[0].Message.Content, nil
 }

@@ -37,6 +37,9 @@ func Build(
 	adapters pipeline.AdapterRegistry,
 	jwtSecret string,
 ) http.Handler {
+	// Inicializa persistência de métricas de LLM em llm_metrics
+	llm.SetMetricsDB(db)
+
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(requestIDLogger)
