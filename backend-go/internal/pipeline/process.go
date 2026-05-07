@@ -43,17 +43,9 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 		}
 	}
 
-	// Detect products that were expected but not found in this crawl
-	// If a product has variants but none appeared in results, increment failures
-	for _, p := range products {
-		if !successfulProductIDs[p.ID] {
-			variants, err := st.ListVariantsByProduct(p.ID)
-			if err == nil && len(variants) > 0 {
-				// Product had variants but wasn't found in this crawl — increment failure
-				_ = st.IncrementProductFailures(p.ID)
-			}
-		}
-	}
+	// Não incrementa falhas aqui — buscas por keyword não garantem redescobrir
+	// todos os produtos existentes. Falhas só devem ser incrementadas via scraper
+	// direto de URL, não por ausência em resultado de busca.
 
 	return nil
 }

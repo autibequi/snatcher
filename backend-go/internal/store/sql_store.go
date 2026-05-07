@@ -1843,7 +1843,7 @@ func (s *SQLStore) IncrementProductFailures(id int64) error {
 	_, err := s.db.Exec(`
 		UPDATE catalogproduct
 		SET consecutive_failures = consecutive_failures + 1,
-		    inactive = (consecutive_failures + 1 >= 3)
+		    inactive = (consecutive_failures + 1 >= 10)
 		WHERE id = $1`, id)
 	return err
 }
