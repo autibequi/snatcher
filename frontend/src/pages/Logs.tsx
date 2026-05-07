@@ -914,38 +914,66 @@ function LLMLogs() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <React.Fragment key={r.id}>
-                <tr className={`border-b border-border last:border-0 ${r.error ? 'bg-danger/5' : ''}`}>
-                  <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap">
-                    {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg">{r.operation}</td>
-                  <td className="px-3 py-2 text-xs text-fg-2 font-mono truncate max-w-xs">{r.model}</td>
-                  <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">{r.tokens_in}→{r.tokens_out}</td>
-                  <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">${r.cost_usd.toFixed(4)}</td>
-                  <td className="px-3 py-2 text-xs text-fg-3 font-mono text-right">
-                    {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    {r.error ? (
-                      <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
-                    ) : r.cache_hit ? (
-                      <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
-                    ) : (
-                      <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">{r.status || 'ok'}</span>
-                    )}
-                  </td>
-                </tr>
-                {r.error && r.error_msg && (
-                  <tr className="bg-danger/5 border-b border-border last:border-0">
-                    <td colSpan={7} className="px-4 py-2 text-xs font-mono text-danger break-all">
-                      {r.error_msg}
+            {rows.map(r => {
+              const isExpanded = expandedId === r.id
+              const hasPayload = !!(r.prompt || r.response)
+              return (
+                <React.Fragment key={r.id}>
+                  <tr
+                    className={`border-b border-border last:border-0 ${r.error ? 'bg-danger/5' : ''} ${hasPayload ? 'cursor-pointer hover:bg-surface-2' : ''}`}
+                    onClick={() => hasPayload && setExpandedId(isExpanded ? null : r.id)}
+                  >
+                    <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap">
+                      {hasPayload && <span className="text-fg-3 mr-1">{isExpanded ? '▼' : '▶'}</span>}
+                      {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-fg">{r.operation}</td>
+                    <td className="px-3 py-2 text-xs text-fg-2 font-mono truncate max-w-xs">{r.model}</td>
+                    <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">{r.tokens_in}→{r.tokens_out}</td>
+                    <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">${r.cost_usd.toFixed(4)}</td>
+                    <td className="px-3 py-2 text-xs text-fg-3 font-mono text-right">
+                      {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.error ? (
+                        <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
+                      ) : r.cache_hit ? (
+                        <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">{r.status || 'ok'}</span>
+                      )}
                     </td>
                   </tr>
-                )}
-              </React.Fragment>
-            ))}
+                  {r.error && r.error_msg && (
+                    <tr className="bg-danger/5 border-b border-border last:border-0">
+                      <td colSpan={7} className="px-4 py-2 text-xs font-mono text-danger break-all">
+                        {r.error_msg}
+                      </td>
+                    </tr>
+                  )}
+                  {isExpanded && hasPayload && (
+                    <tr className="border-b border-border last:border-0 bg-surface-2">
+                      <td colSpan={7} className="px-4 py-3">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Prompt enviado</p>
+                            <pre className="text-xs font-mono text-fg-2 bg-surface border border-border rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words">
+                              {r.prompt || '(vazio)'}
+                            </pre>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Resposta recebida</p>
+                            <pre className={`text-xs font-mono bg-surface border border-border rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words ${r.error ? 'text-danger' : 'text-fg-2'}`}>
+                              {r.response || '(vazio)'}
+                            </pre>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
           </tbody>
         </table>
       )}
