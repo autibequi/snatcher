@@ -145,6 +145,7 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	}
 
 	var result struct {
+		Model   string `json:"model"` // OpenRouter retorna o modelo escolhido (ex: "auto" → "meta-llama/llama-3.3-70b-instruct")
 		Choices []struct {
 			Message struct {
 				Content   string `json:"content"`
@@ -153,9 +154,10 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
+			PromptTokens     int     `json:"prompt_tokens"`
+			CompletionTokens int     `json:"completion_tokens"`
+			TotalTokens      int     `json:"total_tokens"`
+			Cost             float64 `json:"cost"` // OpenRouter retorna custo real quando disponível
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
@@ -215,6 +217,18 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	if finishReason != "" && finishReason != "stop" {
 		status = finishReason
 	}
-	recordMetric(opts.Operation, model, status, result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, false, "", prompt, content)
+
+	// Modelo real (OpenRouter pode retornar diferente do solicitado em caso de "auto")
+	loggedModel := model
+	if result.Model != "" && result.Model != model {
+		loggedModel = result.Model
+	}
+	// Custo: usa o que veio na resposta (OpenRouter) ou estima pela tabela
+	cost := result.Usage.Cost
+	if cost == 0 {
+		cost = EstimateCost(loggedModel, result.Usage.PromptTokens, result.Usage.CompletionTokens)
+	}
+
+	recordMetric(opts.Operation, loggedModel, status, result.Usage.PromptTokens, result.Usage.CompletionTokens, cost, latency, false, "", prompt, content)
 	return content, nil
 }
