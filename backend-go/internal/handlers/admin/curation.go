@@ -58,8 +58,9 @@ func (h *CurationHandler) List(w http.ResponseWriter, r *http.Request) {
 		  AND (
 		    curation_status = 'pending'
 		    OR (brand IS NULL OR brand = '')
-		    OR tags = '[]'
-		    OR tags = ''
+		    OR tags IS NULL
+		    OR tags = '[]'::jsonb
+		    OR jsonb_array_length(tags) = 0
 		  )
 		ORDER BY
 		    CASE WHEN curation_status = 'pending' THEN 0 ELSE 1 END,
@@ -96,7 +97,7 @@ func (h *CurationHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		SELECT COUNT(*) FROM catalogproduct
 		WHERE curation_status != 'rejected'
 		  AND curation_status != 'pending'
-		  AND ((brand IS NULL OR brand = '') OR tags = '[]' OR tags = '')`)
+		  AND ((brand IS NULL OR brand = '') OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0)`)
 	rows = append(rows, stat{Status: "incomplete", Count: incomplete})
 	writeJSON(w, http.StatusOK, rows)
 }
@@ -182,7 +183,7 @@ func (h *CurationHandler) AutoHeuristic(w http.ResponseWriter, r *http.Request) 
 		  AND (
 		    curation_status = 'pending'
 		    OR (brand IS NULL OR brand = '')
-		    OR tags = '[]' OR tags = ''
+		    OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0
 		  )
 		LIMIT 200`)
 	if err != nil {
@@ -269,7 +270,7 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 		  AND (
 		    curation_status = 'pending'
 		    OR (brand IS NULL OR brand = '')
-		    OR tags = '[]' OR tags = ''
+		    OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0
 		  )
 		ORDER BY created_at DESC LIMIT 20`)
 	if err != nil {
