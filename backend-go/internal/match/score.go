@@ -162,6 +162,31 @@ func ScoreChannel(product ProductInput, channel models.Channel, w Weights) Score
 	return score
 }
 
+// MatchesChannelFilter verifica se um produto passa pelos filtros de match_type/match_value/max_price
+// configurados na automação do canal. maxPrice 0 = sem limite.
+func MatchesChannelFilter(inp ProductInput, productPrice float64, matchType, matchValue string, maxPrice float64) bool {
+	if matchType != "all" && matchValue != "" {
+		switch matchType {
+		case "category":
+			if !containsKeyword(inp.Category, matchValue) && !containsKeyword(inp.Name, matchValue) {
+				return false
+			}
+		case "brand":
+			if !containsKeyword(inp.Brand, matchValue) {
+				return false
+			}
+		case "keyword":
+			if !containsKeyword(inp.Name, matchValue) {
+				return false
+			}
+		}
+	}
+	if maxPrice > 0 && productPrice > maxPrice {
+		return false
+	}
+	return true
+}
+
 // RankChannels calcula scores para uma lista de canais e ordena por score desc.
 // Retorna no máximo 50 resultados com score > 0.
 func RankChannels(product ProductInput, channels []models.Channel) []Score {

@@ -58,7 +58,7 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Preview retorna os produtos que seriam disparados no próximo ciclo.
+// Preview retorna os produtos que seriam disparados no próximo ciclo, respeitando configs por canal.
 // GET /api/auto-match/preview
 func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.store.GetConfig()
@@ -66,24 +66,42 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar config")
 		return
 	}
-	threshold := cfg.AutoMatchThreshold
-	if threshold <= 0 { threshold = 50 }
-	maxPerRun := cfg.AutoMatchMaxPerRun
-	if maxPerRun <= 0 { maxPerRun = 3 }
 
-	products, _ := h.store.ListCatalogProducts(20, 0, true)
-	channels, _ := h.store.ListChannels()
+	automations, _ := h.store.ListChannelAutomations(true) // enabled=true
+	now := time.Now()
 
-	// Carregar pares recentes para filtrar (mesma lógica do worker)
-	recentLogs, _ := h.store.ListAutoMatchLogs(500)
-	cutoff := time.Now().Add(-6 * time.Hour)
-	type pairKey struct{ pID, cID int64 }
-	recentPairs := map[pairKey]bool{}
-	for _, l := range recentLogs {
-		if l.CreatedAt.After(cutoff) {
-			recentPairs[pairKey{l.ProductID, l.ChannelID}] = true
+	// Filtrar por auto_match_enabled e paused_until
+	autoByChannelID := make(map[int64]models.ChannelAutomation, len(automations))
+	for _, a := range automations {
+		if !a.AutoMatchEnabled {
+			continue
+		}
+		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
+			continue
+		}
+		autoByChannelID[a.ChannelID] = a
+	}
+
+	if len(autoByChannelID) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items":       []any{},
+			"threshold":   cfg.AutoMatchThreshold,
+			"max_per_run": cfg.AutoMatchMaxPerRun,
+		})
+		return
+	}
+
+	// Carregar canais ativos
+	channelsByID := make(map[int64]models.Channel, len(autoByChannelID))
+	for cID := range autoByChannelID {
+		ch, err := h.store.GetChannel(cID)
+		if err == nil {
+			channelsByID[cID] = ch
 		}
 	}
+
+	products, _ := h.store.ListCatalogProducts(20, 0, true)
+	recentLogs, _ := h.store.ListAutoMatchLogs(500)
 
 	type previewItem struct {
 		ProductID   int64   `json:"product_id"`
@@ -94,39 +112,111 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		AlreadySent bool    `json:"already_sent"`
 	}
 
+	sentByChannel := make(map[int64]int, len(autoByChannelID))
 	var items []previewItem
-	sent := 0
+
+	channels := make([]models.Channel, 0, len(channelsByID))
+	for _, ch := range channelsByID {
+		channels = append(channels, ch)
+	}
+
 	for _, p := range products {
 		inp := match.ProductInput{Name: p.CanonicalName}
-		if p.Brand.Valid { inp.Brand = p.Brand.String }
-		if p.LowestPrice.Valid { inp.Price = p.LowestPrice.Float64 }
-		tags := p.GetTags()
-		if len(tags) > 0 { inp.Category = tags[0] }
+		if p.Brand.Valid {
+			inp.Brand = p.Brand.String
+		}
+		if p.LowestPrice.Valid {
+			inp.Price = p.LowestPrice.Float64
+		}
+		if tags := p.GetTags(); len(tags) > 0 {
+			inp.Category = tags[0]
+		}
+		price := 0.0
+		if p.LowestPrice.Valid {
+			price = p.LowestPrice.Float64
+		}
 
 		scores := match.RankChannels(inp, channels)
 		for _, s := range scores {
-			if s.Value < threshold { break }
-			already := recentPairs[pairKey{p.ID, s.ChannelID}]
+			auto, ok := autoByChannelID[s.ChannelID]
+			if !ok {
+				continue
+			}
+
+			threshold := cfg.AutoMatchThreshold
+			if auto.Threshold.Valid {
+				threshold = auto.Threshold.Float64
+			}
+			if threshold <= 0 {
+				threshold = 50
+			}
+
+			maxPerRun := cfg.AutoMatchMaxPerRun
+			if auto.MaxPerRun.Valid {
+				maxPerRun = int(auto.MaxPerRun.Int64)
+			}
+			if maxPerRun <= 0 {
+				maxPerRun = 3
+			}
+
+			cooldownHours := 6
+			if auto.CooldownHours > 0 {
+				cooldownHours = auto.CooldownHours
+			}
+
+			matchValue := ""
+			if auto.MatchValue.Valid {
+				matchValue = auto.MatchValue.String
+			}
+			maxPrice := 0.0
+			if auto.MaxPrice.Valid {
+				maxPrice = auto.MaxPrice.Float64
+			}
+
+			if !match.MatchesChannelFilter(inp, price, auto.MatchType, matchValue, maxPrice) {
+				continue
+			}
+			if s.Value < threshold {
+				break
+			}
+			if sentByChannel[s.ChannelID] >= maxPerRun {
+				continue
+			}
+
+			cutoff := now.Add(-time.Duration(cooldownHours) * time.Hour)
+			alreadySent := false
+			for _, l := range recentLogs {
+				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
+					alreadySent = true
+					break
+				}
+			}
+
 			items = append(items, previewItem{
 				ProductID:   p.ID,
 				ChannelID:   s.ChannelID,
 				ProductName: p.CanonicalName,
 				ChannelName: s.ChannelName,
 				Score:       s.Value,
-				AlreadySent: already,
+				AlreadySent: alreadySent,
 			})
-			if !already { sent++ }
-			if sent >= maxPerRun && !already { break }
+			if !alreadySent {
+				sentByChannel[s.ChannelID]++
+			}
 		}
-		if len(items) >= 30 { break }
+		if len(items) >= 50 {
+			break
+		}
 	}
-	if items == nil { items = []previewItem{} }
-	// Ordena por score DESC — melhor match no topo
+
+	if items == nil {
+		items = []previewItem{}
+	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Score > items[j].Score })
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":      items,
-		"threshold":  threshold,
-		"max_per_run": maxPerRun,
+		"items":       items,
+		"threshold":   cfg.AutoMatchThreshold,
+		"max_per_run": cfg.AutoMatchMaxPerRun,
 	})
 }
 
@@ -179,13 +269,18 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threshold := cfg.AutoMatchThreshold
-	if threshold <= 0 {
-		threshold = 50
-	}
-	maxPerRun := cfg.AutoMatchMaxPerRun
-	if maxPerRun <= 0 {
-		maxPerRun = 3
+	// Carregar automações ativas para respeitar configs por canal
+	automations, _ := h.store.ListChannelAutomations(true)
+	now := time.Now()
+	autoByChannelID := make(map[int64]models.ChannelAutomation, len(automations))
+	for _, a := range automations {
+		if !a.AutoMatchEnabled {
+			continue
+		}
+		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
+			continue
+		}
+		autoByChannelID[a.ChannelID] = a
 	}
 
 	products, err := h.store.ListCatalogProducts(20, 0, true)
@@ -200,22 +295,14 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	recentLogs, _ := h.store.ListAutoMatchLogs(500)
-	cutoff := time.Now().Add(-6 * time.Hour)
 	type pairKey struct{ pID, cID int64 }
 	recentPairs := make(map[pairKey]bool, len(recentLogs))
-	for _, l := range recentLogs {
-		if l.CreatedAt.After(cutoff) {
-			recentPairs[pairKey{l.ProductID, l.ChannelID}] = true
-		}
-	}
 
 	dispatched := 0
+	sentByChannel := make(map[int64]int, len(autoByChannelID))
 	var errs []string
 
 	for _, p := range products {
-		if dispatched >= maxPerRun {
-			break
-		}
 		inp := match.ProductInput{Name: p.CanonicalName}
 		if p.Brand.Valid {
 			inp.Brand = p.Brand.String
@@ -223,20 +310,73 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		if p.LowestPrice.Valid {
 			inp.Price = p.LowestPrice.Float64
 		}
-		tags := p.GetTags()
-		if len(tags) > 0 {
+		if tags := p.GetTags(); len(tags) > 0 {
 			inp.Category = tags[0]
+		}
+		price := 0.0
+		if p.LowestPrice.Valid {
+			price = p.LowestPrice.Float64
 		}
 
 		scores := match.RankChannels(inp, channels)
 		for _, s := range scores {
+			auto, hasAuto := autoByChannelID[s.ChannelID]
+
+			threshold := cfg.AutoMatchThreshold
+			maxPerRun := cfg.AutoMatchMaxPerRun
+			cooldownHours := 6
+			matchType := "all"
+			matchValue := ""
+			maxPrice := 0.0
+
+			if hasAuto {
+				if auto.Threshold.Valid {
+					threshold = auto.Threshold.Float64
+				}
+				if auto.MaxPerRun.Valid {
+					maxPerRun = int(auto.MaxPerRun.Int64)
+				}
+				if auto.CooldownHours > 0 {
+					cooldownHours = auto.CooldownHours
+				}
+				matchType = auto.MatchType
+				if auto.MatchValue.Valid {
+					matchValue = auto.MatchValue.String
+				}
+				if auto.MaxPrice.Valid {
+					maxPrice = auto.MaxPrice.Float64
+				}
+			}
+			if threshold <= 0 {
+				threshold = 50
+			}
+			if maxPerRun <= 0 {
+				maxPerRun = 3
+			}
+
+			if !match.MatchesChannelFilter(inp, price, matchType, matchValue, maxPrice) {
+				continue
+			}
 			if s.Value < threshold {
 				break
 			}
-			if dispatched >= maxPerRun {
-				break
+			if sentByChannel[s.ChannelID] >= maxPerRun {
+				continue
 			}
+
+			cutoff := now.Add(-time.Duration(cooldownHours) * time.Hour)
 			if recentPairs[pairKey{p.ID, s.ChannelID}] {
+				continue
+			}
+			// Verificar cooldown preciso nos logs
+			alreadySent := false
+			for _, l := range recentLogs {
+				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
+					alreadySent = true
+					break
+				}
+			}
+			if alreadySent {
 				continue
 			}
 
@@ -253,6 +393,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 				Score:      s.Value,
 			})
 			dispatched++
+			sentByChannel[s.ChannelID]++
 		}
 	}
 

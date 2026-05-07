@@ -44,6 +44,29 @@ interface AutoMatchLog {
   channel_name?: string
 }
 
+interface ChannelPreviewItem {
+  product_id: number
+  product_name: string
+  score: number
+  price: number
+  already_sent: boolean
+}
+
+interface ChannelPreview {
+  items: ChannelPreviewItem[]
+  threshold: number
+  max_per_run: number
+}
+
+interface GlobalPreviewItem {
+  product_id: number
+  channel_id: number
+  product_name: string
+  channel_name: string
+  score: number
+  already_sent: boolean
+}
+
 interface AutoMatchStatus {
   enabled: boolean
   threshold: number
@@ -140,6 +163,7 @@ const DRAWER_TABS = [
   { id: 'filters', label: 'Filtros' },
   { id: 'notif',   label: 'Notificacoes' },
   { id: 'monitor', label: 'Monitor' },
+  { id: 'next',    label: 'Proximos Produtos' },
 ]
 
 interface DrawerProps {
@@ -177,6 +201,15 @@ export function Drawer({ row, onClose }: DrawerProps) {
     staleTime: 30_000,
   })
   const monitorLogs = detail?.logs ?? []
+
+  // Preview de próximos produtos para este canal
+  const { data: channelPreview, isLoading: previewLoading } = useQuery<ChannelPreview>({
+    queryKey: ['automations', row.channel_id, 'preview'],
+    queryFn: () => apiClient.get(`/api/automations/${row.channel_id}/preview`).then(r => r.data),
+    enabled: drawerTab === 'next',
+    staleTime: 30_000,
+  })
+  const previewItems = channelPreview?.items ?? []
 
   // Mutacao de save
   const saveMut = useMutation({
@@ -447,6 +480,73 @@ export function Drawer({ row, onClose }: DrawerProps) {
             </div>
           )}
 
+          {/* ── Proximos Produtos ── */}
+          {drawerTab === 'next' && (
+            <div>
+              <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">
+                Proximos produtos na fila
+                {channelPreview && (
+                  <span className="ml-1 normal-case font-normal text-fg-3">
+                    (score ≥ {channelPreview.threshold} · max {channelPreview.max_per_run}/ciclo)
+                  </span>
+                )}
+              </p>
+              {previewLoading ? (
+                <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+              ) : previewItems.length === 0 ? (
+                <div className="rounded-lg border border-warning/50 bg-warning/10 p-4 flex items-start gap-3">
+                  <span className="text-warning text-base mt-0.5">⚠</span>
+                  <div>
+                    <p className="text-sm font-medium text-fg">Nenhum produto na fila</p>
+                    <p className="text-xs text-fg-3 mt-1">
+                      Nenhum produto do catalogo atende ao threshold e filtros configurados para este canal.
+                      Verifique o threshold, tipo de filtro e categorias/marcas ou adicione mais produtos ao catalogo.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="border border-border rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-surface-2 border-b border-border">
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Score</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Preco</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewItems.map(item => (
+                        <tr key={item.product_id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                          <td className="px-3 py-2">
+                            <p className="text-xs text-fg truncate max-w-[160px]">{item.product_name}</p>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`text-xs font-semibold ${item.score >= 70 ? 'text-success' : item.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>
+                              {fmtScore(item.score)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-xs text-fg-3">
+                              {item.price > 0 ? `R$ ${item.price.toFixed(2)}` : '—'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {item.already_sent ? (
+                              <span className="text-xs text-fg-3 italic">em cooldown</span>
+                            ) : (
+                              <span className="text-xs text-success font-medium">na fila</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Monitor ── */}
           {drawerTab === 'monitor' && (
             <div>
@@ -498,8 +598,8 @@ export function Drawer({ row, onClose }: DrawerProps) {
           )}
         </div>
 
-        {/* Footer — salvar (exceto monitor) */}
-        {drawerTab !== 'monitor' && (
+        {/* Footer — salvar (exceto monitor e next) */}
+        {drawerTab !== 'monitor' && drawerTab !== 'next' && (
           <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-3 shrink-0">
             <button
               type="button"
@@ -716,8 +816,21 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
     staleTime: 30_000,
   })
 
-  // Calcular runs 24h a partir dos logs do monitor (seria necessário endpoint dedicado)
-  // Por ora exibimos "—" para não precisar de N requests adicionais
+  // Preview global para indicar quais canais têm produtos na fila
+  const { data: globalPreview } = useQuery<{ items: GlobalPreviewItem[] }>({
+    queryKey: ['auto-match', 'preview'],
+    queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data),
+    staleTime: 60_000,
+  })
+  const channelsWithQueue = React.useMemo(() => {
+    const s = new Set<number>()
+    if (globalPreview?.items) {
+      for (const item of globalPreview.items) {
+        if (!item.already_sent) s.add(item.channel_id)
+      }
+    }
+    return s
+  }, [globalPreview])
 
   if (isLoading) {
     return (
@@ -787,7 +900,16 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                 <td className="px-4 py-3 text-xs text-fg-3">
                   {a?.updated_at ? fmtDate(a.updated_at) : '—'}
                 </td>
-                <td className="px-4 py-3 text-sm text-fg-2">—</td>
+                <td className="px-4 py-3 text-sm text-fg-2">
+                  {a?.enabled && a?.auto_match_enabled && globalPreview && !channelsWithQueue.has(row.channel_id) ? (
+                    <span
+                      title="Nenhum produto na fila para este canal"
+                      className="inline-flex items-center gap-1 text-xs text-warning font-medium"
+                    >
+                      ⚠ sem fila
+                    </span>
+                  ) : '—'}
+                </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     type="button"

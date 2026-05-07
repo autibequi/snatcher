@@ -224,6 +224,7 @@ func Build(
 		r.Get("/api/automations", automations.List)
 		r.Get("/api/automations/{channelId}", automations.Get)
 		r.Put("/api/automations/{channelId}", automations.Upsert)
+		r.Get("/api/automations/{channelId}/preview", automations.Preview)
 
 		// Config
 		r.Get("/api/config", config.Get)

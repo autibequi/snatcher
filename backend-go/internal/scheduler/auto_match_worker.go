@@ -121,6 +121,19 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				cooldown = 6 * time.Hour
 			}
 
+			// Aplicar filtros match_type/match_value/max_price do canal
+			matchValue := ""
+			if auto.MatchValue.Valid {
+				matchValue = auto.MatchValue.String
+			}
+			maxPrice := 0.0
+			if auto.MaxPrice.Valid {
+				maxPrice = auto.MaxPrice.Float64
+			}
+			if !match.MatchesChannelFilter(input, nullFloat(p.LowestPrice), auto.MatchType, matchValue, maxPrice) {
+				continue
+			}
+
 			if s.Value < threshold {
 				break // já ordenado desc
 			}
