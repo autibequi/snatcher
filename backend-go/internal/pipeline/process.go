@@ -135,6 +135,8 @@ func processResult(
 			for _, t := range taxEntries {
 				if t.Type == "brand" {
 					refreshedProduct.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
+					// Limpa duplicações da marca no canonical_name
+					refreshedProduct.CanonicalName = CleanTitle(refreshedProduct.CanonicalName, t.Name)
 					break
 				}
 			}

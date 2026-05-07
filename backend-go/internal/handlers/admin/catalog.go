@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 	"strconv"
 	"time"
@@ -364,21 +365,18 @@ func (h *CatalogHandler) VariantStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
-// ReindexBrands preenche o campo brand em produtos que não têm marca ainda,
-// usando a taxonomia de marcas aprovadas.
-// POST /api/catalog/reindex-brands
-func (h *CatalogHandler) ReindexBrands(w http.ResponseWriter, r *http.Request) {
-	products, _, err := h.store.FilterCatalogProducts(store.CatalogFilters{Limit: 1000, IncludeInactive: true})
+// Reprocess reprocessa toda a base do catálogo: detecta taxonomia, preenche brand,
+// e limpa duplicações da marca no canonical_name. Idempotente — pode rodar múltiplas vezes.
+// POST /api/catalog/reprocess
+func (h *CatalogHandler) Reprocess(w http.ResponseWriter, r *http.Request) {
+	products, _, err := h.store.FilterCatalogProducts(store.CatalogFilters{Limit: 5000, IncludeInactive: true})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	updated := 0
+	branded, cleaned, categorized := 0, 0, 0
 	for i := range products {
 		p := &products[i]
-		if p.Brand.Valid && p.Brand.String != "" {
-			continue
-		}
 		matchedIDs, _ := h.store.DetectAndUpsertTaxonomy(p.CanonicalName)
 		if len(matchedIDs) == 0 {
 			continue
@@ -387,14 +385,46 @@ func (h *CatalogHandler) ReindexBrands(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
+		changed := false
 		for _, t := range taxEntries {
-			if t.Type == "brand" {
-				p.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
-				_ = h.store.UpdateCatalogProduct(*p)
-				updated++
-				break
+			switch t.Type {
+			case "brand":
+				if !p.Brand.Valid || p.Brand.String == "" {
+					p.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
+					branded++
+					changed = true
+				}
+				// Sempre limpa duplicações da marca no título
+				cleanedName := pipeline.CleanTitle(p.CanonicalName, t.Name)
+				if cleanedName != p.CanonicalName && cleanedName != "" {
+					p.CanonicalName = cleanedName
+					cleaned++
+					changed = true
+				}
+			case "category":
+				tags := p.GetTags()
+				found := false
+				for _, tag := range tags {
+					if tag == t.Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					p.SetTags(append(tags, t.Name))
+					categorized++
+					changed = true
+				}
 			}
 		}
+		if changed {
+			_ = h.store.UpdateCatalogProduct(*p)
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"updated": updated})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"branded":     branded,
+		"cleaned":     cleaned,
+		"categorized": categorized,
+		"total":       len(products),
+	})
 }

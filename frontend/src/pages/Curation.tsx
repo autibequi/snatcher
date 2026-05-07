@@ -65,6 +65,16 @@ export default function Curation() {
     onError: () => alert('Erro ao rodar heurísticas'),
   })
 
+  const reprocessMut = useMutation({
+    mutationFn: () => apiClient.post('/api/catalog/reprocess').then(r => r.data as { branded: number; cleaned: number; categorized: number; total: number }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['curation'] })
+      qc.invalidateQueries({ queryKey: ['catalog'] })
+      alert(`Reprocessamento da base: ${data.branded} marcas preenchidas, ${data.cleaned} títulos limpos, ${data.categorized} categorias adicionadas (de ${data.total} produtos).`)
+    },
+    onError: () => alert('Erro ao reprocessar'),
+  })
+
   const autoLLMMut = useMutation({
     mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string }),
     onSuccess: (data) => {
@@ -92,9 +102,22 @@ export default function Curation() {
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => {
+              if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) {
+                reprocessMut.mutate()
+              }
+            }}
+            loading={reprocessMut.isPending}
+            title="Roda taxonomia + limpeza de título em todos os produtos"
+          >
+            🔄 Reprocessar base
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => autoHeuristicMut.mutate()}
             loading={autoHeuristicMut.isPending}
-            title="Roda taxonomy matching nos produtos pendentes"
+            title="Roda taxonomy matching nos produtos pendentes/incompletos"
           >
             ⚡ Auto (heurísticas)
           </Button>

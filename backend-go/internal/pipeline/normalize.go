@@ -176,6 +176,21 @@ func min3(a, b, c int) int {
 	return c
 }
 
+// CleanTitle remove ocorrências da marca do título (case-insensitive, whole word)
+// e colapsa espaços. Útil quando a marca é exibida separadamente como pill.
+func CleanTitle(title, brand string) string {
+	if title == "" || brand == "" {
+		return title
+	}
+	re, err := regexp.Compile(`(?i)\b` + regexp.QuoteMeta(brand) + `\b`)
+	if err != nil {
+		return title
+	}
+	cleaned := re.ReplaceAllString(title, "")
+	cleaned = reSpaces.ReplaceAllString(cleaned, " ")
+	return strings.TrimSpace(cleaned)
+}
+
 // reQuantity captura tamanhos, pesos, volumes e contagens de produtos.
 var reQuantity = regexp.MustCompile(`(?i)\b(\d+(?:[.,]\d+)?)\s*(kg|g|mg|ml|l|lts?|litros?|lb|lbs|oz|caps?|cáps?|cápsulas?|comprimidos?|tabs?|sachê|sachês|unid|unidades?|pares?|pçs?|packs?|pack|kits?|peças?|pcs?|metros?|m2|cm|mm)\b`)
 

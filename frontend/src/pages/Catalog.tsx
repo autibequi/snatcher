@@ -84,10 +84,14 @@ function parseTags(raw: string[] | string | undefined | null): string[] {
 // Title case simples + extrai peso para exibir depois
 const WEIGHT_RE = /\b(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|lb))\b/gi
 
-function formatTitle(raw: string): string {
-  return raw
-    .replace(/\s+/g, ' ')
-    .trim()
+function formatTitle(raw: string, brand?: string): string {
+  let s = raw.replace(/\s+/g, ' ').trim()
+  // Remove ocorrências da marca do título (ela já é mostrada como pill)
+  if (brand) {
+    const escaped = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    s = s.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '').replace(/\s+/g, ' ').trim()
+  }
+  return s
     .split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
@@ -525,7 +529,7 @@ export default function Catalog() {
             <tbody>
               {products.map(p => {
                 const rawTitle = p.canonical_name ?? 'Produto'
-                const title = formatTitle(rawTitle)
+                const title = formatTitle(rawTitle, p.brand)
                 const weight = extractWeight(rawTitle)
                 const price = p.lowest_price ?? 0
                 const src = p.lowest_price_source ?? ''
