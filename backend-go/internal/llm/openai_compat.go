@@ -38,9 +38,21 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 		model = "llama3"
 	}
 
+	messages := []map[string]string{}
+	if opts.JSONMode {
+		// System message força resposta JSON direta:
+		// - "/no_think" desliga o thinking de qwen3.x (ignorado por outros modelos)
+		// - Instrução explícita pra outros modelos
+		messages = append(messages, map[string]string{
+			"role": "system",
+			"content": "/no_think\nVocê é um extrator de dados estruturados. Responda EXCLUSIVAMENTE com JSON válido conforme o schema solicitado. NÃO use raciocínio interno, NÃO use tags <think>, NÃO use markdown. Apenas JSON puro.",
+		})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": prompt})
+
 	reqBody := map[string]any{
 		"model":       model,
-		"messages":    []map[string]string{{"role": "user", "content": prompt}},
+		"messages":    messages,
 		"temperature": opts.Temperature,
 	}
 	if opts.MaxTokens > 0 {
