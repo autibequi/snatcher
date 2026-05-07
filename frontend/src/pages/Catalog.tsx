@@ -64,6 +64,9 @@ interface Product {
   curation_status?: string
   quantity?: string
   weight?: { String: string; Valid: boolean } | string
+  inspected?: boolean
+  inspected_at?: string
+  inspection_notes?: string
   created_at?: string
 }
 
@@ -555,6 +558,11 @@ export default function Catalog() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-fg line-clamp-1">{title}</p>
                             {isInactive && <Badge variant="outline" size="sm">inativo</Badge>}
+                            {p.inspected ? (
+                              <span title={p.inspection_notes ?? 'Auditado por LLM'} className="text-xs text-success font-medium">✓ inspecionado</span>
+                            ) : (
+                              <span title="Aguardando inspeção via LLM" className="text-xs text-fg-3">○ não auditado</span>
+                            )}
                           </div>
                           {/* Linha de marca + fonte */}
                           {(p.brand || src) && (

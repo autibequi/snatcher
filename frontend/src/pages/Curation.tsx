@@ -50,6 +50,8 @@ export default function Curation() {
   const totalCurated = stats.find(s => s.status === 'curated')?.count ?? 0
   const totalRejected = stats.find(s => s.status === 'rejected')?.count ?? 0
   const totalIncomplete = stats.find(s => s.status === 'incomplete')?.count ?? 0
+  const totalInspected = stats.find(s => s.status === 'inspected')?.count ?? 0
+  const totalNotInspected = stats.find(s => s.status === 'not_inspected')?.count ?? 0
 
   const rejectMut = useMutation({
     mutationFn: (id: number) => apiClient.post(`/api/curation/${id}/reject`),
@@ -63,6 +65,26 @@ export default function Curation() {
       alert(`Heurísticas: ${data.categorized} categorizados, ${data.branded} marcas preenchidas (de ${data.processed} processados).`)
     },
     onError: () => alert('Erro ao rodar heurísticas'),
+  })
+
+  const inspectMut = useMutation({
+    mutationFn: () => apiClient.post('/api/curation/inspect-all', undefined, { timeout: 20 * 60 * 1000 })
+      .then(r => r.data as { inspected: number; corrected: number; errors: number; first_error?: string; remaining: number; message?: string }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['curation'] })
+      qc.invalidateQueries({ queryKey: ['catalog'] })
+      if (data.message) {
+        alert(data.message)
+      } else {
+        const errs = data.errors > 0 ? ` · ${data.errors} erros: ${data.first_error ?? ''}` : ''
+        alert(`Inspeção: ${data.inspected} produtos auditados, ${data.corrected} corrigidos.${errs}\n\n${data.remaining} restantes — rode novamente para continuar.`)
+      }
+    },
+    onError: (err: any) => {
+      const status = err?.response?.status ?? '?'
+      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      alert(`Erro ao inspecionar (HTTP ${status}): ${detail}\n\nVeja /logs → tab LLM para detalhes.`)
+    },
   })
 
   const reprocessMut = useMutation({
@@ -109,6 +131,19 @@ export default function Curation() {
             variant="secondary"
             size="sm"
             onClick={() => {
+              if (confirm('Inspecionar via LLM os próximos 30 produtos não auditados? Pode demorar alguns minutos.')) {
+                inspectMut.mutate()
+              }
+            }}
+            loading={inspectMut.isPending}
+            title="LLM audita produtos não inspecionados, corrige nome/marca/tags e marca como inspecionado"
+          >
+            🔍 Inspecionar
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
               if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) {
                 reprocessMut.mutate()
               }
@@ -140,12 +175,14 @@ export default function Curation() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-7 gap-3 mb-6">
         <StatCard label="Pendentes" value={totalPending} accent="warning" />
         <StatCard label="Incompletos" value={totalIncomplete} accent="warning" />
         <StatCard label="Auto-inferidos" value={totalAuto} accent="success" />
         <StatCard label="Curados manual" value={totalCurated} accent="default" />
         <StatCard label="Rejeitados" value={totalRejected} accent="default" />
+        <StatCard label="Inspecionados" value={totalInspected} accent="success" />
+        <StatCard label="A inspecionar" value={totalNotInspected} accent="warning" />
       </div>
 
       <div className="mb-3">

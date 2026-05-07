@@ -249,6 +249,10 @@ type CatalogProduct struct {
 	Inactive            bool `db:"inactive" json:"inactive"`
 	// migration 0095 — tamanho/quantidade para dedup e agrupamento
 	Quantity string `db:"quantity" json:"quantity"`
+	// migration 0102 — auditoria por LLM
+	Inspected       bool       `db:"inspected" json:"inspected"`
+	InspectedAt     NullTime   `db:"inspected_at" json:"inspected_at,omitempty"`
+	InspectionNotes NullString `db:"inspection_notes" json:"inspection_notes,omitempty"`
 }
 
 func (p *CatalogProduct) GetTags() []string {
@@ -275,6 +279,9 @@ func (p CatalogProduct) MarshalJSON() ([]byte, error) {
 		ConsecutiveFailures int         `json:"consecutive_failures"`
 		Inactive            bool        `json:"inactive"`
 		Quantity            string      `json:"quantity"`
+		Inspected           bool        `json:"inspected"`
+		InspectedAt         NullTime    `json:"inspected_at,omitempty"`
+		InspectionNotes     NullString  `json:"inspection_notes,omitempty"`
 	}
 	return json.Marshal(shadow{
 		ID: p.ID, CanonicalName: p.CanonicalName, Brand: p.Brand,
@@ -283,6 +290,7 @@ func (p CatalogProduct) MarshalJSON() ([]byte, error) {
 		Tags: p.GetTags(), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 		CurationStatus: p.CurationStatus, ConsecutiveFailures: p.ConsecutiveFailures,
 		Inactive: p.Inactive, Quantity: p.Quantity,
+		Inspected: p.Inspected, InspectedAt: p.InspectedAt, InspectionNotes: p.InspectionNotes,
 	})
 }
 

@@ -309,6 +309,8 @@ func Build(
 		r.Post("/api/curation/auto-heuristic", curation.AutoHeuristic)
 		// AutoLLM processa N produtos com 7s+ por inferência — sobrescreve timeout global de 30s
 		r.With(chimw.Timeout(15 * time.Minute)).Post("/api/curation/auto-llm", curation.AutoLLM)
+		// Inspect-all audita até 30 produtos por vez via LLM
+		r.With(chimw.Timeout(20 * time.Minute)).Post("/api/curation/inspect-all", curation.InspectAll)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)

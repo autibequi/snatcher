@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 )
@@ -101,6 +103,16 @@ func (h *CurationHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		  AND curation_status != 'pending'
 		  AND ((brand IS NULL OR brand = '') OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0)`)
 	rows = append(rows, stat{Status: "incomplete", Count: incomplete})
+
+	// Inspecionados / pendentes de inspeção
+	var inspected, notInspected int64
+	_ = h.db.GetContext(r.Context(), &inspected,
+		`SELECT COUNT(*) FROM catalogproduct WHERE inspected = true AND inactive = false`)
+	_ = h.db.GetContext(r.Context(), &notInspected,
+		`SELECT COUNT(*) FROM catalogproduct WHERE inspected = false AND inactive = false`)
+	rows = append(rows, stat{Status: "inspected", Count: inspected})
+	rows = append(rows, stat{Status: "not_inspected", Count: notInspected})
+
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -415,5 +427,193 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 		"remaining":      len(products) - categorized,
 		"errors":         llmCallErrors + parseErrors,
 		"first_error":    firstErr,
+	})
+}
+
+// InspectAll POST /api/curation/inspect-all
+// Audita produtos não inspecionados via LLM. Aplica correções automáticas e
+// marca inspected=true quando concluído.
+func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado — configure em Configurações → LLM/IA")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	type prodRow struct {
+		ID                int64    `db:"id"`
+		CanonicalName     string   `db:"canonical_name"`
+		Brand             *string  `db:"brand"`
+		Tags              string   `db:"tags"`
+		Quantity          string   `db:"quantity"`
+		LowestPrice       *float64 `db:"lowest_price"`
+		LowestPriceSource *string  `db:"lowest_price_source"`
+		ImageURL          *string  `db:"image_url"`
+	}
+	var products []prodRow
+	err := h.db.SelectContext(ctx, &products, `
+		SELECT id, canonical_name, brand, tags, quantity,
+		       lowest_price, lowest_price_source, image_url
+		FROM catalogproduct
+		WHERE inspected = false AND inactive = false
+		ORDER BY created_at DESC
+		LIMIT 30`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(products) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"inspected": 0, "message": "todos os produtos já foram inspecionados"})
+		return
+	}
+
+	inspected, corrected := 0, 0
+	var firstErr string
+	var llmErrors int
+
+	for _, row := range products {
+		brand := ""
+		if row.Brand != nil {
+			brand = *row.Brand
+		}
+		price := 0.0
+		if row.LowestPrice != nil {
+			price = *row.LowestPrice
+		}
+		imgURL := ""
+		if row.ImageURL != nil {
+			imgURL = *row.ImageURL
+		}
+		src := ""
+		if row.LowestPriceSource != nil {
+			src = *row.LowestPriceSource
+		}
+
+		prompt := fmt.Sprintf(`Você é um auditor de e-commerce. Inspecione este produto e indique se está pronto para envio em campanhas (precisa ter nome limpo, marca, categoria, preço e imagem).
+
+PRODUTO:
+- Nome: %s
+- Marca: %s
+- Tags: %s
+- Quantidade: %s
+- Preço: R$ %.2f
+- Imagem: %s
+- Fonte: %s
+
+Responda SOMENTE em JSON:
+{
+  "ready_for_dispatch": true|false,
+  "issues": ["lista de problemas encontrados"],
+  "corrections": {
+    "canonical_name": "nome limpo e capitalizado, ou null se já está bom",
+    "brand": "marca correta, ou null",
+    "add_tags": ["tags faltando para categorizar"],
+    "quantity": "quantidade extraída, ou null"
+  },
+  "summary": "uma frase explicando o estado"
+}
+
+Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
+
+		resp, err := cli.Complete(ctx, prompt, llm.Options{
+			MaxTokens:   400,
+			Temperature: 0.1,
+			Operation:   "inspect",
+		})
+		if err != nil {
+			llmErrors++
+			if firstErr == "" {
+				firstErr = err.Error()
+			}
+			continue
+		}
+
+		resp = strings.TrimSpace(resp)
+		resp = strings.TrimPrefix(resp, "```json")
+		resp = strings.TrimPrefix(resp, "```")
+		resp = strings.TrimSuffix(resp, "```")
+		resp = strings.TrimSpace(resp)
+
+		var result struct {
+			ReadyForDispatch bool     `json:"ready_for_dispatch"`
+			Issues           []string `json:"issues"`
+			Summary          string   `json:"summary"`
+			Corrections      struct {
+				CanonicalName *string  `json:"canonical_name"`
+				Brand         *string  `json:"brand"`
+				AddTags       []string `json:"add_tags"`
+				Quantity      *string  `json:"quantity"`
+			} `json:"corrections"`
+		}
+		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			llmErrors++
+			if firstErr == "" {
+				firstErr = "parse: " + err.Error()
+			}
+			continue
+		}
+
+		// Aplicar correções
+		p, err := h.store.GetCatalogProduct(row.ID)
+		if err != nil {
+			continue
+		}
+		hadCorrection := false
+		if result.Corrections.CanonicalName != nil && *result.Corrections.CanonicalName != "" && *result.Corrections.CanonicalName != p.CanonicalName {
+			p.CanonicalName = *result.Corrections.CanonicalName
+			hadCorrection = true
+		}
+		if result.Corrections.Brand != nil && *result.Corrections.Brand != "" && (!p.Brand.Valid || p.Brand.String == "") {
+			p.Brand.String = *result.Corrections.Brand
+			p.Brand.Valid = true
+			hadCorrection = true
+		}
+		if result.Corrections.Quantity != nil && *result.Corrections.Quantity != "" && p.Quantity == "" {
+			p.Quantity = *result.Corrections.Quantity
+			hadCorrection = true
+		}
+		if len(result.Corrections.AddTags) > 0 {
+			tags := p.GetTags()
+			seen := map[string]bool{}
+			for _, t := range tags {
+				seen[strings.ToLower(t)] = true
+			}
+			for _, t := range result.Corrections.AddTags {
+				if t != "" && !seen[strings.ToLower(t)] {
+					tags = append(tags, t)
+					seen[strings.ToLower(t)] = true
+					hadCorrection = true
+				}
+			}
+			if hadCorrection {
+				p.SetTags(tags)
+			}
+		}
+
+		// Marcar como inspecionado
+		notes := result.Summary
+		if len(result.Issues) > 0 {
+			notes += " · Issues: " + strings.Join(result.Issues, "; ")
+		}
+		p.Inspected = true
+		p.InspectedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
+		p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: notes != ""}}
+		_ = h.store.UpdateCatalogProduct(p)
+
+		inspected++
+		if hadCorrection {
+			corrected++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"inspected":   inspected,
+		"corrected":   corrected,
+		"errors":      llmErrors,
+		"first_error": firstErr,
+		"remaining":   len(products) - inspected,
 	})
 }
