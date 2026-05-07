@@ -66,7 +66,8 @@ export default function Curation() {
   })
 
   const reprocessMut = useMutation({
-    mutationFn: () => apiClient.post('/api/catalog/reprocess').then(r => r.data as { branded: number; cleaned: number; categorized: number; total: number }),
+    mutationFn: () => apiClient.post('/api/catalog/reprocess', undefined, { timeout: 5 * 60 * 1000 })
+      .then(r => r.data as { branded: number; cleaned: number; categorized: number; total: number }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
       qc.invalidateQueries({ queryKey: ['catalog'] })
@@ -76,7 +77,8 @@ export default function Curation() {
   })
 
   const autoLLMMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string; first_error?: string; errors?: number }),
+    mutationFn: () => apiClient.post('/api/curation/auto-llm', undefined, { timeout: 10 * 60 * 1000 })
+      .then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string; first_error?: string; errors?: number }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
       if (data.message) {

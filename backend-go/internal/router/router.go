@@ -199,7 +199,8 @@ func Build(
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
-		r.Post("/api/catalog/reprocess", catalog.Reprocess)
+		// Reprocess pode demorar minutos em catálogos grandes — sobrescreve timeout global de 30s
+		r.With(chimw.Timeout(10 * time.Minute)).Post("/api/catalog/reprocess", catalog.Reprocess)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
 		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
 		r.Get("/api/catalog/variants/{variant_id}/history", catalog.ListVariantHistory)
@@ -306,7 +307,8 @@ func Build(
 		r.Patch("/api/curation/{id}/taxonomy", curation.AssignTaxonomy)
 		r.Post("/api/curation/{id}/reject", curation.Reject)
 		r.Post("/api/curation/auto-heuristic", curation.AutoHeuristic)
-		r.Post("/api/curation/auto-llm", curation.AutoLLM)
+		// AutoLLM processa N produtos com 7s+ por inferência — sobrescreve timeout global de 30s
+		r.With(chimw.Timeout(15 * time.Minute)).Post("/api/curation/auto-llm", curation.AutoLLM)
 
 		// Auto Match
 		r.Get("/api/auto-match", autoMatch.Status)
