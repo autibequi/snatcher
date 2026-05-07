@@ -68,22 +68,17 @@ export default function Curation() {
   })
 
   const inspectMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/inspect-all', undefined, { timeout: 20 * 60 * 1000 })
-      .then(r => r.data as { inspected: number; corrected: number; errors: number; first_error?: string; remaining: number; message?: string }),
+    mutationFn: () => apiClient.post('/api/curation/inspect-all').then(r => r.data as { started: boolean; message?: string }),
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['curation'] })
-      qc.invalidateQueries({ queryKey: ['catalog'] })
-      if (data.message) {
-        alert(data.message)
-      } else {
-        const errs = data.errors > 0 ? ` · ${data.errors} erros: ${data.first_error ?? ''}` : ''
-        alert(`Inspeção: ${data.inspected} produtos auditados, ${data.corrected} corrigidos.${errs}\n\n${data.remaining} restantes — rode novamente para continuar.`)
-      }
+      // Backend roda em background — poll dos stats a cada 5s
+      const interval = setInterval(() => qc.invalidateQueries({ queryKey: ['curation'] }), 5000)
+      setTimeout(() => clearInterval(interval), 30 * 60 * 1000)
+      alert(data.message ?? 'Inspeção iniciada em background. Os stats serão atualizados automaticamente.')
     },
     onError: (err: any) => {
       const status = err?.response?.status ?? '?'
       const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
-      alert(`Erro ao inspecionar (HTTP ${status}): ${detail}\n\nVeja /logs → tab LLM para detalhes.`)
+      alert(`Erro ao iniciar inspeção (HTTP ${status}): ${detail}`)
     },
   })
 
@@ -99,22 +94,16 @@ export default function Curation() {
   })
 
   const autoLLMMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/auto-llm', undefined, { timeout: 10 * 60 * 1000 })
-      .then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string; first_error?: string; errors?: number }),
+    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { started: boolean; message?: string }),
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['curation'] })
-      if (data.message) {
-        alert(data.message)
-      } else {
-        const tax = data.new_taxonomies > 0 ? ` · ${data.new_taxonomies} novas taxonomias sugeridas (veja em Taxonomia → Pendentes)` : ''
-        const errs = data.errors ? ` · ${data.errors} erros: ${data.first_error ?? ''}` : ''
-        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.${tax}${errs}`)
-      }
+      const interval = setInterval(() => qc.invalidateQueries({ queryKey: ['curation'] }), 5000)
+      setTimeout(() => clearInterval(interval), 30 * 60 * 1000)
+      alert(data.message ?? 'AutoLLM iniciado em background. Stats e logs serão atualizados.')
     },
     onError: (err: any) => {
       const status = err?.response?.status ?? '?'
       const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
-      alert(`Erro ao rodar LLM (HTTP ${status}): ${detail}\n\nVeja /logs → tab LLM para detalhes.`)
+      alert(`Erro ao iniciar LLM (HTTP ${status}): ${detail}`)
     },
   })
 

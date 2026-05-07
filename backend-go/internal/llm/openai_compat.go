@@ -110,6 +110,17 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 		return content, fmt.Errorf("%s", errMsg)
 	}
 
+	// Detecta resposta "só raciocínio" (<think>...</think> sem JSON depois) — comum em deepseek-r1/qwen3
+	useful := strings.TrimSpace(content)
+	if i := strings.Index(useful, "</think>"); i >= 0 {
+		useful = strings.TrimSpace(useful[i+len("</think>"):])
+	}
+	if useful == "" {
+		errMsg := "modelo retornou apenas <think> sem conteúdo útil — aumente max_tokens ou peça resposta direta"
+		recordMetric(opts.Operation, model, "no_output", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
+		return content, fmt.Errorf("%s", errMsg)
+	}
+
 	status := "ok"
 	if finishReason != "" && finishReason != "stop" {
 		status = finishReason

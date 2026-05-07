@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +19,14 @@ import (
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
+)
+
+// Mutexes pra evitar múltiplas execuções concorrentes dos jobs LLM
+var (
+	autoLLMRunning      sync.Mutex
+	inspectAllRunning   sync.Mutex
+	autoLLMInProgress   bool
+	inspectAllInProgress bool
 )
 
 type CurationHandler struct {
@@ -268,7 +278,8 @@ func (h *CurationHandler) AutoHeuristic(w http.ResponseWriter, r *http.Request) 
 }
 
 // AutoLLM POST /api/curation/auto-llm
-// Envia produtos incompletos ao LLM para inferir atributos e propor novas taxonomias.
+// Dispara o job em background e retorna 202 imediatamente — evita 504 de proxy.
+// Acompanhe o progresso via /api/curation/stats e /api/admin/llm/logs.
 func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 	cli := h.llmFn()
 	if cli == nil {
@@ -276,10 +287,35 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Context desacoplado do request HTTP — o middleware chi tem timeout 30s,
-	// mas Ollama local pode levar minutos na primeira inferência.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
+	autoLLMRunning.Lock()
+	if autoLLMInProgress {
+		autoLLMRunning.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "AutoLLM já está rodando — aguarde"})
+		return
+	}
+	autoLLMInProgress = true
+	autoLLMRunning.Unlock()
+
+	// Spawna goroutine — handler retorna 202 imediatamente
+	go func() {
+		defer func() {
+			autoLLMRunning.Lock()
+			autoLLMInProgress = false
+			autoLLMRunning.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		h.runAutoLLM(ctx, cli)
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"started": true,
+		"message": "AutoLLM rodando em background — acompanhe em Logs → LLM",
+	})
+}
+
+// runAutoLLM executa o trabalho de curadoria via LLM. Roda em goroutine.
+func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client) {
 
 	var products []curationRow
 	err := h.db.SelectContext(ctx, &products, `
@@ -293,11 +329,11 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 		  )
 		ORDER BY created_at DESC LIMIT 20`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		slog.Error("AutoLLM: query failed", "err", err)
 		return
 	}
 	if len(products) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"processed": 0, "message": "nada pendente ou incompleto"})
+		slog.Info("AutoLLM: nada pendente")
 		return
 	}
 
@@ -428,25 +464,17 @@ JSON:`, row.CanonicalName)
 		}
 	}
 
-	// Se nenhum produto foi processado E houve erros, retorna erro detalhado
-	if processed == 0 && (llmCallErrors > 0 || parseErrors > 0) {
-		writeErr(w, http.StatusBadGateway, fmt.Sprintf("LLM falhou em todas as %d tentativas (api_errors=%d, parse_errors=%d): %s", len(products), llmCallErrors, parseErrors, firstErr))
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"processed":      processed,
-		"categorized":    categorized,
-		"new_taxonomies": newTaxonomies,
-		"remaining":      len(products) - categorized,
-		"errors":         llmCallErrors + parseErrors,
-		"first_error":    firstErr,
-	})
+	slog.Info("AutoLLM: concluído",
+		"processed", processed,
+		"categorized", categorized,
+		"new_taxonomies", newTaxonomies,
+		"errors", llmCallErrors+parseErrors,
+		"first_error", firstErr)
 }
 
 // InspectAll POST /api/curation/inspect-all
-// Audita produtos não inspecionados via LLM. Aplica correções automáticas e
-// marca inspected=true quando concluído.
+// Dispara o job em background e retorna 202 imediatamente.
+// Acompanhe via /api/curation/stats e /api/admin/llm/logs.
 func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
 	cli := h.llmFn()
 	if cli == nil {
@@ -454,8 +482,34 @@ func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+	inspectAllRunning.Lock()
+	if inspectAllInProgress {
+		inspectAllRunning.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "Inspeção já está rodando — aguarde"})
+		return
+	}
+	inspectAllInProgress = true
+	inspectAllRunning.Unlock()
+
+	go func() {
+		defer func() {
+			inspectAllRunning.Lock()
+			inspectAllInProgress = false
+			inspectAllRunning.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+		defer cancel()
+		h.runInspectAll(ctx, cli)
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"started": true,
+		"message": "Inspeção rodando em background — acompanhe os stats",
+	})
+}
+
+// runInspectAll executa a inspeção via LLM. Roda em goroutine.
+func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client) {
 
 	type prodRow struct {
 		ID                int64    `db:"id"`
@@ -476,11 +530,11 @@ func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
 		ORDER BY created_at DESC
 		LIMIT 30`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		slog.Error("InspectAll: query failed", "err", err)
 		return
 	}
 	if len(products) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"inspected": 0, "message": "todos os produtos já foram inspecionados"})
+		slog.Info("InspectAll: nada a inspecionar")
 		return
 	}
 
@@ -631,11 +685,10 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"inspected":   inspected,
-		"corrected":   corrected,
-		"errors":      llmErrors,
-		"first_error": firstErr,
-		"remaining":   len(products) - inspected,
-	})
+	slog.Info("InspectAll: concluído",
+		"inspected", inspected,
+		"corrected", corrected,
+		"errors", llmErrors,
+		"first_error", firstErr,
+		"remaining", len(products)-inspected)
 }
