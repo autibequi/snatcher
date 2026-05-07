@@ -210,17 +210,72 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Categoria: crawler_fail — crawlers ativos sem resultados
+	// Categoria: crawler_fail — heurísticas para detectar crawlers quebrados
+	// H1: erros consecutivos (≥2 das últimas 3 execuções falharam) → critico
+	// H2: overdue (não executa há >2× o intervalo esperado) → atencao
+	// H3: rodou mas sem resultados → atencao
 	terms, _ := h.store.ListSearchTerms()
+
+	type consRow struct {
+		SearchTermID int64 `db:"search_term_id"`
+		ErrCount     int   `db:"err_count"`
+		TotalRecent  int   `db:"total_recent"`
+	}
+	var consErrors []consRow
+	if h.db != nil && len(terms) > 0 {
+		_ = h.db.SelectContext(r.Context(), &consErrors, `
+			WITH ranked AS (
+				SELECT search_term_id, status,
+				       ROW_NUMBER() OVER (PARTITION BY search_term_id ORDER BY started_at DESC) AS rn
+				FROM crawllog
+			)
+			SELECT search_term_id,
+			       COUNT(*) FILTER (WHERE status = 'error') AS err_count,
+			       COUNT(*) AS total_recent
+			FROM ranked
+			WHERE rn <= 3
+			GROUP BY search_term_id`)
+	}
+	errByTerm := make(map[int64]consRow, len(consErrors))
+	for _, e := range consErrors {
+		errByTerm[e.SearchTermID] = e
+	}
+
+	now := time.Now()
 	for _, t := range terms {
-		if t.Active && t.LastCrawledAt.Valid && t.ResultCount == 0 {
+		if !t.Active {
+			continue
+		}
+		interval := t.CrawlInterval
+		if interval <= 0 {
+			interval = 60
+		}
+
+		var severity, subtitle string
+
+		if e, ok := errByTerm[t.ID]; ok && e.TotalRecent >= 2 && e.ErrCount >= 2 {
+			// H1: erros consecutivos — crawler quebrado
+			severity = "critico"
+			subtitle = fmt.Sprintf("%d/%d execuções recentes falharam — reparar imediatamente", e.ErrCount, e.TotalRecent)
+		} else if t.LastCrawledAt.Valid && now.Sub(t.LastCrawledAt.Time) > time.Duration(interval*2)*time.Minute {
+			// H2: overdue — parou de executar
+			h := now.Sub(t.LastCrawledAt.Time).Hours()
+			severity = "atencao"
+			subtitle = fmt.Sprintf("não executa há %.0fh (esperado a cada %dmin)", h, interval)
+		} else if t.LastCrawledAt.Valid && t.ResultCount == 0 {
+			// H3: rodou mas encontrou zero produtos
+			severity = "atencao"
+			subtitle = "última execução sem produtos"
+		}
+
+		if severity != "" {
 			alerts = append(alerts, Alert{
 				ID:       fmt.Sprintf("crawler-%d", t.ID),
-				Severity: "atencao",
+				Severity: severity,
 				Category: "crawler_fail",
-				Title:    fmt.Sprintf("Crawler %q sem resultados", t.Query),
-				Subtitle: "última execução sem produtos",
-				CTA:      CTA{Label: "Ver detalhes", Href: "/crawlers"},
+				Title:    fmt.Sprintf("Crawler %q quebrado", t.Query),
+				Subtitle: subtitle,
+				CTA:      CTA{Label: "Ver detalhes", Href: fmt.Sprintf("/crawlers?termId=%d", t.ID)},
 			})
 		}
 	}

@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Skeleton, EmptyState } from '../components/ui'
+import { Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
 import { ProductSwitcher } from '../components/match/ProductSwitcher'
@@ -157,8 +157,6 @@ function ProductDetailMatch({ productId }: { productId: string }) {
 
   const [minScore, setMinScore] = React.useState(0)
   const [breakdown, setBreakdown] = React.useState<GroupScore | null>(null)
-  const [selected, setSelected] = React.useState<number[]>([])
-  const [batchMode, setBatchMode] = React.useState(false)
 
   // Product list (for switcher)
   const { data: allProducts = [] } = useQuery<Product[]>({
@@ -171,11 +169,11 @@ function ProductDetailMatch({ productId }: { productId: string }) {
     staleTime: 60_000,
   })
 
-  // Current product
+  // Current product — GET /api/catalog/{id} retorna {product, variants}
   const { data: product } = useQuery<Product>({
     queryKey: ['catalog', productId],
     queryFn: () =>
-      apiClient.get(`/api/catalog/${productId}`).then(r => r.data),
+      apiClient.get(`/api/catalog/${productId}`).then(r => r.data?.product ?? r.data),
   })
 
   // Match scores
@@ -197,25 +195,15 @@ function ProductDetailMatch({ productId }: { productId: string }) {
 
   const scores: GroupScore[] = normalizeScores(rawScores)
   const filtered = scores.filter(s => s.score >= minScore)
-  const greenCount = filtered.filter(s => s.score >= 70).length
-
-  const toggleGroup = (id: number) =>
-    setSelected(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
 
   const handleAction = (group: GroupScore, action: 'send' | 'review' | 'skip') => {
     if (action === 'send' || action === 'review') {
-      navigate(
-        `/compose?productId=${productId}&targets=${group.group_id}`
-      )
+      navigate(`/compose?productId=${productId}&targets=${group.group_id}`)
     }
-    // skip: no-op (could add a "dismissed" set later)
   }
 
   const handleSwitchProduct = (id: number) => {
     setSearchParams({ productId: String(id) })
-    setSelected([])
   }
 
   return (
@@ -230,41 +218,6 @@ function ProductDetailMatch({ productId }: { productId: string }) {
           </p>
         </div>
 
-        {/* Card 05: Modo lote + Disparar batch */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setBatchMode(b => !b)
-              if (batchMode) setSelected([])
-            }}
-            className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${
-              batchMode
-                ? 'bg-accent/10 border-accent text-accent'
-                : 'border-border text-fg-2 hover:bg-surface-2'
-            }`}
-          >
-            Modo lote
-          </button>
-          {batchMode && (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={selected.length === 0 && greenCount === 0}
-              onClick={() => {
-                const targets =
-                  selected.length > 0
-                    ? selected
-                    : filtered.filter(s => s.score >= 70).map(s => s.group_id)
-                navigate(
-                  `/compose?productId=${productId}&targets=${targets.join(',')}`
-                )
-              }}
-            >
-              ✈ Disparar para {selected.length > 0 ? selected.length : `${greenCount} verdes`}
-            </Button>
-          )}
-        </div>
       </div>
 
       {/* 2-col grid */}
@@ -325,9 +278,9 @@ function ProductDetailMatch({ productId }: { productId: string }) {
                 <GroupRankItem
                   key={g.group_id}
                   group={g}
-                  selected={selected.includes(g.group_id)}
-                  batchMode={batchMode}
-                  onToggle={() => toggleGroup(g.group_id)}
+                  selected={false}
+                  batchMode={false}
+                  onToggle={() => {}}
                   onAction={action => handleAction(g, action)}
                   onBreakdown={() => setBreakdown(g)}
                 />
