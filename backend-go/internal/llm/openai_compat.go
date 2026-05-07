@@ -26,7 +26,8 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 	return &OpenAICompatClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		httpCli: &http.Client{Timeout: 60 * time.Second},
+		// 5min — Ollama local pode demorar na primeira inferência (cold model load)
+		httpCli: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 

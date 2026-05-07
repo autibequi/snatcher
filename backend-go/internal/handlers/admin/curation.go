@@ -1,11 +1,13 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
@@ -262,8 +264,13 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Context desacoplado do request HTTP — o middleware chi tem timeout 30s,
+	// mas Ollama local pode levar minutos na primeira inferência.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	var products []curationRow
-	err := h.db.SelectContext(r.Context(), &products, `
+	err := h.db.SelectContext(ctx, &products, `
 		SELECT id, canonical_name, brand, tags, curation_status
 		FROM catalogproduct
 		WHERE curation_status != 'rejected'
@@ -304,7 +311,7 @@ Nome: %s
 
 Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 
-		resp, err := cli.Complete(r.Context(), prompt, llm.Options{
+		resp, err := cli.Complete(ctx, prompt, llm.Options{
 			MaxTokens:   300,
 			Temperature: 0.1,
 			Operation:   "curation",

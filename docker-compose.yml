@@ -113,6 +113,9 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s   # Chromium ARM demora mais pra inicializar (Python); Go ignora esse delay
+    networks:
+      default: {}
+      nuvem: {}   # acesso ao Ollama/vLLM em ../.cache/nuvem/services/ai
 
   redirect:
     image: ghcr.io/autibequi/snatcher-redirect:latest
@@ -210,3 +213,7 @@ volumes:
   evo_pg_data:
   evo_redis_data:
   app_pg_data:
+
+networks:
+  nuvem:
+    external: true   # criada por ../.cache/nuvem/services/ai/docker-compose.yml
