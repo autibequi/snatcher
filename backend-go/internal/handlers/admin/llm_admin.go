@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -104,6 +107,58 @@ func (h *LLMAdminHandler) Usage(w http.ResponseWriter, r *http.Request) {
 		"period":     period,
 		"operations": budgets,
 	})
+}
+
+// GET /api/admin/llm/ollama/models?base_url=http://localhost:11434
+// Faz fetch dos modelos disponíveis no servidor Ollama via /api/tags.
+func (h *LLMAdminHandler) OllamaModels(w http.ResponseWriter, r *http.Request) {
+	baseURL := strings.TrimSpace(r.URL.Query().Get("base_url"))
+	if baseURL == "" {
+		baseURL = "http://localhost:11434"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/tags", nil)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "URL inválida: "+err.Error())
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "falha ao conectar no Ollama ("+baseURL+"): "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("Ollama retornou %d", resp.StatusCode))
+		return
+	}
+
+	var raw struct {
+		Models []struct {
+			Name       string `json:"name"`
+			Size       int64  `json:"size"`
+			ModifiedAt string `json:"modified_at"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		writeErr(w, http.StatusBadGateway, "resposta inválida do Ollama: "+err.Error())
+		return
+	}
+
+	type modelOut struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+	out := make([]modelOut, 0, len(raw.Models))
+	for _, m := range raw.Models {
+		out = append(out, modelOut{Name: m.Name, Size: m.Size})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GET /api/admin/llm/logs?limit=100&errors_only=true

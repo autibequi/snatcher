@@ -345,23 +345,12 @@ function LLMTab() {
       )}
 
       {provider === 'ollama' && (
-        <div className="space-y-3">
-          <Input
-            label="URL base do Ollama"
-            placeholder="http://localhost:11434"
-            value={form.llm_base_url ?? get('llm_base_url')}
-            onChange={e => set('llm_base_url', e.target.value)}
-          />
-          <Input
-            label="Modelo"
-            placeholder="llama3:8b"
-            value={form.llm_model ?? get('llm_model')}
-            onChange={e => set('llm_model', e.target.value)}
-          />
-          <p className="text-xs text-fg-3">
-            Certifique-se que o Ollama está rodando e o modelo baixado: <code className="bg-surface-2 px-1 rounded">ollama pull llama3</code>
-          </p>
-        </div>
+        <OllamaConfig
+          baseURL={form.llm_base_url ?? get('llm_base_url')}
+          model={form.llm_model ?? get('llm_model')}
+          onBaseURLChange={v => set('llm_base_url', v)}
+          onModelChange={v => set('llm_model', v)}
+        />
       )}
 
       <div className="border border-border rounded-md p-3 space-y-2">
@@ -832,6 +821,99 @@ export default function Settings() {
           {tab === 'branding' && <BrandingTab />}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Ollama Config (com fetch de modelos) ──────────────────────────────────────
+
+interface OllamaModel {
+  name: string
+  size: number
+}
+
+function OllamaConfig({
+  baseURL,
+  model,
+  onBaseURLChange,
+  onModelChange,
+}: {
+  baseURL: string
+  model: string
+  onBaseURLChange: (v: string) => void
+  onModelChange: (v: string) => void
+}) {
+  const url = baseURL || 'http://localhost:11434'
+  const { data: models = [], isLoading, isError, error, refetch } = useQuery<OllamaModel[]>({
+    queryKey: ['ollama-models', url],
+    queryFn: () => apiClient.get(`/api/admin/llm/ollama/models?base_url=${encodeURIComponent(url)}`).then(r => r.data ?? []),
+    retry: false,
+    staleTime: 60_000,
+  })
+
+  return (
+    <div className="space-y-3">
+      <Input
+        label="URL base do Ollama"
+        placeholder="http://localhost:11434"
+        value={baseURL}
+        onChange={e => onBaseURLChange(e.target.value)}
+      />
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-fg-2">Modelo</label>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-xs text-accent hover:underline"
+          >
+            ↻ atualizar lista
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="h-9 bg-surface-2 rounded animate-pulse" />
+        ) : isError ? (
+          <div className="space-y-2">
+            <Input
+              placeholder="llama3:8b"
+              value={model}
+              onChange={e => onModelChange(e.target.value)}
+            />
+            <p className="text-xs text-danger">
+              Não foi possível buscar modelos: {(error as any)?.response?.data?.error ?? (error as any)?.message ?? 'erro'}
+            </p>
+          </div>
+        ) : models.length === 0 ? (
+          <div className="space-y-2">
+            <Input
+              placeholder="llama3:8b"
+              value={model}
+              onChange={e => onModelChange(e.target.value)}
+            />
+            <p className="text-xs text-fg-3">
+              Servidor Ollama vazio. Baixe um modelo: <code className="bg-surface-2 px-1 rounded">ollama pull llama3</code>
+            </p>
+          </div>
+        ) : (
+          <select
+            value={model}
+            onChange={e => onModelChange(e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-2 bg-surface text-fg outline-none focus:border-accent"
+          >
+            <option value="">Selecione um modelo...</option>
+            {models.map(m => (
+              <option key={m.name} value={m.name}>
+                {m.name} ({(m.size / 1024 / 1024 / 1024).toFixed(1)}GB)
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <p className="text-xs text-fg-3">
+        {models.length > 0
+          ? `${models.length} modelo${models.length !== 1 ? 's' : ''} disponíve${models.length !== 1 ? 'is' : 'l'} no servidor.`
+          : 'Certifique-se que o Ollama está rodando.'}
+      </p>
     </div>
   )
 }

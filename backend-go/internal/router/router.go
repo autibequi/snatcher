@@ -380,6 +380,7 @@ func Build(
 		llmAdmin := adminhnd.NewLLMAdminHandler(db)
 		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
 		r.Get("/api/admin/llm/logs", llmAdmin.Logs)
+		r.Get("/api/admin/llm/ollama/models", llmAdmin.OllamaModels)
 		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
 		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
 		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
