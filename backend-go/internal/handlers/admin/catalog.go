@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"net/http"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -361,4 +362,39 @@ func (h *CatalogHandler) VariantStats(w http.ResponseWriter, r *http.Request) {
 	// Set cache header: 10 minutes
 	w.Header().Set("Cache-Control", "public, max-age=600")
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// ReindexBrands preenche o campo brand em produtos que não têm marca ainda,
+// usando a taxonomia de marcas aprovadas.
+// POST /api/catalog/reindex-brands
+func (h *CatalogHandler) ReindexBrands(w http.ResponseWriter, r *http.Request) {
+	products, _, err := h.store.FilterCatalogProducts(store.CatalogFilters{Limit: 1000, IncludeInactive: true})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	updated := 0
+	for i := range products {
+		p := &products[i]
+		if p.Brand.Valid && p.Brand.String != "" {
+			continue
+		}
+		matchedIDs, _ := h.store.DetectAndUpsertTaxonomy(p.CanonicalName)
+		if len(matchedIDs) == 0 {
+			continue
+		}
+		taxEntries, err := h.store.GetTaxonomyByIDs(matchedIDs)
+		if err != nil {
+			continue
+		}
+		for _, t := range taxEntries {
+			if t.Type == "brand" {
+				p.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
+				_ = h.store.UpdateCatalogProduct(*p)
+				updated++
+				break
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"updated": updated})
 }

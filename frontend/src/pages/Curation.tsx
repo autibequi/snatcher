@@ -49,6 +49,7 @@ export default function Curation() {
   const totalAuto = stats.find(s => s.status === 'auto')?.count ?? 0
   const totalCurated = stats.find(s => s.status === 'curated')?.count ?? 0
   const totalRejected = stats.find(s => s.status === 'rejected')?.count ?? 0
+  const totalIncomplete = stats.find(s => s.status === 'incomplete')?.count ?? 0
 
   const rejectMut = useMutation({
     mutationFn: (id: number) => apiClient.post(`/api/curation/${id}/reject`),
@@ -56,22 +57,23 @@ export default function Curation() {
   })
 
   const autoHeuristicMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/auto-heuristic').then(r => r.data as { processed: number; categorized: number }),
+    mutationFn: () => apiClient.post('/api/curation/auto-heuristic').then(r => r.data as { processed: number; categorized: number; branded: number }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
-      alert(`Heurísticas: ${data.categorized} de ${data.processed} produtos categorizados automaticamente.`)
+      alert(`Heurísticas: ${data.categorized} categorizados, ${data.branded} marcas preenchidas (de ${data.processed} processados).`)
     },
     onError: () => alert('Erro ao rodar heurísticas'),
   })
 
   const autoLLMMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; message?: string }),
+    mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { processed: number; categorized: number; new_taxonomies: number; message?: string }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['curation'] })
       if (data.message) {
         alert(data.message)
       } else {
-        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.`)
+        const tax = data.new_taxonomies > 0 ? ` · ${data.new_taxonomies} novas taxonomias sugeridas (veja em Taxonomia → Pendentes)` : ''
+        alert(`LLM: ${data.categorized} de ${data.processed} produtos categorizados.${tax}`)
       }
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao rodar LLM'),
@@ -83,7 +85,7 @@ export default function Curation() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-fg">Curadoria</h1>
           <p className="text-sm text-fg-3 mt-0.5">
-            Produtos do crawl que não foram inferidos automaticamente — cadastre categoria e marca pra entrar no Match.
+            Produtos sem marca, categoria ou atributos completos — mesmo que já estejam no catálogo.
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
@@ -109,8 +111,9 @@ export default function Curation() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-5 gap-3 mb-6">
         <StatCard label="Pendentes" value={totalPending} accent="warning" />
+        <StatCard label="Incompletos" value={totalIncomplete} accent="warning" />
         <StatCard label="Auto-inferidos" value={totalAuto} accent="success" />
         <StatCard label="Curados manual" value={totalCurated} accent="default" />
         <StatCard label="Rejeitados" value={totalRejected} accent="default" />
@@ -129,8 +132,8 @@ export default function Curation() {
       ) : filtered.length === 0 ? (
         <div className="border border-border rounded-md p-8 text-center">
           <p className="text-sm text-fg-2">
-            {totalPending === 0
-              ? 'Nada pendente — todos os produtos foram inferidos automaticamente. ✨'
+            {totalPending === 0 && totalIncomplete === 0
+              ? 'Todos os produtos estão completos. ✨'
               : 'Nenhum produto com esse filtro.'}
           </p>
         </div>
@@ -213,10 +216,29 @@ function ProductRow({
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2 mb-2">
-          <p className="text-sm font-medium text-fg truncate" title={product.canonical_name}>
-            {product.canonical_name}
-          </p>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-fg truncate" title={product.canonical_name}>
+              {product.canonical_name}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+              {product.curation_status !== 'pending' && (
+                <span className="text-xs px-1.5 py-0.5 bg-surface-2 border border-border rounded text-fg-3">
+                  {product.curation_status}
+                </span>
+              )}
+              {(!product.brand) && (
+                <span className="text-xs px-1.5 py-0.5 bg-warning/10 border border-warning/30 rounded text-warning">
+                  sem marca
+                </span>
+              )}
+              {(!product.tags || product.tags === '[]') && (
+                <span className="text-xs px-1.5 py-0.5 bg-warning/10 border border-warning/30 rounded text-warning">
+                  sem categoria
+                </span>
+              )}
+            </div>
+          </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {product.quantity && (
               <span className="text-xs px-1.5 py-0.5 bg-surface-2 border border-border rounded text-fg-2">

@@ -259,9 +259,9 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 			subtitle = fmt.Sprintf("%d/%d execuções recentes falharam — reparar imediatamente", e.ErrCount, e.TotalRecent)
 		} else if t.LastCrawledAt.Valid && now.Sub(t.LastCrawledAt.Time) > time.Duration(interval*2)*time.Minute {
 			// H2: overdue — parou de executar
-			h := now.Sub(t.LastCrawledAt.Time).Hours()
+			hoursLate := now.Sub(t.LastCrawledAt.Time).Hours()
 			severity = "atencao"
-			subtitle = fmt.Sprintf("não executa há %.0fh (esperado a cada %dmin)", h, interval)
+			subtitle = fmt.Sprintf("não executa há %.0fh (esperado a cada %dmin)", hoursLate, interval)
 		} else if t.LastCrawledAt.Valid && t.ResultCount == 0 {
 			// H3: rodou mas encontrou zero produtos
 			severity = "atencao"

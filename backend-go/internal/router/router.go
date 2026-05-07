@@ -196,6 +196,7 @@ func Build(
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
+		r.Post("/api/catalog/reindex-brands", catalog.ReindexBrands)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
 		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
 		r.Get("/api/catalog/variants/{variant_id}/history", catalog.ListVariantHistory)

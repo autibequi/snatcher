@@ -254,5 +254,6 @@ type Store interface {
 	SetTaxonomyStatus(id int64, status string) error
 	ListPendingTaxonomy() ([]models.Taxonomy, error)
 	DetectAndUpsertTaxonomy(text string) ([]int64, error)
+	GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error)
 	SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error)
 }

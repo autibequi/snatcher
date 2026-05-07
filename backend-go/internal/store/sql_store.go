@@ -1967,6 +1967,21 @@ func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) {
 	return ids, err
 }
 
+// GetTaxonomyByIDs retorna as entradas de taxonomia para os IDs fornecidos.
+func (s *SQLStore) GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var out []models.Taxonomy
+	q, args, err := sqlx.In(`SELECT * FROM taxonomy WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	q = s.db.Rebind(q)
+	err = s.db.Select(&out, q, args...)
+	return out, err
+}
+
 // SuggestTaxonomyCandidate cria entrada pending a partir de texto não-categorizado.
 // Usado pelo job LLM quando produto não bate com nenhuma taxonomia aprovada.
 func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error) {

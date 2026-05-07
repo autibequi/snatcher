@@ -128,15 +128,27 @@ func processResult(
 	// Detecta taxonomias (categorias/marcas) no nome canônico — incrementa
 	// detect_count das taxonomias matchadas para fine-tuning de keywords.
 	matchedIDs, _ := st.DetectAndUpsertTaxonomy(refreshedProduct.CanonicalName)
+
+	// Preenche brand a partir da taxonomia, se ainda não preenchida
+	if !refreshedProduct.Brand.Valid && len(matchedIDs) > 0 {
+		if taxEntries, err := st.GetTaxonomyByIDs(matchedIDs); err == nil {
+			for _, t := range taxEntries {
+				if t.Type == "brand" {
+					refreshedProduct.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
+					break
+				}
+			}
+		}
+	}
+
 	// Sem inferência automática → marcar pending para curadoria manual.
 	// Com inferência → marcar curated (auto) para não cair na fila.
 	if len(matchedIDs) == 0 && refreshedProduct.CurationStatus == "" {
 		refreshedProduct.CurationStatus = "pending"
-		_ = st.UpdateCatalogProduct(refreshedProduct)
 	} else if len(matchedIDs) > 0 && (refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "pending") {
 		refreshedProduct.CurationStatus = "auto"
-		_ = st.UpdateCatalogProduct(refreshedProduct)
 	}
+	_ = st.UpdateCatalogProduct(refreshedProduct)
 
 	// Cria variante
 	v := models.CatalogVariant{
