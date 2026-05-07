@@ -299,6 +299,32 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ensureTaxonomyEntry garante que existe uma entrada (pelo menos pending) na taxonomy
+// para um par (type, name). Se já existe (qualquer status), no-op. Se não, cria como pending.
+// Retorna true se criou nova entrada.
+func (h *CurationHandler) ensureTaxonomyEntry(taxType, name, sampleText string) bool {
+	if taxType == "" || name == "" {
+		return false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	// Busca existing — listamos por type e checamos por nome case-insensitive
+	existing, err := h.store.ListTaxonomy(taxType)
+	if err == nil {
+		for _, t := range existing {
+			if strings.EqualFold(t.Name, name) {
+				return false // já existe
+			}
+		}
+	}
+	// Cria como pending — usa o nome lowercase como keyword inicial
+	keywords := []string{strings.ToLower(name)}
+	_, err = h.store.SuggestTaxonomyCandidate(taxType, name, keywords, sampleText, "llm")
+	return err == nil
+}
+
 // runAutoLLM executa o trabalho de curadoria via LLM. Roda em goroutine.
 func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client, jobID string) {
 	defer func() {
@@ -437,11 +463,25 @@ JSON:`, row.CanonicalName, extraCtx)
 				categorized++
 			}
 			changed = true
+			// Auto-promove categoria pra taxonomy (se ainda não existe)
+			if h.ensureTaxonomyEntry("category", *result.Category, row.CanonicalName) {
+				newTaxonomies++
+			}
 		}
 		if result.Brand != nil && *result.Brand != "" && (!p.Brand.Valid || p.Brand.String == "") {
 			p.Brand.String = *result.Brand
 			p.Brand.Valid = true
 			changed = true
+			// Auto-promove marca pra taxonomy
+			if h.ensureTaxonomyEntry("brand", *result.Brand, row.CanonicalName) {
+				newTaxonomies++
+			}
+		}
+		if result.Flavor != nil && *result.Flavor != "" {
+			// Auto-promove sabor pra taxonomy
+			if h.ensureTaxonomyEntry("flavor", *result.Flavor, row.CanonicalName) {
+				newTaxonomies++
+			}
 		}
 		if result.Quantity != nil && *result.Quantity != "" && p.Quantity == "" {
 			p.Quantity = *result.Quantity
@@ -663,6 +703,8 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			p.Brand.Valid = true
 			changes = append(changes, "brand="+*result.Corrections.Brand)
 			hadCorrection = true
+			// Auto-promove marca pra taxonomy (alimenta o crawler)
+			h.ensureTaxonomyEntry("brand", *result.Corrections.Brand, oldName)
 		}
 		if result.Corrections.Quantity != nil && *result.Corrections.Quantity != "" && p.Quantity == "" {
 			p.Quantity = *result.Corrections.Quantity
@@ -687,6 +729,10 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			if len(added) > 0 {
 				p.SetTags(tags)
 				changes = append(changes, "tags+="+strings.Join(added, ","))
+				// Auto-promove cada nova tag pra taxonomy como category
+				for _, t := range added {
+					h.ensureTaxonomyEntry("category", t, oldName)
+				}
 			}
 		}
 
