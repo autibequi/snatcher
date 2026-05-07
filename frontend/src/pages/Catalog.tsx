@@ -59,6 +59,7 @@ interface Product {
   image_url?: string
   lowest_price?: number
   lowest_price_source?: string
+  lowest_price_url?: string
   tags?: string[] | string
   inactive?: boolean
   curation_status?: string
@@ -68,6 +69,21 @@ interface Product {
   inspected_at?: string
   inspection_notes?: string
   created_at?: string
+}
+
+// Mapa de fonte → label visual + cor
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  amz: { label: 'Amazon', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  amazon: { label: 'Amazon', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  ml: { label: 'Mercado Livre', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
+  mercadolivre: { label: 'Mercado Livre', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
+  magalu: { label: 'Magalu', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+  shopee: { label: 'Shopee', color: 'bg-orange-600/15 text-orange-300 border-orange-600/30' },
+  aliexpress: { label: 'AliExpress', color: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  kabum: { label: 'KaBuM!', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  americanas: { label: 'Americanas', color: 'bg-red-600/15 text-red-300 border-red-600/30' },
+  casasbahia: { label: 'Casas Bahia', color: 'bg-blue-600/15 text-blue-300 border-blue-600/30' },
+  manual: { label: 'Manual', color: 'bg-fg-3/15 text-fg-2 border-border' },
 }
 
 interface TaxonomyEntry {
@@ -104,193 +120,6 @@ function extractWeight(title: string): string | null {
   const m = title.match(WEIGHT_RE)
   return m ? m[0] : null
 }
-
-// ── PriceSparkline — inline na coluna da tabela ───────────────────────────────
-function PriceSparkline({ productId }: { productId: number }) {
-  const { data: history = [] } = useQuery({
-    queryKey: ['catalog', 'history', productId],
-    queryFn: () =>
-      apiClient
-        .get(`/api/catalog/variants/${productId}/history`)
-        .then(r => (Array.isArray(r.data) ? r.data.slice(-10) : []))
-        .catch(() => []),
-    staleTime: 5 * 60_000,
-    enabled: !!productId,
-  })
-
-  if (history.length < 2) return <span className="text-xs text-fg-3">—</span>
-
-  const data = history.map((h: any) => ({ v: h.price ?? h.value ?? 0 }))
-  const prices = data.map((d: any) => d.v)
-  const isDown = prices[prices.length - 1] < prices[0]
-
-  return (
-    <div className="w-16 h-6 inline-block">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <Line
-            type="monotone"
-            dataKey="v"
-            stroke={isDown ? '#22c55e' : '#ef4444'}
-            strokeWidth={1.5}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-function AddProductModal({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void
-  onSuccess: () => void
-}) {
-  const [form, setForm] = React.useState({
-    canonical_name: '',
-    brand: '',
-    lowest_price: '',
-    lowest_price_source: 'amazon',
-    image_url: '',
-    tags: '',
-  })
-  const [saving, setSaving] = React.useState(false)
-
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault()
-    if (!form.canonical_name.trim()) return
-    setSaving(true)
-    try {
-      await apiClient.post('/api/catalog', {
-        canonical_name: form.canonical_name.trim(),
-        brand: form.brand.trim() || undefined,
-        lowest_price: form.lowest_price ? Number(form.lowest_price) : undefined,
-        lowest_price_source: form.lowest_price_source || undefined,
-        image_url: form.image_url.trim() || undefined,
-        tags: form.tags
-          ? form.tags
-              .split(',')
-              .map(t => t.trim())
-              .filter(Boolean)
-          : [],
-      })
-      onSuccess()
-      onClose()
-    } catch (err) {
-      alert('Erro ao salvar produto')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
-      onClick={onClose}
-    >
-      <div
-        className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal"
-        onClick={e => e.stopPropagation()}
-      >
-        <h3 className="font-semibold text-fg mb-4">Adicionar produto manual</h3>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome do produto *</label>
-            <input
-              required
-              value={form.canonical_name}
-              onChange={e => setForm(f => ({ ...f, canonical_name: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="Whey Protein 900g Growth..."
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">Marca</label>
-              <input
-                value={form.brand}
-                onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
-                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-fg-2 block mb-1">Preco (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.lowest_price}
-                onChange={e => setForm(f => ({ ...f, lowest_price: e.target.value }))}
-                className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                placeholder="89.90"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Fonte</label>
-            <select
-              value={form.lowest_price_source}
-              onChange={e => setForm(f => ({ ...f, lowest_price_source: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            >
-              {[
-                'amazon',
-                'mercadolivre',
-                'magalu',
-                'shopee',
-                'aliexpress',
-                'casasbahia',
-                'kabum',
-                'americanas',
-                'manual',
-              ].map(s => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">URL da imagem</label>
-            <input
-              value={form.image_url}
-              onChange={e => setForm(f => ({ ...f, image_url: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="https://..."
-            />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Tags (separadas por virgula)</label>
-            <input
-              value={form.tags}
-              onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="suplemento, whey, proteina"
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2 hover:bg-border"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {saving ? 'Salvando...' : 'Adicionar produto'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 export default function Catalog() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -311,6 +140,32 @@ export default function Catalog() {
       apiClient.patch(`/api/catalog/${id}`, { curation_status: status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['catalog'] }),
     onError: () => alert('Erro ao salvar'),
+  })
+
+  // Inspecionar via LLM — auditoria de produtos não inspecionados
+  const inspectMut = useMutation({
+    mutationFn: () => apiClient.post('/api/curation/inspect-all').then(r => r.data as { started: boolean; message?: string }),
+    onSuccess: (data) => {
+      const interval = setInterval(() => qc.invalidateQueries({ queryKey: ['catalog'] }), 5000)
+      setTimeout(() => clearInterval(interval), 30 * 60 * 1000)
+      alert(data.message ?? 'Inspeção iniciada em background. O catálogo será atualizado.')
+    },
+    onError: (err: any) => {
+      const status = err?.response?.status ?? '?'
+      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      alert(`Erro ao iniciar inspeção (HTTP ${status}): ${detail}`)
+    },
+  })
+
+  // Reprocessar base — taxonomia + limpeza
+  const reprocessMut = useMutation({
+    mutationFn: () => apiClient.post('/api/catalog/reprocess', undefined, { timeout: 5 * 60 * 1000 })
+      .then(r => r.data as { branded: number; cleaned: number; categorized: number; total: number }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['catalog'] })
+      alert(`Reprocessamento: ${data.branded} marcas, ${data.cleaned} títulos, ${data.categorized} categorias (de ${data.total} produtos).`)
+    },
+    onError: () => alert('Erro ao reprocessar'),
   })
 
   // Categorias da taxonomia para o filtro
@@ -394,6 +249,32 @@ export default function Catalog() {
             Disparar selecionados ({selected.size})
           </Button>
         )}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            if (confirm('Inspecionar via LLM os próximos 30 produtos não auditados? Roda em background.')) {
+              inspectMut.mutate()
+            }
+          }}
+          loading={inspectMut.isPending}
+          title="LLM audita produtos não inspecionados, corrige nome/marca/tags e marca como inspecionado"
+        >
+          🔍 Inspecionar
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) {
+              reprocessMut.mutate()
+            }
+          }}
+          loading={reprocessMut.isPending}
+          title="Roda taxonomia + limpeza de título em todos os produtos"
+        >
+          🔄 Reprocessar
+        </Button>
         <div className="w-48">
           <Input
             placeholder="Buscar..."
@@ -494,6 +375,7 @@ export default function Catalog() {
             />
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface border-b border-border z-10">
               <tr>
@@ -508,11 +390,11 @@ export default function Catalog() {
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
                   Produto
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Histórico
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide hidden md:table-cell">
+                  Loja
                 </th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Preco
+                  Preço
                 </th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -564,17 +446,12 @@ export default function Catalog() {
                               <span title="Aguardando inspeção via LLM" className="text-xs text-fg-3">○ não auditado</span>
                             )}
                           </div>
-                          {/* Linha de marca + fonte */}
-                          {(p.brand || src) && (
+                          {/* Linha de marca (loja virou coluna separada) */}
+                          {p.brand && (
                             <div className="flex items-center gap-1.5 mt-0.5">
-                              {p.brand && (
-                                <span className="text-xs bg-surface-2 border border-border text-fg-2 px-1.5 py-0.5 rounded font-medium">
-                                  {p.brand}
-                                </span>
-                              )}
-                              {src && (
-                                <span className="text-xs text-fg-3">{src}</span>
-                              )}
+                              <span className="text-xs bg-surface-2 border border-border text-fg-2 px-1.5 py-0.5 rounded font-medium">
+                                {p.brand}
+                              </span>
                             </div>
                           )}
                           {/* Pills de peso + tags */}
@@ -604,13 +481,17 @@ export default function Catalog() {
                         </div>
                       </div>
                     </td>
-                    {/* Sparkline column — inline */}
-                    <td className="px-4 py-3">
-                      <PriceSparkline productId={p.id} />
+                    {/* Loja — pill colorida visível */}
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      {src ? (
+                        <span className={`text-xs px-2 py-0.5 rounded border font-medium ${SOURCE_LABELS[src]?.color ?? 'bg-surface-2 text-fg-2 border-border'}`}>
+                          {SOURCE_LABELS[src]?.label ?? src}
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {price > 0 ? (
-                        <span className="font-semibold text-fg">R$ {price.toFixed(2)}</span>
+                        <span className="font-semibold text-fg whitespace-nowrap">R$ {price.toFixed(2)}</span>
                       ) : (
                         '—'
                       )}
@@ -645,9 +526,18 @@ export default function Catalog() {
                         >
                           Enviar
                         </Button>
-                        <a href="#" className="text-fg-3 hover:text-fg p-1" title="Link externo">
-                          🔗
-                        </a>
+                        {p.lowest_price_url && (
+                          <a
+                            href={p.lowest_price_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="text-fg-3 hover:text-accent p-1"
+                            title={`Abrir na ${SOURCE_LABELS[src]?.label ?? src}`}
+                          >
+                            🔗
+                          </a>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -663,6 +553,7 @@ export default function Catalog() {
               })}
             </tbody>
           </table>
+          </div>
         )}
         {/* Paginação */}
         {totalPages > 1 && (

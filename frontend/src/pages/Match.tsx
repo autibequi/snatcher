@@ -209,15 +209,11 @@ function ProductDetailMatch({ productId }: { productId: string }) {
   return (
     <div className="flex flex-col h-full">
       {/* Page header */}
-      <div className="px-6 pt-5 pb-3 border-b border-border flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Match</h1>
-          <p className="text-sm text-fg-3 mt-0.5">
-            Escolha um produto. O sistema mostra{' '}
-            <strong>quais grupos têm fit</strong> — e por quê.
-          </p>
-        </div>
-
+      <div className="px-6 py-3 border-b border-border flex-shrink-0">
+        <p className="text-sm text-fg-3">
+          Escolha um produto. O sistema mostra{' '}
+          <strong>quais grupos têm fit</strong> — e por quê.
+        </p>
       </div>
 
       {/* 2-col grid */}
@@ -351,8 +347,8 @@ function BestMatchesView() {
       <div className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-fg">Melhores Matches</h1>
-            <p className="text-sm text-fg-3 mt-0.5">
+            <h2 className="text-base font-semibold text-fg">Melhores Matches</h2>
+            <p className="text-sm text-fg-3">
               Produtos com score ≥ {threshold} prontos para disparar. Para roteamento manual, acesse o <button type="button" className="text-accent hover:underline" onClick={() => navigate('/catalog')}>Catálogo</button>.
             </p>
           </div>
@@ -380,6 +376,7 @@ function BestMatchesView() {
             />
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
@@ -418,6 +415,7 @@ function BestMatchesView() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

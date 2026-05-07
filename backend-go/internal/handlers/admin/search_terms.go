@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
@@ -200,13 +201,32 @@ func (h *SearchTermsHandler) CrawlNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	// Dispara crawl + process em background
+	jobName := fmt.Sprintf("Crawl[%s]", term.Query)
+	job, ctx := jobs.Default().Start(context.Background(), jobName)
+	jobID := job.ID
 	go func() {
-		ctx := context.Background()
-		_ = pipeline.CrawlSearchTerm(ctx, h.store, term, h.scrapers)
-		_ = pipeline.ProcessCrawlResults(ctx, h.store)
+		defer func() {
+			if r := recover(); r != nil {
+				jobs.Default().Fail(jobID, fmt.Sprintf("panic: %v", r))
+			}
+		}()
+		jobs.Default().Update(jobID, 0, 2, "crawling sources…")
+		if err := pipeline.CrawlSearchTerm(ctx, h.store, term, h.scrapers); err != nil {
+			jobs.Default().Fail(jobID, err.Error())
+			return
+		}
+		jobs.Default().Update(jobID, 1, 2, "processing crawled results…")
+		if err := pipeline.ProcessCrawlResults(ctx, h.store); err != nil {
+			jobs.Default().Fail(jobID, err.Error())
+			return
+		}
+		jobs.Default().Done(jobID, "crawl + process concluídos")
 	}()
-	writeJSON(w, http.StatusAccepted, map[string]any{"status": "triggered", "search_term_id": id})
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":         "triggered",
+		"search_term_id": id,
+		"job_id":         jobID,
+	})
 }
 
 func (h *SearchTermsHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +338,7 @@ JSON:`, existingCtx, modeInstruction, intentCtx)
 		Temperature: 0.3,
 		Operation:   "suggest_crawler",
 		JSONMode:    true,
+		WebSearch:   true, // enriquece com tendências/produtos atuais via web
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())

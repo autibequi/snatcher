@@ -1002,6 +1002,7 @@ JSON:`, channelCtx, productCtx, modeInst, intentCtx)
 		Temperature: 0.35,
 		Operation:   "suggest_channel",
 		JSONMode:    true,
+		WebSearch:   true, // enriquece com canais reais conhecidos via busca online
 	})
 	if llmErr != nil {
 		writeErr(w, http.StatusBadGateway, "LLM: "+llmErr.Error())

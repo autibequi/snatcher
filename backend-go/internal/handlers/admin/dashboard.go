@@ -1,11 +1,16 @@
 package admin
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/jmoiron/sqlx"
@@ -14,11 +19,26 @@ import (
 type DashboardHandler struct {
 	store store.Store
 	db    *sqlx.DB
+	llmFn func() llm.Client
+
+	recoMu     sync.Mutex
+	recoCache  *recommendationResp
+	recoCachedAt time.Time
+}
+
+type recommendationResp struct {
+	Headline    string   `json:"headline"`
+	Reason      string   `json:"reason"`
+	Actions     []string `json:"actions"`
+	GeneratedAt string   `json:"generated_at"`
+	CachedFor   int      `json:"cached_for_seconds"` // segundos restantes do cache
 }
 
 func NewDashboardHandler(st store.Store, db *sqlx.DB) *DashboardHandler {
 	return &DashboardHandler{store: st, db: db}
 }
+
+func (h *DashboardHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 // GET /api/dashboard/kpis — retorna KPIs com deltas WoW + saúde anti-ban.
 //
@@ -472,4 +492,146 @@ func (h *DashboardHandler) UpcomingDispatches(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, items)
+}
+
+const recommendationTTL = 1 * time.Hour
+
+// GET /api/dashboard/recommendation — sugere próxima ação operacional.
+// Cacheado por 1h em memória. Usa LLM com web search habilitado.
+//
+// ?force=1 invalida o cache e força regeneração.
+func (h *DashboardHandler) Recommendation(w http.ResponseWriter, r *http.Request) {
+	force := r.URL.Query().Get("force") == "1"
+
+	h.recoMu.Lock()
+	cached := h.recoCache
+	cachedAt := h.recoCachedAt
+	h.recoMu.Unlock()
+
+	if !force && cached != nil && time.Since(cachedAt) < recommendationTTL {
+		out := *cached
+		out.CachedFor = int(recommendationTTL.Seconds() - time.Since(cachedAt).Seconds())
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	// Snapshot do estado operacional atual
+	snapshot := h.collectOperationalSnapshot(r.Context())
+
+	prompt := fmt.Sprintf(`Você é um operador sênior de um sistema de promoções automáticas (catálogo + canais WA/TG + crawlers).
+Analise o estado atual abaixo e sugira UMA ação prioritária a ser tomada AGORA.
+
+ESTADO ATUAL:
+%s
+
+Responda EXCLUSIVAMENTE em JSON com este formato:
+{
+  "headline": "frase curta e direta (máx 80 chars) — o que fazer agora",
+  "reason": "por quê (1-2 frases)",
+  "actions": ["passo 1", "passo 2", "passo 3"]
+}
+
+Use a busca online se útil pra contextualizar tendências de e-commerce/promoções no Brasil.`, snapshot)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   600,
+		Temperature: 0.4,
+		Operation:   "dashboard_recommendation",
+		JSONMode:    true,
+		WebSearch:   true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var parsed recommendationResp
+	jsonStr := extractJSON(resp)
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida: "+err.Error())
+		return
+	}
+	parsed.GeneratedAt = time.Now().Format(time.RFC3339)
+	parsed.CachedFor = int(recommendationTTL.Seconds())
+
+	h.recoMu.Lock()
+	h.recoCache = &parsed
+	h.recoCachedAt = time.Now()
+	h.recoMu.Unlock()
+
+	writeJSON(w, http.StatusOK, parsed)
+}
+
+func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) string {
+	var lines []string
+
+	// Inbox
+	var inboxCount int
+	_ = h.db.GetContext(ctx, &inboxCount, `SELECT COUNT(*) FROM catalogproduct WHERE curation_status IN ('pending','incomplete')`)
+	lines = append(lines, fmt.Sprintf("- inbox de curadoria: %d itens pendentes/incompletos", inboxCount))
+
+	// Disparos últimas 24h
+	var dispatches24h int
+	_ = h.db.GetContext(ctx, &dispatches24h, `SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '24 hours'`)
+	lines = append(lines, fmt.Sprintf("- disparos nas últimas 24h: %d", dispatches24h))
+
+	// Próximo disparo agendado
+	var nextDispatchETA *int
+	_ = h.db.GetContext(ctx, &nextDispatchETA, `SELECT EXTRACT(EPOCH FROM (MIN(scheduled_for) - now()))::int FROM dispatches WHERE status='scheduled' AND scheduled_for > now()`)
+	if nextDispatchETA != nil {
+		lines = append(lines, fmt.Sprintf("- próximo disparo agendado em: %d minutos", *nextDispatchETA/60))
+	} else {
+		lines = append(lines, "- nenhum disparo agendado")
+	}
+
+	// Crawlers ativos
+	var crawlersActive int
+	_ = h.db.GetContext(ctx, &crawlersActive, `SELECT COUNT(*) FROM search_terms WHERE active = true`)
+	lines = append(lines, fmt.Sprintf("- crawlers ativos: %d", crawlersActive))
+
+	// Produtos auditados
+	var inspected, uninspected int
+	_ = h.db.GetContext(ctx, &inspected, `SELECT COUNT(*) FROM catalogproduct WHERE inspected = true`)
+	_ = h.db.GetContext(ctx, &uninspected, `SELECT COUNT(*) FROM catalogproduct WHERE inspected = false OR inspected IS NULL`)
+	lines = append(lines, fmt.Sprintf("- produtos auditados: %d / a auditar: %d", inspected, uninspected))
+
+	// Canais ativos
+	var channelsActive int
+	_ = h.db.GetContext(ctx, &channelsActive, `SELECT COUNT(*) FROM channels WHERE active = true`)
+	lines = append(lines, fmt.Sprintf("- canais ativos: %d", channelsActive))
+
+	return strings.Join(lines, "\n")
+}
+
+// extractJSON tenta extrair o JSON de uma resposta do LLM (remove possível ```json envelope).
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimPrefix(s, "```")
+		if i := strings.LastIndex(s, "```"); i >= 0 {
+			s = s[:i]
+		}
+		s = strings.TrimSpace(s)
+	}
+	// Pega tudo entre primeira { e última }
+	first := strings.Index(s, "{")
+	last := strings.LastIndex(s, "}")
+	if first >= 0 && last > first {
+		return s[first : last+1]
+	}
+	return s
 }

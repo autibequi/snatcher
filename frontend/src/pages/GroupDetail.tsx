@@ -594,6 +594,7 @@ function MembersTable({
       ) : paginated.length === 0 ? (
         <p className="text-sm text-fg-3 p-6 text-center">Nenhum membro neste filtro.</p>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -661,6 +662,7 @@ function MembersTable({
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* Pagination */}

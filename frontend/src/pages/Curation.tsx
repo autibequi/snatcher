@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input } from '../components/ui'
+import { Button, Input, KpiCard } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import TagInput from '../components/TagInput'
 
@@ -67,32 +67,6 @@ export default function Curation() {
     onError: () => alert('Erro ao rodar heurísticas'),
   })
 
-  const inspectMut = useMutation({
-    mutationFn: () => apiClient.post('/api/curation/inspect-all').then(r => r.data as { started: boolean; message?: string }),
-    onSuccess: (data) => {
-      // Backend roda em background — poll dos stats a cada 5s
-      const interval = setInterval(() => qc.invalidateQueries({ queryKey: ['curation'] }), 5000)
-      setTimeout(() => clearInterval(interval), 30 * 60 * 1000)
-      alert(data.message ?? 'Inspeção iniciada em background. Os stats serão atualizados automaticamente.')
-    },
-    onError: (err: any) => {
-      const status = err?.response?.status ?? '?'
-      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
-      alert(`Erro ao iniciar inspeção (HTTP ${status}): ${detail}`)
-    },
-  })
-
-  const reprocessMut = useMutation({
-    mutationFn: () => apiClient.post('/api/catalog/reprocess', undefined, { timeout: 5 * 60 * 1000 })
-      .then(r => r.data as { branded: number; cleaned: number; categorized: number; total: number }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['curation'] })
-      qc.invalidateQueries({ queryKey: ['catalog'] })
-      alert(`Reprocessamento da base: ${data.branded} marcas preenchidas, ${data.cleaned} títulos limpos, ${data.categorized} categorias adicionadas (de ${data.total} produtos).`)
-    },
-    onError: () => alert('Erro ao reprocessar'),
-  })
-
   const autoLLMMut = useMutation({
     mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { started: boolean; message?: string }),
     onSuccess: (data) => {
@@ -115,33 +89,7 @@ export default function Curation() {
             Produtos sem marca, categoria ou atributos completos — mesmo que já estejam no catálogo.
           </p>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (confirm('Inspecionar via LLM os próximos 30 produtos não auditados? Pode demorar alguns minutos.')) {
-                inspectMut.mutate()
-              }
-            }}
-            loading={inspectMut.isPending}
-            title="LLM audita produtos não inspecionados, corrige nome/marca/tags e marca como inspecionado"
-          >
-            🔍 Inspecionar
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) {
-                reprocessMut.mutate()
-              }
-            }}
-            loading={reprocessMut.isPending}
-            title="Roda taxonomia + limpeza de título em todos os produtos"
-          >
-            🔄 Reprocessar base
-          </Button>
+        <div className="flex gap-2 flex-shrink-0 flex-wrap">
           <Button
             variant="secondary"
             size="sm"
@@ -164,14 +112,14 @@ export default function Curation() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-7 gap-3 mb-6">
-        <StatCard label="Pendentes" value={totalPending} accent="warning" />
-        <StatCard label="Incompletos" value={totalIncomplete} accent="warning" />
-        <StatCard label="Auto-inferidos" value={totalAuto} accent="success" />
-        <StatCard label="Curados manual" value={totalCurated} accent="default" />
-        <StatCard label="Rejeitados" value={totalRejected} accent="default" />
-        <StatCard label="Inspecionados" value={totalInspected} accent="success" />
-        <StatCard label="A inspecionar" value={totalNotInspected} accent="warning" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+        <KpiCard label="Pendentes" value={totalPending} />
+        <KpiCard label="Incompletos" value={totalIncomplete} />
+        <KpiCard label="Auto-inferidos" value={totalAuto} />
+        <KpiCard label="Curados manual" value={totalCurated} />
+        <KpiCard label="Rejeitados" value={totalRejected} />
+        <KpiCard label="Inspecionados" value={totalInspected} />
+        <KpiCard label="A inspecionar" value={totalNotInspected} />
       </div>
 
       <div className="mb-3">
@@ -203,29 +151,6 @@ export default function Curation() {
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string
-  value: number
-  accent: 'warning' | 'success' | 'default'
-}) {
-  const color =
-    accent === 'warning'
-      ? 'text-warning'
-      : accent === 'success'
-      ? 'text-success'
-      : 'text-fg-2'
-  return (
-    <div className="border border-border rounded-md p-3 bg-surface">
-      <p className="text-xs text-fg-3 uppercase tracking-wide">{label}</p>
-      <p className={`text-2xl font-semibold mt-1 ${color}`}>{value}</p>
     </div>
   )
 }

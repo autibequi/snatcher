@@ -149,6 +149,7 @@ function CrawlerLogs() {
 
   return (
     <div className="bg-surface border border-border rounded-md overflow-hidden">
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-surface-2">
@@ -180,6 +181,7 @@ function CrawlerLogs() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -252,7 +254,7 @@ function DispatchDrawer({
         )}
 
         {(dispatch.channel_name || dispatch.group_name) && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {dispatch.channel_name && (
               <div className="bg-surface-2 rounded-md p-3">
                 <p className="text-xs text-fg-3">Canal</p>
@@ -269,7 +271,7 @@ function DispatchDrawer({
         )}
 
         {targets.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="bg-surface-2 rounded-md p-3">
               <p className="text-xs text-fg-3">Total</p>
               <p className="text-lg font-semibold text-fg">{targets.length}</p>
@@ -304,7 +306,7 @@ function DispatchDrawer({
         )}
 
         {dispatch.target_count != null && targets.length === 0 && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-surface-2 rounded-md p-3">
               <p className="text-xs text-fg-3">Destinos</p>
               <p className="text-lg font-semibold text-fg">{dispatch.target_count}</p>
@@ -954,7 +956,7 @@ function LLMLogs() {
                   {isExpanded && hasPayload && (
                     <tr className="border-b border-border last:border-0 bg-surface-2">
                       <td colSpan={7} className="px-4 py-3">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Prompt enviado</p>
                             <pre className="text-xs font-mono text-fg-2 bg-surface border border-border rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words">

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { KpiCard } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
+import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
 import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
@@ -133,7 +134,7 @@ export default function Dashboard() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
 
       {/* ── 1. Header ───────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-fg">
             {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
@@ -167,7 +168,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── 2. OperationInbox ───────────────────────────────────────────────── */}
+      {/* ── 2. Recomendação operacional (cache 1h) ──────────────────────────── */}
+      <RecommendationCard />
+
+      {/* ── 3. OperationInbox ───────────────────────────────────────────────── */}
       <OperationInbox />
 
       {/* ── 3. KPIs — 4 cards ───────────────────────────────────────────────── */}

@@ -44,6 +44,7 @@ function ChannelHistory({ channelId }: { channelId: string }) {
     <>
       {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
       <div className="border border-border rounded-md overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-2 border-b border-border">
@@ -81,6 +82,7 @@ function ChannelHistory({ channelId }: { channelId: string }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   )
@@ -146,381 +148,6 @@ function AccountGroupsPicker({
           )
         })
       )}
-    </div>
-  )
-}
-
-// ── Aba: Regras (filtro + notificações) ──────────────────────────────────────
-
-interface ChannelRule {
-  id: number
-  channel_id: number
-  match_type: string
-  match_value?: string | null
-  max_price?: number | null
-  notify_new: boolean
-  notify_drop: boolean
-  notify_lowest: boolean
-  drop_threshold: number
-  active: boolean
-}
-
-const MATCH_TYPES = [
-  { value: 'all',      label: 'Todos os produtos' },
-  { value: 'category', label: 'Categoria' },
-  { value: 'brand',    label: 'Marca' },
-  { value: 'keyword',  label: 'Palavra-chave' },
-]
-
-const matchTypeLabel = (v: string) => MATCH_TYPES.find(t => t.value === v)?.label ?? v
-
-interface RuleFormState {
-  match_type: string
-  match_value: string
-  max_price: string
-  notify_new: boolean
-  notify_drop: boolean
-  notify_lowest: boolean
-  drop_threshold: number
-  active: boolean
-}
-
-const emptyRuleForm: RuleFormState = {
-  match_type: 'all',
-  match_value: '',
-  max_price: '',
-  notify_new: true,
-  notify_drop: true,
-  notify_lowest: false,
-  drop_threshold: 10,
-  active: true,
-}
-
-function ruleToForm(r: ChannelRule): RuleFormState {
-  return {
-    match_type: r.match_type || 'all',
-    match_value: r.match_value ?? '',
-    max_price: r.max_price != null ? String(r.max_price) : '',
-    notify_new: !!r.notify_new,
-    notify_drop: !!r.notify_drop,
-    notify_lowest: !!r.notify_lowest,
-    drop_threshold: r.drop_threshold > 1 ? r.drop_threshold : Math.round((r.drop_threshold || 0.1) * 100),
-    active: r.active !== false,
-  }
-}
-
-function formToPayload(f: RuleFormState) {
-  const payload: Record<string, any> = {
-    match_type: f.match_type,
-    notify_new: f.notify_new,
-    notify_drop: f.notify_drop,
-    notify_lowest: f.notify_lowest,
-    drop_threshold: (f.drop_threshold || 10) / 100,
-    active: f.active,
-  }
-  if (f.match_type !== 'all' && f.match_value.trim()) {
-    payload.match_value = f.match_value.trim()
-  }
-  const mp = parseFloat(f.max_price)
-  if (!Number.isNaN(mp) && mp > 0) payload.max_price = mp
-  return payload
-}
-
-function ChannelRules({ channelId }: { channelId: string }) {
-  const qc = useQueryClient()
-  const [editing, setEditing] = React.useState<ChannelRule | 'new' | null>(null)
-  const [form, setForm] = React.useState<RuleFormState>(emptyRuleForm)
-
-  const { data: rules = [], isLoading } = useQuery<ChannelRule[]>({
-    queryKey: ['channels', channelId, 'rules'],
-    queryFn: () =>
-      apiClient
-        .get(`/api/channels/${channelId}/rules`)
-        .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(() => []),
-    staleTime: 30_000,
-  })
-
-  const closeModal = () => setEditing(null)
-
-  const saveMut = useMutation({
-    mutationFn: () => {
-      const payload = formToPayload(form)
-      if (editing && editing !== 'new') {
-        return apiClient.put(`/api/channels/${channelId}/rules/${editing.id}`, payload).then(r => r.data)
-      }
-      return apiClient.post(`/api/channels/${channelId}/rules`, payload).then(r => r.data)
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['channels', channelId, 'rules'] })
-      closeModal()
-    },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar regra'),
-  })
-
-  const deleteMut = useMutation({
-    mutationFn: (ruleId: number) =>
-      apiClient.delete(`/api/channels/${channelId}/rules/${ruleId}`),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ['channels', channelId, 'rules'] }),
-    onError: (err: any) =>
-      alert(err?.response?.data?.error ?? 'Erro ao remover regra'),
-  })
-
-  function openNew() {
-    setForm(emptyRuleForm)
-    setEditing('new')
-  }
-
-  function openEdit(rule: ChannelRule) {
-    setForm(ruleToForm(rule))
-    setEditing(rule)
-  }
-
-  const isEditing = editing && editing !== 'new'
-  const needsValue = form.match_type !== 'all'
-  const canSave = !needsValue || form.match_value.trim().length > 0
-
-  return (
-    <>
-      {editing && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={closeModal}
-        >
-          <div
-            className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-semibold text-fg mb-4">{isEditing ? 'Editar regra' : 'Adicionar regra'}</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Filtro de produto</label>
-                <select
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={form.match_type}
-                  onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))}
-                >
-                  {MATCH_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              {needsValue && (
-                <div>
-                  <label className="text-xs text-fg-2 block mb-1">
-                    Valor ({matchTypeLabel(form.match_type).toLowerCase()})
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                    placeholder="Ex: suplementos / growth / whey"
-                    value={form.match_value}
-                    onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
-                  />
-                </div>
-              )}
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Preço máximo (R$, opcional)</label>
-                <input
-                  type="number"
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                  placeholder="ex: 199.90"
-                  value={form.max_price}
-                  onChange={e => setForm(f => ({ ...f, max_price: e.target.value }))}
-                />
-              </div>
-              <div className="border-t border-border pt-3">
-                <p className="text-xs text-fg-2 font-medium mb-2">Notificações</p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
-                    <input type="checkbox" checked={form.notify_new}
-                      onChange={e => setForm(f => ({ ...f, notify_new: e.target.checked }))} />
-                    Produto novo encontrado
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
-                    <input type="checkbox" checked={form.notify_drop}
-                      onChange={e => setForm(f => ({ ...f, notify_drop: e.target.checked }))} />
-                    Queda de preço ≥
-                    <input type="number" min={1} max={99} className="w-14 text-xs border border-border rounded px-1.5 py-0.5 bg-surface text-fg"
-                      value={form.drop_threshold}
-                      onChange={e => setForm(f => ({ ...f, drop_threshold: Number(e.target.value) || 10 }))}
-                      disabled={!form.notify_drop} />
-                    %
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
-                    <input type="checkbox" checked={form.notify_lowest}
-                      onChange={e => setForm(f => ({ ...f, notify_lowest: e.target.checked }))} />
-                    Menor preço histórico
-                  </label>
-                </div>
-              </div>
-              <div className="border-t border-border pt-3">
-                <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
-                  <input type="checkbox" checked={form.active}
-                    onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
-                  Regra ativa
-                </label>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end mt-5">
-              <Button variant="secondary" size="sm" onClick={closeModal}>Cancelar</Button>
-              <Button
-                variant="primary"
-                size="sm"
-                loading={saveMut.isPending}
-                disabled={!canSave}
-                onClick={() => saveMut.mutate()}
-              >
-                {isEditing ? 'Salvar' : 'Criar regra'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-fg-2">
-            Filtros e notificações para produtos deste canal
-          </p>
-          <Button variant="primary" size="sm" onClick={openNew}>+ Adicionar regra</Button>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-2">
-            {[1, 2].map(i => <Skeleton key={i} className="h-16 w-full" />)}
-          </div>
-        ) : rules.length === 0 ? (
-          <div className="border border-border rounded-md p-6 text-center">
-            <p className="text-sm text-fg-3 mb-1">Nenhuma regra configurada.</p>
-            <p className="text-xs text-fg-3">
-              Regras controlam quais produtos do catálogo viram disparos neste canal.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {rules.map(rule => {
-              const notifs: string[] = []
-              if (rule.notify_new) notifs.push('produto novo')
-              if (rule.notify_drop) notifs.push(`queda ≥ ${Math.round((rule.drop_threshold || 0.1) * 100)}%`)
-              if (rule.notify_lowest) notifs.push('menor preço histórico')
-              return (
-                <div
-                  key={rule.id}
-                  className="border border-border rounded-md p-4 flex items-start justify-between gap-4 bg-surface hover:bg-surface-2 cursor-pointer transition-colors"
-                  onClick={() => openEdit(rule)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-medium bg-surface-2 text-fg-2 px-2 py-0.5 rounded uppercase tracking-wide">
-                        Filtro
-                      </span>
-                      <span className="text-sm text-fg">
-                        {matchTypeLabel(rule.match_type)}
-                        {rule.match_value ? <span className="text-fg-2"> = </span> : null}
-                        {rule.match_value && <span className="font-mono text-accent">{rule.match_value}</span>}
-                      </span>
-                      {rule.max_price != null && (
-                        <span className="text-xs text-fg-3">
-                          até R$ {rule.max_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      )}
-                      {!rule.active && (
-                        <span className="text-xs px-1.5 py-0.5 rounded border border-fg-3 text-fg-3">pausada</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-fg-3 mt-2">
-                      Notifica: {notifs.length > 0 ? notifs.join(' · ') : <span className="italic">nada</span>}
-                    </p>
-                  </div>
-                  <div className="flex gap-3 shrink-0" onClick={e => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="text-xs text-accent hover:underline"
-                      onClick={() => openEdit(rule)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs text-danger hover:underline"
-                      onClick={() => {
-                        if (confirm('Remover esta regra?')) deleteMut.mutate(rule.id)
-                      }}
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </>
-  )
-}
-
-// ── Aba: Demografia (stub) ────────────────────────────────────────────────────
-
-function ChannelDemographics() {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-fg-2">Distribuição demográfica estimada da audiência do canal.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Gênero */}
-        <div className="border border-border rounded-md p-4 bg-surface">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Gênero</p>
-          <div className="space-y-2">
-            {[{ label: 'Feminino', pct: 58 }, { label: 'Masculino', pct: 38 }, { label: 'Outro', pct: 4 }].map(g => (
-              <div key={g.label}>
-                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
-                  <span>{g.label}</span>
-                  <span>{g.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-                  <div className="h-full bg-accent rounded-full" style={{ width: `${g.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Faixa etária */}
-        <div className="border border-border rounded-md p-4 bg-surface">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Faixa etária</p>
-          <div className="space-y-2">
-            {[{ label: '18–24', pct: 22 }, { label: '25–34', pct: 40 }, { label: '35–44', pct: 25 }, { label: '45+', pct: 13 }].map(a => (
-              <div key={a.label}>
-                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
-                  <span>{a.label}</span>
-                  <span>{a.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-                  <div className="h-full bg-accent rounded-full" style={{ width: `${a.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Região */}
-        <div className="border border-border rounded-md p-4 bg-surface">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Região</p>
-          <div className="space-y-2">
-            {[{ label: 'Sudeste', pct: 45 }, { label: 'Sul', pct: 20 }, { label: 'Nordeste', pct: 18 }, { label: 'Outros', pct: 17 }].map(r => (
-              <div key={r.label}>
-                <div className="flex justify-between text-xs text-fg-2 mb-0.5">
-                  <span>{r.label}</span>
-                  <span>{r.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-                  <div className="h-full bg-accent rounded-full" style={{ width: `${r.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
@@ -685,7 +312,6 @@ function DisparoChart({ metrics }: { metrics: any }) {
 const TABS = [
   { id: 'overview', label: 'Visão geral' },
   { id: 'audience', label: 'Audiência' },
-  { id: 'demographics', label: 'Demografia' },
   { id: 'groups', label: 'Grupos' },
   { id: 'rules', label: 'Regras' },
   { id: 'history', label: 'Histórico' },
@@ -937,6 +563,7 @@ export default function ChannelDetail() {
               <p className="text-sm text-fg-3 py-4">Nenhum grupo vinculado. Clique em "+ Adicionar grupo" para associar.</p>
             ) : (
               <div className="border border-border rounded-md overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-surface-2 border-b border-border">
@@ -969,13 +596,10 @@ export default function ChannelDetail() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
-        )}
-
-        {tab === 'demographics' && (
-          <ChannelDemographics />
         )}
 
         {tab === 'rules' && (

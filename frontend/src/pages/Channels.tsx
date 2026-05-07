@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Input, Modal, Skeleton, Switch } from '../components/ui'
+import { Badge, Button, Input, Modal, PlatformPill, Skeleton, Switch } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -270,13 +270,11 @@ function ChannelCard({ channel, onClick, index }: { channel: Channel; onClick: (
       className={`bg-surface border border-border rounded-md p-4 hover:border-border-strong cursor-pointer transition-colors flex flex-col gap-2 ${statusBorderClass(channel)}`}
     >
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <p className="font-medium text-fg">{channel.name}</p>
           {channel.platform && (
-            <Badge size="sm" variant={channel.platform === 'whatsapp' ? 'success' : 'accent'}>
-              {channel.platform === 'whatsapp' ? 'WA' : 'TG'}
-            </Badge>
+            <PlatformPill platform={channel.platform} />
           )}
         </div>
         <Badge variant={channel.active ? 'success' : 'default'}>

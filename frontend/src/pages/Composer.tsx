@@ -1,7 +1,7 @@
 import React from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Button, Spinner, Badge } from '../components/ui'
+import { Button, Spinner, PlatformPill } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -255,7 +255,6 @@ export default function Composer() {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Compor disparo</h1>
           <p className="text-sm text-fg-3">Selecione produtos, canais, edite a mensagem e envie ou agende</p>
         </div>
         <div className="flex items-center gap-2">
@@ -535,7 +534,7 @@ export default function Composer() {
                           <span className="flex-1 min-w-0 truncate text-sm text-fg font-medium">
                             {ch.name}
                           </span>
-                          <Badge size="sm">{ch.platform ?? 'WA'}</Badge>
+                          <PlatformPill platform={ch.platform ?? 'whatsapp'} />
                         </button>
                       )
                     })}

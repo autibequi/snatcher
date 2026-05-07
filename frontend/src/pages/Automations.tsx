@@ -675,11 +675,11 @@ export function TabOverview() {
     <div className="p-6 space-y-6">
       {/* KPIs */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard label="Cliques 24h" value="—" subtitle="via analytics" />
           <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
           <KpiCard label="Taxa entrega" value={deliveryRate} subtitle="estimado" />
@@ -934,9 +934,8 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
 export default function Automations() {
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 pt-6 pb-4 border-b border-border">
-        <h1 className="text-lg font-semibold text-fg">Automações — Visão geral</h1>
-        <p className="text-sm text-fg-3 mt-0.5">Configuração global e KPIs de auto-match</p>
+      <div className="px-6 py-3 border-b border-border">
+        <p className="text-sm text-fg-3">Configuração global e KPIs de auto-match</p>
       </div>
       <div className="flex-1 overflow-y-auto">
         <TabOverview />

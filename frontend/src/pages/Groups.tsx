@@ -212,6 +212,7 @@ function GroupsTable({
 
   return (
     <div className="border border-border rounded-md overflow-hidden">
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-surface-2 border-b border-border">
@@ -281,6 +282,7 @@ function GroupsTable({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -615,7 +617,7 @@ export default function Groups() {
       {/* Modal de importação de grupos WA */}
       {showImport && activeWA.length > 0 && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
           onClick={() => setShowImport(false)}
         >
           <div

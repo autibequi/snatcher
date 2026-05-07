@@ -31,6 +31,8 @@ interface FallbackGroup {
 interface Channel {
   id: number
   name: string
+  slug?: string
+  active?: boolean
 }
 
 interface DayBucket {
@@ -446,8 +448,7 @@ export default function PublicLinks() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold text-fg">Links públicos</h1>
-          <p className="text-xs text-fg-3 mt-0.5">
+          <p className="text-xs text-fg-3">
             URL estável que <strong>sempre</strong> resolve para um grupo válido. Quando o grupo
             enche ou é arquivado, o link automaticamente passa pro próximo da fila — o link sobrevive
             como <em>referência</em>, não cola num grupo específico.
@@ -457,6 +458,38 @@ export default function PublicLinks() {
           + Novo link público
         </Button>
       </div>
+
+      {/* ── Links de canal (página /canal/{slug} com picker de grupos) ── */}
+      {channels.filter(c => c.slug && c.active !== false).length > 0 && (
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border">
+            <p className="text-sm font-medium text-fg">Links automáticos por canal</p>
+            <p className="text-xs text-fg-3 mt-0.5">Cada canal tem uma página pública com os grupos disponíveis para entrar</p>
+          </div>
+          <div className="divide-y divide-border">
+            {channels.filter(c => c.slug && c.active !== false).map(c => {
+              const url = `${linkBaseURL}/canal/${c.slug}`
+              return (
+                <div key={c.id} className="flex items-center justify-between px-4 py-2 gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-fg truncate">{c.name}</p>
+                    <a href={url} target="_blank" rel="noopener" className="text-xs text-accent hover:underline font-mono truncate block">
+                      {url}
+                    </a>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { navigator.clipboard.writeText(url); }}
+                  >
+                    Copiar
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

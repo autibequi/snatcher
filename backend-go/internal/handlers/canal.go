@@ -23,25 +23,44 @@ func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targets, _ := h.store.ListChannelTargets(ch.ID)
-
-	// Filtra targets com invite_url
-	var withInvite []struct {
+	type pickerEntry struct {
 		Name      string
 		InviteURL string
 		Provider  string
 	}
-	for _, t := range targets {
-		if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
-			name := t.ChatID
-			if t.Name.Valid && t.Name.String != "" {
-				name = t.Name.String
+	var withInvite []pickerEntry
+
+	// 1) Grupos modernos (tabela groups / RedesignGroup) — fonte primária
+	groups, _ := h.store.ListRedesignGroups(ch.ID, "", "active")
+	for _, g := range groups {
+		if g.InviteLink.Valid && g.InviteLink.String != "" {
+			name := g.Name
+			if name == "" {
+				name = "Grupo"
 			}
-			withInvite = append(withInvite, struct {
-				Name      string
-				InviteURL string
-				Provider  string
-			}{Name: name, InviteURL: t.InviteURL.String, Provider: t.Provider})
+			withInvite = append(withInvite, pickerEntry{
+				Name:      name,
+				InviteURL: g.InviteLink.String,
+				Provider:  g.Platform,
+			})
+		}
+	}
+
+	// 2) Fallback legacy: channel_targets (compat com setups antigos)
+	if len(withInvite) == 0 {
+		targets, _ := h.store.ListChannelTargets(ch.ID)
+		for _, t := range targets {
+			if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
+				name := t.ChatID
+				if t.Name.Valid && t.Name.String != "" {
+					name = t.Name.String
+				}
+				withInvite = append(withInvite, pickerEntry{
+					Name:      name,
+					InviteURL: t.InviteURL.String,
+					Provider:  t.Provider,
+				})
+			}
 		}
 	}
 

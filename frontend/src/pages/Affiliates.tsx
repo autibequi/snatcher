@@ -394,9 +394,8 @@ export default function Affiliates() {
   return (
     <div className="p-6 max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-lg font-semibold text-fg">Afiliados</h1>
-        <p className="text-sm text-fg-3 mt-0.5">
+      <div className="mb-4">
+        <p className="text-sm text-fg-3">
           Credenciais e tags por programa. Sem isso, link curto nao comissiona.
         </p>
       </div>

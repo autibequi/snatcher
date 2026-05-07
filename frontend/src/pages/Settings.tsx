@@ -22,11 +22,12 @@ function AppearanceTab() {
 
   return (
     <div className="space-y-6 max-w-sm">
-      {/* Tema Light/Dark */}
+      {/* Tema Light/Dark/System */}
       <div>
-        <p className="text-sm font-medium text-fg mb-3">Tema</p>
-        <div className="flex gap-2">
-          {(['light', 'dark'] as const).map((t) => (
+        <p className="text-sm font-medium text-fg mb-1">Tema</p>
+        <p className="text-xs text-fg-3 mb-3">"Sistema" segue a preferência do seu dispositivo (dark/light automaticamente).</p>
+        <div className="flex gap-2 flex-wrap">
+          {(['system', 'light', 'dark'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTheme(t)}
@@ -36,7 +37,7 @@ function AppearanceTab() {
                   : 'bg-surface-2 text-fg-2 hover:bg-border border border-border'
               }`}
             >
-              {t === 'light' ? '☀️ Claro' : '🌙 Escuro'}
+              {t === 'system' ? '🖥️ Sistema' : t === 'light' ? '☀️ Claro' : '🌙 Escuro'}
             </button>
           ))}
         </div>
@@ -477,7 +478,7 @@ function AntiBanSection({
         <p className="text-xs text-fg-3 mt-0.5">Limites para evitar banimento nas plataformas de mensagens.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-fg-2 block mb-1">Intervalo entre grupos (s)</label>
           <input
@@ -557,7 +558,7 @@ function ShortenerSection({
         <span className="text-sm text-fg">Usar links encurtados nos disparos</span>
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-fg-2 block mb-1">Prefixo grupo WhatsApp</label>
           <input
@@ -747,7 +748,7 @@ function GeneralTab() {
           <input
             type="url"
             placeholder="https://hooks.slack.com/..."
-            value={merged.notify_approval_webhook ?? ''}
+            value={(merged.notify_approval_webhook as string) ?? ''}
             onChange={e => updateField('notify_approval_webhook', e.target.value)}
             className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
           />
@@ -807,8 +808,6 @@ export default function Settings() {
 
   return (
     <div className="p-6">
-      <h1 className="text-lg font-semibold text-fg mb-6">Configurações</h1>
-
       <div className="bg-surface border border-border rounded-lg overflow-hidden">
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
 

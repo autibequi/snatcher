@@ -1,5 +1,7 @@
 import React from 'react'
 
+// 'system' = segue prefers-color-scheme; 'light'/'dark' = explícito
+type ThemePref = 'system' | 'light' | 'dark'
 type Theme = 'light' | 'dark'
 type Density = 'compact' | 'comfy'
 type Accent = 'indigo' | 'green' | 'orange' | 'pink'
@@ -10,9 +12,17 @@ const KEYS = {
   accent: 'snatcher.accent',
 } as const
 
-function applyTheme(theme: Theme) {
-  document.documentElement.dataset.theme = theme
-  localStorage.setItem(KEYS.theme, theme)
+function systemTheme(): Theme {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function resolveTheme(pref: ThemePref): Theme {
+  return pref === 'system' ? systemTheme() : pref
+}
+
+function applyTheme(pref: ThemePref) {
+  document.documentElement.dataset.theme = resolveTheme(pref)
+  localStorage.setItem(KEYS.theme, pref)
 }
 
 function applyDensity(density: Density) {
@@ -25,22 +35,30 @@ function applyAccent(accent: Accent) {
   localStorage.setItem(KEYS.accent, accent)
 }
 
-function getPreferredTheme(): Theme {
-  const saved = localStorage.getItem(KEYS.theme) as Theme | null
-  if (saved) return saved
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+function getSavedPref(): ThemePref {
+  const saved = localStorage.getItem(KEYS.theme) as ThemePref | null
+  if (saved === 'system' || saved === 'light' || saved === 'dark') return saved
+  // default = system
+  return 'system'
 }
 
 export function initTheme() {
-  applyTheme(getPreferredTheme())
+  applyTheme(getSavedPref())
   applyDensity((localStorage.getItem(KEYS.density) as Density | null) ?? 'comfy')
   applyAccent((localStorage.getItem(KEYS.accent) as Accent | null) ?? 'indigo')
+
+  // Reaplica quando o tema do sistema muda (se prefer = 'system')
+  const mql = window.matchMedia('(prefers-color-scheme: dark)')
+  mql.addEventListener('change', () => {
+    const pref = getSavedPref()
+    if (pref === 'system') {
+      document.documentElement.dataset.theme = resolveTheme(pref)
+    }
+  })
 }
 
 export function useTheme() {
-  const [theme, setThemeState] = React.useState<Theme>(
-    () => (localStorage.getItem(KEYS.theme) as Theme | null) ?? getPreferredTheme()
-  )
+  const [theme, setThemeState] = React.useState<ThemePref>(() => getSavedPref())
   const [density, setDensityState] = React.useState<Density>(
     () => (localStorage.getItem(KEYS.density) as Density | null) ?? 'comfy'
   )
@@ -48,7 +66,7 @@ export function useTheme() {
     () => (localStorage.getItem(KEYS.accent) as Accent | null) ?? 'indigo'
   )
 
-  const setTheme = React.useCallback((t: Theme) => {
+  const setTheme = React.useCallback((t: ThemePref) => {
     applyTheme(t)
     setThemeState(t)
   }, [])
@@ -63,10 +81,9 @@ export function useTheme() {
     setAccentState(a)
   }, [])
 
-  // Sync between tabs
   React.useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key === KEYS.theme && e.newValue) setThemeState(e.newValue as Theme)
+      if (e.key === KEYS.theme && e.newValue) setThemeState(e.newValue as ThemePref)
       if (e.key === KEYS.density && e.newValue) setDensityState(e.newValue as Density)
       if (e.key === KEYS.accent && e.newValue) setAccentState(e.newValue as Accent)
     }
@@ -74,5 +91,5 @@ export function useTheme() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  return { theme, setTheme, density, setDensity, accent, setAccent }
+  return { theme, setTheme, density, setDensity, accent, setAccent, resolvedTheme: resolveTheme(theme) }
 }

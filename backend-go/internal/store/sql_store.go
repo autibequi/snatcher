@@ -468,7 +468,8 @@ func (s *SQLStore) UpdateCatalogProduct(p models.CatalogProduct) error {
 		UPDATE catalogproduct SET canonical_name=:canonical_name, brand=:brand, weight=:weight,
 			image_url=:image_url, lowest_price=:lowest_price, lowest_price_url=:lowest_price_url,
 			lowest_price_source=:lowest_price_source, tags=:tags, updated_at=:updated_at,
-			curation_status=:curation_status, quantity=:quantity
+			curation_status=:curation_status, quantity=:quantity,
+			inspected=:inspected, inspected_at=:inspected_at, inspection_notes=:inspection_notes
 		WHERE id = :id`, p)
 	return err
 }

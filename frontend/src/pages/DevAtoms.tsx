@@ -3,8 +3,6 @@ import { Badge, Button, Input, KpiCard, ScoreBar, Skeleton, EmptyState, Spinner,
 export default function DevAtoms() {
   return (
     <div className="p-8 space-y-8">
-      <h1 className="text-lg font-semibold text-fg">Dev — Atoms showcase</h1>
-
       <section>
         <p className="text-xs text-fg-3 mb-2">Badge</p>
         <div className="flex gap-2 flex-wrap">

@@ -115,6 +115,10 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 		// Ollama nativo aceita também o campo "format" — incluímos para compat
 		reqBody["format"] = "json"
 	}
+	if opts.WebSearch && strings.Contains(c.baseURL, "openrouter.ai") {
+		// OpenRouter web plugin — habilita busca online no modelo (resultado vem citado no content)
+		reqBody["plugins"] = []map[string]any{{"id": "web"}}
+	}
 
 	b, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(b))

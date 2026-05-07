@@ -98,8 +98,7 @@ export default function Analytics() {
       {/* Header + filtro de período */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Insights de cliques</h1>
-          <p className="text-sm text-fg-3 mt-0.5">Métricas de engajamento e performance de links</p>
+          <p className="text-sm text-fg-3">Métricas de engajamento e performance de links</p>
         </div>
         <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border">
           {PERIOD_OPTIONS.map(opt => (
@@ -121,11 +120,11 @@ export default function Analytics() {
 
       {/* KPIs */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard label="Cliques totais" value={data?.total ?? 0} sub={`últimos ${days} dias`} />
           <KpiCard label="Cliques únicos" value={data?.unique ?? 0} sub="por IP" />
           <KpiCard label="CTR estimado" value={ctr} sub={`${fmt(data?.messages_sent ?? 0)} disparos`} />

@@ -97,6 +97,8 @@ func Build(
 	channels.SetLLMFn(composeH.BuildLLMClient)
 	// Injeta factory LLM no curation handler (precisa do composeH já criado)
 	curation.SetLLMFn(composeH.BuildLLMClient)
+	// Injeta factory LLM no dashboard pra recomendação "o que fazer agora"
+	dash.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
@@ -381,6 +383,7 @@ func Build(
 		r.Get("/api/dashboard/performance", dash.Performance)
 		r.Get("/api/dashboard/channel-performance", dash.Performance)
 		r.Get("/api/dashboard/upcoming-dispatches", dash.UpcomingDispatches)
+		r.Get("/api/dashboard/recommendation", dash.Recommendation)
 
 		// Team (operadores)
 		r.Get("/api/team", team.List)
