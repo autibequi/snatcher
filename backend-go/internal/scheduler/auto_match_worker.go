@@ -135,7 +135,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			}
 
 			if s.Value < threshold {
-				break // já ordenado desc
+				continue // threshold é por canal — não pode break, outros canais podem ter threshold menor
 			}
 			if sentByChannel[s.ChannelID] >= maxPerRun {
 				continue // canal saturado neste ciclo, mas outros canais ainda podem receber

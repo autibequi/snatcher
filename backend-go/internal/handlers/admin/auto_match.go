@@ -177,7 +177,7 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if s.Value < threshold {
-				break
+				continue // threshold é por canal — não pode break
 			}
 			if sentByChannel[s.ChannelID] >= maxPerRun {
 				continue
@@ -358,7 +358,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if s.Value < threshold {
-				break
+				continue // threshold é por canal — não pode break
 			}
 			if sentByChannel[s.ChannelID] >= maxPerRun {
 				continue
