@@ -54,6 +54,7 @@ func Build(
 	auth := adminhnd.NewAuthHandler(db, jwtSecret)
 	scan := adminhnd.NewScan(st, runner, sched)
 	terms := adminhnd.NewSearchTerms(st, scrapers)
+	// LLM injected after composeH is created below
 	sources := adminhnd.NewSources(st)
 	affiliates := adminhnd.NewAffiliates(st)
 	catalog := adminhnd.NewCatalogDB(st, db)
@@ -91,6 +92,9 @@ func Build(
 		svc := compose.NewService(llmCli)
 		composeH = adminhnd.NewComposeHandler(st, svc)
 	}
+	// Injeta factory LLM nos handlers que precisam
+	terms.SetLLMFn(composeH.BuildLLMClient)
+	channels.SetLLMFn(composeH.BuildLLMClient)
 	// Injeta factory LLM no curation handler (precisa do composeH já criado)
 	curation.SetLLMFn(composeH.BuildLLMClient)
 
@@ -190,6 +194,7 @@ func Build(
 		r.Put("/api/search-terms/{id}", terms.Update)
 		r.Delete("/api/search-terms/{id}", terms.Delete)
 		r.Post("/api/search-terms/{id}/crawl", terms.CrawlNow)
+		r.Post("/api/search-terms/suggest", terms.Suggest)
 		r.Get("/api/search-terms/{id}/results", terms.ListResults)
 
 		// Catalog
@@ -224,6 +229,7 @@ func Build(
 		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
 		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
 		r.Post("/api/channels/{id}/send-product", channels.SendProduct)
+		r.Post("/api/channels/suggest", channels.Suggest)
 
 		// Automations
 		r.Get("/api/automations", automations.List)

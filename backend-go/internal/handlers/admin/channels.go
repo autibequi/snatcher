@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
@@ -58,11 +59,14 @@ func (e *evolutionSender) post(ctx context.Context, path string, payload any) er
 type ChannelsHandler struct {
 	store    store.Store
 	adapters pipeline.AdapterRegistry
+	llmFn    func() llm.Client
 }
 
 func NewChannels(st store.Store, adapters pipeline.AdapterRegistry) *ChannelsHandler {
 	return &ChannelsHandler{store: st, adapters: adapters}
 }
+
+func (h *ChannelsHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 func (h *ChannelsHandler) List(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.store.ListChannels()
@@ -883,4 +887,161 @@ func (h *ChannelsHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		entries = []models.ChannelHistoryEntry{}
 	}
 	writeJSON(w, http.StatusOK, entries)
+}
+
+// Suggest POST /api/channels/suggest
+// Usa LLM pra recomendar configuração de canal passando lista de produtos e canais atuais.
+// Body (todos opcionais):
+//
+//	{ "intent": "quero um canal pra mães de São Paulo", "mode": "next|expand" }
+func (h *ChannelsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado — configure em Configurações → LLM/IA")
+		return
+	}
+
+	var req struct {
+		Intent string `json:"intent"`
+		Mode   string `json:"mode"` // "next" | "expand" | ""
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// Contexto de canais existentes
+	existing, _ := h.store.ListChannels()
+	channelLines := []string{}
+	for _, ch := range existing {
+		_ = ch.UnmarshalAudience()
+		cats := strings.Join(ch.Audience.Categories, ", ")
+		brands := strings.Join(ch.Audience.Brands, ", ")
+		line := fmt.Sprintf("- %q (categorias: %s | marcas: %s | membros: %d | CTR30d: %.1f%%)",
+			ch.Name, cats, brands, ch.MemberCount, ch.CTR30d*100)
+		channelLines = append(channelLines, line)
+	}
+	channelCtx := "Nenhum canal cadastrado ainda."
+	if len(channelLines) > 0 {
+		max := 20
+		if len(channelLines) < max { max = len(channelLines) }
+		channelCtx = strings.Join(channelLines[:max], "\n")
+	}
+
+	// Contexto de produtos mais recentes do catálogo (top 40 por preço/tags)
+	products, _, _ := h.store.FilterCatalogProducts(store.CatalogFilters{Limit: 40, IncludeInactive: false})
+	productLines := []string{}
+	for _, p := range products {
+		tags := strings.Join(p.GetTags(), ", ")
+		brand := ""
+		if p.Brand.Valid { brand = p.Brand.String }
+		price := ""
+		if p.LowestPrice.Valid { price = fmt.Sprintf("R$%.0f", p.LowestPrice.Float64) }
+		line := fmt.Sprintf("- %q | marca: %s | cat: %s | %s", p.CanonicalName, brand, tags, price)
+		productLines = append(productLines, line)
+	}
+	productCtx := "Nenhum produto no catálogo ainda."
+	if len(productLines) > 0 { productCtx = strings.Join(productLines, "\n") }
+
+	modeInst := ""
+	switch req.Mode {
+	case "expand":
+		modeInst = "\nO usuário quer um canal para um NICHO DIFERENTE dos atuais — audiência nova, comportamento diferente."
+	case "next":
+		modeInst = "\nO usuário quer um canal COMPLEMENTAR aos atuais — mesma base de produtos, segmento diferente."
+	default:
+		if req.Intent == "" {
+			modeInst = "\nAnalise canais e produtos e sugira o próximo canal mais impactante pra crescimento."
+		}
+	}
+
+	intentCtx := ""
+	if req.Intent != "" { intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent) }
+
+	prompt := fmt.Sprintf(`Você é um especialista em marketing digital para e-commerce brasileiro via grupos de WhatsApp e Telegram.
+
+CANAIS JÁ EXISTENTES:
+%s
+
+PRODUTOS NO CATÁLOGO (sample):
+%s
+%s%s
+
+Recomende UM canal otimizado. Responda SOMENTE em JSON:
+{
+  "name": "Nome do canal (ex: Suplementos Fitness SP)",
+  "description": "Descrição em 1 frase",
+  "audience_categories": ["categoria1", "categoria2"],
+  "audience_brands": ["Marca1", "Marca2"],
+  "audience_min_price": 0,
+  "audience_max_price": 500,
+  "audience_min_drop": 10,
+  "send_start_hour": 8,
+  "send_end_hour": 21,
+  "digest_mode": false,
+  "rationale": "Por que este canal faz sentido agora, em 2 frases",
+  "target_profile": "Perfil da audiência ideal (ex: Homens 25-40 interessados em musculação)"
+}
+
+REGRAS:
+- audience_categories: categorias de produtos que este canal deve receber (match com taxonomy)
+- audience_brands: marcas preferidas desta audiência (empty = aceita tudo)
+- audience_min_drop: percentual mínimo de desconto para disparar (10 = só ofertas com 10+ por cento off)
+- send_start_hour/end_hour: horário de envio em BRT (8-21 para público geral, 7-23 para jovens)
+- digest_mode: true se preferir 1 mensagem por dia com lista; false para envio imediato
+- rationale: mencione o gap que este canal preenche nos canais atuais
+
+JSON:`, channelCtx, productCtx, modeInst, intentCtx)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	resp, llmErr := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   1200,
+		Temperature: 0.35,
+		Operation:   "suggest_channel",
+		JSONMode:    true,
+	})
+	if llmErr != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+llmErr.Error())
+		return
+	}
+
+	resp = strings.TrimSpace(resp)
+	if i := strings.Index(resp, "</think>"); i >= 0 { resp = strings.TrimSpace(resp[i+len("</think>"):]) }
+	resp = strings.TrimPrefix(resp, "```json"); resp = strings.TrimPrefix(resp, "```"); resp = strings.TrimSuffix(resp, "```"); resp = strings.TrimSpace(resp)
+	if s := strings.Index(resp, "{"); s > 0 { resp = resp[s:] }
+
+	var suggestion struct {
+		Name               string   `json:"name"`
+		Description        string   `json:"description"`
+		AudienceCategories []string `json:"audience_categories"`
+		AudienceBrands     []string `json:"audience_brands"`
+		AudienceMinPrice   float64  `json:"audience_min_price"`
+		AudienceMaxPrice   float64  `json:"audience_max_price"`
+		AudienceMinDrop    float64  `json:"audience_min_drop"`
+		SendStartHour      int      `json:"send_start_hour"`
+		SendEndHour        int      `json:"send_end_hour"`
+		DigestMode         bool     `json:"digest_mode"`
+		Rationale          string   `json:"rationale"`
+		TargetProfile      string   `json:"target_profile"`
+	}
+	if jsonErr := json.Unmarshal([]byte(resp), &suggestion); jsonErr != nil {
+		writeErr(w, http.StatusBadGateway, "parse: "+jsonErr.Error()+" — resp: "+resp[:min(len(resp), 200)])
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"suggestion":      suggestion,
+		"intent":          req.Intent,
+		"mode":            req.Mode,
+		"existing_count":  len(existing),
+		"products_sample": len(products),
+	})
+}
+
+func min(a, b int) int {
+	if a < b { return a }
+	return b
 }

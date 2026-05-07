@@ -3,9 +3,13 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
@@ -55,12 +59,18 @@ func (req searchTermRequest) toModel() models.SearchTerm {
 }
 
 type SearchTermsHandler struct {
-	store   store.Store
+	store    store.Store
 	scrapers map[string]pipeline.Scraper
+	llmFn    func() llm.Client
 }
 
 func NewSearchTerms(st store.Store, scrapers map[string]pipeline.Scraper) *SearchTermsHandler {
 	return &SearchTermsHandler{store: st, scrapers: scrapers}
+}
+
+// SetLLMFn injeta o factory de LLM client.
+func (h *SearchTermsHandler) SetLLMFn(fn func() llm.Client) {
+	h.llmFn = fn
 }
 
 // List retorna todos os search terms.
@@ -210,4 +220,177 @@ func (h *SearchTermsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Suggest POST /api/search-terms/suggest
+// Usa LLM pra recomendar configuração de crawler.
+// Body (todos opcionais):
+//
+//	{ "intent": "quero rastrear suplementos baratos", "mode": "next|expand" }
+//
+// - intent: descrição livre do que crawlear. Se vazio, LLM analisa os existentes e sugere algo
+// - mode: "next" = próximo da área atual; "expand" = mercado novo distante
+func (h *SearchTermsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado — configure em Configurações → LLM/IA")
+		return
+	}
+
+	var req struct {
+		Intent string `json:"intent"` // "quero rastrear Nintendo Switch baratos"
+		Mode   string `json:"mode"`   // "next" | "expand" | "" (auto)
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// Busca termos existentes para contexto
+	existing, _ := h.store.ListSearchTerms()
+	existingLines := []string{}
+	for _, t := range existing {
+		queries := t.GetQueries()
+		line := fmt.Sprintf("- %q (fontes: %s, resultados: %d/ciclo)", queries[0], t.GetSources(), t.ResultCount)
+		existingLines = append(existingLines, line)
+	}
+	existingCtx := "Nenhum crawler configurado ainda."
+	if len(existingLines) > 0 {
+		max := 30
+		if len(existingLines) < max {
+			max = len(existingLines)
+		}
+		existingCtx = strings.Join(existingLines[:max], "\n")
+	}
+
+	modeInstruction := ""
+	switch req.Mode {
+	case "expand":
+		modeInstruction = "\nO usuário quer explorar um NICHO DIFERENTE — sugira algo distante dos crawlers atuais, novo mercado ou categoria."
+	case "next":
+		modeInstruction = "\nO usuário quer complementar os crawlers atuais — sugira algo próximo/relacionado ao que já rastreia."
+	default:
+		if req.Intent == "" {
+			modeInstruction = "\nAnalise os crawlers existentes e sugira o PRÓXIMO MELHOR crawler pra complementar ou um novo mercado promissor."
+		}
+	}
+
+	intentCtx := ""
+	if req.Intent != "" {
+		intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent)
+	}
+
+	prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro e configuração de crawlers de preço.
+
+CRAWLERS JÁ CONFIGURADOS:
+%s
+%s%s
+
+Recomende UMA configuração de crawler otimizada para o contexto acima. Responda SOMENTE em JSON:
+{
+  "query": "termo de busca principal (ex: whey protein 900g)",
+  "queries": ["variação 1", "variação 2", "variação 3"],
+  "sources": ["amazon", "mercadolivre"],
+  "min_val": 0,
+  "max_val": 500,
+  "crawl_interval": 60,
+  "rationale": "Explicação em 1-2 frases do por que essa configuração faz sentido",
+  "expected_products": "estimativa de quantos produtos por ciclo (ex: 10-30)",
+  "category": "ecommerce"
+}
+
+REGRAS:
+- query deve ser específica o suficiente pra encontrar bons produtos mas não muito restrita
+- queries deve ter 3-5 variações (marcas, sinônimos, formatos)
+- sources: use ["amazon","mercadolivre"] como padrão; Magalu/Shopee pra categorias fashion/eletro
+- min_val/max_val: faixa de preço realista pra categoria (0 = sem limite)
+- crawl_interval: 30 pra mercados voláteis (tech, jogos), 60-120 pra mercados estáveis (moda, suplementos)
+- rationale: seja específico sobre o gap que está preenchendo nos crawlers atuais
+
+JSON:`, existingCtx, modeInstruction, intentCtx)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   1000,
+		Temperature: 0.3,
+		Operation:   "suggest_crawler",
+		JSONMode:    true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	// Limpeza
+	resp = strings.TrimSpace(resp)
+	if i := strings.Index(resp, "</think>"); i >= 0 {
+		resp = strings.TrimSpace(resp[i+len("</think>"):])
+	}
+	resp = strings.TrimPrefix(resp, "```json")
+	resp = strings.TrimPrefix(resp, "```")
+	resp = strings.TrimSuffix(resp, "```")
+	resp = strings.TrimSpace(resp)
+	if s := strings.Index(resp, "{"); s > 0 {
+		resp = resp[s:]
+	}
+
+	var suggestion struct {
+		Query           string   `json:"query"`
+		Queries         []string `json:"queries"`
+		Sources         []string `json:"sources"`
+		MinVal          float64  `json:"min_val"`
+		MaxVal          float64  `json:"max_val"`
+		CrawlInterval   int      `json:"crawl_interval"`
+		Rationale       string   `json:"rationale"`
+		ExpectedProducts string  `json:"expected_products"`
+		Category        string   `json:"category"`
+	}
+	if err := json.Unmarshal([]byte(resp), &suggestion); err != nil {
+		// Tenta extractLastJSON como fallback
+		if extracted := extractLastJSONForSuggest(resp); extracted != "" {
+			if err2 := json.Unmarshal([]byte(extracted), &suggestion); err2 != nil {
+				writeErr(w, http.StatusBadGateway, "parse: "+err.Error())
+				return
+			}
+		} else {
+			writeErr(w, http.StatusBadGateway, "parse: "+err.Error())
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"suggestion": suggestion,
+		"intent":     req.Intent,
+		"mode":       req.Mode,
+		"existing_count": len(existing),
+	})
+}
+
+// extractLastJSONForSuggest é igual ao extractLastJSON do openai_compat mas duplicado aqui
+// pra evitar dependência circular entre packages (handlers → llm → handlers).
+func extractLastJSONForSuggest(s string) string {
+	s = strings.ReplaceAll(s, "```json", "")
+	s = strings.ReplaceAll(s, "```", "")
+	for start := strings.LastIndex(s, "{"); start >= 0; start = strings.LastIndex(s[:start], "{") {
+		depth, inStr, escaped := 0, false, false
+		for i := start; i < len(s); i++ {
+			c := s[i]
+			if escaped { escaped = false; continue }
+			if c == '\\' && inStr { escaped = true; continue }
+			if c == '"' { inStr = !inStr; continue }
+			if inStr { continue }
+			if c == '{' { depth++ } else if c == '}' {
+				depth--
+				if depth == 0 {
+					candidate := s[start : i+1]
+					if strings.Contains(candidate, ":") { return candidate }
+					break
+				}
+			}
+		}
+	}
+	return ""
 }

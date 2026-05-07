@@ -337,7 +337,9 @@ function NewChannelPlaceholder({ onClick }: { onClick: () => void }) {
 
 export default function Channels() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [showModal, setShowModal] = React.useState(false)
+  const [showSuggestModal, setShowSuggestModal] = React.useState(false)
 
   const { data: channels = [], isLoading } = useQuery<Channel[]>({
     queryKey: ['channels'],
@@ -346,7 +348,10 @@ export default function Channels() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex items-center gap-2 justify-end mb-4">
+        <Button variant="secondary" size="sm" onClick={() => setShowSuggestModal(true)}>
+          ✨ Sugerir canal
+        </Button>
         <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
           + Novo canal
         </Button>
@@ -370,6 +375,165 @@ export default function Channels() {
       )}
 
       <CreateChannelModal open={showModal} onClose={() => setShowModal(false)} />
+      {showSuggestModal && (
+        <SuggestChannelModal
+          onClose={() => setShowSuggestModal(false)}
+          onCreated={() => { setShowSuggestModal(false); qc.invalidateQueries({ queryKey: ['channels'] }) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Suggest Channel Modal ─────────────────────────────────────────────────────
+
+interface ChannelSuggestion {
+  name: string
+  description: string
+  audience_categories: string[]
+  audience_brands: string[]
+  audience_min_price: number
+  audience_max_price: number
+  audience_min_drop: number
+  send_start_hour: number
+  send_end_hour: number
+  digest_mode: boolean
+  rationale: string
+  target_profile: string
+}
+
+function SuggestChannelModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [intent, setIntent] = React.useState('')
+  const [mode, setMode] = React.useState<'' | 'next' | 'expand'>('')
+  const [suggestion, setSuggestion] = React.useState<ChannelSuggestion | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [creating, setCreating] = React.useState(false)
+  const [error, setError] = React.useState('')
+
+  const handleSuggest = async () => {
+    setLoading(true); setError(''); setSuggestion(null)
+    try {
+      const res = await apiClient.post('/api/channels/suggest', { intent, mode }, { timeout: 90_000 })
+      setSuggestion(res.data.suggestion)
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err?.message ?? 'Erro ao consultar LLM')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!suggestion) return
+    setCreating(true)
+    try {
+      await apiClient.post('/api/channels', {
+        name: suggestion.name,
+        description: suggestion.description,
+        send_start_hour: suggestion.send_start_hour,
+        send_end_hour: suggestion.send_end_hour,
+        digest_mode: suggestion.digest_mode,
+        active: true,
+        audience: {
+          categories: suggestion.audience_categories,
+          brands: suggestion.audience_brands,
+          min_price: suggestion.audience_min_price,
+          max_price: suggestion.audience_max_price,
+          min_drop: suggestion.audience_min_drop,
+        },
+      })
+      onCreated()
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? 'Erro ao criar canal')
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-fg">✨ Sugerir canal com IA</h3>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg">×</button>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Que audiência você quer alcançar? (opcional)</label>
+            <textarea value={intent} onChange={e => setIntent(e.target.value)} rows={2}
+              placeholder="ex: mães com filhos pequenos em SP, gamers que buscam promoções, homens 25-40 fitness..."
+              className="w-full text-sm border border-border rounded-md px-2.5 py-2 bg-surface text-fg outline-none focus:border-accent resize-none" />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Estratégia</label>
+            <div className="flex gap-2">
+              {([['', 'Auto'], ['next', '🔗 Próximo'], ['expand', '🚀 Nova audiência']] as const).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setMode(m as '' | 'next' | 'expand')}
+                  className={`flex-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${mode === m ? 'border-accent bg-accent/10 text-accent' : 'border-border text-fg-2 hover:bg-surface-2'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button type="button" onClick={handleSuggest} disabled={loading}
+          className="w-full text-sm bg-accent text-white rounded-md px-4 py-2 hover:bg-accent-hover disabled:opacity-50 mb-4">
+          {loading ? '⏳ Consultando IA com produtos e canais atuais...' : '✨ Gerar sugestão'}
+        </button>
+
+        {error && <p className="text-sm text-danger mb-3">{error}</p>}
+
+        {suggestion && (
+          <div className="border border-border rounded-md p-4 space-y-3 bg-surface-2">
+            <div className="bg-accent/5 border border-accent/20 rounded p-3">
+              <p className="text-sm font-semibold text-fg">{suggestion.name}</p>
+              <p className="text-xs text-fg-3 mt-0.5">{suggestion.description}</p>
+              <p className="text-xs text-accent mt-1 italic">{suggestion.target_profile}</p>
+            </div>
+            <div className="text-sm text-fg-2">{suggestion.rationale}</div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <p className="text-fg-2 mb-0.5">Categorias</p>
+                <p className="font-mono text-fg">{(suggestion.audience_categories || []).join(', ') || '—'}</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Marcas preferidas</p>
+                <p className="font-mono text-fg">{(suggestion.audience_brands || []).join(', ') || 'todas'}</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Faixa de preço</p>
+                <p className="font-mono text-fg">
+                  {suggestion.audience_min_price > 0 ? `R$ ${suggestion.audience_min_price}` : 'sem min'}
+                  {' — '}
+                  {suggestion.audience_max_price > 0 ? `R$ ${suggestion.audience_max_price}` : 'sem max'}
+                </p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Desconto mínimo</p>
+                <p className="font-mono text-fg">{suggestion.audience_min_drop}%</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Horário de envio</p>
+                <p className="font-mono text-fg">{suggestion.send_start_hour}h – {suggestion.send_end_hour}h</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Modo</p>
+                <p className="font-mono text-fg">{suggestion.digest_mode ? 'digest diário' : 'envio imediato'}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2 border-t border-border">
+              <button type="button" onClick={() => { setSuggestion(null); setError('') }}
+                className="flex-1 text-sm px-3 py-1.5 border border-border rounded-md text-fg-2 hover:bg-surface">
+                Gerar nova
+              </button>
+              <button type="button" onClick={handleCreate} disabled={creating}
+                className="flex-1 text-sm bg-success text-white rounded-md px-3 py-1.5 hover:opacity-90 disabled:opacity-50">
+                {creating ? 'Criando...' : '+ Criar canal'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

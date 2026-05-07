@@ -562,7 +562,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
 
 // ── MarketplacesTab ──────────────────────────────────────────────────────────
 
-function MarketplacesTab({ onNew }: { onNew: () => void }) {
+function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: () => void }) {
   const qc = useQueryClient()
   const { data: terms = [], isLoading } = useQuery<SearchTerm[]>({
     queryKey: ['search-terms'],
@@ -682,6 +682,9 @@ function MarketplacesTab({ onNew }: { onNew: () => void }) {
             className="border-accent text-accent hover:bg-accent/5"
           >
             {runningIds.size > 0 ? `▶ Rodando ${runningIds.size}...` : '▶ Rodar todos'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onSuggest}>
+            ✨ Sugerir crawler
           </Button>
           <Button variant="primary" size="sm" onClick={onNew}>
             + Novo crawler
@@ -1057,12 +1060,169 @@ function ChangeReaderModal({ spy, onClose }: { spy: SpyGroup; onClose: () => voi
   )
 }
 
+// ── Suggest Crawler Modal ─────────────────────────────────────────────────────
+
+interface CrawlerSuggestion {
+  query: string
+  queries: string[]
+  sources: string[]
+  min_val: number
+  max_val: number
+  crawl_interval: number
+  rationale: string
+  expected_products: string
+  category: string
+}
+
+function SuggestCrawlerModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [intent, setIntent] = React.useState('')
+  const [mode, setMode] = React.useState<'next' | 'expand' | ''>('')
+  const [suggestion, setSuggestion] = React.useState<CrawlerSuggestion | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [creating, setCreating] = React.useState(false)
+  const [error, setError] = React.useState('')
+
+  const handleSuggest = async () => {
+    setLoading(true)
+    setError('')
+    setSuggestion(null)
+    try {
+      const res = await apiClient.post('/api/search-terms/suggest', { intent, mode }, { timeout: 90_000 })
+      setSuggestion(res.data.suggestion)
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err?.message ?? 'Erro ao consultar LLM')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!suggestion) return
+    setCreating(true)
+    try {
+      await apiClient.post('/api/search-terms', {
+        query: suggestion.query,
+        queries: suggestion.queries,
+        sources: suggestion.sources.join(','),
+        min_val: suggestion.min_val,
+        max_val: suggestion.max_val,
+        crawl_interval: suggestion.crawl_interval,
+        category: suggestion.category || 'ecommerce',
+        active: true,
+      })
+      onCreated()
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? 'Erro ao criar crawler')
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-fg">✨ Sugerir crawler com IA</h3>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg">×</button>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">O que você quer rastrear? (opcional)</label>
+            <textarea
+              value={intent}
+              onChange={e => setIntent(e.target.value)}
+              rows={2}
+              placeholder="ex: suplementos importados baratos, jogos Nintendo Switch, tênis Nike masculino..."
+              className="w-full text-sm border border-border rounded-md px-2.5 py-2 bg-surface text-fg outline-none focus:border-accent resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Estratégia</label>
+            <div className="flex gap-2">
+              {(['', 'next', 'expand'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setMode(m)}
+                  className={`flex-1 text-xs px-3 py-1.5 rounded-md border transition-colors ${mode === m ? 'border-accent bg-accent/10 text-accent' : 'border-border text-fg-2 hover:bg-surface-2'}`}>
+                  {m === '' ? 'Auto' : m === 'next' ? '🔗 Próximo' : '🚀 Novo mercado'}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-fg-3 mt-1">
+              {mode === 'next' ? 'Complementa os crawlers atuais' : mode === 'expand' ? 'Explora nicho completamente diferente' : 'IA decide a melhor estratégia'}
+            </p>
+          </div>
+        </div>
+
+        <button type="button" onClick={handleSuggest} disabled={loading}
+          className="w-full text-sm bg-accent text-white rounded-md px-4 py-2 hover:bg-accent-hover disabled:opacity-50 mb-4">
+          {loading ? '⏳ Consultando IA...' : '✨ Gerar sugestão'}
+        </button>
+
+        {error && <p className="text-sm text-danger mb-3">{error}</p>}
+
+        {suggestion && (
+          <div className="border border-border rounded-md p-4 space-y-3 bg-surface-2">
+            <div className="bg-accent/5 border border-accent/20 rounded p-3">
+              <p className="text-xs text-fg-2 font-medium mb-1">💡 Raciocínio da IA</p>
+              <p className="text-sm text-fg">{suggestion.rationale}</p>
+              {suggestion.expected_products && (
+                <p className="text-xs text-fg-3 mt-1">Estimativa: ~{suggestion.expected_products} produtos/ciclo</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <p className="text-fg-2 mb-0.5">Termo principal</p>
+                <p className="font-mono text-fg">{suggestion.query}</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Fontes</p>
+                <p className="font-mono text-fg">{(suggestion.sources || []).join(', ')}</p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Faixa de preço</p>
+                <p className="font-mono text-fg">
+                  {suggestion.min_val > 0 ? `R$ ${suggestion.min_val}` : 'sem min'} — {suggestion.max_val > 0 ? `R$ ${suggestion.max_val}` : 'sem max'}
+                </p>
+              </div>
+              <div>
+                <p className="text-fg-2 mb-0.5">Intervalo</p>
+                <p className="font-mono text-fg">{suggestion.crawl_interval}min</p>
+              </div>
+            </div>
+            {(suggestion.queries || []).length > 0 && (
+              <div>
+                <p className="text-xs text-fg-2 mb-1">Variações</p>
+                <div className="flex flex-wrap gap-1">
+                  {suggestion.queries.map((q, i) => (
+                    <span key={i} className="text-xs bg-surface border border-border rounded px-1.5 py-0.5 font-mono">{q}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 pt-2 border-t border-border">
+              <button type="button" onClick={() => { setSuggestion(null); setError('') }}
+                className="flex-1 text-sm px-3 py-1.5 border border-border rounded-md text-fg-2 hover:bg-surface">
+                Gerar nova
+              </button>
+              <button type="button" onClick={handleCreate} disabled={creating}
+                className="flex-1 text-sm bg-success text-white rounded-md px-3 py-1.5 hover:opacity-90 disabled:opacity-50">
+                {creating ? 'Criando...' : '+ Criar crawler'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Crawlers page ────────────────────────────────────────────────────────
 
 export default function Crawlers() {
+  const qc = useQueryClient()
   const [tab, setTab] = React.useState('marketplaces')
   const [showMarketplaceModal, setShowMarketplaceModal] = React.useState(false)
   const [showSpyModal, setShowSpyModal] = React.useState(false)
+  const [showSuggestModal, setShowSuggestModal] = React.useState(false)
 
   const tabs = [
     { id: 'marketplaces', label: 'Marketplaces' },
@@ -1081,13 +1241,14 @@ export default function Crawlers() {
       <div className="bg-surface border border-border rounded-md overflow-hidden">
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
         {tab === 'marketplaces'
-          ? <MarketplacesTab onNew={() => setShowMarketplaceModal(true)} />
+          ? <MarketplacesTab onNew={() => setShowMarketplaceModal(true)} onSuggest={() => setShowSuggestModal(true)} />
           : <SpyTab onNew={() => setShowSpyModal(true)} />
         }
       </div>
 
       <CreateMarketplaceModal open={showMarketplaceModal} onClose={() => setShowMarketplaceModal(false)} />
       <CreateSpyModal open={showSpyModal} onClose={() => setShowSpyModal(false)} />
+      {showSuggestModal && <SuggestCrawlerModal onClose={() => setShowSuggestModal(false)} onCreated={() => { setShowSuggestModal(false); qc.invalidateQueries({ queryKey: ['search-terms'] }) }} />}
     </div>
   )
 }
