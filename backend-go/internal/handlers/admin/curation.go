@@ -306,6 +306,8 @@ func (h *CurationHandler) AutoLLM(w http.ResponseWriter, r *http.Request) {
 	var llmCallErrors, parseErrors int
 	for _, row := range products {
 		prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro de suplementos e produtos fitness.
+Responda DIRETAMENTE em JSON, sem tags de raciocínio (sem <think>...</think>), sem markdown, sem prefácio.
+
 Dado o nome de produto abaixo, responda SOMENTE um JSON com os campos:
 {
   "category": "categoria principal em português (ex: Suplementos, Smartphones, Tênis) ou null",
@@ -317,14 +319,14 @@ Dado o nome de produto abaixo, responda SOMENTE um JSON com os campos:
   ]
 }
 
-Inclua em new_taxonomies quaisquer marcas, categorias, sabores ou tamanhos novos que você identificar e que possam ser úteis para classificar outros produtos similares.
+Inclua em new_taxonomies quaisquer marcas, categorias, sabores ou tamanhos novos que você identificar e que possam ser úteis para classificar outros produtos similares. Se nada novo, deixe array vazio.
 
 Nome: %s
 
-Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
+JSON:`, row.CanonicalName)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   300,
+			MaxTokens:   1500, // deepseek-r1/qwen usam tokens de raciocínio antes da resposta
 			Temperature: 0.1,
 			Operation:   "curation",
 		})
@@ -336,11 +338,20 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 			continue
 		}
 
+		rawResp := resp
 		resp = strings.TrimSpace(resp)
+		// Remove <think>...</think> de modelos de reasoning (deepseek-r1, qwen3)
+		if i := strings.Index(resp, "</think>"); i >= 0 {
+			resp = strings.TrimSpace(resp[i+len("</think>"):])
+		}
 		resp = strings.TrimPrefix(resp, "```json")
 		resp = strings.TrimPrefix(resp, "```")
 		resp = strings.TrimSuffix(resp, "```")
 		resp = strings.TrimSpace(resp)
+		// Tenta extrair primeiro bloco JSON válido se houver texto extra
+		if start := strings.Index(resp, "{"); start > 0 {
+			resp = resp[start:]
+		}
 
 		var result struct {
 			Category     *string `json:"category"`
@@ -355,9 +366,12 @@ Responda apenas o JSON, sem markdown nem texto extra.`, row.CanonicalName)
 		}
 		if err := json.Unmarshal([]byte(resp), &result); err != nil {
 			parseErrors++
+			parseErrMsg := "handler parse: " + err.Error()
 			if firstErr == "" {
-				firstErr = "parse: " + err.Error() + " — resp: " + resp
+				firstErr = parseErrMsg + " — resp: " + resp
 			}
+			// Loga no llm_metrics pra aparecer no /logs → tab LLM
+			llm.RecordHandlerError("curation", "", parseErrMsg, rawResp)
 			continue
 		}
 
@@ -519,7 +533,7 @@ Responda SOMENTE em JSON:
 Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   400,
+			MaxTokens:   2000, // deepseek-r1/qwen usam tokens de raciocínio antes da resposta
 			Temperature: 0.1,
 			Operation:   "inspect",
 		})
@@ -531,11 +545,18 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			continue
 		}
 
+		rawResp := resp
 		resp = strings.TrimSpace(resp)
+		if i := strings.Index(resp, "</think>"); i >= 0 {
+			resp = strings.TrimSpace(resp[i+len("</think>"):])
+		}
 		resp = strings.TrimPrefix(resp, "```json")
 		resp = strings.TrimPrefix(resp, "```")
 		resp = strings.TrimSuffix(resp, "```")
 		resp = strings.TrimSpace(resp)
+		if start := strings.Index(resp, "{"); start > 0 {
+			resp = resp[start:]
+		}
 
 		var result struct {
 			ReadyForDispatch bool     `json:"ready_for_dispatch"`
@@ -553,6 +574,7 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			if firstErr == "" {
 				firstErr = "parse: " + err.Error()
 			}
+			llm.RecordHandlerError("inspect", "", "handler parse: "+err.Error(), rawResp)
 			continue
 		}
 

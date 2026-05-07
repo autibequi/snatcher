@@ -35,6 +35,12 @@ func truncatePayload(s string) string {
 	return s[:maxPayloadStoreLen] + "... [truncated]"
 }
 
+// RecordHandlerError loga falhas que acontecem no handler após o LLM ter respondido
+// (ex: parse JSON falhou no consumidor). Útil pra rastrear todas as falhas no log unificado.
+func RecordHandlerError(operation, model, errMsg, payload string) {
+	recordMetric(operation, model, "handler_parse_error", 0, 0, 0, 0, true, errMsg, "", payload)
+}
+
 // recordMetric insere um exec do LLM na tabela llm_metrics. No-op se DB não setado.
 func recordMetric(operation, model, status string, tokIn, tokOut int, costUSD float64, latencySeconds float64, isError bool, errMsg, prompt, response string) {
 	db := getMetricsDB()

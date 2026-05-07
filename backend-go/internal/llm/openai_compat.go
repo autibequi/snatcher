@@ -80,10 +80,12 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
@@ -93,6 +95,25 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	}
 
 	content := result.Choices[0].Message.Content
-	recordMetric(opts.Operation, model, "ok", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, false, "", prompt, content)
+	finishReason := result.Choices[0].FinishReason
+
+	// Detecta respostas problemáticas mesmo com HTTP 200
+	if content == "" {
+		errMsg := "empty content (finish_reason=" + finishReason + ")"
+		recordMetric(opts.Operation, model, "empty_response", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, rawResponse)
+		return "", fmt.Errorf("%s", errMsg)
+	}
+	if finishReason == "length" {
+		// resposta truncada por max_tokens — quase sempre vai falhar no parse
+		errMsg := "response truncated (finish_reason=length, completion_tokens=" + fmt.Sprintf("%d", result.Usage.CompletionTokens) + ") — aumente max_tokens"
+		recordMetric(opts.Operation, model, "truncated", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
+		return content, fmt.Errorf("%s", errMsg)
+	}
+
+	status := "ok"
+	if finishReason != "" && finishReason != "stop" {
+		status = finishReason
+	}
+	recordMetric(opts.Operation, model, status, result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, false, "", prompt, content)
 	return content, nil
 }
