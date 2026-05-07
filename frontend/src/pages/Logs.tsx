@@ -663,8 +663,7 @@ export default function Logs() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-semibold text-fg">Logs</h1>
+      <div className="flex items-center justify-end mb-4">
         <Button variant="secondary" size="sm" onClick={handleExport}>
           Exportar CSV
         </Button>

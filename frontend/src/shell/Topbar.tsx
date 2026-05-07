@@ -78,43 +78,52 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const title = pageTitle(location.pathname)
 
   return (
-    <header className="flex items-center h-14 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
-      {/* Hamburger mobile */}
-      <button
-        type="button"
-        onClick={onMenuClick}
-        className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded"
-        aria-label="Abrir menu"
-      >
-        ☰
-      </button>
+    <>
+      <header className="flex items-center h-14 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
+        {/* Hamburger mobile */}
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded"
+          aria-label="Abrir menu"
+        >
+          ☰
+        </button>
 
-      {/* Título da página */}
+        {/* Título da página — desktop */}
+        {title && (
+          <h1 className="text-sm font-semibold text-fg flex-shrink-0 hidden md:block">{title}</h1>
+        )}
+
+        {/* Search bar */}
+        <div className="flex-1">
+          <SearchBar />
+        </div>
+
+        {/* Accounts badge */}
+        <AccountsBadge />
+
+        {/* Badge de aprovações pendentes */}
+        <PendingApprovalsBadge />
+
+        {/* Avatar com inicial do usuário */}
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          className="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center hover:bg-accent/30 transition-colors flex-shrink-0"
+          title={user?.name ?? 'Configurações'}
+        >
+          {initials || 'U'}
+        </button>
+      </header>
+
+      {/* Título da página — mobile (linha separada abaixo do topbar) */}
       {title && (
-        <h1 className="text-sm font-semibold text-fg flex-shrink-0 hidden md:block">{title}</h1>
+        <div className="md:hidden px-4 py-2 bg-surface border-b border-border flex-shrink-0">
+          <h1 className="text-base font-semibold text-fg">{title}</h1>
+        </div>
       )}
-
-      {/* Search bar */}
-      <div className="flex-1">
-        <SearchBar />
-      </div>
-
-      {/* Accounts badge */}
-      <AccountsBadge />
-
-      {/* Badge de aprovações pendentes */}
-      <PendingApprovalsBadge />
-
-      {/* Avatar com inicial do usuário */}
-      <button
-        type="button"
-        onClick={() => navigate('/settings')}
-        className="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center hover:bg-accent/30 transition-colors flex-shrink-0"
-        title={user?.name ?? 'Configurações'}
-      >
-        {initials || 'U'}
-      </button>
-    </header>
+    </>
   )
 }
 

@@ -202,8 +202,7 @@ export default function AutoMatch() {
     <div className="p-6 max-w-3xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-lg font-semibold text-fg">Auto Match</h1>
-        <p className="text-sm text-fg-3 mt-0.5">
+        <p className="text-sm text-fg-3">
           Dispara automaticamente produtos que batem com canais, a cada 1 minuto.
         </p>
       </div>

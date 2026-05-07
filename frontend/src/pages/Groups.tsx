@@ -532,8 +532,7 @@ export default function Groups() {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Grupos</h1>
-          <p className="text-sm text-fg-3 mt-0.5">
+          <p className="text-sm text-fg-3">
             Destinos físicos (WhatsApp/Telegram) vinculados a canais
           </p>
           {!isLoading && (

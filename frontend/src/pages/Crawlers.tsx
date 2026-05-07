@@ -1071,8 +1071,7 @@ export default function Crawlers() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-semibold text-fg">Crawlers</h1>
+      <div className="flex items-center justify-end mb-4">
         {tab === 'spy' && (
           <Button variant="primary" size="sm" onClick={() => setShowSpyModal(true)}>
             + Adicionar grupo a espionar

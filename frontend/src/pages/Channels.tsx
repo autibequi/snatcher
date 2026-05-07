@@ -346,8 +346,7 @@ export default function Channels() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold text-fg">Canais</h1>
+      <div className="flex items-center justify-end mb-4">
         <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
           + Novo canal
         </Button>

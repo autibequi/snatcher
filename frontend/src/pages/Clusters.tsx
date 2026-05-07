@@ -375,9 +375,8 @@ export default function Clusters() {
       {/* Header */}
       <div className="flex items-start justify-between mb-4 gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Clusters</h1>
           {hasData && (
-            <p className="text-xs text-fg-3 mt-0.5">
+            <p className="text-xs text-fg-3">
               {clusters.length} agrupamentos · {totalMembers.toLocaleString('pt-BR')} membros
               {clusters[0]?.computed_at && (
                 <> · última análise {new Date(clusters[0].computed_at).toLocaleString('pt-BR')}</>

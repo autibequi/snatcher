@@ -58,8 +58,7 @@ export default function Taxonomy() {
     <div className="p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h1 className="text-lg font-semibold text-fg">Taxonomia</h1>
-          <p className="text-sm text-fg-3 mt-0.5">
+          <p className="text-sm text-fg-3">
             Categorias e marcas usadas no Match e detectadas pelo crawler
           </p>
         </div>

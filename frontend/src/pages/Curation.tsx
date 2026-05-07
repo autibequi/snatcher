@@ -93,8 +93,7 @@ export default function Curation() {
     <div className="p-6">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-fg">Curadoria</h1>
-          <p className="text-sm text-fg-3 mt-0.5">
+          <p className="text-sm text-fg-3">
             Produtos sem marca, categoria ou atributos completos — mesmo que já estejam no catálogo.
           </p>
         </div>
