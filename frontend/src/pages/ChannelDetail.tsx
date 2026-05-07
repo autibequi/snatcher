@@ -525,23 +525,96 @@ function ChannelDemographics() {
   )
 }
 
-// ── Aba: Link público (placeholder) ──────────────────────────────────────────
+// ── Aba: Link público ─────────────────────────────────────────────────────────
 
-function ChannelPublicLink({ channelId }: { channelId: string }) {
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function ChannelPublicLink({ channelId, channel }: { channelId: string; channel: { name?: string; slug?: string } }) {
+  const qc = useQueryClient()
+  const initialSlug = channel.slug || slugify(channel.name || '')
+  const [slug, setSlug] = React.useState(initialSlug)
+  const [copied, setCopied] = React.useState(false)
+
+  React.useEffect(() => {
+    setSlug(channel.slug || slugify(channel.name || ''))
+  }, [channel.slug, channel.name])
+
+  const fullURL = `${window.location.origin}/canal/${slug}`
+
+  const saveMut = useMutation({
+    mutationFn: () => apiClient.put(`/api/channels/${channelId}`, { ...channel, slug }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', channelId] })
+      qc.invalidateQueries({ queryKey: ['channels'] })
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar slug'),
+  })
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(fullURL).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const slugChanged = slug !== (channel.slug || slugify(channel.name || ''))
+
   return (
-    <div className="max-w-lg">
-      <p className="text-sm text-fg-2 mb-4">
-        Link público de afiliado para este canal. Compartilhe para rastrear conversões
-        atribuídas a este canal de forma independente.
+    <div className="max-w-2xl space-y-4">
+      <p className="text-sm text-fg-2">
+        Link público compartilhável. Aponta para uma página que oferece os grupos disponíveis (WhatsApp/Telegram) para o usuário escolher.
+        Quando um grupo enche, basta atualizar o link de convite na aba <strong>Grupos</strong>.
       </p>
-      <div className="border border-border rounded-md p-6 bg-surface-2 text-center">
-        <p className="text-sm font-medium text-fg mb-1">Em breve</p>
-        <p className="text-xs text-fg-3">
-          A geração de links públicos de afiliado por canal está em desenvolvimento.
-        </p>
+
+      <div>
+        <label className="text-xs text-fg-2 block mb-1">Slug (parte da URL)</label>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-fg-3 font-mono">{window.location.host}/canal/</span>
+          <input
+            value={slug}
+            onChange={e => setSlug(slugify(e.target.value))}
+            placeholder={slugify(channel.name || 'meu-canal')}
+            className="flex-1 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono"
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!slug || !slugChanged || saveMut.isPending}
+            onClick={() => saveMut.mutate()}
+            loading={saveMut.isPending}
+          >
+            Salvar
+          </Button>
+        </div>
         <p className="text-xs text-fg-3 mt-1">
-          ID do canal: <span className="font-mono text-accent">{channelId}</span>
+          Por default, gerado do nome do canal. Pode ser editado para algo mais curto.
         </p>
+      </div>
+
+      <div className="border border-border rounded-md p-4 bg-surface-2">
+        <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-2">Link completo</p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-sm font-mono text-accent bg-surface border border-border rounded px-2 py-1.5 truncate">
+            {fullURL}
+          </code>
+          <Button variant="secondary" size="sm" onClick={handleCopy}>
+            {copied ? '✓ Copiado' : 'Copiar'}
+          </Button>
+          <a href={fullURL} target="_blank" rel="noopener" className="text-sm text-accent hover:underline px-2">
+            abrir →
+          </a>
+        </div>
+      </div>
+
+      <div className="text-xs text-fg-3 border-t border-border pt-3">
+        Ao acessar, o usuário vê uma página com os grupos ativos do canal e escolhe um para entrar.
+        Configure os grupos e seus invite links na aba <strong>Grupos</strong>.
       </div>
     </div>
   )
@@ -928,7 +1001,7 @@ export default function ChannelDetail() {
         )}
 
         {tab === 'publiclink' && (
-          <ChannelPublicLink channelId={id!} />
+          <ChannelPublicLink channelId={id!} channel={channel} />
         )}
       </div>
     </div>

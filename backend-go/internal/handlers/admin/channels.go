@@ -137,8 +137,15 @@ func (req channelRequest) toModel() models.Channel {
 		DigestMaxItems: req.DigestMaxItems,
 		Active:         req.Active,
 	}
-	if req.Slug != nil {
-		c.Slug = models.NullString{NullString: sql.NullString{String: *req.Slug, Valid: true}}
+	// Slug: usa o fornecido OU gera do nome (default)
+	slug := ""
+	if req.Slug != nil && *req.Slug != "" {
+		slug = slugify(*req.Slug)
+	} else {
+		slug = slugify(req.Name)
+	}
+	if slug != "" {
+		c.Slug = models.NullString{NullString: sql.NullString{String: slug, Valid: true}}
 	}
 	if req.MessageTemplate != nil {
 		c.MessageTemplate = models.NullString{NullString: sql.NullString{String: *req.MessageTemplate, Valid: true}}
