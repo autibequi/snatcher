@@ -872,11 +872,14 @@ interface LLMLogRow {
   error: boolean
   error_msg?: string
   latency_seconds?: number
+  prompt?: string
+  response?: string
   created_at: string
 }
 
 function LLMLogs() {
   const [errorsOnly, setErrorsOnly] = React.useState(false)
+  const [expandedId, setExpandedId] = React.useState<number | null>(null)
   const { data: rows = [], isLoading, refetch } = useQuery<LLMLogRow[]>({
     queryKey: ['llm-logs', errorsOnly],
     queryFn: () => apiClient.get(`/api/admin/llm/logs?limit=200${errorsOnly ? '&errors_only=true' : ''}`)

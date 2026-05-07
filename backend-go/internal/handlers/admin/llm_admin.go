@@ -187,12 +187,14 @@ func (h *LLMAdminHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		Error      bool      `db:"error" json:"error"`
 		ErrorMsg   *string   `db:"error_msg" json:"error_msg,omitempty"`
 		LatencyS   *float64  `db:"latency_seconds" json:"latency_seconds,omitempty"`
+		Prompt     *string   `db:"prompt" json:"prompt,omitempty"`
+		Response   *string   `db:"response" json:"response,omitempty"`
 		CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	}
 
 	q := `SELECT id, operation, model, status, tokens_in, tokens_out,
 	             estimated_cost_usd, cache_hit, error, error_msg,
-	             latency_seconds, created_at
+	             latency_seconds, prompt, response, created_at
 	      FROM llm_metrics`
 	if errorsOnly {
 		q += ` WHERE error = true`
