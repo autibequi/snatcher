@@ -96,7 +96,8 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"` // qwen3/deepseek-r1 emitem thinking aqui
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -113,12 +114,25 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 	}
 
 	content := result.Choices[0].Message.Content
+	reasoning := result.Choices[0].Message.Reasoning
 	finishReason := result.Choices[0].FinishReason
 
 	// Detecta respostas problemáticas mesmo com HTTP 200
 	if content == "" {
-		errMsg := "empty content (finish_reason=" + finishReason + ")"
-		recordMetric(opts.Operation, model, "empty_response", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, rawResponse)
+		var errMsg string
+		if reasoning != "" {
+			// Modelo gastou todos os tokens em reasoning sem emitir o JSON real.
+			// Comum em qwen3/deepseek-r1 mesmo com /no_think e response_format=json.
+			errMsg = "model returned only reasoning, no content (finish_reason=" + finishReason + ", completion_tokens=" + fmt.Sprintf("%d", result.Usage.CompletionTokens) + "). Modelo de thinking não respeita format=json — troque para llama3.1/qwen2.5/mistral em Configurações → LLM/IA"
+		} else {
+			errMsg = "empty content (finish_reason=" + finishReason + ")"
+		}
+		// Salva o reasoning no payload pra debug
+		fullDebug := rawResponse
+		if reasoning != "" {
+			fullDebug = "REASONING:\n" + reasoning + "\n\n--- FULL RESPONSE ---\n" + rawResponse
+		}
+		recordMetric(opts.Operation, model, "empty_response", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, fullDebug)
 		return "", fmt.Errorf("%s", errMsg)
 	}
 	if finishReason == "length" {
