@@ -292,7 +292,16 @@ function LLMTab() {
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
 
   const saveMut = useMutation({
-    mutationFn: () => apiClient.put('/api/config', { ...config, ...form }).then(r => r.data),
+    mutationFn: () => {
+      // Coerce string-encoded booleans dos campos com checkbox antes de enviar pro backend.
+      const payload: Record<string, unknown> = { ...config, ...form }
+      const boolFields = ['llm_reasoning_enabled']
+      for (const k of boolFields) {
+        if (payload[k] === 'true') payload[k] = true
+        else if (payload[k] === 'false') payload[k] = false
+      }
+      return apiClient.put('/api/config', payload).then(r => r.data)
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['config'] }); setForm({}) },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
@@ -353,6 +362,29 @@ function LLMTab() {
           onModelChange={v => set('llm_model', v)}
         />
       )}
+
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-fg">Habilitar reasoning (chain-of-thought)</p>
+            <p className="text-xs text-fg-3 mt-0.5">
+              Modelos como deepseek-v4, gpt-5 e r1 fazem raciocínio interno antes da resposta.
+              Desligado por padrão — evita truncar o JSON quando max_tokens aperta.
+              Ligue só se sentir falta de qualidade nas respostas.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            className="accent-accent w-4 h-4 flex-shrink-0"
+            checked={
+              form.llm_reasoning_enabled !== undefined
+                ? form.llm_reasoning_enabled === 'true'
+                : !!config?.llm_reasoning_enabled
+            }
+            onChange={e => set('llm_reasoning_enabled', String(e.target.checked))}
+          />
+        </label>
+      </div>
 
       <div className="border border-accent/30 bg-accent/5 rounded-md p-3 flex items-start gap-3">
         <span className="text-base leading-none mt-0.5">🤵</span>
