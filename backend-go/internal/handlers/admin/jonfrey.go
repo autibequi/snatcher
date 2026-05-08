@@ -110,6 +110,12 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     true,
 		Run:         actionDedupBrandsCategories,
 	},
+	"reset_stale_cooldown": {
+		Type:        "reset_stale_cooldown",
+		Description: "Limpa cooldown de produtos cujos dispatches nunca foram entregues (pending_approval ou failed) — desbloqueia fila de auto-match imediatamente",
+		UsesLLM:     false,
+		Run:         actionResetStaleCooldown,
+	},
 	"curate_taxonomy": {
 		Type:        "curate_taxonomy",
 		Description: "Revisa taxonomia pendente: aprova, rejeita e melhora keywords das entradas para maximizar o match heurístico e reduzir trabalho manual futuro",
@@ -882,6 +888,32 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
 		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
 	)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionResetStaleCooldown: remove auto_match_logs de dispatches não entregues
+// (pending_approval, failed, pending sem entrega) para desbloquear a fila de auto-match.
+func actionResetStaleCooldown(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	var before int
+	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM auto_match_logs`)
+
+	res, err := h.db.ExecContext(ctx, `
+		DELETE FROM auto_match_logs
+		WHERE dispatch_id IN (
+			SELECT id FROM dispatches
+			WHERE status IN ('pending_approval', 'failed', 'cancelled')
+		)`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	removed, _ := res.RowsAffected()
+
+	var after int
+	_ = h.db.GetContext(ctx, &after, `SELECT COUNT(*) FROM auto_match_logs`)
+
+	beforeMap := map[string]any{"logs_before": before}
+	afterMap := map[string]any{"removed": removed, "logs_after": after}
+	reasoning := fmt.Sprintf("Removi %d logs de cooldown de dispatches não entregues. Produtos destas tentativas voltam ao pool pra o próximo ciclo de auto-match.", removed)
 	return beforeMap, afterMap, reasoning, nil
 }
 
