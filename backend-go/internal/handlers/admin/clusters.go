@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/jmoiron/sqlx"
@@ -51,6 +52,9 @@ func (h *ClustersHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar clusters")
 		return
+	}
+	if clusters == nil {
+		clusters = []models.Cluster{}
 	}
 	writeJSON(w, http.StatusOK, clusters)
 }

@@ -32,6 +32,9 @@ func (h *AffiliateProgramsHandler) List(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "erro ao listar programas")
 		return
 	}
+	if programs == nil {
+		programs = []models.AffiliateProgram{}
+	}
 	writeJSON(w, http.StatusOK, programs)
 }
 

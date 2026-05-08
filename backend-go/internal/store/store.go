@@ -188,6 +188,7 @@ type Store interface {
 	UpdatePublicLink(l models.PublicLink) error
 	DeletePublicLink(id int64) error
 	IncrementRoundRobinIdx(id int64, newIdx int) error
+	IncrementPublicLinkClicks(id int64) error
 
 	// Channel history
 	ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error)

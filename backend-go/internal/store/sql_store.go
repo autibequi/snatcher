@@ -1553,6 +1553,32 @@ func (s *SQLStore) IncrementRoundRobinIdx(id int64, newIdx int) error {
 	return err
 }
 
+// IncrementPublicLinkClicks aumenta clicks_30d em 1 para o link público dado.
+// Usado pelo resolver /g/{slug} para fechar o loop de atribuição.
+// Nota: clicks_30d hoje é cumulativo na coluna; o "30d" é semântico — o expurgo
+// fica para um job de cleanup periódico, fora do hot path do resolver.
+func (s *SQLStore) IncrementPublicLinkClicks(id int64) error {
+	_, err := s.db.Exec(`UPDATE public_links SET clicks_30d = clicks_30d + 1 WHERE id = $1`, id)
+	return err
+}
+
+// PurgeOldLLMMetrics apaga registros mais antigos que `days` dias da tabela
+// llm_metrics. Retorna quantas linhas foram removidas. Idealmente chamado
+// por um job diário; ver docs/llm-metrics-retention.md.
+func (s *SQLStore) PurgeOldLLMMetrics(days int) (int64, error) {
+	if days <= 0 {
+		days = 90
+	}
+	res, err := s.db.Exec(
+		`DELETE FROM llm_metrics WHERE created_at < now() - ($1 || ' days')::interval`,
+		days,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ---------------------------------------------------------------------------
 // Dispatches
 // ---------------------------------------------------------------------------

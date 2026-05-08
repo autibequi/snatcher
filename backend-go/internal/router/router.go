@@ -177,6 +177,7 @@ func Build(
 
 		// Auth
 		r.Get("/api/auth/me", auth.Me)
+		r.Get("/api/me", auth.Me) // alias canônico (handoff de design)
 
 		// Scan
 		r.Get("/api/scan/status", scan.Status)
