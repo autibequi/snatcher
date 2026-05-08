@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
+import { describeError } from '../lib/errors'
 import { KpiCard, Skeleton, Tabs, Switch, Badge } from '../components/ui'
 import AudienceEditor from '../components/AudienceEditor'
 
@@ -306,7 +307,7 @@ export function Drawer({ row, onClose }: DrawerProps) {
               )}
               {adviseMut.isError && (
                 <p className="text-xs text-danger">
-                  Erro ao pedir conselho: {(adviseMut.error as any)?.response?.data?.error ?? 'falha desconhecida'}
+                  Erro ao pedir conselho: {describeError(adviseMut.error)}
                 </p>
               )}
 

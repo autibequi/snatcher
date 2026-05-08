@@ -449,7 +449,8 @@ Responda EXCLUSIVAMENTE em JSON:
 		g.Name, g.Platform, channelName, g.MemberCount,
 	)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// Timeout 45s (Cloudflare corta em ~100s) — WebSearch ativo é mais lento.
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{

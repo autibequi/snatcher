@@ -27,6 +27,7 @@ interface JonfreyConfig {
 interface AvailableAction {
   type: string
   description: string
+  uses_llm: boolean
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -204,10 +205,9 @@ export default function Jonfrey() {
           />
         </div>
 
-        <div className="border-t border-border pt-3">
-          <p className="text-xs text-fg-2 font-medium mb-2">Ações disponíveis</p>
-          <div className="space-y-1.5">
-            {available.map(a => {
+        <div className="border-t border-border pt-3 space-y-4">
+          {(() => {
+            const renderRow = (a: AvailableAction) => {
               const enabled = config?.enabled_actions.includes(a.type) ?? false
               return (
                 <div key={a.type} className="flex items-center justify-between gap-3 py-1.5">
@@ -231,8 +231,36 @@ export default function Jonfrey() {
                   </div>
                 </div>
               )
-            })}
-          </div>
+            }
+            const llmActions = available.filter(a => a.uses_llm)
+            const simpleActions = available.filter(a => !a.uses_llm)
+            return (
+              <>
+                {simpleActions.length > 0 && (
+                  <div>
+                    <p className="text-xs text-fg-2 font-medium mb-2 flex items-center gap-2">
+                      ⚡ Automações simples
+                      <span className="text-[10px] text-fg-3 font-normal">heurísticas / SQL — rápido, sem custo</span>
+                    </p>
+                    <div className="space-y-1.5 divide-y divide-border/40">
+                      {simpleActions.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {llmActions.length > 0 && (
+                  <div>
+                    <p className="text-xs text-fg-2 font-medium mb-2 flex items-center gap-2">
+                      🧠 Automações com LLM
+                      <span className="text-[10px] text-fg-3 font-normal">gasta tokens — mais lento</span>
+                    </p>
+                    <div className="space-y-1.5 divide-y divide-border/40">
+                      {llmActions.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
 
         <div className="border-t border-border pt-3 flex items-center justify-between gap-2 flex-wrap">

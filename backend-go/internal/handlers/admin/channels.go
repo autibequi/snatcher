@@ -1001,11 +1001,12 @@ REGRAS:
 
 JSON:`, channelCtx, productCtx, modeInst, intentCtx)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// Timeout 45s — Cloudflare corta em ~100s.
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 
 	resp, llmErr := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   1200,
+		MaxTokens:   900,
 		Temperature: 0.35,
 		Operation:   "suggest_channel",
 		JSONMode:    true,

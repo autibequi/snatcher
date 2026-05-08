@@ -543,11 +543,12 @@ Responda EXCLUSIVAMENTE em JSON com este formato:
 
 Use a busca online se útil pra contextualizar tendências de e-commerce/promoções no Brasil.`, snapshot)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// Timeout 45s (Cloudflare corta em ~100s).
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   600,
+		MaxTokens:   500,
 		Temperature: 0.4,
 		Operation:   "dashboard_recommendation",
 		JSONMode:    true,

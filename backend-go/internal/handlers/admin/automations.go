@@ -309,15 +309,17 @@ Analise e sugira ajustes concretos. Responda EXCLUSIVAMENTE em JSON:
 Campos válidos: threshold, cooldown_hours, max_per_run, drop_threshold, auto_match_enabled, events_enabled.
 Sugira somente o que faz sentido mudar — não preencha por preencher.`, snapshot)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// Timeout 35s (Cloudflare corta em ~100s). WebSearch desligado pra evitar
+	// inflar prompt + latência alta — análise é sobre dados internos, não tendências.
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   600,
+		MaxTokens:   500,
 		Temperature: 0.3,
 		Operation:   "advise_automation",
 		JSONMode:    true,
-		WebSearch:   true,
+		WebSearch:   false,
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())

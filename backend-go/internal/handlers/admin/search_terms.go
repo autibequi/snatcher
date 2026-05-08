@@ -337,11 +337,12 @@ REGRAS:
 
 JSON:`, existingCtx, modeInstruction, intentCtx)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// Timeout 45s — Cloudflare corta em ~100s.
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   1000,
+		MaxTokens:   800,
 		Temperature: 0.3,
 		Operation:   "suggest_crawler",
 		JSONMode:    true,
