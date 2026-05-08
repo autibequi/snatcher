@@ -136,21 +136,21 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		cli := llm.NewOpenAICompat(baseURL, "")
+		cli := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningEnabled)
 		if model != "" {
 			return &modelOverrideClient{inner: cli, model: model}
 		}
 		return cli
 	case "openrouter":
 		if apiKey == "" { return nil }
-		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey)
+		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningEnabled)
 		if model != "" {
 			return &modelOverrideClient{inner: cli, model: model}
 		}
 		return cli
 	default:
 		if baseURL != "" {
-			return llm.NewOpenAICompat(baseURL, apiKey)
+			return llm.NewOpenAICompat(baseURL, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
 		}
 		return nil
 	}

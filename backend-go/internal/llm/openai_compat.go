@@ -14,9 +14,18 @@ import (
 // OpenAICompatClient funciona com qualquer API compatível com OpenAI:
 // OpenRouter, Ollama (/v1/chat/completions), LM Studio, etc.
 type OpenAICompatClient struct {
-	baseURL string
-	apiKey  string
-	httpCli *http.Client
+	baseURL          string
+	apiKey           string
+	httpCli          *http.Client
+	reasoningEnabled bool // default false: manda reasoning:{enabled:false} pra desligar chain-of-thought (deepseek-v4, gpt-5, r1)
+}
+
+// WithReasoning ativa o reasoning explicitamente no provider (default off).
+// Quando off, injeta reasoning:{enabled:false, effort:"minimal"} em todo request.
+// Doc: https://openrouter.ai/docs/use-cases/reasoning-tokens
+func (c *OpenAICompatClient) WithReasoning(enabled bool) *OpenAICompatClient {
+	c.reasoningEnabled = enabled
+	return c
 }
 
 // extractLastJSON procura o último bloco JSON válido (objeto `{...}`) em uma string.
@@ -132,6 +141,12 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	if opts.WebSearch && strings.Contains(c.baseURL, "openrouter.ai") {
 		// OpenRouter web plugin — habilita busca online no modelo (resultado vem citado no content)
 		reqBody["plugins"] = []map[string]any{{"id": "web"}}
+	}
+	if !c.reasoningEnabled {
+		// Default: desliga chain-of-thought no provider. Evita truncamento em modelos
+		// reasoning (deepseek-v4, gpt-5, r1) que gastam max_tokens no thinking antes do JSON.
+		// Provider que não suporta reasoning ignora silenciosamente.
+		reqBody["reasoning"] = map[string]any{"enabled": false, "effort": "minimal"}
 	}
 
 	b, _ := json.Marshal(reqBody)

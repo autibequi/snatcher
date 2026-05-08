@@ -117,6 +117,11 @@ type AppConfig struct {
 	FullAutoMode           bool   `db:"full_auto_mode" json:"full_auto_mode"`
 	NotifyApprovalWebhook  string `db:"notify_approval_webhook" json:"notify_approval_webhook"`
 	AutoCurateLLM          bool   `db:"auto_curate_llm" json:"auto_curate_llm"`
+
+	// LLM reasoning — migration 0098
+	// Default false: desliga chain-of-thought no provider (deepseek-v4, gpt-5, r1).
+	// Evita "response truncated" em chamadas com max_tokens apertado pra JSON.
+	LLMReasoningEnabled bool `db:"llm_reasoning_enabled" json:"llm_reasoning_enabled"`
 }
 
 type AutoMatchLog struct {
