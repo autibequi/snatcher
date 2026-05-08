@@ -67,16 +67,18 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 				continue
 			}
 
-			// Defense-in-depth: filter sources by category match.
-			// If scraper implements ScraperWithCategory, check that it matches the search term's category.
-			if categorized, ok := scraper.(ScraperWithCategory); ok {
-				if categorized.Category() != term.Category {
-					log.Warn("source category mismatch",
-						"search_term_id", term.ID,
-						"source", sourceID,
-						"expected_category", term.Category,
-						"got_category", categorized.Category())
-					continue
+			// Filtra scraper por categoria se o term tem categoria definida.
+			// Category vazia = aceita qualquer scraper (evita bloquear terms sem categoria).
+			if term.Category != "" {
+				if categorized, ok := scraper.(ScraperWithCategory); ok {
+					if categorized.Category() != term.Category {
+						log.Warn("source category mismatch",
+							"search_term_id", term.ID,
+							"source", sourceID,
+							"expected_category", term.Category,
+							"got_category", categorized.Category())
+						continue
+					}
 				}
 			}
 
