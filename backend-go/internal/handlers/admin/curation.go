@@ -636,23 +636,21 @@ func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client, job
 
 		prompt := fmt.Sprintf(`Você é um auditor de e-commerce que aprova produtos para anúncio em grupos de oferta WhatsApp/Telegram brasileiros.
 
-CRITÉRIO DE APROVAÇÃO (mínimo necessário pra publicar SEM postar algo errado):
-- Nome do produto está claro o suficiente pra leitor entender o que é (ex: "Whey Protein 900g Chocolate" — OK; "Produto Genérico" — NÃO).
-- Marca presente OU é dispensável (acessório genérico, item sem marca conhecida).
+CRITÉRIO DE APROVAÇÃO:
+- Nome claro o suficiente para o leitor entender o que é.
 - Preço presente e realista (> R$ 0).
 - Imagem presente.
 
-NÃO bloqueie por:
-- Quantidade ausente — opcional. Se conseguir extrair do título tudo bem, mas a falta dela NÃO impede aprovação.
-- Tags ausentes — opcional. Se conseguir sugerir tags úteis, ótimo, mas a falta NÃO impede aprovação.
-- Descrição curta — desde que o nome seja claro.
+VALIDAÇÃO DE MARCA (CRÍTICO — muitos falsos positivos):
+A marca atual foi detectada automaticamente por palavra-chave e pode estar ERRADA.
+Exemplos de erro: "Acer" em "Fox Racer" (racer contém "acer"), "LG" em "Leg Press", "Nike" em "Nikecomb".
+Se a marca NÃO aparece explicitamente no nome do produto ou é sub-string acidental de outra palavra, defina remove_brand=true.
 
-ready_for_dispatch deve ser TRUE se o produto pode ser anunciado sem risco de informação enganosa. Seja LIBERAL.
-Use FALSE só quando há risco real de erro: nome confuso/ambíguo, preço suspeito, imagem quebrada.
+ready_for_dispatch: TRUE se pode ser anunciado. Seja LIBERAL — só FALSE para risco real de engano.
 
 PRODUTO:
 - Nome: %s
-- Marca: %s
+- Marca atual: %s
 - Tags: %s
 - Quantidade: %s
 - Preço: R$ %.2f
@@ -662,24 +660,29 @@ PRODUTO:
 Responda SOMENTE em JSON:
 {
   "ready_for_dispatch": true|false,
-  "issues": ["lista somente dos problemas BLOQUEANTES (vazia se aprovado)"],
+  "issues": [],
   "corrections": {
-    "canonical_name": "nome limpo e capitalizado, ou null se já está bom",
-    "brand": "marca correta, ou null",
-    "add_tags": ["tags úteis pra categorizar"],
-    "quantity": "quantidade extraída, ou null"
+    "canonical_name": "nome limpo, ou null",
+    "brand": "marca correta se você tem certeza, ou null",
+    "remove_brand": false,
+    "add_tags": [],
+    "quantity": null
   },
-  "summary": "uma frase curta sobre o estado e a decisão"
+  "summary": "uma frase"
 }
 
+remove_brand=true limpa a marca atual (use quando é falso positivo de keyword).
 Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
 
-		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   16000, // modelos free com reasoning gastam 5k-10k antes do JSON
+		// Timeout por produto — evita job travado por uma chamada LLM que não retorna
+		callCtx, callCancel := context.WithTimeout(ctx, 90*time.Second)
+		resp, err := cli.Complete(callCtx, prompt, llm.Options{
+			MaxTokens:   16000,
 			Temperature: 0.1,
 			Operation:   "inspect",
 			JSONMode:    true,
 		})
+		callCancel()
 		if err != nil {
 			llmErrors++
 			if firstErr == "" {
@@ -708,6 +711,7 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			Corrections      struct {
 				CanonicalName *string  `json:"canonical_name"`
 				Brand         *string  `json:"brand"`
+				RemoveBrand   bool     `json:"remove_brand"`
 				AddTags       []string `json:"add_tags"`
 				Quantity      *string  `json:"quantity"`
 			} `json:"corrections"`
@@ -735,13 +739,20 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			changes = append(changes, fmt.Sprintf("name: %q→%q", oldName, p.CanonicalName))
 			hadCorrection = true
 		}
-		if result.Corrections.Brand != nil && *result.Corrections.Brand != "" && (!p.Brand.Valid || p.Brand.String == "") {
-			p.Brand.String = *result.Corrections.Brand
-			p.Brand.Valid = true
-			changes = append(changes, "brand="+*result.Corrections.Brand)
+		if result.Corrections.RemoveBrand && p.Brand.Valid && p.Brand.String != "" {
+			// Falso positivo de keyword — limpa marca incorreta
+			changes = append(changes, "brand_cleared: "+p.Brand.String)
+			p.Brand = models.NullString{}
 			hadCorrection = true
-			// Auto-promove marca pra taxonomy (alimenta o crawler)
-			h.ensureTaxonomyEntry("brand", *result.Corrections.Brand, oldName)
+		} else if result.Corrections.Brand != nil && *result.Corrections.Brand != "" {
+			// Sobrescreve marca mesmo que já exista (LLM pode corrigir marca errada)
+			if p.Brand.String != *result.Corrections.Brand {
+				changes = append(changes, fmt.Sprintf("brand: %q→%q", p.Brand.String, *result.Corrections.Brand))
+				p.Brand.String = *result.Corrections.Brand
+				p.Brand.Valid = true
+				hadCorrection = true
+				h.ensureTaxonomyEntry("brand", *result.Corrections.Brand, oldName)
+			}
 		}
 		if result.Corrections.Quantity != nil && *result.Corrections.Quantity != "" && p.Quantity == "" {
 			p.Quantity = *result.Corrections.Quantity
