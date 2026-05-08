@@ -59,7 +59,7 @@ func Build(
 	affiliates := adminhnd.NewAffiliates(st)
 	catalog := adminhnd.NewCatalogDB(st, db)
 	channels := adminhnd.NewChannels(st, adapters)
-	config := adminhnd.NewConfig(st)
+	config := adminhnd.NewConfigWithDB(st, db)
 	canal := handlers.NewCanal(st)
 	accounts := adminhnd.NewAccounts(st)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
@@ -280,6 +280,7 @@ func Build(
 		// Config
 		r.Get("/api/config", config.Get)
 		r.Put("/api/config", config.Update)
+		r.Post("/api/config/full-auto-toggle", config.ToggleFullAuto)
 
 		// Accounts — WhatsApp
 		r.Get("/api/accounts/wa", accounts.ListWA)

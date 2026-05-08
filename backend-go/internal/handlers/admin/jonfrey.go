@@ -12,9 +12,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
+	"snatcher/backendv2/internal/clusters"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -38,179 +38,128 @@ func (h *JonfreyHandler) SetCurationHandler(c *CurationHandler)      { h.curatio
 type actionDef struct {
 	Type        string
 	Description string
+	Category    string // cleanup, curation, dispatch, optimization, health, admin
 	UsesLLM     bool // true = usa LLM (lento, custo); false = heurística/SQL pura (rápido, grátis)
 	// Run: executa a ação. Retorna (before, after, reasoning, err).
 	Run func(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error)
 }
 
 var actionRegistry = map[string]actionDef{
-	"dispatch_auto_match": {
-		Type:        "dispatch_auto_match",
-		Description: "Roda o ciclo de auto-match: pontua produtos recentes contra canais ativos e dispara matches acima do threshold",
-		UsesLLM:     true, // o composer dentro do worker usa LLM pra gerar a copy do disparo
-		Run:         actionDispatchAutoMatch,
-	},
-	"expire_stale_dispatches": {
-		Type:        "expire_stale_dispatches",
-		Description: "Marca dispatch_targets pending há mais de 2h como failed",
-		UsesLLM:     false,
-		Run:         actionExpireStale,
-	},
 	"inspect_pending_products": {
 		Type:        "inspect_pending_products",
+		Category:    "curation",
 		Description: "Audita via LLM os próximos 30 produtos não inspecionados",
 		UsesLLM:     true,
 		Run:         actionInspectPending,
 	},
 	"tune_thresholds": {
 		Type:        "tune_thresholds",
+		Category:    "optimization",
 		Description: "Avalia performance de cada automação ativa e ajusta thresholds via LLM",
 		UsesLLM:     true,
 		Run:         actionTuneThresholds,
 	},
 	"auto_curate_high_confidence": {
 		Type:        "auto_curate_high_confidence",
+		Category:    "curation",
 		Description: "Auto-aprova produtos pending com sugestão LLM de alta confiança; rejeita lixo óbvio",
 		UsesLLM:     true,
 		Run:         actionAutoCurate,
 	},
 	"detect_failing_channel": {
 		Type:        "detect_failing_channel",
+		Category:    "health",
 		Description: "Detecta canais com CTR ruim ou delivery rate baixo nos últimos 14d e pausa automaticamente",
 		UsesLLM:     false,
 		Run:         actionDetectFailingChannel,
 	},
-	"mark_full_groups": {
-		Type:        "mark_full_groups",
-		Description: "Marca grupos WhatsApp com 1024+ membros como 'full' para entrarem em fallback",
+	"manage_group_health": {
+		Type:        "manage_group_health",
+		Category:    "cleanup",
+		Description: "Marca grupos WhatsApp com 1024+ membros como 'full' para fallback e arquiva grupos com falhas recorrentes (last_error > 7d e múltiplas falhas)",
 		UsesLLM:     false,
-		Run:         actionMarkFullGroups,
-	},
-	"cleanup_archived_groups": {
-		Type:        "cleanup_archived_groups",
-		Description: "Arquiva grupos com falhas recorrentes (last_error > 7d e múltiplas falhas)",
-		UsesLLM:     false,
-		Run:         actionCleanupGroups,
+		Run:         actionManageGroupHealth,
 	},
 	"audit_affiliate_coverage": {
 		Type:        "audit_affiliate_coverage",
+		Category:    "health",
 		Description: "Detecta marketplaces presentes no catálogo sem programa de afiliado configurado",
 		UsesLLM:     false,
 		Run:         actionAuditAffiliate,
 	},
 	"replenish_stagnant_crawlers": {
 		Type:        "replenish_stagnant_crawlers",
+		Category:    "health",
 		Description: "Identifica crawlers ativos sem produtos novos há 7+ dias para review/troca",
 		UsesLLM:     false,
 		Run:         actionReplenishCrawlers,
 	},
-	"dedup_brands_categories": {
-		Type:        "dedup_brands_categories",
-		Description: "Detecta marcas e categorias duplicadas com nomes muito próximos (ex: 'Adaptogen' vs 'Adaptogen Science') e consolida nos produtos afetados",
+	"maintain_taxonomy": {
+		Type:        "maintain_taxonomy",
+		Category:    "curation",
+		Description: "Consolida marcas e categorias duplicadas; revisa taxonomia pendente: aprova, rejeita, melhora keywords e funde entradas para maximizar match heurístico",
 		UsesLLM:     true,
-		Run:         actionDedupBrandsCategories,
-	},
-	"dedup_pending": {
-		Type:        "dedup_pending",
-		Description: "Remove dispatches duplicados na fila (mesmo produto+canal). Mantém o mais recente, rejeita os antigos",
-		UsesLLM:     false,
-		Run:         actionDedupPending,
+		Run:         actionMaintainTaxonomy,
 	},
 	"auto_release_pending": {
 		Type:        "auto_release_pending",
+		Category:    "dispatch",
 		Description: "Quando full_auto_mode estiver ON, libera todos os dispatches em pending_approval para envio. Roda no ciclo regular do auto-pilot",
 		UsesLLM:     false,
 		Run:         actionAutoReleasePending,
 	},
-	"enable_full_auto": {
-		Type:        "enable_full_auto",
-		Description: "Ativa full_auto_mode diretamente no banco — mensagens passam a ser enviadas imediatamente sem precisar de aprovação humana",
-		UsesLLM:     false,
-		Run:         actionEnableFullAuto,
-	},
 	"reset_stale_cooldown": {
 		Type:        "reset_stale_cooldown",
+		Category:    "cleanup",
 		Description: "Limpa cooldown de produtos cujos dispatches nunca foram entregues (pending_approval ou failed) — desbloqueia fila de auto-match imediatamente",
 		UsesLLM:     false,
 		Run:         actionResetStaleCooldown,
 	},
-	"curate_taxonomy": {
-		Type:        "curate_taxonomy",
-		Description: "Revisa taxonomia pendente: aprova, rejeita e melhora keywords das entradas para maximizar o match heurístico e reduzir trabalho manual futuro",
+	"cleanup_dispatch_queue": {
+		Type:        "cleanup_dispatch_queue",
+		Category:    "cleanup",
+		Description: "Remove dispatches duplicados na fila (mesmo produto+canal) mantendo o mais recente, depois marca targets pending há mais de 2h como failed",
+		UsesLLM:     false,
+		Run:         actionCleanupDispatchQueue,
+	},
+	"archive_old_logs": {
+		Type:        "archive_old_logs",
+		Category:    "cleanup",
+		Description: "Remove auto_match_logs com mais de 30 dias de idade para liberar espaço",
+		UsesLLM:     false,
+		Run:         actionArchiveOldLogs,
+	},
+	"compute_clusters": {
+		Type:        "compute_clusters",
+		Category:    "optimization",
+		Description: "Computa clusters de produtos similares usando LLM para otimizar matching",
 		UsesLLM:     true,
-		Run:         actionCurateTaxonomy,
+		Run:         actionComputeClusters,
+	},
+	"optimize_audience_from_clicks": {
+		Type:        "optimize_audience_from_clicks",
+		Category:    "optimization",
+		Description: "Analisa cliques recentes por canal e otimiza audience (categorias e marcas) via LLM com confiança alta",
+		UsesLLM:     true,
+		Run:         actionOptimizeAudienceFromClicks,
+	},
+	"purge_inactive_products": {
+		Type:        "purge_inactive_products",
+		Category:    "cleanup",
+		Description: "Remove produtos marcados como inativos com mais de 60 dias sem atualização",
+		UsesLLM:     false,
+		Run:         actionPurgeInactiveProducts,
+	},
+	"pause_dead_crawlers": {
+		Type:        "pause_dead_crawlers",
+		Category:    "health",
+		Description: "Pausa searchterms ativos que não retornam resultados há 14+ dias (5+ logs com result_count=0)",
+		UsesLLM:     false,
+		Run:         actionPauseDeadCrawlers,
 	},
 }
 
-func actionDispatchAutoMatch(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	// before: contar dispatches nas últimas 24h e produtos elegíveis
-	var dispatches24h int
-	_ = h.db.GetContext(ctx, &dispatches24h,
-		`SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '24 hours'`)
-
-	cfg, _ := h.store.GetConfig()
-	if !cfg.AutoMatchEnabled {
-		return map[string]any{"auto_match_enabled": false},
-			map[string]any{"skipped": true},
-			"Auto-match está desligado em Configurações. Pulando.",
-			nil
-	}
-
-	autosCount := 0
-	if autos, err := h.store.ListChannelAutomations(true); err == nil {
-		autosCount = len(autos)
-	}
-
-	beforeMap := map[string]any{
-		"dispatches_last_24h":     dispatches24h,
-		"automations_enabled":     autosCount,
-	}
-
-	if autosCount == 0 {
-		return beforeMap,
-			map[string]any{"skipped": true, "reason": "no enabled automations"},
-			"Nenhuma automação de canal habilitada. Pulando o ciclo.",
-			nil
-	}
-
-	// Executa o worker (síncrono — captura efeito dentro deste action)
-	scheduler.RunAutoMatchWorker(ctx, h.store)
-
-	// after: quantos dispatches saíram desde o início desta action (~ últimos minutos)
-	var newDispatches int
-	_ = h.db.GetContext(ctx, &newDispatches,
-		`SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '5 minutes'`)
-
-	afterMap := map[string]any{"new_dispatches": newDispatches}
-	reasoning := fmt.Sprintf("Rodei auto-match em %d automações ativas. %d dispatches criados nos últimos 5min.", autosCount, newDispatches)
-	return beforeMap, afterMap, reasoning, nil
-}
-
 // ── Ações ──────────────────────────────────────────────────────────────────
-
-func actionExpireStale(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	// before: contar pending stale
-	var before int
-	_ = h.db.GetContext(ctx, &before, `
-		SELECT COUNT(*) FROM dispatch_targets
-		WHERE status = 'pending' AND created_at < now() - interval '2 hours'`)
-
-	res, err := h.db.ExecContext(ctx, `
-		UPDATE dispatch_targets
-		SET status = 'failed',
-		    error_reason = 'expirado pelo Jonfrey'
-		WHERE status = 'pending'
-		  AND created_at < now() - interval '2 hours'`)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	expired, _ := res.RowsAffected()
-
-	beforeMap := map[string]any{"stale_pending_count": before}
-	afterMap := map[string]any{"expired": expired}
-	reasoning := fmt.Sprintf("Encontrei %d targets travados em pending há mais de 2h. Marquei como failed para liberar a fila.", before)
-	return beforeMap, afterMap, reasoning, nil
-}
 
 func actionInspectPending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	var pendingCount int
@@ -372,30 +321,37 @@ func (h *JonfreyHandler) ListActions(w http.ResponseWriter, r *http.Request) {
 func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	type item struct {
 		Type        string `json:"type"`
+		Category    string `json:"category"`
 		Description string `json:"description"`
 		UsesLLM     bool   `json:"uses_llm"`
 	}
 	out := []item{}
 	for _, a := range actionRegistry {
-		out = append(out, item{Type: a.Type, Description: a.Description, UsesLLM: a.UsesLLM})
+		out = append(out, item{Type: a.Type, Category: a.Category, Description: a.Description, UsesLLM: a.UsesLLM})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// RunCycle executa todas as actions habilitadas no JonfreyConfig e atualiza last_run_at.
-// Usado pelo scheduler tick automático.
+// RunCycle executa todas as actions habilitadas no JonfreyConfig, ordenadas por categoria.
+// Ordem: cleanup → curation → health → optimization → dispatch
 func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 	cfg, err := h.store.GetJonfreyConfig()
 	if err != nil || !cfg.Enabled {
 		return
 	}
-	for _, t := range []string(cfg.EnabledActions) {
-		def, ok := actionRegistry[t]
-		if !ok {
-			continue
+
+	// Executa ações em ordem de categoria
+	order := []string{"cleanup", "curation", "health", "optimization", "dispatch"}
+	for _, cat := range order {
+		for _, t := range []string(cfg.EnabledActions) {
+			def, ok := actionRegistry[t]
+			if !ok || def.Category != cat {
+				continue
+			}
+			_ = h.executeAction(ctx, def, "scheduler", "")
 		}
-		_ = h.executeAction(ctx, def, "scheduler", "")
 	}
+
 	cfg.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
 	_ = h.store.UpdateJonfreyConfig(cfg)
 }
@@ -657,34 +613,29 @@ func actionDetectFailingChannel(ctx context.Context, h *JonfreyHandler) (map[str
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionMarkFullGroups: marca grupos com 1024+ membros como 'full'.
-func actionMarkFullGroups(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	var candidates int
-	_ = h.db.GetContext(ctx, &candidates,
+// actionManageGroupHealth: marca grupos em 'full' e arquiva grupos com falhas recorrentes.
+// Combina mark_full_groups e cleanup_archived_groups numa única action.
+func actionManageGroupHealth(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// Passo 1: marcar grupos com 1024+ membros como 'full'
+	var candidatesFull int
+	_ = h.db.GetContext(ctx, &candidatesFull,
 		`SELECT COUNT(*) FROM groups WHERE platform = 'whatsapp' AND member_count >= 1024 AND status = 'active'`)
 
-	res, err := h.db.ExecContext(ctx, `
+	resFull, err := h.db.ExecContext(ctx, `
 		UPDATE groups SET status = 'full'
 		WHERE platform = 'whatsapp' AND member_count >= 1024 AND status = 'active'`)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	updated, _ := res.RowsAffected()
+	markedFull, _ := resFull.RowsAffected()
 
-	beforeMap := map[string]any{"candidates_active_at_limit": candidates}
-	afterMap := map[string]any{"marked_full": updated}
-	reasoning := fmt.Sprintf("Encontrei %d grupos WhatsApp ativos com 1024+ membros (limite WA). Marquei %d como 'full' — agora entram automaticamente em fallback chains.", candidates, updated)
-	return beforeMap, afterMap, reasoning, nil
-}
-
-// actionCleanupGroups: arquiva grupos com falhas recorrentes.
-func actionCleanupGroups(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// Passo 2: arquivar grupos com falhas recorrentes
 	type row struct {
 		ID   int64  `db:"id"`
 		Name string `db:"name"`
 	}
 	var candidates []row
-	err := h.db.SelectContext(ctx, &candidates, `
+	err = h.db.SelectContext(ctx, &candidates, `
 		SELECT g.id, g.name
 		FROM groups g
 		WHERE g.archived = false
@@ -709,9 +660,9 @@ func actionCleanupGroups(ctx context.Context, h *JonfreyHandler) (map[string]any
 		}
 	}
 
-	beforeMap := map[string]any{"candidates": candidates}
-	afterMap := map[string]any{"archived": archived}
-	reasoning := fmt.Sprintf("Achei %d grupos com last_error_at > 7d e ≥3 falhas nos últimos 14d. Arquivei %d.", len(candidates), archived)
+	beforeMap := map[string]any{"candidates_full": candidatesFull, "candidates_archived": len(candidates)}
+	afterMap := map[string]any{"marked_full": markedFull, "archived": archived}
+	reasoning := fmt.Sprintf("Encontrei %d grupos WhatsApp ativos com 1024+ membros — marquei como 'full'. Achei %d grupos com last_error_at > 7d e ≥3 falhas nos últimos 14d — arquivei %d.", candidatesFull, len(candidates), archived)
 	return beforeMap, afterMap, reasoning, nil
 }
 
@@ -803,10 +754,61 @@ func actionReplenishCrawlers(ctx context.Context, h *JonfreyHandler) (map[string
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionDedupBrandsCategories detecta marcas e categorias duplicadas/próximas
-// (ex: "Adaptogen" vs "Adaptogen Science") e consolida nos produtos afetados.
-// Envia listas compactas ao LLM em batch único para minimizar tokens.
-func actionDedupBrandsCategories(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+// actionCleanupDispatchQueue: remove duplicatas da fila (mesmo produto+canal) depois marca targets stale como failed.
+// Combina dedup_pending e expire_stale_dispatches numa única action.
+func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// Passo 1: remover duplicatas
+	resDedup, err := h.db.ExecContext(ctx, `
+		UPDATE dispatches SET status = 'rejected'
+		WHERE id IN (
+			SELECT d.id FROM dispatches d
+			JOIN auto_match_logs aml ON aml.dispatch_id = d.id
+			WHERE d.status IN ('pending_approval', 'queued')
+			  AND d.id NOT IN (
+			      SELECT (
+			          SELECT d2.id FROM dispatches d2
+			          JOIN auto_match_logs aml2 ON aml2.dispatch_id = d2.id
+			          WHERE aml2.product_id = aml.product_id
+			            AND aml2.channel_id = aml.channel_id
+			            AND d2.status IN ('pending_approval', 'queued')
+			          ORDER BY d2.created_at DESC
+			          LIMIT 1
+			      )
+			      FROM auto_match_logs aml
+			      GROUP BY aml.product_id, aml.channel_id
+			  )
+		)`)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("dedup: %w", err)
+	}
+	dedupedCount, _ := resDedup.RowsAffected()
+
+	// Passo 2: contar e expirar targets stale
+	var beforeStale int
+	_ = h.db.GetContext(ctx, &beforeStale, `
+		SELECT COUNT(*) FROM dispatch_targets
+		WHERE status = 'pending' AND created_at < now() - interval '2 hours'`)
+
+	resExpire, err := h.db.ExecContext(ctx, `
+		UPDATE dispatch_targets
+		SET status = 'failed',
+		    error_reason = 'expirado pelo Jonfrey'
+		WHERE status = 'pending'
+		  AND created_at < now() - interval '2 hours'`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	expiredCount, _ := resExpire.RowsAffected()
+
+	beforeMap := map[string]any{"stale_pending_count": beforeStale}
+	afterMap := map[string]any{"rejected_duplicates": dedupedCount, "expired": expiredCount}
+	reasoning := fmt.Sprintf("Removi %d dispatches duplicados na fila. Marquei %d targets travados em pending há mais de 2h como failed para liberar a fila.", dedupedCount, expiredCount)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionMaintainTaxonomy: consolida marcas e categorias duplicadas e revisa taxonomia pendente.
+// Combina dedup_brands_categories e curate_taxonomy numa única action com 1 chamada LLM.
+func actionMaintainTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	if h.llmFn == nil {
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
@@ -815,7 +817,7 @@ func actionDedupBrandsCategories(ctx context.Context, h *JonfreyHandler) (map[st
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
-	// Busca marcas e tags distintas do catálogo (máx 150 cada — contexto mínimo)
+	// Coleta dados do catálogo e taxonomia pendente
 	type strRow struct{ Val string `db:"val"` }
 	var brandRows, tagRows []strRow
 
@@ -834,32 +836,69 @@ func actionDedupBrandsCategories(ctx context.Context, h *JonfreyHandler) (map[st
 	tags := make([]string, 0, len(tagRows))
 	for _, r := range tagRows { tags = append(tags, r.Val) }
 
-	if len(brands)+len(tags) == 0 {
-		return map[string]any{"brands": 0, "tags": 0}, map[string]any{"groups": []any{}}, "Catálogo vazio — nada a deduplicar.", nil
+	// Carrega entradas de taxonomia pendente e aprovadas
+	pending, _ := h.store.ListPendingTaxonomy()
+	approved, _ := h.store.ListTaxonomy("")
+
+	type compactEntry struct {
+		ID       int64    `json:"id"`
+		Type     string   `json:"type"`
+		Name     string   `json:"name"`
+		Keywords []string `json:"keywords"`
+	}
+	compactPending := make([]compactEntry, 0, len(pending))
+	for _, t := range pending {
+		compactPending = append(compactPending, compactEntry{
+			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+		})
+	}
+	compactApproved := make([]compactEntry, 0, len(approved))
+	for _, t := range approved {
+		compactApproved = append(compactApproved, compactEntry{
+			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+		})
 	}
 
-	prompt := fmt.Sprintf(`Dado duas listas de valores de um catálogo de e-commerce brasileiro, identifique grupos de duplicatas/variantes do mesmo item (nomes muito próximos, abreviações, com/sem sufixo comercial).
+	// Prompt unificado para consolidação de marcas/categorias + revisão de taxonomia
+	prompt := fmt.Sprintf(`Você é curador de taxonomia e deduplicador de um sistema de promoções brasileiro (e-commerce, WA/TG).
 
+PARTE 1 — CATÁLOGO ATUAL:
 MARCAS (%d): %v
-
 CATEGORIAS (%d): %v
 
-Responda SOMENTE JSON — sem texto extra:
+PARTE 2 — TAXONOMIA:
+APROVADAS ATUAIS (%d entradas): %v
+PENDENTES (%d entradas): %v
+
+INSTRUÇÕES:
+1. Para MARCAS e CATEGORIAS do catálogo: identifique duplicatas/variantes (nomes muito próximos, abreviações). Retorne "brand_groups" e "tag_groups" com canônicos e aliases.
+2. Para cada ENTRADA PENDENTE: decida se "approve", "reject", "merge_into" uma aprovada (com merge_id), ou "approve_with_keywords" (com extra_keywords).
+
+Responda SOMENTE JSON:
 {
   "brand_groups": [
-    {"canonical": "nome canônico escolhido", "aliases": ["variante1", "variante2"]}
+    {"canonical": "nome", "aliases": ["var1", "var2"]}
   ],
   "tag_groups": [
-    {"canonical": "nome canônico escolhido", "aliases": ["variante1", "variante2"]}
+    {"canonical": "nome", "aliases": ["var1", "var2"]}
+  ],
+  "taxonomy_decisions": [
+    {"id": 123, "action": "approve"},
+    {"id": 124, "action": "reject"},
+    {"id": 125, "action": "merge_into", "merge_id": 45},
+    {"id": 126, "action": "approve_with_keywords", "extra_keywords": ["key1"]}
   ]
 }
 
-Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne listas vazias. Prefira o nome mais completo como canônico.`,
-		len(brands), brands, len(tags), tags)
+Regras: grupos de duplicatas com ≥2 membros. Seja agressivo com marcas reais e categorias úteis na taxonomia.`,
+		len(brands), brands, len(tags), tags,
+		len(compactApproved), compactApproved,
+		len(compactPending), compactPending,
+	)
 
-	ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
+	ctxC, cancel := context.WithTimeout(ctx, 60*time.Second)
 	resp, err := cli.Complete(ctxC, prompt, llm.Options{
-		MaxTokens: 1000, Temperature: 0.1, Operation: "jonfrey_dedup", JSONMode: true,
+		MaxTokens: 2000, Temperature: 0.1, Operation: "jonfrey_maintain_taxonomy", JSONMode: true,
 	})
 	cancel()
 	if err != nil {
@@ -875,6 +914,12 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 			Canonical string   `json:"canonical"`
 			Aliases   []string `json:"aliases"`
 		} `json:"tag_groups"`
+		TaxonomyDecisions []struct {
+			ID            int64    `json:"id"`
+			Action        string   `json:"action"`
+			MergeInto     int64    `json:"merge_id"`
+			ExtraKeywords []string `json:"extra_keywords"`
+		} `json:"taxonomy_decisions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		return nil, nil, "", fmt.Errorf("parse: %w", err)
@@ -882,7 +927,7 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 
 	brandsMerged, tagsMerged := 0, 0
 
-	// Consolida marcas: atualiza catalogproduct.brand onde brand IN (aliases) → canonical
+	// Consolida marcas
 	for _, g := range parsed.BrandGroups {
 		if len(g.Aliases) == 0 || g.Canonical == "" { continue }
 		placeholders := ""
@@ -897,11 +942,10 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		if n, _ := res.RowsAffected(); n > 0 { brandsMerged++ }
 	}
 
-	// Consolida categorias: substitui alias por canonical nas tags JSONB de cada produto afetado
+	// Consolida categorias
 	for _, g := range parsed.TagGroups {
 		if len(g.Aliases) == 0 || g.Canonical == "" { continue }
 		for _, alias := range g.Aliases {
-			// Substitui ocorrência do alias pelo canonical em todos os arrays de tags
 			_, _ = h.db.ExecContext(ctx, `
 				UPDATE catalogproduct
 				SET tags = (
@@ -913,52 +957,81 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		}
 	}
 
-	beforeMap := map[string]any{"brands_evaluated": len(brands), "tags_evaluated": len(tags)}
+	// Processa decisões de taxonomia
+	pendingByID := make(map[int64]models.Taxonomy, len(pending))
+	for _, t := range pending { pendingByID[t.ID] = t }
+	approvedByID := make(map[int64]models.Taxonomy, len(approved))
+	for _, t := range approved { approvedByID[t.ID] = t }
+
+	approved_count, rejected_count, merged_count, enriched_count := 0, 0, 0, 0
+
+	for _, d := range parsed.TaxonomyDecisions {
+		t, ok := pendingByID[d.ID]
+		if !ok { continue }
+
+		switch d.Action {
+		case "approve":
+			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
+			approved_count++
+
+		case "reject":
+			_ = h.store.SetTaxonomyStatus(t.ID, "rejected")
+			rejected_count++
+
+		case "merge_into":
+			target, ok := approvedByID[d.MergeInto]
+			if !ok { break }
+			seen := map[string]bool{}
+			for _, k := range target.Keywords { seen[k] = true }
+			added := false
+			for _, k := range t.Keywords {
+				if !seen[strings.ToLower(k)] {
+					target.Keywords = append(target.Keywords, k)
+					seen[strings.ToLower(k)] = true
+					added = true
+				}
+			}
+			if added {
+				_ = h.store.UpdateTaxonomy(target)
+			}
+			_ = h.store.SetTaxonomyStatus(t.ID, "rejected")
+			merged_count++
+
+		case "approve_with_keywords":
+			seen := map[string]bool{}
+			for _, k := range t.Keywords { seen[strings.ToLower(k)] = true }
+			for _, k := range d.ExtraKeywords {
+				if k != "" && !seen[strings.ToLower(k)] {
+					t.Keywords = append(t.Keywords, k)
+					seen[strings.ToLower(k)] = true
+				}
+			}
+			t.Active = true
+			_ = h.store.UpdateTaxonomy(t)
+			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
+			enriched_count++
+		}
+	}
+
+	beforeMap := map[string]any{
+		"brands_evaluated": len(brands), "tags_evaluated": len(tags),
+		"pending_taxonomy": len(pending), "approved_taxonomy": len(approved),
+	}
 	afterMap := map[string]any{
 		"brand_groups_found": len(parsed.BrandGroups),
 		"tag_groups_found":   len(parsed.TagGroups),
 		"brands_merged":      brandsMerged,
 		"tags_merged":        tagsMerged,
+		"taxonomy_approved":  approved_count,
+		"taxonomy_rejected":  rejected_count,
+		"taxonomy_merged":    merged_count,
+		"taxonomy_enriched":  enriched_count,
 	}
 	reasoning := fmt.Sprintf(
-		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
-		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
+		"LLM consolidou %d marcas+%d categorias do catálogo (encontrou %d grupos marca + %d grupos categoria duplicadas). Revisei %d entradas de taxonomia: %d aprovadas, %d rejeitadas, %d fundidas, %d enriquecidas.",
+		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups),
+		len(pending), approved_count, rejected_count, merged_count, enriched_count,
 	)
-	return beforeMap, afterMap, reasoning, nil
-}
-
-// actionDedupPending: remove dispatches duplicados (mesmo produto+canal) na fila pending/queued.
-// Mantém o mais recente por par (product_id, channel_id), rejeita os antigos.
-func actionDedupPending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	// Identifica grupos de duplicatas: dispatches com mesmo product_id + channel_id em pending/queued
-	res, err := h.db.ExecContext(ctx, `
-		UPDATE dispatches SET status = 'rejected'
-		WHERE id IN (
-			SELECT d.id FROM dispatches d
-			JOIN auto_match_logs aml ON aml.dispatch_id = d.id
-			WHERE d.status IN ('pending_approval', 'queued')
-			  AND d.id NOT IN (
-			      -- mantém o mais novo de cada (product_id, channel_id)
-			      SELECT (
-			          SELECT d2.id FROM dispatches d2
-			          JOIN auto_match_logs aml2 ON aml2.dispatch_id = d2.id
-			          WHERE aml2.product_id = aml.product_id
-			            AND aml2.channel_id = aml.channel_id
-			            AND d2.status IN ('pending_approval', 'queued')
-			          ORDER BY d2.created_at DESC
-			          LIMIT 1
-			      )
-			      FROM auto_match_logs aml
-			      GROUP BY aml.product_id, aml.channel_id
-			  )
-		)`)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("dedup: %w", err)
-	}
-	rejected, _ := res.RowsAffected()
-	beforeMap := map[string]any{"checked": "all pending+queued"}
-	afterMap := map[string]any{"rejected_duplicates": rejected}
-	reasoning := fmt.Sprintf("Encontrei e rejeitei %d dispatches duplicados na fila (mesmo produto+canal). Mantive sempre o mais recente.", rejected)
 	return beforeMap, afterMap, reasoning, nil
 }
 
@@ -988,22 +1061,6 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionEnableFullAuto: seta full_auto_mode=true e approve_all diretamente no banco.
-// Bypassa o bug do UpdateConfig que não persistia o campo.
-func actionEnableFullAuto(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	_, err := h.db.ExecContext(ctx, `UPDATE appconfig SET full_auto_mode = true WHERE id = 1`)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("UPDATE appconfig: %w", err)
-	}
-	// Aprova todos os pending_approval para envio imediato
-	res, _ := h.db.ExecContext(ctx, `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
-	approved, _ := res.RowsAffected()
-
-	beforeMap := map[string]any{"full_auto_mode": false}
-	afterMap := map[string]any{"full_auto_mode": true, "approved_dispatches": approved}
-	reasoning := fmt.Sprintf("Ativei full_auto_mode no banco e aprovei %d dispatches pendentes. Mensagens passarão a ser enviadas automaticamente.", approved)
-	return beforeMap, afterMap, reasoning, nil
-}
 
 // actionResetStaleCooldown: remove auto_match_logs de dispatches não entregues
 // (pending_approval, failed, pending sem entrega) para desbloquear a fila de auto-match.
@@ -1036,11 +1093,30 @@ func actionResetStaleCooldown(ctx context.Context, h *JonfreyHandler) (map[strin
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionCurateTaxonomy: revisa taxonomia pendente com LLM.
-// Aprova entradas válidas, rejeita genéricas/inúteis, enriquece keywords das aprovadas
-// e funde duplicatas de pendentes com entradas existentes.
-// Objetivo: maximizar match heurístico pra reduzir trabalho manual futuro.
-func actionCurateTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+// actionArchiveOldLogs: remove auto_match_logs com mais de 30 dias
+func actionArchiveOldLogs(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	var before int
+	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM auto_match_logs`)
+
+	res, err := h.db.ExecContext(ctx, `
+		DELETE FROM auto_match_logs
+		WHERE created_at < now() - interval '30 days'`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	deleted, _ := res.RowsAffected()
+
+	var after int
+	_ = h.db.GetContext(ctx, &after, `SELECT COUNT(*) FROM auto_match_logs`)
+
+	beforeMap := map[string]any{"logs_before": before}
+	afterMap := map[string]any{"deleted": deleted, "logs_after": after}
+	reasoning := fmt.Sprintf("Arquivei e removi %d logs com mais de 30 dias para liberar espaço no banco.", deleted)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionComputeClusters: computa clusters de produtos similares via LLM
+func actionComputeClusters(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	if h.llmFn == nil {
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
@@ -1049,157 +1125,330 @@ func actionCurateTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]an
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
-	pending, err := h.store.ListPendingTaxonomy()
+	ctxC, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	err := clusters.Compute(ctxC, h.store, cli)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("clusters.Compute: %w", err)
+	}
+
+	beforeMap := map[string]any{"status": "started"}
+	afterMap := map[string]any{"status": "completed"}
+	reasoning := "Executei clusters.Compute para otimizar agrupamento de produtos similares para matching."
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionOptimizeAudienceFromClicks: analisa cliques recentes e otimiza audience dos canais via LLM
+func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+
+	// Listar canais ativos
+	channels, err := h.store.ListChannels()
 	if err != nil {
 		return nil, nil, "", err
 	}
-	if len(pending) == 0 {
-		return map[string]any{"pending": 0}, map[string]any{"approved": 0, "rejected": 0, "enriched": 0},
-			"Nenhuma entrada pendente na taxonomia.", nil
-	}
 
-	// Carrega entradas aprovadas para contexto (evita rejeitar algo já aprovado)
-	approved, _ := h.store.ListTaxonomy("")
-
-	// Compacta pendentes: id, tipo, nome, keywords, sample (min contexto)
-	type compactEntry struct {
-		ID       int64    `json:"id"`
-		Type     string   `json:"type"`
-		Name     string   `json:"name"`
-		Keywords []string `json:"keywords"`
-	}
-	compactPending := make([]compactEntry, 0, len(pending))
-	for _, t := range pending {
-		compactPending = append(compactPending, compactEntry{
-			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
-		})
-	}
-	compactApproved := make([]compactEntry, 0, len(approved))
-	for _, t := range approved {
-		compactApproved = append(compactApproved, compactEntry{
-			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
-		})
-	}
-
-	prompt := fmt.Sprintf(`Você é curador de taxonomia de um sistema de promoções brasileiro (e-commerce, WA/TG).
-Seu único objetivo: MAXIMIZAR o match heurístico automático de produtos — quanto mais keywords precisas, menos trabalho manual.
-
-APROVADAS ATUAIS (%d entradas): %v
-
-PENDENTES (%d entradas): %v
-
-Para cada PENDENTE, decida:
-- "approve": entrada útil e distinta, approve como está
-- "reject": genérica demais ("Sem Fio", "Nova Geração"), atributo de produto (não uma marca/categoria), ou duplicata exata de aprovada
-- "merge_into": pendente é variante/alias de uma entrada aprovada (informe "merge_id" da aprovada) — keywords serão absorvidas
-- "approve_with_keywords": válida mas keywords pobres — forneça keywords extras pra melhorar o match
-
-Responda SOMENTE JSON (mín contexto):
-{
-  "decisions": [
-    {"id": 123, "action": "approve"},
-    {"id": 124, "action": "reject"},
-    {"id": 125, "action": "merge_into", "merge_id": 45},
-    {"id": 126, "action": "approve_with_keywords", "extra_keywords": ["keyword1", "keyword2"]}
-  ]
-}
-
-Seja AGRESSIVO a aprovar marcas reais e categorias úteis. Rejeite só o que genuinamente não ajuda no match.`,
-		len(compactApproved), compactApproved,
-		len(compactPending), compactPending,
-	)
-
-	ctxC, cancel := context.WithTimeout(ctx, 60*time.Second)
-	resp, err := cli.Complete(ctxC, prompt, llm.Options{
-		MaxTokens: 2000, Temperature: 0.1, Operation: "jonfrey_curate_taxonomy", JSONMode: true,
-	})
-	cancel()
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("LLM: %w", err)
-	}
-
-	var parsed struct {
-		Decisions []struct {
-			ID            int64    `json:"id"`
-			Action        string   `json:"action"`
-			MergeInto     int64    `json:"merge_id"`
-			ExtraKeywords []string `json:"extra_keywords"`
-		} `json:"decisions"`
-	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		return nil, nil, "", fmt.Errorf("parse: %w", err)
-	}
-
-	// Mapa id→entrada pendente para lookup rápido
-	pendingByID := make(map[int64]models.Taxonomy, len(pending))
-	for _, t := range pending { pendingByID[t.ID] = t }
-	// Mapa id→entrada aprovada
-	approvedByID := make(map[int64]models.Taxonomy, len(approved))
-	for _, t := range approved { approvedByID[t.ID] = t }
-
-	approved_count, rejected_count, merged_count, enriched_count := 0, 0, 0, 0
-
-	for _, d := range parsed.Decisions {
-		t, ok := pendingByID[d.ID]
-		if !ok { continue }
-
-		switch d.Action {
-		case "approve":
-			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
-			approved_count++
-
-		case "reject":
-			_ = h.store.SetTaxonomyStatus(t.ID, "rejected")
-			rejected_count++
-
-		case "merge_into":
-			target, ok := approvedByID[d.MergeInto]
-			if !ok { break }
-			// Absorve keywords da pendente na aprovada (sem duplicar)
-			seen := map[string]bool{}
-			for _, k := range target.Keywords { seen[k] = true }
-			added := false
-			for _, k := range t.Keywords {
-				if !seen[strings.ToLower(k)] {
-					target.Keywords = append(target.Keywords, k)
-					seen[strings.ToLower(k)] = true
-					added = true
-				}
-			}
-			if added {
-				_ = h.store.UpdateTaxonomy(target)
-			}
-			_ = h.store.SetTaxonomyStatus(t.ID, "rejected") // pendente virou obsoleta
-			merged_count++
-
-		case "approve_with_keywords":
-			// Adiciona keywords extras antes de aprovar
-			seen := map[string]bool{}
-			for _, k := range t.Keywords { seen[strings.ToLower(k)] = true }
-			for _, k := range d.ExtraKeywords {
-				if k != "" && !seen[strings.ToLower(k)] {
-					t.Keywords = append(t.Keywords, k)
-					seen[strings.ToLower(k)] = true
-				}
-			}
-			t.Active = true
-			_ = h.store.UpdateTaxonomy(t)
-			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
-			enriched_count++
+	type channelClickData struct {
+		ChannelID      int64
+		ChannelName    string
+		ClickCount     int64
+		ProductClicks  []struct {
+			ProductID  int64
+			ClickCount int64
+			Brand      string
+			Categories string // delimitado por vírgula
 		}
 	}
 
-	beforeMap := map[string]any{"pending_count": len(pending), "approved_existing": len(approved)}
-	afterMap := map[string]any{
-		"approved":    approved_count,
-		"rejected":    rejected_count,
-		"merged":      merged_count,
-		"enriched":    enriched_count,
-		"total_acted": approved_count + rejected_count + merged_count + enriched_count,
+	var channelsWithClicks []channelClickData
+	var updateCount int
+
+	for _, ch := range channels {
+		if !ch.Active {
+			continue
+		}
+
+		// Query: cliques dos últimos 7 dias, agrupado por product_id
+		type clickRow struct {
+			ProductID  int64  `db:"product_id"`
+			ClickCount int64  `db:"click_count"`
+		}
+		var clicks []clickRow
+		err := h.db.SelectContext(ctx, &clicks, `
+			SELECT product_id, COUNT(*) as click_count
+			FROM shortlink_clicks
+			WHERE channel_id = $1 AND clicked_at > now() - interval '7 days'
+			GROUP BY product_id
+			ORDER BY click_count DESC
+		`, ch.ID)
+		if err != nil {
+			continue
+		}
+
+		totalClicks := int64(0)
+		for _, c := range clicks {
+			totalClicks += c.ClickCount
+		}
+
+		// Skip se menos de 20 cliques
+		if totalClicks < 20 {
+			continue
+		}
+
+		// Buscar detalhes dos produtos clicados
+		var productDetails []struct {
+			ProductID  int64
+			ClickCount int64
+			Brand      string
+			Categories string
+		}
+
+		for _, c := range clicks {
+			var p models.CatalogProduct
+			if err := h.db.GetContext(ctx, &p, `
+				SELECT id, brand, tags FROM catalogproduct WHERE id = $1
+			`, c.ProductID); err == nil {
+				brand := ""
+				if p.Brand.Valid {
+					brand = p.Brand.String
+				}
+				catStr := p.Tags // tags estão em JSON string
+				productDetails = append(productDetails, struct {
+					ProductID  int64
+					ClickCount int64
+					Brand      string
+					Categories string
+				}{
+					ProductID:  c.ProductID,
+					ClickCount: c.ClickCount,
+					Brand:      brand,
+					Categories: catStr,
+				})
+			}
+		}
+
+		// Snapshot antes
+		beforeJSON, _ := json.Marshal(ch.Audience)
+
+		// Montar prompt para LLM
+		type prodClick struct {
+			ID         int64  `json:"id"`
+			Clicks     int64  `json:"clicks"`
+			Brand      string `json:"brand"`
+			Categories string `json:"categories"`
+		}
+		var prods []prodClick
+		for _, p := range productDetails {
+			prods = append(prods, prodClick{
+				ID:         p.ProductID,
+				Clicks:     p.ClickCount,
+				Brand:      p.Brand,
+				Categories: p.Categories,
+			})
+		}
+		prodsJSON, _ := json.Marshal(prods)
+
+		currentAudienceJSON, _ := json.Marshal(ch.Audience)
+
+		prompt := fmt.Sprintf(`Você é analista de audiência de canal de vendas.
+
+CANAL: %s
+CLIQUES ÚLTIMOS 7 DIAS: %d
+
+AUDIÊNCIA ATUAL:
+%s
+
+PRODUTOS MAIS CLICADOS (últimos 7 dias):
+%s
+
+Analise os cliques: quais categorias e marcas são populares? A audiência atual reflete bem o comportamento de cliques?
+
+Responda EXCLUSIVAMENTE em JSON com sugestões de ajuste:
+{
+  "categories_to_add": [],
+  "categories_to_remove": [],
+  "brands_to_add": [],
+  "brands_to_remove": [],
+  "confidence": 0.85,
+  "reasoning": "explicação breve"
+}
+
+Regras:
+- confidence >= 0.85 = mudança será aplicada automaticamente
+- Seja específico: retorne categorias/marcas reais
+- Se a audiência atual está boa, deixe os arrays vazios e confidence baixa`,
+			ch.Name, totalClicks, string(currentAudienceJSON), string(prodsJSON))
+
+		ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
+		resp, err := cli.Complete(ctxC, prompt, llm.Options{
+			MaxTokens: 500, Temperature: 0.2, Operation: "jonfrey_optimize_audience", JSONMode: true,
+		})
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		var parsed struct {
+			CategoriesToAdd    []string `json:"categories_to_add"`
+			CategoriesToRemove []string `json:"categories_to_remove"`
+			BrandsToAdd        []string `json:"brands_to_add"`
+			BrandsToRemove     []string `json:"brands_to_remove"`
+			Confidence         float64  `json:"confidence"`
+			Reasoning          string   `json:"reasoning"`
+		}
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			continue
+		}
+
+		// Se confiança >= 0.85, aplicar mudanças
+		if parsed.Confidence < 0.85 {
+			continue
+		}
+
+		// Aplicar mudanças na audiência
+		for _, c := range parsed.CategoriesToAdd {
+			found := false
+			for _, existing := range ch.Audience.Categories {
+				if existing == c {
+					found = true
+					break
+				}
+			}
+			if !found && c != "" {
+				ch.Audience.Categories = append(ch.Audience.Categories, c)
+			}
+		}
+
+		for _, c := range parsed.CategoriesToRemove {
+			var newCats []string
+			for _, existing := range ch.Audience.Categories {
+				if existing != c {
+					newCats = append(newCats, existing)
+				}
+			}
+			ch.Audience.Categories = newCats
+		}
+
+		for _, b := range parsed.BrandsToAdd {
+			found := false
+			for _, existing := range ch.Audience.Brands {
+				if existing == b {
+					found = true
+					break
+				}
+			}
+			if !found && b != "" {
+				ch.Audience.Brands = append(ch.Audience.Brands, b)
+			}
+		}
+
+		for _, b := range parsed.BrandsToRemove {
+			var newBrands []string
+			for _, existing := range ch.Audience.Brands {
+				if existing != b {
+					newBrands = append(newBrands, existing)
+				}
+			}
+			ch.Audience.Brands = newBrands
+		}
+
+		// Snapshot depois
+		afterJSON, _ := json.Marshal(ch.Audience)
+
+		// Atualizar no banco
+		if err := ch.MarshalAudience(); err != nil {
+			continue
+		}
+		if err := h.store.UpdateChannel(ch); err != nil {
+			continue
+		}
+
+		updateCount++
+
+		// Registrar no audit
+		_, _ = h.db.ExecContext(ctx, `
+			INSERT INTO jonfrey_action_audits (channel_id, action_type, before_snapshot, after_snapshot, reasoning, created_at)
+			VALUES ($1, 'optimize_audience_from_clicks', $2, $3, $4, now())
+		`, ch.ID, beforeJSON, afterJSON, parsed.Reasoning)
 	}
-	reasoning := fmt.Sprintf(
-		"Revisei %d entradas pendentes: %d aprovadas, %d aprovadas com keywords extras, %d fundidas em entradas existentes, %d rejeitadas. Taxonomia heurística melhorada.",
-		len(pending), approved_count, enriched_count, merged_count, rejected_count,
-	)
+
+	beforeMap := map[string]any{"channels_evaluated": len(channels), "with_sufficient_clicks": len(channelsWithClicks)}
+	afterMap := map[string]any{"updated": updateCount, "confidence_threshold": 0.85}
+	reasoning := fmt.Sprintf("Avaliei cliques dos últimos 7 dias em %d canais ativos. Otimizei audience (categorias/marcas) em %d canais com confiança LLM ≥ 85%% e ≥20 cliques.", len(channels), updateCount)
 	return beforeMap, afterMap, reasoning, nil
 }
+
+// actionPurgeInactiveProducts: remove produtos marcados como inativos com 60+ dias sem update
+func actionPurgeInactiveProducts(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	var before int
+	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM catalogproduct WHERE inactive=true`)
+
+	res, err := h.db.ExecContext(ctx, `
+		DELETE FROM catalogproduct
+		WHERE inactive=true AND updated_at < now() - interval '60 days'`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	deleted, _ := res.RowsAffected()
+
+	var after int
+	_ = h.db.GetContext(ctx, &after, `SELECT COUNT(*) FROM catalogproduct WHERE inactive=true`)
+
+	beforeMap := map[string]any{"inactive_products_before": before}
+	afterMap := map[string]any{"purged": deleted, "inactive_products_after": after}
+	reasoning := fmt.Sprintf("Removi %d produtos inativos com mais de 60 dias sem atualização.", deleted)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionPauseDeadCrawlers: pausa searchterms ativos sem resultados há 14+ dias (5+ logs com result_count=0)
+func actionPauseDeadCrawlers(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	type searchTermRow struct {
+		ID   int64  `db:"id"`
+		Term string `db:"search_term"`
+	}
+
+	// Encontrar searchterms ativos sem novos resultados há 14d e com 5+ logs zerados
+	var deadTerms []searchTermRow
+	err := h.db.SelectContext(ctx, &deadTerms, `
+		SELECT s.id, s.search_term
+		FROM searchterm s
+		WHERE s.active = true
+		  AND (
+		      SELECT MAX(cl.created_at) FROM crawllog cl
+		      WHERE cl.searchterm_id = s.id
+		  ) < now() - interval '14 days'
+		  AND (
+		      SELECT COUNT(*) FROM crawllog cl
+		      WHERE cl.searchterm_id = s.id
+		        AND cl.result_count = 0
+		        AND cl.created_at > now() - interval '30 days'
+		  ) >= 5`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	paused := 0
+	var pausedIDs []int64
+	for _, t := range deadTerms {
+		res, err := h.db.ExecContext(ctx, `UPDATE searchterm SET active = false WHERE id = $1`, t.ID)
+		if err == nil {
+			if n, _ := res.RowsAffected(); n > 0 {
+				paused++
+				pausedIDs = append(pausedIDs, t.ID)
+			}
+		}
+	}
+
+	beforeMap := map[string]any{"dead_candidates": len(deadTerms)}
+	afterMap := map[string]any{"paused": paused, "paused_ids": pausedIDs}
+	reasoning := fmt.Sprintf("Identifiquei %d searchterms ativos sem resultados há 14+ dias e com 5+ tentativas falhadas — pausei %d para revisão manual.", len(deadTerms), paused)
+	return beforeMap, afterMap, reasoning, nil
+}
+

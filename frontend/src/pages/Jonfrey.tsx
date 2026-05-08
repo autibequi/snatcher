@@ -28,6 +28,7 @@ interface AvailableAction {
   type: string
   description: string
   uses_llm: boolean
+  category: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -240,32 +241,45 @@ export default function Jonfrey() {
                 </div>
               )
             }
-            const llmActions = available.filter(a => a.uses_llm)
-            const simpleActions = available.filter(a => !a.uses_llm)
+
+            const categoryOrder = ['cleanup', 'curation', 'health', 'optimization', 'dispatch']
+            const categoryLabels: Record<string, { emoji: string; label: string }> = {
+              cleanup: { emoji: '🧹', label: 'Limpeza' },
+              curation: { emoji: '✨', label: 'Curadoria' },
+              health: { emoji: '❤️', label: 'Saúde' },
+              optimization: { emoji: '🎯', label: 'Otimização' },
+              dispatch: { emoji: '🚀', label: 'Disparo' },
+            }
+
+            // Group actions by category
+            const grouped = categoryOrder.reduce((acc, cat) => {
+              const actions = available
+                .filter(a => (a.category || 'other') === cat)
+                .sort((a, b) => a.type.localeCompare(b.type))
+              if (actions.length > 0) {
+                acc[cat] = actions
+              }
+              return acc
+            }, {} as Record<string, AvailableAction[]>)
+
+            // Add "other" category if needed (actions without category)
+            const other = available.filter(a => !a.category || !categoryOrder.includes(a.category))
+            if (other.length > 0) {
+              grouped['other'] = other.sort((a, b) => a.type.localeCompare(b.type))
+            }
+
             return (
               <>
-                {simpleActions.length > 0 && (
-                  <div>
-                    <p className="text-xs text-fg-2 font-medium mb-2 flex items-center gap-2">
-                      ⚡ Automações simples
-                      <span className="text-[10px] text-fg-3 font-normal">heurísticas / SQL — rápido, sem custo</span>
+                {Object.entries(grouped).map(([cat, actions]) => (
+                  <div key={cat}>
+                    <p className="text-xs text-fg-2 font-medium mb-2 flex items-center gap-2 uppercase tracking-wider">
+                      {cat === 'other' ? '❓ Outras' : `${categoryLabels[cat]?.emoji} ${categoryLabels[cat]?.label}`}
                     </p>
                     <div className="space-y-1.5 divide-y divide-border/40">
-                      {simpleActions.map(renderRow)}
+                      {actions.map(renderRow)}
                     </div>
                   </div>
-                )}
-                {llmActions.length > 0 && (
-                  <div>
-                    <p className="text-xs text-fg-2 font-medium mb-2 flex items-center gap-2">
-                      🧠 Automações com LLM
-                      <span className="text-[10px] text-fg-3 font-normal">gasta tokens — mais lento</span>
-                    </p>
-                    <div className="space-y-1.5 divide-y divide-border/40">
-                      {llmActions.map(renderRow)}
-                    </div>
-                  </div>
-                )}
+                ))}
               </>
             )
           })()}
