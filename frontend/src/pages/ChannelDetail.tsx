@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Badge, Button, Tabs, KpiCard, Skeleton } from '../components/ui'
+import { Badge, Button, Tabs, KpiCard, Skeleton, Switch } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import AudienceEditor from '../components/AudienceEditor'
 
@@ -161,6 +161,127 @@ function ChannelHistory({ channelId }: { channelId: string }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Histórico: só já enviados ─────────────────────────────────────────────────
+function ChannelHistoryOnly({ channelId }: { channelId: string }) {
+  const [previewText, setPreviewText] = React.useState<string | null>(null)
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ['channels', channelId, 'history'],
+    queryFn: () => apiClient.get(`/api/channels/${channelId}/history`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 30_000,
+  })
+  const NOT_SENT = new Set(['pending', 'pending_approval', 'queued'])
+  const sent = entries.filter((e: any) => !NOT_SENT.has(e.status))
+  const statusVariant: Record<string, 'success'|'warning'|'danger'|'default'> = { delivered:'success',sending:'warning',failed:'danger',pending:'default' }
+  if (isLoading) return <Skeleton className="h-20 w-full" />
+  return (
+    <div>
+      {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
+      {sent.length === 0 ? (
+        <p className="text-sm text-fg-3 py-4">Nenhum disparo entregue ainda.</p>
+      ) : (
+        <div className="border border-border rounded-md overflow-hidden">
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-surface-2 border-b border-border sticky top-0">
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Grupo</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
+                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th>
+              </tr></thead>
+              <tbody>
+                {sent.map((e: any, i: number) => {
+                  let msgText = ''
+                  try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
+                  return (
+                    <tr key={`${e.dispatch_id}-${i}`} className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer" onClick={() => setPreviewText(msgText)}>
+                      <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{msgText || `#${e.dispatch_id}`}</td>
+                      <td className="px-4 py-2.5 text-xs text-fg-2">{e.group_name || `#${e.group_id}`}</td>
+                      <td className="px-4 py-2.5"><Badge variant={statusVariant[e.status]??'default'} size="sm">{e.status}</Badge></td>
+                      <td className="px-4 py-2.5 text-xs text-fg-3 text-right">{new Date(e.created_at).toLocaleString('pt-BR')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Fila: próximos disparos ───────────────────────────────────────────────────
+function ChannelQueue({ channelId }: { channelId: string }) {
+  const { data: preview } = useQuery<{ items: { product_id: number; product_name: string; score: number; price: number; already_sent: boolean }[] }>({
+    queryKey: ['automations', channelId, 'preview'],
+    queryFn: () => apiClient.get(`/api/automations/${channelId}/preview`).then(r => r.data).catch(() => ({ items: [] })),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+  const { data: entries = [] } = useQuery({
+    queryKey: ['channels', channelId, 'history'],
+    queryFn: () => apiClient.get(`/api/channels/${channelId}/history`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 30_000,
+  })
+  const NOT_SENT = new Set(['pending', 'pending_approval', 'queued'])
+  const toSend = entries.filter((e: any) => NOT_SENT.has(e.status))
+  const queueItems = (preview?.items ?? []).filter(i => !i.already_sent)
+  const statusVariant: Record<string, 'success'|'warning'|'danger'|'default'> = { pending:'default', pending_approval:'warning', queued:'default' }
+
+  return (
+    <div className="space-y-5">
+      {/* Próximos ciclo */}
+      <div className="border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+          <p className="text-sm font-medium text-fg">Próximos · score suficiente</p>
+          <p className="text-xs text-fg-3">Produtos que serão disparados no próximo ciclo de auto-match</p>
+        </div>
+        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila agora.</p> : (
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Produto</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Score</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Preço</th></tr></thead>
+            <tbody>
+              {queueItems.slice(0,10).map(item => (
+                <tr key={item.product_id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{item.product_name}</td>
+                  <td className="px-4 py-2.5 text-center"><span className={`text-xs font-semibold ${item.score>=70?'text-success':'text-warning'}`}>{item.score.toFixed(0)}</span></td>
+                  <td className="px-4 py-2.5 text-center text-xs text-fg-2">{item.price>0?`R$ ${item.price.toFixed(2)}`:'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {/* A entregar */}
+      {toSend.length > 0 && (
+        <div className="border border-warning/40 rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
+            <p className="text-sm font-medium text-fg">A entregar ({toSend.length})</p>
+            <a href="/automations" className="text-xs text-accent hover:underline">Ver em Automações →</a>
+          </div>
+          <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-surface-2 border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th><th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th></tr></thead>
+              <tbody>
+                {toSend.map((e: any, i: number) => {
+                  let msgText = ''
+                  try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
+                  return (
+                    <tr key={`${e.dispatch_id}-${i}`} className="border-b border-border last:border-0">
+                      <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{msgText || `#${e.dispatch_id}`}</td>
+                      <td className="px-4 py-2.5"><Badge variant={statusVariant[e.status]??'default'} size="sm">{e.status}</Badge></td>
+                      <td className="px-4 py-2.5 text-xs text-fg-3 text-right">{new Date(e.created_at).toLocaleString('pt-BR')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -389,8 +510,10 @@ function DisparoChart({ metrics }: { metrics: any }) {
 const TABS = [
   { id: 'overview', label: 'Visão geral' },
   { id: 'audience', label: 'Audiência' },
+  { id: 'automation', label: 'Automação' },
   { id: 'groups', label: 'Grupos' },
   { id: 'history', label: 'Histórico' },
+  { id: 'queue', label: 'Fila' },
   { id: 'publiclink', label: 'Link público' },
 ]
 
@@ -454,6 +577,20 @@ export default function ChannelDetail() {
       setEditingInviteLink(prev => { const n = { ...prev }; delete n[groupId]; return n })
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar link'),
+  })
+
+  // Automação do canal
+  const { data: automationRow, refetch: refetchAutomation } = useQuery<any>({
+    queryKey: ['automations', id],
+    queryFn: () => apiClient.get(`/api/automations/${id}`).then(r => r.data?.automation ?? null).catch(() => null),
+    enabled: tab === 'automation' && !!id,
+  })
+  const [autoForm, setAutoForm] = React.useState<any>({})
+  React.useEffect(() => { if (automationRow) setAutoForm(automationRow) }, [automationRow])
+  const saveAutoMut = useMutation({
+    mutationFn: () => apiClient.put(`/api/automations/${id}`, autoForm).then(r => r.data),
+    onSuccess: () => refetchAutomation(),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
   const { data: groups = [] } = useQuery({
@@ -722,8 +859,70 @@ export default function ChannelDetail() {
           </div>
         )}
 
-{tab === 'history' && (
-          <ChannelHistory channelId={id!} />
+{tab === 'automation' && (
+          <div className="space-y-5">
+            <div className="border border-border rounded-md p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-fg">Canal ativo</p>
+                  <p className="text-xs text-fg-3">Habilita toda automação deste canal</p>
+                </div>
+                <Switch checked={!!autoForm.enabled} onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v }))} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-fg">Auto Match</p>
+                  <p className="text-xs text-fg-3">Dispara automaticamente produtos com score alto</p>
+                </div>
+                <Switch checked={!!autoForm.auto_match_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, auto_match_enabled: v }))} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-fg">Eventos</p>
+                  <p className="text-xs text-fg-3">Notifica por eventos de preço (nova oferta, queda...)</p>
+                </div>
+                <Switch checked={!!autoForm.events_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, events_enabled: v }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-fg-2 block mb-1">Threshold (0–100)</label>
+                  <input type="range" min={0} max={100}
+                    value={autoForm.threshold ?? 50}
+                    onChange={e => setAutoForm((f: any) => ({ ...f, threshold: Number(e.target.value) }))}
+                    className="w-full accent-accent" />
+                  <div className="flex justify-between text-xs text-fg-3 mt-0.5">
+                    <span>0</span><span className="font-semibold text-fg">{autoForm.threshold ?? 50}</span><span>100</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-fg-2 block mb-1">Cooldown (horas)</label>
+                  <input type="number" min={1} max={168}
+                    value={autoForm.cooldown_hours ?? 6}
+                    onChange={e => setAutoForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) || 6 }))}
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Max disparos por ciclo</label>
+                <input type="number" min={1} max={50}
+                  value={autoForm.max_per_run ?? ''}
+                  placeholder="3 (default)"
+                  onChange={e => setAutoForm((f: any) => ({ ...f, max_per_run: e.target.value === '' ? null : Number(e.target.value) }))}
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+              </div>
+              <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
+                Salvar automação
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'history' && (
+          <ChannelHistoryOnly channelId={id!} />
+        )}
+
+        {tab === 'queue' && (
+          <ChannelQueue channelId={id!} />
         )}
 
         {tab === 'publiclink' && (
