@@ -205,7 +205,7 @@ function CatalogSidebar({
   onClear: () => void; hasActiveFilters: boolean
 }) {
   return (
-    <aside className="w-52 flex-shrink-0 border-r border-border overflow-y-auto bg-surface flex flex-col gap-4 px-3 py-4">
+    <aside className="flex-1 overflow-y-auto flex flex-col gap-4 px-3 py-4">
       {/* Busca */}
       <input
         type="text"
@@ -275,6 +275,15 @@ function CatalogSidebar({
         </button>
       )}
     </aside>
+  )
+}
+
+function CountChip({ total, page, totalPages }: { total: number; page: number; totalPages: number }) {
+  return (
+    <div className="px-3 py-2 border-t border-border text-[11px] text-fg-3">
+      <p><strong className="text-fg">{total}</strong> produto{total !== 1 ? 's' : ''}</p>
+      {totalPages > 1 && <p>pág. {page + 1}/{totalPages}</p>}
+    </div>
   )
 }
 
@@ -402,35 +411,34 @@ export default function Catalog() {
   return (
     <div className="flex h-full overflow-hidden">
 
-      {/* ── Sidebar de filtros ── */}
-      <CatalogSidebar
-        search={search} onSearch={setSearch}
-        source={source} onSource={setSource}
-        tagFilter={tagFilter} onTagFilter={setTagFilter} categories={categories}
-        brandFilter={brandFilter} onBrandFilter={setBrandFilter} brands={brands}
-        priceMin={priceMin} onPriceMin={setPriceMin}
-        priceMax={priceMax} onPriceMax={setPriceMax}
-        statusFilter={statusFilter} onStatusFilter={setStatusFilter}
-        showInactive={showInactive} onShowInactive={setShowInactive}
-        onClear={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('') }}
-        hasActiveFilters={!!(search || source || tagFilter || brandFilter || priceMin || priceMax || statusFilter)}
-      />
+      {/* ── Sidebar de filtros + contagem ── */}
+      <div className="flex flex-col w-52 flex-shrink-0 border-r border-border bg-surface">
+        <CatalogSidebar
+          search={search} onSearch={setSearch}
+          source={source} onSource={setSource}
+          tagFilter={tagFilter} onTagFilter={setTagFilter} categories={categories}
+          brandFilter={brandFilter} onBrandFilter={setBrandFilter} brands={brands}
+          priceMin={priceMin} onPriceMin={setPriceMin}
+          priceMax={priceMax} onPriceMax={setPriceMax}
+          statusFilter={statusFilter} onStatusFilter={setStatusFilter}
+          showInactive={showInactive} onShowInactive={setShowInactive}
+          onClear={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('') }}
+          hasActiveFilters={!!(search || source || tagFilter || brandFilter || priceMin || priceMax || statusFilter)}
+        />
+        <CountChip total={totalProducts} page={page} totalPages={totalPages} />
+      </div>
 
       {/* ── Conteúdo principal ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Barra de contagem + seleção */}
-        <div className="px-4 py-1.5 flex gap-2 border-b border-border flex-shrink-0 items-center">
-          {selected.size > 0 && (
+        {/* Barra de seleção (só aparece quando tem itens marcados) */}
+        {selected.size > 0 && (
+          <div className="px-4 py-1.5 flex gap-2 border-b border-border flex-shrink-0 items-center">
             <Button variant="primary" size="sm"
               onClick={() => { const ids = Array.from(selected).join(','); navigate(`/compose?productIds=${ids}`) }}>
               Disparar selecionados ({selected.size})
             </Button>
-          )}
-          <span className="text-xs text-fg-3 ml-auto">
-            {totalProducts} produto{totalProducts !== 1 ? 's' : ''}
-            {totalPages > 1 && ` · pág. ${page + 1}/${totalPages}`}
-          </span>
-        </div>
+          </div>
+        )}
 
       {/* Tabela */}
       <div className="flex-1 overflow-y-auto">

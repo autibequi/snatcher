@@ -548,8 +548,11 @@ func dispatchPairToStore(st store.Store, p models.CatalogProduct, s match.Score)
 		Message:       msgBytes,
 		AffiliateLink: affiliateLink,
 	}
+	// Verifica se produto ainda existe antes de setar o FK. Evita FK violation se foi deletado entre fetch e insert.
 	if p.ID > 0 {
-		d.ProductID = models.NullInt64{NullInt64: sql.NullInt64{Int64: p.ID, Valid: true}}
+		if _, err := st.GetCatalogProduct(p.ID); err == nil {
+			d.ProductID = models.NullInt64{NullInt64: sql.NullInt64{Int64: p.ID, Valid: true}}
+		}
 	}
 
 	if len(targets) > 0 {
