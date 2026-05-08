@@ -13,6 +13,7 @@ import (
 
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -39,6 +40,11 @@ type actionDef struct {
 }
 
 var actionRegistry = map[string]actionDef{
+	"dispatch_auto_match": {
+		Type:        "dispatch_auto_match",
+		Description: "Roda o ciclo de auto-match: pontua produtos recentes contra canais ativos e dispara matches acima do threshold",
+		Run:         actionDispatchAutoMatch,
+	},
 	"expire_stale_dispatches": {
 		Type:        "expire_stale_dispatches",
 		Description: "Marca dispatch_targets pending há mais de 2h como failed",
@@ -54,6 +60,50 @@ var actionRegistry = map[string]actionDef{
 		Description: "Avalia performance de cada automação ativa e ajusta thresholds via LLM",
 		Run:         actionTuneThresholds,
 	},
+}
+
+func actionDispatchAutoMatch(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// before: contar dispatches nas últimas 24h e produtos elegíveis
+	var dispatches24h int
+	_ = h.db.GetContext(ctx, &dispatches24h,
+		`SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '24 hours'`)
+
+	cfg, _ := h.store.GetConfig()
+	if !cfg.AutoMatchEnabled {
+		return map[string]any{"auto_match_enabled": false},
+			map[string]any{"skipped": true},
+			"Auto-match está desligado em Configurações. Pulando.",
+			nil
+	}
+
+	autosCount := 0
+	if autos, err := h.store.ListChannelAutomations(true); err == nil {
+		autosCount = len(autos)
+	}
+
+	beforeMap := map[string]any{
+		"dispatches_last_24h":     dispatches24h,
+		"automations_enabled":     autosCount,
+	}
+
+	if autosCount == 0 {
+		return beforeMap,
+			map[string]any{"skipped": true, "reason": "no enabled automations"},
+			"Nenhuma automação de canal habilitada. Pulando o ciclo.",
+			nil
+	}
+
+	// Executa o worker (síncrono — captura efeito dentro deste action)
+	scheduler.RunAutoMatchWorker(ctx, h.store)
+
+	// after: quantos dispatches saíram desde o início desta action (~ últimos minutos)
+	var newDispatches int
+	_ = h.db.GetContext(ctx, &newDispatches,
+		`SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '5 minutes'`)
+
+	afterMap := map[string]any{"new_dispatches": newDispatches}
+	reasoning := fmt.Sprintf("Rodei auto-match em %d automações ativas. %d dispatches criados nos últimos 5min.", autosCount, newDispatches)
+	return beforeMap, afterMap, reasoning, nil
 }
 
 // ── Ações ──────────────────────────────────────────────────────────────────

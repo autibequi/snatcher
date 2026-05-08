@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS jonfrey_config (
   id INTEGER PRIMARY KEY DEFAULT 1,
   enabled BOOLEAN NOT NULL DEFAULT false,
   interval_minutes INTEGER NOT NULL DEFAULT 60,
-  enabled_actions TEXT[] DEFAULT ARRAY['expire_stale_dispatches','inspect_pending_products']::TEXT[],
+  enabled_actions TEXT[] DEFAULT ARRAY['dispatch_auto_match','expire_stale_dispatches','inspect_pending_products']::TEXT[],
   last_run_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (id = 1)
