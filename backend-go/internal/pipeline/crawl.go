@@ -179,11 +179,22 @@ func CrawlAllTerms(ctx context.Context, st store.Store, scrapers map[string]Scra
 		return err
 	}
 
+	now := time.Now()
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 	for _, term := range terms {
 		if !term.Active {
 			continue
+		}
+		// Respeita crawl_interval por termo — só crawla quando o intervalo passou
+		if term.LastCrawledAt.Valid {
+			interval := time.Duration(term.CrawlInterval) * time.Minute
+			if interval <= 0 {
+				interval = 30 * time.Minute
+			}
+			if now.Sub(term.LastCrawledAt.Time) < interval {
+				continue // ainda dentro do intervalo, pula
+			}
 		}
 		term := term
 		wg.Add(1)
