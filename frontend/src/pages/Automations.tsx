@@ -725,37 +725,35 @@ export function TabOverview() {
   const threshold = localThreshold ?? data?.threshold ?? 50
   const maxPerRun = localMaxPerRun ?? data?.max_per_run ?? 3
   const logs = data?.logs ?? []
-  const lastRunAt = data?.last_run_at ?? null
-  const intervalSeconds = data?.interval_seconds ?? 60
 
-  // Hook deve estar no top level — chamar incondicionalmente
-  const countdownValue = useCountdown(lastRunAt, intervalSeconds)
-
-  // Calcular KPIs a partir dos logs
+  // Calcular KPI: disparos 24h
   const now = Date.now()
   const h24ago = now - 24 * 3600 * 1000
-  const recentLogs = logs.filter(l => new Date(l.created_at).getTime() > h24ago)
-  const dispatches24h = recentLogs.length
-  // clicks 24h: sem endpoint, exibimos "—"
-  const deliveryRate = dispatches24h > 0 ? '—' : '—'
+  const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
   return (
     <div className="p-6 space-y-6">
-      {/* KPIs */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+      {/* Banner: Jonfrey assume orquestração */}
+      <div className="rounded-md border border-accent/40 bg-accent/5 p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-medium text-fg">🤖 Orquestrado pelo Jonfrey</p>
+          <p className="text-xs text-fg-3">
+            Auto-match agora roda dentro do ciclo do Jonfrey (Automações → Jonfrey).
+            Aqui ficam só o kill-switch global e os defaults usados quando o canal não tem override.
+          </p>
         </div>
+        <a href="/automations/jonfrey" className="text-xs text-accent hover:underline whitespace-nowrap">
+          Abrir Jonfrey →
+        </a>
+      </div>
+
+      {/* KPI mínimo: só disparos 24h */}
+      {isLoading ? (
+        <Skeleton className="h-20 w-full max-w-xs" />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Cliques 24h" value="—" subtitle="via analytics" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
           <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
-          <KpiCard label="Taxa entrega" value={deliveryRate} subtitle="estimado" />
-          <KpiCard
-            label="Proxima execucao"
-            value={countdownValue}
-            subtitle={enabled ? 'auto match ativo' : 'desativado'}
-          />
+          <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
         </div>
       )}
 
@@ -766,8 +764,8 @@ export function TabOverview() {
             <p className="text-sm font-semibold text-fg">{enabled ? 'Auto Match global ativado' : 'Auto Match global desativado'}</p>
             <p className="text-xs text-fg-3 mt-0.5">
               {enabled
-                ? `Rodando a cada ${intervalSeconds}s · score min ${threshold} · max ${maxPerRun}/ciclo`
-                : 'Ative para disparar automaticamente produtos matchados.'}
+                ? `Score min ${threshold} · max ${maxPerRun}/ciclo (defaults — canais podem sobrescrever)`
+                : 'Desligado — Jonfrey vai pular a ação dispatch_auto_match.'}
             </p>
           </div>
           <button
@@ -813,64 +811,12 @@ export function TabOverview() {
         </div>
       </div>
 
-      {/* Tabela ultimos 10 disparos */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <p className="text-sm font-medium text-fg">Ultimos disparos automaticos</p>
-          <button
-            type="button"
-            onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })}
-            className="text-xs text-accent hover:underline"
-          >
-            atualizar
-          </button>
-        </div>
-        {isLoading ? (
-          <div className="p-4 space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
-        ) : logs.length === 0 ? (
-          <div className="text-center py-10">
-            <p className="text-sm text-fg-3">Nenhum disparo automatico registrado ainda.</p>
-            <p className="text-xs text-fg-3 mt-1">Ative o Auto Match acima para comecar.</p>
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-surface-2 border-b border-border">
-                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Produto</th>
-                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Canal</th>
-                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Score</th>
-                <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Quando</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.slice(0, 10).map(log => (
-                <tr key={log.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-2.5">
-                    <p className="text-sm text-fg truncate max-w-[200px]">{log.product_name || `#${log.product_id}`}</p>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <p className="text-sm text-fg">{log.channel_name || `#${log.channel_id}`}</p>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-sm font-semibold ${log.score >= 70 ? 'text-success' : log.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>
-                      {fmtScore(log.score)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <p className="text-xs text-fg-3">{fmtDate(log.created_at)}</p>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <a href={`/logs?dispatchId=${log.dispatch_id}`} className="text-xs text-accent hover:underline">
-                      ver &rarr;
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <p className="text-xs text-fg-3">
+        Histórico de disparos automáticos: ver{' '}
+        <a href="/automations/jonfrey" className="text-accent hover:underline">changelog do Jonfrey</a>
+        {' '}ou{' '}
+        <a href="/logs" className="text-accent hover:underline">Logs</a>.
+      </p>
     </div>
   )
 }
@@ -1003,7 +949,7 @@ export default function Automations() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 py-3 border-b border-border">
-        <p className="text-sm text-fg-3">Configuração global e KPIs de auto-match</p>
+        <p className="text-sm text-fg-3">Kill-switch global e defaults — orquestração por canal vai pra <a href="/automations/channels" className="text-accent hover:underline">Por canal</a> ou <a href="/automations/jonfrey" className="text-accent hover:underline">Jonfrey</a>.</p>
       </div>
       <div className="flex-1 overflow-y-auto">
         <TabOverview />

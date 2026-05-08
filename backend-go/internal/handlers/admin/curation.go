@@ -529,29 +529,42 @@ JSON:`, row.CanonicalName, extraCtx)
 // Dispara o job em background e retorna 202 imediatamente.
 // Acompanhe via /api/curation/stats e /api/admin/llm/logs.
 func (h *CurationHandler) InspectAll(w http.ResponseWriter, r *http.Request) {
+	jobID, started, msg := h.TriggerInspectAll()
+	if !started {
+		if msg == "" {
+			msg = "Inspeção não iniciada"
+		}
+		if jobID == "" {
+			writeErr(w, http.StatusServiceUnavailable, msg)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": msg})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"started": true,
+		"job_id":  jobID,
+		"message": "Inspeção rodando em background — acompanhe em /jobs",
+	})
+}
+
+// TriggerInspectAll inicia o job de inspeção em background.
+// Retorna (jobID, started, message). Reusável de fora do contexto HTTP (ex: Jonfrey).
+func (h *CurationHandler) TriggerInspectAll() (string, bool, string) {
 	cli := h.llmFn()
 	if cli == nil {
-		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado — configure em Configurações → LLM/IA")
-		return
+		return "", false, "LLM não configurado — configure em Configurações → LLM/IA"
 	}
-
 	if jobs.Default().HasRunning("InspectAll") {
-		writeJSON(w, http.StatusOK, map[string]any{"started": false, "message": "Inspeção já está rodando — veja em Jobs"})
-		return
+		return "", false, "Inspeção já está rodando — veja em Jobs"
 	}
-
 	job, ctx := jobs.Default().Start(context.Background(), "InspectAll")
 	go func() {
 		jobCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 		defer cancel()
 		h.runInspectAll(jobCtx, cli, job.ID)
 	}()
-
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"started": true,
-		"job_id":  job.ID,
-		"message": "Inspeção rodando em background — acompanhe em /jobs",
-	})
+	return job.ID, true, ""
 }
 
 // runInspectAll executa a inspeção via LLM. Roda em goroutine.

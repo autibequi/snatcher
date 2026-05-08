@@ -104,6 +104,7 @@ func Build(
 	groups.SetLLMFn(composeH.BuildLLMClient)
 	catalog.SetLLMFn(composeH.BuildLLMClient)
 	jonfrey.SetLLMFn(composeH.BuildLLMClient)
+	jonfrey.SetCurationHandler(curation)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()

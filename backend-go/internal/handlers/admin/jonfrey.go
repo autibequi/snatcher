@@ -19,16 +19,18 @@ import (
 
 // JonfreyHandler é o orquestrador AI das automações.
 type JonfreyHandler struct {
-	store store.Store
-	db    *sqlx.DB
-	llmFn func() llm.Client
+	store    store.Store
+	db       *sqlx.DB
+	llmFn    func() llm.Client
+	curation *CurationHandler // delega tarefas longas (inspect-all, etc)
 }
 
 func NewJonfreyHandler(st store.Store, db *sqlx.DB) *JonfreyHandler {
 	return &JonfreyHandler{store: st, db: db}
 }
 
-func (h *JonfreyHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
+func (h *JonfreyHandler) SetLLMFn(fn func() llm.Client)              { h.llmFn = fn }
+func (h *JonfreyHandler) SetCurationHandler(c *CurationHandler)      { h.curation = c }
 
 // ── Catálogo de ações que o Jonfrey pode executar ────────────────────────────
 
@@ -174,16 +176,29 @@ func actionInspectPending(ctx context.Context, h *JonfreyHandler) (map[string]an
 			nil
 	}
 
-	// Aciona o endpoint interno (mesma lógica do botão Inspecionar do Catálogo).
-	// O endpoint /api/curation/inspect-all dispara em background; só queremos sinalizar.
-	return map[string]any{"pending": pendingCount},
-		map[string]any{"started": true, "queued_for_inspection": min(pendingCount, 30)},
-		fmt.Sprintf("Encontrei %d produtos sem auditoria. Disparei inspeção dos próximos 30 em background.", pendingCount),
-		nil
+	if h.curation == nil {
+		return map[string]any{"pending": pendingCount},
+			map[string]any{"started": false},
+			"CurationHandler não injetado no Jonfrey — não consigo disparar inspeção.",
+			fmt.Errorf("curation handler not wired")
+	}
+
+	jobID, started, msg := h.curation.TriggerInspectAll()
+	beforeMap := map[string]any{"pending": pendingCount}
+	if !started {
+		return beforeMap, map[string]any{"started": false, "reason": msg}, msg, nil
+	}
+	afterMap := map[string]any{"started": true, "job_id": jobID, "queued_for_inspection": min(pendingCount, 30)}
+	reasoning := fmt.Sprintf("Encontrei %d produtos sem auditoria. Iniciei job InspectAll (job_id=%s) — LLM vai auditar os próximos 30 em background.", pendingCount, jobID)
+	return beforeMap, afterMap, reasoning, nil
 }
 
 func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
@@ -198,6 +213,7 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 		FieldChanged string  `json:"field"`
 		OldValue     float64 `json:"old"`
 		NewValue     float64 `json:"new"`
+		Reason       string  `json:"reason"`
 	}
 	var adjustments []adjustment
 	beforeMap := map[string]any{"automations_count": len(autos)}
@@ -205,13 +221,12 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 	for _, a := range autos {
 		ch, _ := h.store.GetChannel(a.ChannelID)
 		logs, _ := h.store.ListAutoMatchLogsByChannel(a.ChannelID, 50)
-		// Heurística: se score médio > threshold + 15, abaixar threshold em 5; se score médio < threshold - 15, subir 5.
+		if len(logs) < 5 {
+			continue
+		}
 		threshold := 60.0
 		if a.Threshold.Valid {
 			threshold = a.Threshold.Float64
-		}
-		if len(logs) < 5 {
-			continue // pouco sinal
 		}
 		var sum float64
 		for _, l := range logs {
@@ -219,26 +234,72 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 		}
 		avg := sum / float64(len(logs))
 
-		newThreshold := threshold
-		if avg > threshold+15 {
-			newThreshold = threshold + 5
-		} else if avg < threshold-15 {
-			newThreshold = threshold - 5
-		}
-		if newThreshold == threshold {
+		// Snapshot por canal para o LLM
+		var deliveryCount, failedCount int
+		_ = h.db.GetContext(ctx, &deliveryCount, `
+			SELECT COUNT(*) FROM dispatch_targets dt
+			JOIN dispatches d ON d.id = dt.dispatch_id
+			WHERE d.channel_id = $1 AND dt.status = 'delivered'
+			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
+		_ = h.db.GetContext(ctx, &failedCount, `
+			SELECT COUNT(*) FROM dispatch_targets dt
+			JOIN dispatches d ON d.id = dt.dispatch_id
+			WHERE d.channel_id = $1 AND dt.status = 'failed'
+			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
+
+		prompt := fmt.Sprintf(`Você é um operador sênior otimizando automação de canal de afiliados.
+
+Canal: %s
+Threshold atual: %.0f (score min para disparar)
+Score médio dos últimos %d logs: %.1f
+Disparos entregues últimos 14d: %d
+Disparos falhados últimos 14d: %d
+Cooldown atual: %dh
+
+Decida se threshold deve mudar e em quanto. Se canal está performando bem (delivery alto, score médio próximo do threshold), mantém. Se score médio muito acima do threshold, abaixa pra disparar mais; se muito abaixo, sobe pra ser mais seletivo.
+
+Responda EXCLUSIVAMENTE em JSON:
+{
+  "new_threshold": 55,
+  "change": true,
+  "reason": "explicação breve em 1 frase"
+}`,
+			ch.Name, threshold, len(logs), avg, deliveryCount, failedCount, a.CooldownHours)
+
+		ctxC, cancel := context.WithTimeout(ctx, 30*time.Second)
+		resp, err := cli.Complete(ctxC, prompt, llm.Options{
+			MaxTokens: 200, Temperature: 0.2, Operation: "jonfrey_tune_threshold", JSONMode: true,
+		})
+		cancel()
+		if err != nil {
 			continue
 		}
-		// Aplica
-		a.Threshold = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: newThreshold, Valid: true}}
+		var parsed struct {
+			NewThreshold float64 `json:"new_threshold"`
+			Change       bool    `json:"change"`
+			Reason       string  `json:"reason"`
+		}
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			continue
+		}
+		if !parsed.Change || parsed.NewThreshold == threshold {
+			continue
+		}
+		// Sanity bounds
+		if parsed.NewThreshold < 20 || parsed.NewThreshold > 95 {
+			continue
+		}
+		a.Threshold = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: parsed.NewThreshold, Valid: true}}
 		_ = h.store.UpsertChannelAutomation(a)
 		adjustments = append(adjustments, adjustment{
 			ChannelID: a.ChannelID, ChannelName: ch.Name,
-			FieldChanged: "threshold", OldValue: threshold, NewValue: newThreshold,
+			FieldChanged: "threshold", OldValue: threshold, NewValue: parsed.NewThreshold,
+			Reason: parsed.Reason,
 		})
 	}
 
-	afterMap := map[string]any{"adjustments": adjustments}
-	reasoning := fmt.Sprintf("Avaliei %d automações ativas. Ajustei threshold em %d delas para acompanhar o score médio dos logs recentes.", len(autos), len(adjustments))
+	afterMap := map[string]any{"adjustments": adjustments, "adjusted_count": len(adjustments)}
+	reasoning := fmt.Sprintf("LLM avaliou %d automações ativas e recomendou ajuste em %d delas com base em score médio + delivery/failed dos últimos 14 dias.", len(autos), len(adjustments))
 	return beforeMap, afterMap, reasoning, nil
 }
 
