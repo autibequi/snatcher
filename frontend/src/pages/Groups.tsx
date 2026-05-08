@@ -300,7 +300,7 @@ function AvailableWAGroupsSection({
   linkedJIDs: Set<string>
   onLinked: () => void
 }) {
-  const { data: waGroups = [], isLoading } = useQuery<WAGroupOption[]>({
+  const { data: waGroups = [], isLoading, isFetching, refetch } = useQuery<WAGroupOption[]>({
     queryKey: ['available-wa-groups', account.id],
     queryFn: () =>
       apiClient
@@ -308,7 +308,11 @@ function AvailableWAGroupsSection({
         .then(r => (Array.isArray(r.data) ? r.data : []))
         .catch(() => []),
     enabled: account.status === 'connected',
-    refetchInterval: 60_000,
+    // Long-polling adaptativo: enquanto vazio (Evolution ainda respondendo), 15s; com dados, 60s.
+    refetchInterval: (q) => {
+      const data = q.state.data as WAGroupOption[] | undefined
+      return data && data.length > 0 ? 60_000 : 15_000
+    },
   })
 
   const linkMut = useMutation({
@@ -325,47 +329,93 @@ function AvailableWAGroupsSection({
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao vincular'),
   })
 
-  const unlinked = waGroups.filter(g => !linkedJIDs.has(g.id))
+  const [search, setSearch] = useState('')
+
+  const unlinkedAll = waGroups.filter(g => !linkedJIDs.has(g.id))
+  const q = search.trim().toLowerCase()
+  const unlinked = q
+    ? unlinkedAll.filter(g => g.name.toLowerCase().includes(q))
+    : unlinkedAll
 
   if (account.status !== 'connected') return null
-  if (isLoading) return null
-  if (waGroups.length === 0) return null
+
+  // Mantém visível o estado "esperando Evolution" — antes desaparecia, dando impressão
+  // de tela quebrada. Agora mostra placeholder com refresh manual.
+  const empty = !isLoading && waGroups.length === 0
 
   return (
     <div className="mt-6">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-sm font-semibold text-fg">
+      <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+        <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
           Grupos no WhatsApp · {account.name}
+          {isFetching && (
+            <span className="text-[10px] text-fg-3 font-normal flex items-center gap-1">
+              <span className="inline-block w-2 h-2 bg-accent rounded-full animate-pulse" />
+              atualizando…
+            </span>
+          )}
         </h2>
-        <span className="text-xs text-fg-3">
-          {unlinked.length} disponíveis · {waGroups.length - unlinked.length} já vinculados
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-fg-3">
+            {unlinkedAll.length} disponíveis · {waGroups.length - unlinkedAll.length} vinculados
+          </span>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="text-xs text-fg-3 hover:text-fg disabled:opacity-50"
+            title="Forçar refresh da Evolution"
+          >
+            ↻
+          </button>
+        </div>
       </div>
-      {unlinked.length === 0 ? (
+
+      {empty ? (
+        <div className="border border-border rounded-md p-4 text-center bg-surface-2">
+          <p className="text-xs text-fg-3">Evolution ainda não retornou os grupos desta conta.</p>
+          <p className="text-[10px] text-fg-3 mt-1">Auto-refresh a cada 15s. Pode levar até 1 min se a instância acabou de conectar.</p>
+        </div>
+      ) : isLoading ? (
+        <p className="text-xs text-fg-3 py-2">Carregando…</p>
+      ) : unlinkedAll.length === 0 ? (
         <p className="text-xs text-fg-3 py-2">Todos os grupos já foram vinculados.</p>
       ) : (
-        <div className="border border-border rounded-md overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-surface-2 border-b border-border">
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
-                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Membros</th>
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase w-72">Vincular a canal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {unlinked.map(g => (
-                <UnlinkedRow
-                  key={g.id}
-                  group={g}
-                  channels={channels}
-                  onLink={(channelId) => linkMut.mutate({ jid: g.id, name: g.name, size: g.size, channelId })}
-                  pending={linkMut.isPending}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={`Filtrar entre ${unlinkedAll.length} grupos pelo nome…`}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent mb-2"
+          />
+          {unlinked.length === 0 ? (
+            <p className="text-xs text-fg-3 py-2">Nenhum grupo bate com "{search}".</p>
+          ) : (
+            <div className="border border-border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-surface-2 border-b border-border">
+                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
+                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Membros</th>
+                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase w-72">Vincular a canal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unlinked.map(g => (
+                    <UnlinkedRow
+                      key={g.id}
+                      group={g}
+                      channels={channels}
+                      onLink={(channelId) => linkMut.mutate({ jid: g.id, name: g.name, size: g.size, channelId })}
+                      pending={linkMut.isPending}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
