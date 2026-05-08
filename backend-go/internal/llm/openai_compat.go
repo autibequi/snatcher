@@ -83,6 +83,20 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 }
 
 func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts Options) (string, error) {
+	out, err := c.complete(ctx, prompt, opts)
+	// Retry: se WebSearch causou empty/erro, tenta sem o plugin (modelos free quebram com web plugin).
+	if err != nil && opts.WebSearch && (strings.Contains(err.Error(), "empty content") || strings.Contains(err.Error(), "no JSON found")) {
+		retryOpts := opts
+		retryOpts.WebSearch = false
+		retryOpts.Operation = opts.Operation + "_retry_nowebsearch"
+		if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
+			return out2, nil
+		}
+	}
+	return out, err
+}
+
+func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts Options) (string, error) {
 	start := time.Now()
 	model := opts.Model
 	if model == "" {

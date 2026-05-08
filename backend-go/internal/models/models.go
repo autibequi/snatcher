@@ -623,12 +623,31 @@ type PublicLink struct {
 	ID               int64     `db:"id" json:"id"`
 	Slug             string    `db:"slug" json:"slug"`
 	ChannelID        int64     `db:"channel_id" json:"channel_id"`
-	FallbackChain    []byte    `db:"fallback_chain" json:"fallback_chain"`
+	FallbackChain    []byte    `db:"fallback_chain" json:"-"` // raw JSONB do DB; exposto via MarshalJSON
 	RedirectStrategy string    `db:"redirect_strategy" json:"redirect_strategy"`
 	RoundRobinIdx    int       `db:"round_robin_idx" json:"-"`
 	Active           bool      `db:"active" json:"active"`
 	Clicks30d        int       `db:"clicks_30d" json:"clicks_30d"`
 	CreatedAt        time.Time `db:"created_at" json:"created_at"`
+}
+
+// MarshalJSON serializa FallbackChain como array de objetos em vez de bytes (base64).
+func (l PublicLink) MarshalJSON() ([]byte, error) {
+	var chain []map[string]any
+	if len(l.FallbackChain) > 0 {
+		_ = json.Unmarshal(l.FallbackChain, &chain)
+	}
+	if chain == nil {
+		chain = []map[string]any{}
+	}
+	type alias PublicLink
+	return json.Marshal(&struct {
+		alias
+		FallbackChain []map[string]any `json:"fallback_chain"`
+	}{
+		alias:         alias(l),
+		FallbackChain: chain,
+	})
 }
 
 // Cluster é um agrupamento analítico de canais.

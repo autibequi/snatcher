@@ -178,10 +178,29 @@ function CreateLinkModal({ onClose }: { onClose: () => void }) {
 
 // ── FallbackChainPanel ────────────────────────────────────────────────────────
 
+function parseChain(raw: any): FallbackGroup[] {
+  if (Array.isArray(raw)) return raw as FallbackGroup[]
+  if (typeof raw === 'string' && raw) {
+    try {
+      // tenta JSON direto
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      try {
+        // fallback: backend antigo enviava base64 do JSON
+        const decoded = atob(raw)
+        const parsed = JSON.parse(decoded)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+    }
+  }
+  return []
+}
+
 function FallbackChainPanel({ link, channels }: { link: PublicLink; channels: Channel[] }) {
   const qc = useQueryClient()
   const [showAddDropdown, setShowAddDropdown] = React.useState(false)
-  const chain: FallbackGroup[] = link.fallback_chain ?? []
+  const chain: FallbackGroup[] = parseChain(link.fallback_chain)
 
   const saveMut = useMutation({
     mutationFn: (newChain: FallbackGroup[]) =>
@@ -439,7 +458,7 @@ export default function PublicLinks() {
   const ctrAvg = links.length > 0
     ? Math.round(links.reduce((s, l) => s + (l.clicks_30d / Math.max(1, 30)), 0) / links.length)
     : 0
-  const noFallback = links.filter(l => !l.fallback_chain || l.fallback_chain.length === 0).length
+  const noFallback = links.filter(l => parseChain(l.fallback_chain).length === 0).length
 
   const selectedLink = links.find(l => l.id === selectedId) ?? null
 
