@@ -91,21 +91,42 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 	}
 }
 
+// isTransientError detecta falhas temporárias de modelos free (429, 504, content nulo, abort)
+// que valem retry imediato — diferente de erros permanentes (400, auth).
+func isTransientError(errStr string) bool {
+	transients := []string{
+		"empty content", "no JSON found",
+		"llm status 429", "llm status 502", "llm status 503", "llm status 504",
+		"operation was aborted", "code:504", "code:502",
+		"rate-limited", "rate limited", "retry shortly",
+		"empty_response",
+	}
+	lower := strings.ToLower(errStr)
+	for _, t := range transients {
+		if strings.Contains(lower, strings.ToLower(t)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts Options) (string, error) {
 	out, err := c.complete(ctx, prompt, opts)
 	if err != nil {
 		errStr := err.Error()
+
 		// Retry sem reasoning: modelo exige reasoning obrigatório e rejeita o disable
 		if !c.reasoningEnabled && strings.Contains(errStr, "Reasoning is mandatory") {
 			saved := c.reasoningEnabled
-			c.reasoningEnabled = true // não envia o bloco reasoning neste retry
+			c.reasoningEnabled = true
 			out2, err2 := c.complete(ctx, prompt, opts)
 			c.reasoningEnabled = saved
 			if err2 == nil {
 				return out2, nil
 			}
 		}
-		// Retry com max_tokens dobrado quando truncado (modelo de reasoning gasta tudo em chain-of-thought)
+
+		// Retry com max_tokens dobrado quando truncado
 		if strings.Contains(errStr, "response truncated") && opts.MaxTokens > 0 && opts.MaxTokens < 32000 {
 			retryOpts := opts
 			retryOpts.MaxTokens = opts.MaxTokens * 2
@@ -114,14 +135,29 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 				return out2, nil
 			}
 		}
-		// Retry sem web search: modelos free quebram com web plugin
-		if opts.WebSearch && (strings.Contains(errStr, "empty content") || strings.Contains(errStr, "no JSON found")) {
+
+		// Retry em falhas transientes de modelos free (429, 504, content null, abort)
+		// Até 5 tentativas mas SOMENTE para openrouter/free — outros modelos não precisam.
+		if isTransientError(errStr) {
+			maxRetries := 1
+			if opts.Model == "openrouter/free" {
+				maxRetries = 4 // 1 tentativa original + 4 retries = 5 total
+			}
 			retryOpts := opts
 			retryOpts.WebSearch = false
-			retryOpts.Operation = opts.Operation + "_retry_nowebsearch"
-			if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
-				return out2, nil
+			var lastErr error
+			for i := 0; i < maxRetries; i++ {
+				retryOpts.Operation = fmt.Sprintf("%s_retry_transient_%d", opts.Operation, i+1)
+				if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
+					return out2, nil
+				} else if !isTransientError(err2.Error()) {
+					lastErr = err2
+					break // erro permanente, não adianta retry
+				} else {
+					lastErr = err2
+				}
 			}
+			_ = lastErr
 		}
 	}
 	return out, err
