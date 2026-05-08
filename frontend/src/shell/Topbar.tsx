@@ -245,7 +245,7 @@ function PendingApprovalsBadge() {
   return (
     <button
       type="button"
-      onClick={() => navigate('/auto-match')}
+      onClick={() => navigate('/automations')}
       className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning/10 text-warning text-xs font-medium hover:bg-warning/20 transition-colors"
       title={`${pending.length} dispatch${pending.length !== 1 ? 'es' : ''} aguardando aprovação`}
     >

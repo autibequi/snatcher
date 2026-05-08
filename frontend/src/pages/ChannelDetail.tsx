@@ -117,7 +117,7 @@ function ChannelHistory({ channelId }: { channelId: string }) {
         <div className="border border-warning/40 rounded-md overflow-hidden">
           <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
             <p className="text-sm font-medium text-fg">A enviar · na fila de entrega ({toSend.length})</p>
-            <a href="/" className="text-xs text-accent hover:underline">Aprovar →</a>
+            <a href="/automations" className="text-xs text-accent hover:underline">Aprovar em Automações →</a>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

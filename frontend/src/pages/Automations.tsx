@@ -877,79 +877,72 @@ export function TabOverview() {
   return (
     <div className="p-6 space-y-5">
 
-      {/* ── Painel de envio: modo de despacho ── */}
-      <div className={`border rounded-md p-4 flex items-start gap-4 ${fullAutoMode ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'}`}>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-semibold text-fg">
-              {fullAutoMode ? '✅ Full-auto ativo — mensagens enviadas automaticamente' : '⚠️ Modo manual — mensagens aguardam aprovação humana'}
-            </p>
-          </div>
-          <p className="text-xs text-fg-3 mt-0.5">
-            {fullAutoMode
-              ? 'Cada match de produto→canal dispara a mensagem direto para o grupo WA/TG sem revisão.'
-              : 'Cada match cria um disparo mas não envia. São os "pendentes" no header. Ative Full-auto ou aprove manualmente.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {!fullAutoMode && (pendingCount ?? 0) > 0 && (
-            <button
-              type="button"
-              disabled={approveAllMut.isPending}
-              onClick={() => approveAllMut.mutate()}
-              className="text-xs bg-accent text-white rounded px-3 py-1.5 hover:bg-accent/90 disabled:opacity-50"
-            >
-              {approveAllMut.isPending ? 'Aprovando…' : `Enviar ${pendingCount} pendentes agora`}
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={toggleFullAuto.isPending}
-            onClick={() => toggleFullAuto.mutate(!fullAutoMode)}
-            className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullAutoMode ? 'bg-success' : 'bg-border'} disabled:opacity-50`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullAutoMode ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
-        </div>
-      </div>
+      {/* ── KPI + controles num grid único ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
-      {/* KPI + Parâmetros globais inline */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+        {/* Disparos 24h */}
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
           tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h." />
+
+        {/* Próx. ciclo */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card flex flex-col gap-1">
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Próx. ciclo</p>
           <p className="text-lg font-bold text-fg leading-none">{countdownLabel}</p>
           <p className="text-[10px] text-fg-3">{data?.interval_seconds ? `a cada ${data.interval_seconds / 60 | 0}min` : '—'}</p>
         </div>
-        {/* Kill-switch */}
-        <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled ? 'border-accent/40' : 'border-border'}`}>
-          <div className="flex items-start justify-between gap-2">
+
+        {/* Auto-pilot — toggle único que controla auto-match + full_auto_mode */}
+        <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled && fullAutoMode ? 'border-success/40' : fullyEnabled ? 'border-warning/40' : 'border-border'}`}>
+          <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
               <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Auto-pilot</p>
-              <p className={`text-sm font-semibold mt-1 ${fullyEnabled ? 'text-success' : 'text-fg-2'}`}>{fullyEnabled ? 'Ativo' : 'Pausado'}</p>
+              <p className={`text-sm font-semibold mt-1 ${fullyEnabled && fullAutoMode ? 'text-success' : fullyEnabled ? 'text-warning' : 'text-fg-2'}`}>
+                {fullyEnabled && fullAutoMode ? 'Ativo · enviando' : fullyEnabled ? 'Ativo · aguardando aprovação' : 'Pausado'}
+              </p>
             </div>
-            <button type="button" disabled={toggleMut.isPending} onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
-              className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+            <button type="button"
+              disabled={toggleMut.isPending || toggleFullAuto.isPending}
+              onClick={async () => {
+                const next = !fullyEnabled
+                await toggleMut.mutateAsync({ enabled: next })
+                if (next) await toggleFullAuto.mutateAsync(true)
+              }}
+              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
+            >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
+          {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
+            <button type="button" disabled={approveAllMut.isPending}
+              onClick={() => approveAllMut.mutate()}
+              className="w-full text-xs bg-accent text-white rounded px-2 py-1 hover:bg-accent/90 disabled:opacity-50">
+              {approveAllMut.isPending ? 'Enviando…' : `Enviar ${pendingCount} pendentes`}
+            </button>
+          )}
         </div>
-        {/* Score mínimo */}
-        <div className="bg-surface border border-border rounded-md p-4 shadow-card">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1.5">Score mínimo</p>
-          <input type="number" min={0} max={100} value={threshold}
-            onChange={e => setLocalThreshold(Number(e.target.value))}
-            onBlur={() => toggleMut.mutate({ threshold })}
-            className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
-        </div>
-        {/* Max por ciclo */}
-        <div className="bg-surface border border-border rounded-md p-4 shadow-card">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1.5">Max/ciclo</p>
-          <input type="number" min={1} max={20} value={maxPerRun}
-            onChange={e => setLocalMaxPerRun(Number(e.target.value))}
-            onBlur={() => toggleMut.mutate({ max_per_run: maxPerRun })}
-            className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+
+        {/* Score mínimo + Max/ciclo juntos */}
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Score mínimo</p>
+              <TooltipIcon content="Afinidade mínima produto↔canal (0–100) para disparar. Score 50 = padrão conservador. Abaixe para mais volume, suba para mais qualidade." side="top" />
+            </div>
+            <input type="number" min={0} max={100} value={threshold}
+              onChange={e => setLocalThreshold(Number(e.target.value))}
+              onBlur={() => toggleMut.mutate({ threshold })}
+              className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Max/ciclo</p>
+              <TooltipIcon content="Máximo de produtos disparados por canal por ciclo. Evita spam: mesmo com 100 produtos elegíveis, só esse número sai por vez." side="top" />
+            </div>
+            <input type="number" min={1} max={20} value={maxPerRun}
+              onChange={e => setLocalMaxPerRun(Number(e.target.value))}
+              onBlur={() => toggleMut.mutate({ max_per_run: maxPerRun })}
+              className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
         </div>
       </div>
 

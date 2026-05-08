@@ -100,6 +100,9 @@ func isTransientError(errStr string) bool {
 		"operation was aborted", "code:504", "code:502",
 		"rate-limited", "rate limited", "retry shortly",
 		"empty_response",
+		// modelo free retornou 0 tokens / resposta não é JSON válido (nemotron-nano, etc.)
+		"llm parse error: {\"error\"",
+		"completion_tokens\":0",
 	}
 	lower := strings.ToLower(errStr)
 	for _, t := range transients {
