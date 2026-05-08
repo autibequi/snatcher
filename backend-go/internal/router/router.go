@@ -85,6 +85,10 @@ func Build(
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
 	jonfrey     := adminhnd.NewJonfreyHandler(st, db)
+	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled
+	if sched != nil {
+		sched.SetJonfreyTick(jonfrey.RunCycle)
+	}
 	ads         := adminhnd.NewAdsHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado

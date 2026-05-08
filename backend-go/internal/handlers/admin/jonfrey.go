@@ -376,6 +376,24 @@ func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// RunCycle executa todas as actions habilitadas no JonfreyConfig e atualiza last_run_at.
+// Usado pelo scheduler tick automático.
+func (h *JonfreyHandler) RunCycle(ctx context.Context) {
+	cfg, err := h.store.GetJonfreyConfig()
+	if err != nil || !cfg.Enabled {
+		return
+	}
+	for _, t := range []string(cfg.EnabledActions) {
+		def, ok := actionRegistry[t]
+		if !ok {
+			continue
+		}
+		_ = h.executeAction(ctx, def, "scheduler", "")
+	}
+	cfg.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
+	_ = h.store.UpdateJonfreyConfig(cfg)
+}
+
 // RunAction POST /api/jonfrey/run
 // Body: { "action_type": "...", "target": "..." }
 // Se action_type vazio → executa todas as ações habilitadas na config.

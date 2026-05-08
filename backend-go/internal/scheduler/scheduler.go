@@ -19,6 +19,13 @@ type Scheduler struct {
 	interval int
 	llmCli   llm.Client
 	storeRef store.Store
+	jonfreyTick func(ctx context.Context) // injetado via SetJonfreyTick — evita ciclo de import
+}
+
+// SetJonfreyTick registra o callback que executa todas as actions habilitadas do Jonfrey.
+// Chamado pelo main.go após o handler do Jonfrey ser construído.
+func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context)) {
+	sc.jonfreyTick = fn
 }
 
 type Status struct {
@@ -102,8 +109,38 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Auto-curate LLM agora é gerido pelo Jonfrey (action auto_curate_high_confidence).
-	// Ver internal/handlers/admin/jonfrey.go.
+	// Job do Jonfrey — executa actions habilitadas a cada 1 min se enabled
+	// Cada action checa internamente o JonfreyConfig.IntervalMinutes via last_run_at.
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(1*time.Minute),
+			gocron.NewTask(func() {
+				if sc.jonfreyTick == nil {
+					return // callback ainda não registrado
+				}
+				cfg, err := sc.storeRef.GetJonfreyConfig()
+				if err != nil || !cfg.Enabled {
+					return
+				}
+				// Respeita IntervalMinutes do JonfreyConfig
+				if cfg.LastRunAt.Valid {
+					interval := time.Duration(cfg.IntervalMinutes) * time.Minute
+					if interval <= 0 {
+						interval = 60 * time.Minute
+					}
+					if time.Since(cfg.LastRunAt.Time) < interval {
+						return
+					}
+				}
+				slog.Info("scheduler: jonfrey tick")
+				sc.jonfreyTick(ctx)
+			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
 
 	// Job de sync de grupos WA — atualiza member_count a cada 30min
 	if sc.storeRef != nil {
