@@ -46,9 +46,11 @@ function ChannelHistory({ channelId }: { channelId: string }) {
     delivered: 'success', sending: 'warning', failed: 'danger', pending: 'default', pending_approval: 'warning',
   }
 
-  // Split: pending_approval = "a enviar", others = "já enviados"
-  const toSend = entries.filter((e: any) => e.status === 'pending_approval')
-  const sent   = entries.filter((e: any) => e.status !== 'pending_approval')
+  // Split: pending/pending_approval/queued = "a enviar" (ainda não chegou ao grupo)
+  //        delivered/failed/sent = "já enviados"
+  const NOT_SENT = new Set(['pending', 'pending_approval', 'queued'])
+  const toSend = entries.filter((e: any) => NOT_SENT.has(e.status))
+  const sent   = entries.filter((e: any) => !NOT_SENT.has(e.status))
 
   const renderRow = (e: any, i: number) => {
     let msgText = ''
@@ -114,7 +116,7 @@ function ChannelHistory({ channelId }: { channelId: string }) {
       {toSend.length > 0 && (
         <div className="border border-warning/40 rounded-md overflow-hidden">
           <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
-            <p className="text-sm font-medium text-fg">A enviar · aguardando aprovação ({toSend.length})</p>
+            <p className="text-sm font-medium text-fg">A enviar · na fila de entrega ({toSend.length})</p>
             <a href="/" className="text-xs text-accent hover:underline">Aprovar →</a>
           </div>
           <div className="overflow-x-auto">

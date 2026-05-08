@@ -748,6 +748,27 @@ export function TabOverview() {
   })
   const fullAutoMode = !!appConfig?.full_auto_mode
 
+  const toggleFullAuto = useMutation({
+    mutationFn: (v: boolean) => apiClient.put('/api/config', { ...appConfig, full_auto_mode: v }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+  })
+
+  const approveAllMut = useMutation({
+    mutationFn: () => apiClient.post('/api/dispatches/approve-all'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto-match'] })
+      qc.invalidateQueries({ queryKey: ['config'] })
+    },
+  })
+
+  // Conta pendentes
+  const { data: pendingCount } = useQuery<number>({
+    queryKey: ['dispatches', 'pending-count'],
+    queryFn: () => apiClient.get('/api/dispatches/pending').then(r =>
+      Array.isArray(r.data) ? r.data.length : (r.data?.total ?? 0)).catch(() => 0),
+    refetchInterval: 15_000,
+  })
+
   // Mantém o toggle global sync com Jonfrey: ligar/desligar aqui afeta ambos.
   const toggleMut = useMutation({
     mutationFn: async (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) => {
@@ -855,6 +876,43 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
+
+      {/* ── Painel de envio: modo de despacho ── */}
+      <div className={`border rounded-md p-4 flex items-start gap-4 ${fullAutoMode ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'}`}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-fg">
+              {fullAutoMode ? '✅ Full-auto ativo — mensagens enviadas automaticamente' : '⚠️ Modo manual — mensagens aguardam aprovação humana'}
+            </p>
+          </div>
+          <p className="text-xs text-fg-3 mt-0.5">
+            {fullAutoMode
+              ? 'Cada match de produto→canal dispara a mensagem direto para o grupo WA/TG sem revisão.'
+              : 'Cada match cria um disparo mas não envia. São os "pendentes" no header. Ative Full-auto ou aprove manualmente.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!fullAutoMode && (pendingCount ?? 0) > 0 && (
+            <button
+              type="button"
+              disabled={approveAllMut.isPending}
+              onClick={() => approveAllMut.mutate()}
+              className="text-xs bg-accent text-white rounded px-3 py-1.5 hover:bg-accent/90 disabled:opacity-50"
+            >
+              {approveAllMut.isPending ? 'Aprovando…' : `Enviar ${pendingCount} pendentes agora`}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={toggleFullAuto.isPending}
+            onClick={() => toggleFullAuto.mutate(!fullAutoMode)}
+            className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullAutoMode ? 'bg-success' : 'bg-border'} disabled:opacity-50`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullAutoMode ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      </div>
+
       {/* KPI + Parâmetros globais inline */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
