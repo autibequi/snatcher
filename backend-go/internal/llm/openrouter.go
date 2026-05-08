@@ -29,10 +29,20 @@ func NewOpenRouter(apiKey string) *OpenRouterClient {
 }
 
 type orRequest struct {
-	Model       string      `json:"model"`
-	Messages    []orMessage `json:"messages"`
-	MaxTokens   int         `json:"max_tokens,omitempty"`
-	Temperature float64     `json:"temperature,omitempty"`
+	Model       string       `json:"model"`
+	Messages    []orMessage  `json:"messages"`
+	MaxTokens   int          `json:"max_tokens,omitempty"`
+	Temperature float64      `json:"temperature,omitempty"`
+	Reasoning   *orReasoning `json:"reasoning,omitempty"`
+}
+
+// orReasoning controla chain-of-thought em modelos reasoning (deepseek-v4, r1, gpt-5, etc).
+// Default global desligado — evita truncamento (response_truncated finish_reason=length)
+// quando max_tokens é apertado pra JSON e o modelo gasta tudo no reasoning antes do output.
+// Doc: https://openrouter.ai/docs/use-cases/reasoning-tokens
+type orReasoning struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 type orMessage struct {
@@ -73,11 +83,13 @@ func (c *OpenRouterClient) Complete(ctx context.Context, prompt string, opts Opt
 		temp = 0.3
 	}
 
+	reasoningOff := false
 	payload := orRequest{
 		Model:       model,
 		Messages:    []orMessage{{Role: "user", Content: prompt}},
 		MaxTokens:   maxTokens,
 		Temperature: temp,
+		Reasoning:   &orReasoning{Enabled: &reasoningOff, Effort: "minimal"},
 	}
 
 	var lastErr error
