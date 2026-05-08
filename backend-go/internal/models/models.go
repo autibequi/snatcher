@@ -811,8 +811,8 @@ type JonfreyConfig struct {
 	UpdatedAt       time.Time      `db:"updated_at" json:"updated_at"`
 }
 
-// Ad é um anúncio recorrente customizado (texto+imagem) que dispara num schedule
-// até atingir active_until. Diferente de Dispatch (one-shot).
+// Ad é um anúncio recorrente customizado (texto+imagem) PAGO por um cliente,
+// que dispara num schedule até atingir active_until. Diferente de Dispatch (one-shot).
 type Ad struct {
 	ID                int64          `db:"id" json:"id"`
 	Name              string         `db:"name" json:"name"`
@@ -827,6 +827,12 @@ type Ad struct {
 	DispatchCount     int            `db:"dispatch_count" json:"dispatch_count"`
 	CreatedAt         time.Time      `db:"created_at" json:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at" json:"updated_at"`
+	// Billing & tracking (migration 0107)
+	ClientName        string         `db:"client_name" json:"client_name"`
+	PaidAmount        float64        `db:"paid_amount" json:"paid_amount"`
+	ShortID           NullString     `db:"short_id" json:"short_id,omitempty"`
+	ClickCount        int            `db:"click_count" json:"click_count"`
+	TargetURL         string         `db:"target_url" json:"target_url"`
 }
 
 // AdActive retorna true se o anúncio está dentro da janela de ativação.

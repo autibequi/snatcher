@@ -48,6 +48,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/channels', label: 'Canais', icon: '📢' },
       { to: '/links', label: 'Links públicos', icon: '🔗' },
+      { to: '/ads', label: 'Anúncios pagos', icon: '💸' },
     ],
   },
   {

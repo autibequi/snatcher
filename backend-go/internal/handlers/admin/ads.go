@@ -29,6 +29,10 @@ type adRequest struct {
 	ScheduleCron string  `json:"schedule_cron"`
 	ActiveUntil  *string `json:"active_until"` // RFC3339
 	Enabled      *bool   `json:"enabled"`
+	// Billing
+	ClientName  string  `json:"client_name"`
+	PaidAmount  float64 `json:"paid_amount"`
+	TargetURL   string  `json:"target_url"`
 }
 
 func (req adRequest) toModel() models.Ad {
@@ -39,6 +43,9 @@ func (req adRequest) toModel() models.Ad {
 		GroupIDs:     pq.Int64Array(req.GroupIDs),
 		ScheduleCron: req.ScheduleCron,
 		Enabled:      true,
+		ClientName:   req.ClientName,
+		PaidAmount:   req.PaidAmount,
+		TargetURL:    req.TargetURL,
 	}
 	if req.ImageURL != "" {
 		a.ImageURL = models.NullString{NullString: sql.NullString{String: req.ImageURL, Valid: true}}
@@ -95,6 +102,14 @@ func (h *AdsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := req.toModel()
+
+	// Gera short_id pra rastrear cliques se há target_url
+	if a.TargetURL != "" {
+		if shortID, err := h.store.GetOrCreateShortLink(a.TargetURL, "ad"); err == nil && shortID != "" {
+			a.ShortID = models.NullString{NullString: sql.NullString{String: shortID, Valid: true}}
+		}
+	}
+
 	id, err := h.store.CreateAd(a)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

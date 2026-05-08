@@ -271,4 +271,5 @@ type Store interface {
 	UpdateAd(a models.Ad) error
 	DeleteAd(id int64) error
 	MarkAdDispatched(id int64) error
+	IncrementAdClicks(shortID string, n int) error
 }

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { KpiCard } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
-import { AdsSection } from '../components/dashboard/AdsSection'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
 import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
@@ -174,9 +173,6 @@ export default function Dashboard() {
 
       {/* ── 3. OperationInbox ───────────────────────────────────────────────── */}
       <OperationInbox />
-
-      {/* ── 4. Anúncios recorrentes ─────────────────────────────────────────── */}
-      <AdsSection />
 
       {/* ── 3. KPIs — 4 cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

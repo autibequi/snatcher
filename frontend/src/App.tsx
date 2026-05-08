@@ -92,6 +92,7 @@ const Analytics = lazy(() => import('./pages/Analytics'))
 const Automations = lazy(() => import('./pages/Automations'))
 const AutomationsByChannel = lazy(() => import('./pages/AutomationsByChannel'))
 const Jonfrey = lazy(() => import('./pages/Jonfrey'))
+const Ads = lazy(() => import('./pages/Ads'))
 const Setup = lazy(() => import('./pages/Setup'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
@@ -129,6 +130,7 @@ export default function App() {
               <Route path="automations" element={<Automations />} />
               <Route path="automations/channels" element={<AutomationsByChannel />} />
               <Route path="automations/jonfrey" element={<Jonfrey />} />
+              <Route path="ads" element={<Ads />} />
               <Route path="compose" element={<Composer />} />
               <Route path="logs" element={<Logs />} />
               <Route path="catalog" element={<Catalog />} />

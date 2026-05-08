@@ -16,6 +16,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/crawlers': 'Crawlers',
   '/channels': 'Canais',
   '/links': 'Links',
+  '/ads': 'Anúncios pagos',
   '/groups': 'Grupos',
   '/accounts': 'Contas',
   '/affiliates': 'Afiliados',
