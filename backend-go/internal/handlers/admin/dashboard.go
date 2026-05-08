@@ -654,9 +654,9 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	_ = h.db.GetContext(ctx, &uninspected, `SELECT COUNT(*) FROM catalogproduct WHERE inspected = false OR inspected IS NULL`)
 	lines = append(lines, fmt.Sprintf("- produtos auditados: %d / a auditar: %d", inspected, uninspected))
 
-	// Canais ativos
+	// Canais ativos — tabela: channel (sem s)
 	var channelsActive int
-	_ = h.db.GetContext(ctx, &channelsActive, `SELECT COUNT(*) FROM channels WHERE active = true`)
+	_ = h.db.GetContext(ctx, &channelsActive, `SELECT COUNT(*) FROM channel WHERE active = true`)
 	lines = append(lines, fmt.Sprintf("- canais ativos: %d", channelsActive))
 
 	return strings.Join(lines, "\n")
