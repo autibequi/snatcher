@@ -145,6 +145,7 @@ func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
 func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	if limit <= 0 { limit = 50 }
 	var out []models.AutoMatchLog
+	// Exclui dispatches com pending_approval do cooldown — sem aprovação o produto ficaria bloqueado pra sempre.
 	err := s.db.Select(&out, `
 		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
 		       COALESCE(p.canonical_name, '') as product_name,
@@ -159,6 +160,8 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 		FROM auto_match_logs l
 		LEFT JOIN catalogproduct p ON p.id = l.product_id
 		LEFT JOIN channel c ON c.id = l.channel_id
+		LEFT JOIN dispatches d ON d.id = l.dispatch_id
+		WHERE d.id IS NULL OR d.status != 'pending_approval'
 		ORDER BY l.created_at DESC LIMIT $1`, limit)
 	return out, err
 }

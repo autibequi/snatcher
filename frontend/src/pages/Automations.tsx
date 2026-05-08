@@ -1023,7 +1023,7 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
               <tr
                 key={row.channel_id}
                 className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                onClick={() => onOpenDrawer(row)}
+                onClick={() => navigate(`/channels/${row.channel_id}`)}
               >
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <button
@@ -1054,33 +1054,37 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                   {a?.updated_at ? fmtDate(a.updated_at) : '—'}
                 </td>
                 <td className="px-4 py-3 text-sm text-fg-2">
-                  {a?.enabled && a?.auto_match_enabled && globalPreview && !channelsWithQueue.has(row.channel_id) ? (
-                    <span
-                      title="Nenhum produto na fila para este canal"
-                      className="inline-flex items-center gap-1 text-xs text-warning font-medium"
-                    >
-                      ⚠ sem fila
-                    </span>
+                  {a?.enabled && a?.auto_match_enabled ? (
+                    channelsWithQueue.has(row.channel_id) ? (
+                      <span className="text-xs text-success">na fila ✓</span>
+                    ) : (
+                      <span className="inline-flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 text-xs text-warning font-medium" title="Nenhum produto na fila — todos em cooldown ou sem score suficiente">
+                          ⚠ sem fila
+                        </span>
+                        {a?.updated_at && (
+                          <span className="text-[10px] text-fg-3">
+                            {(() => {
+                              const interval = 60 // minutos — ciclo do scheduler
+                              const last = new Date(a.updated_at).getTime()
+                              const next = last + interval * 60_000
+                              const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
+                              return diff === 0 ? 'próx: agora' : `próx: ~${diff}min`
+                            })()}
+                          </span>
+                        )}
+                      </span>
+                    )
                   ) : '—'}
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={e => { e.stopPropagation(); onOpenDrawer(row) }}
-                      className="text-xs text-fg-3 hover:text-fg border border-border rounded px-2 py-1"
-                      title="Edição rápida de automação"
-                    >
-                      ⚡ Automação
-                    </button>
-                    <button
-                      type="button"
-                      onClick={e => { e.stopPropagation(); navigate(`/channels/${row.channel_id}`) }}
-                      className="text-xs text-accent hover:underline"
-                    >
-                      Configurar &rarr;
-                    </button>
-                  </div>
+                <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/channels/${row.channel_id}`)}
+                    className="text-xs text-accent hover:underline"
+                  >
+                    Configurar &rarr;
+                  </button>
                 </td>
               </tr>
             )
