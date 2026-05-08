@@ -2005,13 +2005,15 @@ func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) {
 		return nil, nil
 	}
 	var ids []int64
+	// Match normalizado: lower + unaccent dos dois lados.
+	// "Fogão" (keyword) bate com "FOGAO" (título), evita duplicatas na taxonomia.
 	err := s.db.Select(&ids, `
 		WITH matched AS (
 			SELECT id FROM taxonomy
 			WHERE status = 'approved' AND active = TRUE
 			  AND EXISTS (
 			    SELECT 1 FROM unnest(keywords) AS kw
-			    WHERE position(lower(kw) IN lower($1)) > 0
+			    WHERE position(lower(unaccent(kw)) IN lower(unaccent($1))) > 0
 			  )
 		)
 		UPDATE taxonomy SET detect_count = detect_count + 1, last_detected_at = now()
