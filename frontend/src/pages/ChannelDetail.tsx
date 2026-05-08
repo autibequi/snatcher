@@ -368,6 +368,17 @@ export default function ChannelDetail() {
   })
   const [showAddGroup, setShowAddGroup] = React.useState(false)
   const [search, setSearch] = React.useState('')
+  const [editingInviteLink, setEditingInviteLink] = React.useState<Record<number, string>>({})
+
+  const updateInviteLinkMut = useMutation({
+    mutationFn: ({ groupId, link }: { groupId: number; link: string }) =>
+      apiClient.patch(`/api/groups/${groupId}`, { invite_link: link }),
+    onSuccess: (_, { groupId }) => {
+      qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
+      setEditingInviteLink(prev => { const n = { ...prev }; delete n[groupId]; return n })
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar link'),
+  })
 
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', { channelId: id }],
@@ -571,6 +582,7 @@ export default function ChannelDetail() {
                       <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Plataforma</th>
                       <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
                       <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Membros</th>
+                      <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Link de convite</th>
                       <th className="px-4 py-2"></th>
                     </tr>
                   </thead>
@@ -583,6 +595,38 @@ export default function ChannelDetail() {
                           <Badge variant={g.status === 'active' ? 'success' : 'warning'} size="sm">{g.status}</Badge>
                         </td>
                         <td className="px-4 py-2.5 text-right text-fg-2">{g.member_count ?? 0}</td>
+                        <td className="px-4 py-2.5 min-w-[200px]">
+                          {editingInviteLink[g.id] !== undefined ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                autoFocus
+                                type="url"
+                                placeholder="https://chat.whatsapp.com/..."
+                                value={editingInviteLink[g.id]}
+                                onChange={e => setEditingInviteLink(prev => ({ ...prev, [g.id]: e.target.value }))}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') updateInviteLinkMut.mutate({ groupId: g.id, link: editingInviteLink[g.id] })
+                                  if (e.key === 'Escape') setEditingInviteLink(prev => { const n = { ...prev }; delete n[g.id]; return n })
+                                }}
+                                className="flex-1 text-xs border border-accent rounded px-2 py-1 bg-surface text-fg outline-none min-w-0"
+                              />
+                              <button type="button"
+                                onClick={() => updateInviteLinkMut.mutate({ groupId: g.id, link: editingInviteLink[g.id] })}
+                                className="text-xs text-success hover:underline whitespace-nowrap">✓</button>
+                              <button type="button"
+                                onClick={() => setEditingInviteLink(prev => { const n = { ...prev }; delete n[g.id]; return n })}
+                                className="text-xs text-fg-3 hover:text-fg">✕</button>
+                            </div>
+                          ) : (
+                            <button type="button"
+                              onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: g.invite_link ?? '' }))}
+                              className="text-xs text-left truncate max-w-[180px] block">
+                              {g.invite_link
+                                ? <span className="text-accent font-mono truncate">{g.invite_link}</span>
+                                : <span className="text-fg-3 italic">+ definir link</span>}
+                            </button>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-right">
                           <button
                             type="button"
