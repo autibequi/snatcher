@@ -31,60 +31,128 @@ function ChannelHistory({ channelId }: { channelId: string }) {
     queryKey: ['channels', channelId, 'history'],
     queryFn: () => apiClient.get(`/api/channels/${channelId}/history`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 30_000,
+    refetchInterval: 15_000,
   })
 
+  const { data: preview } = useQuery<{ items: { product_id: number; product_name: string; score: number; price: number; already_sent: boolean }[] }>({
+    queryKey: ['automations', channelId, 'preview'],
+    queryFn: () => apiClient.get(`/api/automations/${channelId}/preview`).then(r => r.data).catch(() => ({ items: [] })),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+  const queueItems = (preview?.items ?? []).filter(i => !i.already_sent)
+
   const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
-    delivered: 'success', sending: 'warning', failed: 'danger', pending: 'default',
+    delivered: 'success', sending: 'warning', failed: 'danger', pending: 'default', pending_approval: 'warning',
+  }
+
+  // Split: pending_approval = "a enviar", others = "já enviados"
+  const toSend = entries.filter((e: any) => e.status === 'pending_approval')
+  const sent   = entries.filter((e: any) => e.status !== 'pending_approval')
+
+  const renderRow = (e: any, i: number) => {
+    let msgText = ''
+    try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
+    const groupName = e.group_name || `grupo #${e.group_id}`
+    return (
+      <tr key={`${e.dispatch_id}-${i}`}
+        className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
+        onClick={() => setPreviewText(msgText)} title="Clique para ver preview WA">
+        <td className="px-4 py-2.5 text-fg max-w-xs">
+          <p className="truncate text-xs">{msgText || `#${e.dispatch_id}`}</p>
+        </td>
+        <td className="px-4 py-2.5 text-fg-2 text-xs">{groupName}</td>
+        <td className="px-4 py-2.5">
+          <Badge variant={statusVariant[e.status] ?? 'default'} size="sm">{e.status}</Badge>
+        </td>
+        <td className="px-4 py-2.5 text-fg-3 text-xs text-right">
+          {new Date(e.created_at).toLocaleString('pt-BR')}
+        </td>
+      </tr>
+    )
   }
 
   if (isLoading) return <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
-  if (!entries.length) return <p className="text-sm text-fg-3">Nenhum disparo para este canal ainda.</p>
 
   return (
-    <>
+    <div className="space-y-5">
       {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
+
+      {/* Próximos (na fila de score) */}
       <div className="border border-border rounded-md overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-surface-2 border-b border-border">
-              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th>
-              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Grupo</th>
-              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
-              <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e: any, i: number) => {
-              let msgText = ''
-              try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
-              const groupName = e.group_name || `grupo #${e.group_id}`
-              return (
-                <tr
-                  key={`${e.dispatch_id}-${i}`}
-                  className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                  onClick={() => setPreviewText(msgText)}
-                  title="Clique para ver preview WA"
-                >
-                  <td className="px-4 py-2.5 text-fg max-w-xs">
-                    <p className="truncate text-xs">{msgText || `#${e.dispatch_id}`}</p>
-                    <p className="text-xs text-accent opacity-60 mt-0.5">ver preview →</p>
-                  </td>
-                  <td className="px-4 py-2.5 text-fg-2 text-xs">{groupName}</td>
+        <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+          <p className="text-sm font-medium text-fg">Próximos disparos · na fila</p>
+          <p className="text-xs text-fg-3">Produtos com score suficiente pra disparar no próximo ciclo</p>
+        </div>
+        {queueItems.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila agora.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-border">
+              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Produto</th>
+              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Score</th>
+              <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Preço</th>
+            </tr></thead>
+            <tbody>
+              {queueItems.slice(0, 10).map(item => (
+                <tr key={item.product_id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{item.product_name}</td>
                   <td className="px-4 py-2.5">
-                    <Badge variant={statusVariant[e.status] ?? 'default'} size="sm">{e.status}</Badge>
+                    <span className={`text-xs font-semibold ${item.score >= 70 ? 'text-success' : 'text-warning'}`}>{item.score.toFixed(0)}</span>
                   </td>
-                  <td className="px-4 py-2.5 text-fg-3 text-xs text-right">
-                    {new Date(e.created_at).toLocaleString('pt-BR')}
+                  <td className="px-4 py-2.5 text-xs text-fg-2">
+                    {item.price > 0 ? `R$ ${item.price.toFixed(2)}` : '—'}
                   </td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        </div>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    </>
+
+      {/* A enviar (pending_approval) */}
+      {toSend.length > 0 && (
+        <div className="border border-warning/40 rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
+            <p className="text-sm font-medium text-fg">A enviar · aguardando aprovação ({toSend.length})</p>
+            <a href="/" className="text-xs text-accent hover:underline">Aprovar →</a>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-surface-2 border-b border-border">
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Grupo</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
+                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th>
+              </tr></thead>
+              <tbody>{toSend.map(renderRow)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Já enviados */}
+      <div className="border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+          <p className="text-sm font-medium text-fg">Já enviados</p>
+        </div>
+        {sent.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-fg-3">Nenhum disparo enviado ainda.</p>
+        ) : (
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-surface-2 border-b border-border sticky top-0">
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Grupo</th>
+                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
+                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th>
+              </tr></thead>
+              <tbody>{sent.map(renderRow)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
