@@ -585,6 +585,13 @@ export default function ChannelDetail() {
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar link'),
   })
 
+  const fetchInviteMut = useMutation({
+    mutationFn: (groupId: number) =>
+      apiClient.post(`/api/groups/${groupId}/fetch-invite`).then(r => r.data as { invite_link?: string }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao buscar link via WhatsApp'),
+  })
+
   // Automação do canal
   const { data: automationRow, refetch: refetchAutomation } = useQuery<any>({
     queryKey: ['automations', id],
@@ -837,13 +844,24 @@ export default function ChannelDetail() {
                                 className="text-xs text-fg-3 hover:text-fg">✕</button>
                             </div>
                           ) : (
-                            <button type="button"
-                              onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: g.invite_link ?? '' }))}
-                              className="text-xs text-left truncate max-w-[180px] block">
-                              {g.invite_link
-                                ? <span className="text-accent font-mono truncate">{g.invite_link}</span>
-                                : <span className="text-fg-3 italic">+ definir link</span>}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button type="button"
+                                onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: g.invite_link ?? '' }))}
+                                className="text-xs text-left truncate max-w-[180px] block">
+                                {g.invite_link
+                                  ? <span className="text-accent font-mono truncate">{g.invite_link}</span>
+                                  : <span className="text-fg-3 italic">+ definir link</span>}
+                              </button>
+                              {g.platform === 'whatsapp' && g.jid && (
+                                <button type="button"
+                                  onClick={() => fetchInviteMut.mutate(g.id)}
+                                  disabled={fetchInviteMut.isPending && fetchInviteMut.variables === g.id}
+                                  title="Buscar link de convite via WhatsApp"
+                                  className="text-xs text-accent hover:underline disabled:opacity-50 whitespace-nowrap">
+                                  {fetchInviteMut.isPending && fetchInviteMut.variables === g.id ? '...' : '🔄 WA'}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-right">

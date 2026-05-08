@@ -103,6 +103,10 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 
 		scores := match.RankChannels(input, channels)
 
+		// Carregar taxonomias do produto para scoring detalhado
+		productTaxonomies, _ := st.ListProductTaxonomies(p.ID)
+		productAttrs := parseProductAttributes(p)
+
 		for _, s := range scores {
 			// Resolver threshold/maxPerRun/cooldown específicos do canal
 			auto, ok := automationsByChannelID[s.ChannelID]
@@ -238,12 +242,19 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				continue
 			}
 
-			_ = st.CreateAutoMatchLog(models.AutoMatchLog{
+			logID, err := st.CreateAutoMatchLog(models.AutoMatchLog{
 				ProductID:  p.ID,
 				ChannelID:  s.ChannelID,
 				DispatchID: dispatchID,
 				Score:      s.Value,
 			})
+			if err == nil && logID > 0 {
+				// Calcular score detalhado com breakdown e persisti-lo
+				ch := channelsByID[s.ChannelID]
+				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, match.Weights{})
+				breakdownJSON, _ := json.Marshal(detailedResult.Breakdown)
+				_ = st.UpdateAutoMatchScoreBreakdown(logID, breakdownJSON, detailedResult.Reasons)
+			}
 
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)
 			sentByChannel[s.ChannelID]++
@@ -273,4 +284,21 @@ func buildAutoMatchMessage(p models.CatalogProduct) string {
 		return fmt.Sprintf("🔥 %s\n💰 R$ %.2f\n\n{link}", name, price)
 	}
 	return "🔥 " + name + "\n\n{link}"
+}
+
+// parseProductAttributes extrai mapa de atributos do campo Attributes (JSONB) do produto.
+// Formato esperado: {"color": [1, 2], "size": [3, 4]}
+// Se o campo estiver vazio ou inválido, retorna map vazio.
+func parseProductAttributes(p models.CatalogProduct) map[string][]int64 {
+	result := make(map[string][]int64)
+	if len(p.Attributes) == 0 {
+		return result
+	}
+	err := json.Unmarshal(p.Attributes, &result)
+	if err != nil {
+		// Log opcional se quiser
+		slog.Warn("parse product attributes", "product_id", p.ID, "err", err)
+		return make(map[string][]int64)
+	}
+	return result
 }

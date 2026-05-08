@@ -559,9 +559,140 @@ function ErrorsTab({ dispatches, crawlLogs }: { dispatches: Dispatch[]; crawlLog
   )
 }
 
+// ── MatchLogs subcomponent ────────────────────────────────────────────────────
+
+interface MatchLog {
+  id: number
+  product_id: number
+  channel_id: number
+  score: number
+  score_breakdown?: Record<string, number>
+  match_reasons?: string[]
+  false_positive?: boolean
+  false_positive_reason?: string
+  false_positive_marked_at?: string
+  created_at: string
+}
+
+function MatchLogs() {
+  const [expandedId, setExpandedId] = React.useState<number | null>(null)
+  const qc = useQueryClient()
+
+  const { data: logs = [], isLoading } = useQuery<MatchLog[]>({
+    queryKey: ['match-logs'],
+    queryFn: () => apiClient.get('/api/match-logs?limit=50').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 30_000,
+  })
+
+  const markFalsePositiveMut = useMutation({
+    mutationFn: (logId: number) => {
+      const reason = window.prompt('Motivo do falso positivo:')
+      if (!reason) return Promise.reject('Cancelado')
+      return apiClient.post(`/api/match-logs/${logId}/false-positive`, { reason })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['match-logs'] })
+      alert('Falso positivo marcado.')
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao marcar falso positivo'),
+  })
+
+  if (isLoading) return <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+  if (!logs.length) return <EmptyState title="Nenhum match log" description="Os logs aparecem após matching automático de produtos." />
+
+  return (
+    <div className="space-y-2">
+      {logs.map(log => (
+        <div key={log.id} className="border border-border rounded-md bg-surface">
+          {/* Header row */}
+          <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-surface-2" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-fg">Produto #{log.product_id}</span>
+                <span className="text-xs text-fg-3">Canal #{log.channel_id}</span>
+                {log.false_positive && <Badge variant="danger" size="sm">Falso positivo</Badge>}
+              </div>
+              <div className="text-xs text-fg-3 mt-0.5">
+                {new Date(log.created_at).toLocaleString('pt-BR')}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-lg font-semibold text-fg">{log.score}</div>
+              <div className="text-xs text-fg-3">score</div>
+            </div>
+            <span className="ml-2 text-fg-3">{expandedId === log.id ? '▼' : '▶'}</span>
+          </div>
+
+          {/* Expandable content */}
+          {expandedId === log.id && (
+            <div className="border-t border-border p-3 space-y-3 bg-surface-2">
+              {/* Score breakdown */}
+              {log.score_breakdown && (
+                <div>
+                  <p className="text-xs font-medium text-fg mb-2">Score breakdown:</p>
+                  <div className="space-y-1">
+                    {Object.entries(log.score_breakdown).map(([key, val]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-xs text-fg-2 w-16">{key}:</span>
+                        <div className="flex-1 bg-surface rounded h-4 overflow-hidden relative">
+                          <div
+                            className="bg-accent h-full transition-all"
+                            style={{ width: `${Math.min(val * 100, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-mono text-fg-2 w-10 text-right">{(val * 100).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Match reasons */}
+              {log.match_reasons && log.match_reasons.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-fg mb-2">Motivos do match:</p>
+                  <ul className="text-xs text-fg-3 space-y-1 list-disc list-inside">
+                    {log.match_reasons.map((reason, i) => (
+                      <li key={i}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* False positive section */}
+              {log.false_positive && (
+                <div className="bg-danger/10 border border-danger/30 rounded p-2">
+                  <p className="text-xs font-medium text-danger mb-1">Falso positivo marcado</p>
+                  <p className="text-xs text-danger/70">{log.false_positive_reason}</p>
+                  <p className="text-xs text-danger/60 mt-1">
+                    {log.false_positive_marked_at && new Date(log.false_positive_marked_at).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              )}
+
+              {/* Mark false positive button */}
+              {!log.false_positive && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => markFalsePositiveMut.mutate(log.id)}
+                  loading={markFalsePositiveMut.isPending}
+                  className="w-full"
+                >
+                  Marcar como falso positivo
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main Logs page ────────────────────────────────────────────────────────────
 
-type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors' | 'llm'
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors' | 'llm' | 'match_logs'
 
 export default function Logs() {
   const navigate = useNavigate()
@@ -656,6 +787,7 @@ export default function Logs() {
     { id: 'dispatches', label: 'Disparos', count: items.length },
     { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length },
     { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
+    { id: 'match_logs', label: 'Matches' },
     { id: 'llm', label: 'LLM' },
     { id: 'errors', label: 'Erros', count: errorCount },
   ]
@@ -776,6 +908,7 @@ export default function Logs() {
       {/* Tab content */}
       {logTab === 'crawlers' && <CrawlerLogs />}
       {logTab === 'scheduled' && <ScheduledDispatches />}
+      {logTab === 'match_logs' && <MatchLogs />}
       {logTab === 'llm' && <LLMLogs />}
       {logTab === 'errors' && <ErrorsTab dispatches={items} crawlLogs={crawlLogs} />}
 

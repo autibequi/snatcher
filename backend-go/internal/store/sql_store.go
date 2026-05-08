@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"snatcher/backendv2/internal/models"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,12 +74,14 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 	return err
 }
 
-func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) error {
-	_, err := s.db.Exec(`
+func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`
 		INSERT INTO auto_match_logs (product_id, channel_id, dispatch_id, score)
-		VALUES ($1, $2, $3, $4)`,
-		log.ProductID, log.ChannelID, log.DispatchID, log.Score)
-	return err
+		VALUES ($1, $2, $3, $4)
+		RETURNING id`,
+		log.ProductID, log.ChannelID, log.DispatchID, log.Score).Scan(&id)
+	return id, err
 }
 
 func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
@@ -1979,6 +1982,46 @@ func (s *SQLStore) ListTaxonomy(taxType string) ([]models.Taxonomy, error) {
 	return out, err
 }
 
+// ListTaxonomyWithParent retorna entradas da taxonomia filtradas por type e/ou parent_id.
+// parentID == nil → sem filtro por parent; parentID com valor específico (inclusive 0) → filtro aplicado.
+func (s *SQLStore) ListTaxonomyWithParent(taxType string, parentID *int64) ([]models.Taxonomy, error) {
+	var out []models.Taxonomy
+
+	query := `
+		SELECT id, type, name, slug, keywords, parent_id, detect_count,
+		       last_detected_at, active, status, source, sample_text, created_at
+		FROM taxonomy WHERE status = 'approved' AND active = true`
+
+	var args []interface{}
+
+	if taxType != "" {
+		query += ` AND type = $1`
+		args = append(args, taxType)
+	}
+
+	if parentID != nil {
+		if len(args) == 0 {
+			query += ` AND parent_id = $1`
+		} else {
+			query += ` AND parent_id = $2`
+		}
+		args = append(args, *parentID)
+	}
+
+	query += ` ORDER BY name`
+
+	var err error
+	if len(args) == 0 {
+		err = s.db.Select(&out, query)
+	} else if len(args) == 1 {
+		err = s.db.Select(&out, query, args[0])
+	} else {
+		err = s.db.Select(&out, query, args[0], args[1])
+	}
+
+	return out, err
+}
+
 // IncrementTaxonomyDetect aumenta o contador de detecção e atualiza last_detected_at.
 // Usado pelo crawler/categorizador para tunning das keywords.
 func (s *SQLStore) IncrementTaxonomyDetect(id int64) error {
@@ -2072,6 +2115,19 @@ func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) {
 		WHERE id IN (SELECT id FROM matched)
 		RETURNING id`, text)
 	return ids, err
+}
+
+// GetTaxonomy retorna uma entrada de taxonomia por ID.
+func (s *SQLStore) GetTaxonomy(id int64) (*models.Taxonomy, error) {
+	var t models.Taxonomy
+	err := s.db.Get(&t, `SELECT * FROM taxonomy WHERE id = $1`, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &t, nil
 }
 
 // GetTaxonomyByIDs retorna as entradas de taxonomia para os IDs fornecidos.
@@ -2203,4 +2259,134 @@ func (s *SQLStore) ListPendingCurationProducts(limit int) ([]models.CatalogProdu
 		ORDER BY created_at DESC
 		LIMIT $1`, limit)
 	return out, err
+}
+
+// ListTaxonomyPatterns retorna padrões de taxonomy filtrados por IDs e kinds.
+func (s *SQLStore) ListTaxonomyPatterns(taxonomyIDs []int64, kinds []string) ([]models.TaxonomyPattern, error) {
+	var out []models.TaxonomyPattern
+	query := `
+		SELECT id, taxonomy_id, kind, value, weight, locale, source, active, created_at, updated_at
+		FROM taxonomy_pattern
+		WHERE 1=1`
+	args := []interface{}{}
+
+	if len(taxonomyIDs) > 0 {
+		query += ` AND taxonomy_id = ANY($` + strconv.Itoa(len(args)+1) + `)`
+		args = append(args, pq.Array(taxonomyIDs))
+	}
+
+	if len(kinds) > 0 {
+		query += ` AND kind = ANY($` + strconv.Itoa(len(args)+1) + `)`
+		args = append(args, pq.Array(kinds))
+	}
+
+	query += ` ORDER BY created_at DESC`
+
+	err := s.db.Select(&out, query, args...)
+	return out, err
+}
+
+// ListAllActivePatterns retorna todos os padrões ativos de taxonomy.
+func (s *SQLStore) ListAllActivePatterns() ([]models.TaxonomyPattern, error) {
+	var out []models.TaxonomyPattern
+	err := s.db.Select(&out, `
+		SELECT id, taxonomy_id, kind, value, weight, locale, source, active, created_at, updated_at
+		FROM taxonomy_pattern
+		WHERE active = true
+		ORDER BY created_at DESC`)
+	return out, err
+}
+
+// MaxTaxonomyPatternUpdatedAt retorna o timestamp mais recente de atualização em taxonomy_pattern.
+func (s *SQLStore) MaxTaxonomyPatternUpdatedAt() (time.Time, error) {
+	var maxTime *time.Time
+	err := s.db.Get(&maxTime, `SELECT MAX(updated_at) FROM taxonomy_pattern`)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if maxTime == nil {
+		return time.Time{}, nil
+	}
+	return *maxTime, nil
+}
+
+// UpsertProductTaxonomy insere ou atualiza um link de produto para taxonomy (role, confidence, source).
+func (s *SQLStore) UpsertProductTaxonomy(productID, taxonomyID int64, role string, confidence float64, source string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO catalogproduct_taxonomy (product_id, taxonomy_id, role, confidence, source, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (product_id, taxonomy_id) DO UPDATE SET
+			role = EXCLUDED.role,
+			confidence = EXCLUDED.confidence,
+			source = EXCLUDED.source`, productID, taxonomyID, role, confidence, source)
+	return err
+}
+
+// ListProductTaxonomies retorna todas as taxonomias associadas a um produto.
+func (s *SQLStore) ListProductTaxonomies(productID int64) ([]models.CatalogProductTaxonomy, error) {
+	var out []models.CatalogProductTaxonomy
+	err := s.db.Select(&out, `
+		SELECT product_id, taxonomy_id, role, confidence, source, created_at
+		FROM catalogproduct_taxonomy
+		WHERE product_id = $1
+		ORDER BY confidence DESC, created_at DESC`, productID)
+	return out, err
+}
+
+// MarkAutoMatchFalsePositive marca um auto_match_log como falso positivo com motivo.
+func (s *SQLStore) MarkAutoMatchFalsePositive(logID int64, reason string) error {
+	_, err := s.db.Exec(`
+		UPDATE auto_match_logs
+		SET false_positive = true,
+		    false_positive_reason = $1,
+		    false_positive_marked_at = NOW()
+		WHERE id = $2`, reason, logID)
+	return err
+}
+
+// ListFalsePositiveLogs retorna logs de auto_match marcados como falso positivo nos últimos N dias.
+func (s *SQLStore) ListFalsePositiveLogs(sinceDays int) ([]models.AutoMatchLog, error) {
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT id, product_id, variant_id, audience_id, score, score_breakdown, match_reasons,
+		       false_positive, false_positive_reason, false_positive_marked_at, created_at
+		FROM auto_match_logs
+		WHERE false_positive = true AND false_positive_marked_at >= NOW() - INTERVAL '1 day' * $1
+		ORDER BY false_positive_marked_at DESC`, sinceDays)
+	return out, err
+}
+
+// UpdateAutoMatchScoreBreakdown atualiza score_breakdown e match_reasons de um log.
+func (s *SQLStore) UpdateAutoMatchScoreBreakdown(logID int64, breakdown []byte, reasons []string) error {
+	_, err := s.db.Exec(`
+		UPDATE auto_match_logs
+		SET score_breakdown = $1,
+		    match_reasons = $2
+		WHERE id = $3`, breakdown, pq.Array(reasons), logID)
+	return err
+}
+
+// UpdateProductAttributesJSON atualiza o campo attributes (JSONB) de um produto.
+func (s *SQLStore) UpdateProductAttributesJSON(productID int64, attrs []byte) error {
+	_, err := s.db.Exec(`
+		UPDATE catalogproduct
+		SET attributes = $1
+		WHERE id = $2`, attrs, productID)
+	return err
+}
+
+// GetVariantBySourceSubID retorna uma variante por source e sub_id.
+func (s *SQLStore) GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error) {
+	var v models.CatalogVariant
+	err := s.db.Get(&v, `
+		SELECT id, product_id, source, source_sub_id, url, title, short_id,
+		       price, discount, discount_pct, stock, is_available, specs,
+		       created_at, updated_at
+		FROM catalogvariant
+		WHERE source = $1 AND source_sub_id = $2
+		LIMIT 1`, source, subid)
+	if err == sql.ErrNoRows {
+		return v, false, nil
+	}
+	return v, err == nil, err
 }

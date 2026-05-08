@@ -3,7 +3,10 @@ package pipeline
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
+	"net/url"
+	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 	"strings"
@@ -16,6 +19,66 @@ import (
 const fuzzyThreshold = 0.80 // legado, mantido para compat
 const matchHighConfidence = 0.90
 const matchGrayLow = 0.65
+
+var patternCache = match.NewPatternCache()
+
+// canonicalizeURL normaliza URL removendo parâmetros de tracking e fragmentos
+func canonicalizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	// Remove tracking params
+	q := u.Query()
+	trackingParams := []string{"utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+		"tag", "ref", "fbclid", "gclid", "mc_cid", "mc_eid"}
+	for _, p := range trackingParams {
+		q.Del(p)
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	return u.String()
+}
+
+// mapTaxonomyTypeToRole mapeia TaxonomyType para o role apropriado
+func mapTaxonomyTypeToRole(taxonomyType string, parentID *int64) string {
+	switch taxonomyType {
+	case "brand":
+		return "brand"
+	case "category":
+		if parentID == nil || *parentID == 0 {
+			return "primary_category"
+		}
+		return "subcategory"
+	case "color":
+		return "attribute_color"
+	case "size":
+		return "attribute_size"
+	case "voltage":
+		return "attribute_voltage"
+	case "capacity":
+		return "attribute_capacity"
+	default:
+		return "attribute_other"
+	}
+}
+
+// buildAttributesJSON constrói JSON JSONB com atributos agrupados por tipo
+func buildAttributesJSON(hits []match.TaxonomyHit) []byte {
+	attrs := make(map[string][]int64)
+	for _, hit := range hits {
+		role := mapTaxonomyTypeToRole(hit.TaxonomyType, hit.ParentID)
+		// Só mapeamos atributos, não categorias/brands
+		if strings.HasPrefix(role, "attribute_") {
+			key := strings.TrimPrefix(role, "attribute_")
+			attrs[key] = append(attrs[key], hit.TaxonomyID)
+		}
+	}
+	data, _ := json.Marshal(attrs)
+	return data
+}
 
 // ProcessCrawlResults normaliza CrawlResults não processados e os associa ao catálogo.
 func ProcessCrawlResults(ctx context.Context, st store.Store) error {
@@ -57,53 +120,73 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 }
 
 func processResult(
-	_ context.Context,
+	ctx context.Context,
 	st store.Store,
 	r models.CrawlResult,
 	products []models.CatalogProduct,
 	keywords []models.GroupingKeyword,
 ) (int64, error) {
-	// Verifica se já existe por URL
-	existing, found, err := st.GetVariantByURL(r.URL)
-	if err != nil {
-		return 0, err
-	}
-	if found {
-		// URL já no catálogo — atualiza preço se mudou
-		if existing.Price != r.Price {
-			existing.Price = r.Price
-			_ = st.UpdateCatalogVariant(existing)
-			_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
-				VariantID: existing.ID,
-				Price:     r.Price,
-			})
-			// Atualiza lowest_price no produto pai
-			updateLowestPrice(st, existing.CatalogProductID)
+	// PASSO 1: Dedup por (source, source_subid)
+	if r.SourceSubID.Valid && r.SourceSubID.String != "" {
+		variant, found, err := st.GetVariantBySourceSubID(r.Source, r.SourceSubID.String)
+		if err == nil && found {
+			// UPDATE price + INSERT pricehistoryv2
+			if variant.Price != r.Price {
+				variant.Price = r.Price
+				_ = st.UpdateCatalogVariant(variant)
+				_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
+					VariantID: variant.ID,
+					Price:     r.Price,
+				})
+				updateLowestPrice(st, variant.CatalogProductID)
+			}
+			_ = st.ResetProductFailures(variant.CatalogProductID)
+			return variant.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, variant.ID)
 		}
-		// Reset failure count for successful re-crawl
-		_ = st.ResetProductFailures(existing.CatalogProductID)
-		return existing.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, existing.ID)
 	}
 
-	// Descarta resultados sem preço — produto sem preço não pode ser disparado
+	// PASSO 2: Dedup por URL canônica
+	canonURL := canonicalizeURL(r.URL)
+	variant, found, err := st.GetVariantByURL(canonURL)
+	if err == nil && found {
+		if variant.Price != r.Price {
+			variant.Price = r.Price
+			_ = st.UpdateCatalogVariant(variant)
+			_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
+				VariantID: variant.ID,
+				Price:     r.Price,
+			})
+			updateLowestPrice(st, variant.CatalogProductID)
+		}
+		_ = st.ResetProductFailures(variant.CatalogProductID)
+		return variant.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, variant.ID)
+	}
+
+	// Descarta resultados sem preço
 	if r.Price <= 0 {
 		return 0, st.MarkCrawlResultProcessed(r.ID, 0)
 	}
 
-	// Nova URL — normalizar e buscar produto matching
+	// PASSO 3: Fuzzy match com 3 zonas
 	canonical := NormalizeTitle(r.Title)
 	weight := ExtractWeight(r.Title)
 	variantLabel := ExtractVariantLabel(r.Title)
 
-	// Match com 3 zonas: top score + weight check
 	matchedProduct, matchScore, matchMethod := findBestMatch(canonical, weight, products)
 
 	var productID int64
-	if matchedProduct != nil {
+
+	switch {
+	case matchScore >= 0.90 && matchedProduct != nil:
+		// High confidence: create variant em produto existente
 		productID = matchedProduct.ID
-	} else {
+	case matchScore >= 0.65 && matchedProduct != nil:
+		// Gray zone: chama LLM tiebreaker (temporariamente: fallback pra criar novo)
+		// TODO: implementar callLLMTiebreaker com timeout 90s
+		productID = matchedProduct.ID // fallback: assume merge
+	default:
+		// Score < 0.65 OU nenhum match: criar novo produto
 		matchMethod = "new_product"
-		// Cria novo produto canônico
 		p := models.CatalogProduct{
 			CanonicalName: canonical,
 			Tags:          "[]",
@@ -125,55 +208,52 @@ func processResult(
 		matchedProduct = &products[len(products)-1]
 	}
 
-	// Aplica grouping keywords e enriquece tags com categorias detectadas
+	// PASSO 4: Enrich tags via patterns
+	_ = patternCache.Refresh(st)
+	hits := patternCache.MatchAllPatterns(canonical + " " + r.Title)
+
 	refreshedProduct, _ := st.GetCatalogProduct(productID)
-	tags := EnrichTags(refreshedProduct.CanonicalName, refreshedProduct.GetTags())
-	refreshedProduct.SetTags(tags)
-	_ = st.UpdateCatalogProduct(refreshedProduct)
-	applyKeywords(st, &refreshedProduct, r.Title, keywords)
 
-	// Detecta taxonomias (categorias/marcas) no nome canônico — incrementa
-	// detect_count das taxonomias matchadas para fine-tuning de keywords.
-	matchedIDs, _ := st.DetectAndUpsertTaxonomy(refreshedProduct.CanonicalName)
+	// Upsert cada hit em catalogproduct_taxonomy
+	for _, hit := range hits {
+		role := mapTaxonomyTypeToRole(hit.TaxonomyType, hit.ParentID)
+		_ = st.UpsertProductTaxonomy(productID, hit.TaxonomyID, role, hit.Confidence, "pipeline")
+	}
 
-	// Preenche brand a partir da taxonomia, se ainda não preenchida
-	if !refreshedProduct.Brand.Valid && len(matchedIDs) > 0 {
-		if taxEntries, err := st.GetTaxonomyByIDs(matchedIDs); err == nil {
-			for _, t := range taxEntries {
-				if t.Type == "brand" {
-					refreshedProduct.Brand = models.NullString{NullString: sql.NullString{String: t.Name, Valid: true}}
-					// Limpa duplicações da marca no canonical_name
-					refreshedProduct.CanonicalName = CleanTitle(refreshedProduct.CanonicalName, t.Name)
-					break
-				}
-			}
+	// PASSO 5: Sincroniza attributes JSONB
+	attrs := buildAttributesJSON(hits)
+	_ = st.UpdateProductAttributesJSON(productID, attrs)
+
+	// PASSO 6: Curation status
+	hasPrimary := false
+	hasBrand := false
+	for _, hit := range hits {
+		if hit.TaxonomyType == "category" && (hit.ParentID == nil || *hit.ParentID == 0) {
+			hasPrimary = true
+		}
+		if hit.TaxonomyType == "brand" {
+			hasBrand = true
 		}
 	}
 
-	// Triagem: produto sem marca detectada → pending (precisa revisão humana ou LLM).
-	// Com marca + categoria → auto (pipeline barato cobriu).
-	hasBrand := refreshedProduct.Brand.Valid && refreshedProduct.Brand.String != ""
-	hasCategory := len(matchedIDs) > 0 || len(refreshedProduct.GetTags()) > 0
-	if !hasBrand || !hasCategory {
-		if refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "auto" {
-			refreshedProduct.CurationStatus = "pending"
-		}
-	} else if refreshedProduct.CurationStatus == "" || refreshedProduct.CurationStatus == "pending" {
+	if hasPrimary && hasBrand {
 		refreshedProduct.CurationStatus = "auto"
+	} else {
+		refreshedProduct.CurationStatus = "pending"
 	}
 	_ = st.UpdateCatalogProduct(refreshedProduct)
 
-	// Cria variante com metadados de match (P-MERGE / task #35) e enriquecidos (task #34)
+	// Cria variante
 	v := models.CatalogVariant{
 		CatalogProductID: productID,
 		Title:            r.Title,
 		Price:            r.Price,
-		URL:              r.URL,
+		URL:              canonURL,
 		ImageURL:         r.ImageURL,
 		Source:           r.Source,
 		MatchConfidence:  models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: matchScore, Valid: matchScore > 0}},
 		MatchMethod:      models.NullString{NullString: sql.NullString{String: matchMethod, Valid: matchMethod != ""}},
-		Metadata:         r.Metadata, // propaga JSON enriquecido do crawler
+		Metadata:         r.Metadata,
 	}
 	if variantLabel != "" {
 		v.VariantLabel = models.NullString{NullString: sql.NullString{String: variantLabel, Valid: true}}
@@ -183,7 +263,7 @@ func processResult(
 		return 0, err
 	}
 
-	// Histórico de preço inicial
+	// Histórico de preço
 	_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
 		VariantID: variantID,
 		Price:     r.Price,
@@ -192,7 +272,7 @@ func processResult(
 	// Atualiza lowest_price
 	updateLowestPrice(st, productID)
 
-	// Reset failure count for successful crawl
+	// Reset failure count
 	_ = st.ResetProductFailures(productID)
 
 	return productID, st.MarkCrawlResultProcessed(r.ID, variantID)

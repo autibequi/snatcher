@@ -226,7 +226,7 @@ type Store interface {
 	HasDeliveredTarget(dispatchID int64) (bool, error)
 
 	// Auto Match
-	CreateAutoMatchLog(log models.AutoMatchLog) error
+	CreateAutoMatchLog(log models.AutoMatchLog) (int64, error)
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
 
 	// Match — CTR histórico
@@ -258,6 +258,7 @@ type Store interface {
 
 	// Taxonomy (categorias e marcas)
 	ListTaxonomy(taxType string) ([]models.Taxonomy, error)
+	ListTaxonomyWithParent(taxType string, parentID *int64) ([]models.Taxonomy, error)
 	IncrementTaxonomyDetect(id int64) error
 	CreateTaxonomy(t models.Taxonomy) (int64, error)
 	UpdateTaxonomy(t models.Taxonomy) error
@@ -265,6 +266,7 @@ type Store interface {
 	SetTaxonomyStatus(id int64, status string) error
 	ListPendingTaxonomy() ([]models.Taxonomy, error)
 	DetectAndUpsertTaxonomy(text string) ([]int64, error)
+	GetTaxonomy(id int64) (*models.Taxonomy, error)
 	GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error)
 	SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error)
 
@@ -283,4 +285,22 @@ type Store interface {
 	DeleteAd(id int64) error
 	MarkAdDispatched(id int64) error
 	IncrementAdClicks(shortID string, n int) error
+
+	// Taxonomy Patterns (PR-1: triage-refactor)
+	ListTaxonomyPatterns(taxonomyIDs []int64, kinds []string) ([]models.TaxonomyPattern, error)
+	ListAllActivePatterns() ([]models.TaxonomyPattern, error)
+	MaxTaxonomyPatternUpdatedAt() (time.Time, error)
+
+	// Product Taxonomy (PR-1: triage-refactor)
+	UpsertProductTaxonomy(productID, taxonomyID int64, role string, confidence float64, source string) error
+	ListProductTaxonomies(productID int64) ([]models.CatalogProductTaxonomy, error)
+
+	// Auto Match Log false positives and breakdown (PR-1: triage-refactor)
+	MarkAutoMatchFalsePositive(logID int64, reason string) error
+	ListFalsePositiveLogs(sinceDays int) ([]models.AutoMatchLog, error)
+	UpdateAutoMatchScoreBreakdown(logID int64, breakdown []byte, reasons []string) error
+
+	// Product attributes (PR-1: triage-refactor)
+	UpdateProductAttributesJSON(productID int64, attrs []byte) error
+	GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error)
 }

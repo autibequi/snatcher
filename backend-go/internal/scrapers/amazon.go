@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"strconv"
@@ -106,17 +107,27 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 			return
 		}
 		items = append(items, pipeline.Item{
-			Title:    title,
-			Price:    price,
-			URL:      link,
-			ImageURL: img,
-			Source:   "amazon",
+			Title:       title,
+			Price:       price,
+			URL:         link,
+			ImageURL:    img,
+			Source:      "amazon",
+			SourceSubID: asin,
 		})
 	})
 	return items, nil
 }
 
 func (s *AmazonScraper) Provider() string { return "amazon" }
+
+// extractAmazonASIN extrai ASIN da URL do Amazon
+func extractAmazonASIN(rawURL string) string {
+	re := regexp.MustCompile(`/(?:dp|gp/product)/([A-Z0-9]{10})`)
+	if m := re.FindStringSubmatch(rawURL); len(m) >= 2 {
+		return m[1]
+	}
+	return ""
+}
 
 // Plugin interface implementations for amazonScraper
 // ===================================================

@@ -157,6 +157,27 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionPauseDeadCrawlers,
 	},
+	"enrich_taxonomy_from_unmatched": {
+		Type:        "enrich_taxonomy_from_unmatched",
+		Category:    "curation",
+		Description: "Audita próximos 100 produtos sem categoria primária; agrupa por similaridade de título; sugere via LLM novas taxonomias + patterns se confiança ≥0.85",
+		UsesLLM:     true,
+		Run:         actionEnrichTaxonomyFromUnmatched,
+	},
+	"prune_false_positives": {
+		Type:        "prune_false_positives",
+		Category:    "curation",
+		Description: "Top 20 taxonomias flagged como falso positivo nos últimos 30 dias; sugere exclude_regex patterns via LLM para cada",
+		UsesLLM:     true,
+		Run:         actionPruneFalsePositives,
+	},
+	"refine_subcategories": {
+		Type:        "refine_subcategories",
+		Category:    "optimization",
+		Description: "Para cada categoria-raiz com >100 produtos sem subcategoria, LLM agrupa 50 amostras em 3-7 subcategorias coerentes; aplica se confiança ≥0.85",
+		UsesLLM:     true,
+		Run:         actionRefineSubcategories,
+	},
 }
 
 // ── Ações ──────────────────────────────────────────────────────────────────
@@ -1450,5 +1471,59 @@ func actionPauseDeadCrawlers(ctx context.Context, h *JonfreyHandler) (map[string
 	afterMap := map[string]any{"paused": paused, "paused_ids": pausedIDs}
 	reasoning := fmt.Sprintf("Identifiquei %d searchterms ativos sem resultados há 14+ dias e com 5+ tentativas falhadas — pausei %d para revisão manual.", len(deadTerms), paused)
 	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionEnrichTaxonomyFromUnmatched: audita próximos 100 produtos sem categoria primária
+// Agrupa por similaridade de título; pede LLM JSON com sugestões; aplica se confiança ≥0.85
+func actionEnrichTaxonomyFromUnmatched(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	// TODO: implementação completa
+	// 1. SELECT 100 produtos sem role='primary_category' em catalogproduct_taxonomy
+	// 2. Agrupar por similaridade (primeiras 2 palavras lowercase)
+	// 3. Para cada grupo, chamar LLM com batch de 20 produtos
+	// 4. LLM retorna JSON {groups: [{category_name, parent, patterns, confidence}]}
+	// 5. Se confidence ≥ 0.85, criar taxonomy entries + patterns
+	// 6. Retornar befre/after/reasoning
+
+	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
+}
+
+// actionPruneFalsePositives: top 20 taxonomias com false_positive flags
+// Para cada taxonomy_id, LLM sugere exclude_regex patterns
+func actionPruneFalsePositives(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	// TODO: implementação completa
+	// 1. SELECT taxonomy_id, COUNT(*) FROM auto_match_logs aml
+	//    JOIN catalogproduct_taxonomy cpt ON cpt.product_id = aml.product_id
+	//    WHERE aml.false_positive = true AND aml.created_at > now() - interval '30 days'
+	//    GROUP BY cpt.taxonomy_id ORDER BY COUNT DESC LIMIT 20
+	// 2. Para cada taxonomy_id top, pega 50 títulos de produtos com false_positive=true
+	// 3. Chama LLM: {exclude_regex_suggestions: [{pattern, reasoning}]}
+	// 4. Cria taxonomy_pattern com kind='exclude_regex', source='jonfrey', active=false (pendente aprovação)
+	// 5. Retornar before/after/reasoning
+
+	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
+}
+
+// actionRefineSubcategories: para cada categoria-raiz com >100 produtos sem subcategory
+// LLM agrupa amostras (50) em 3-7 subcategorias
+func actionRefineSubcategories(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	// TODO: implementação completa
+	// 1. SELECT t.id FROM taxonomy t WHERE t.type='category' AND t.parent_id IS NULL
+	// 2. Para cada categoria-raiz, contar produtos com role='primary_category' = $cat AND sem role='subcategory'
+	// 3. Se COUNT > 100, pegar 50 amostras de canonical_name
+	// 4. Chamar LLM com prompt: "agrupa esses títulos em 3-7 subcategorias coerentes"
+	//    Retorna JSON {subcategories: [{name, slug, patterns: [{kind, value}]}]}
+	// 5. Se confidence ≥ 0.85, criar taxonomy entries para cada subcategoria + patterns
+	// 6. Retornar before/after/reasoning
+
+	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
 }
 

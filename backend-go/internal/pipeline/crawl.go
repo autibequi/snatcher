@@ -13,11 +13,12 @@ import (
 
 // Item é o resultado bruto de um scraper.
 type Item struct {
-	Title    string
-	Price    float64
-	URL      string
-	ImageURL string
-	Source   string
+	Title      string
+	Price      float64
+	URL        string
+	ImageURL   string
+	Source     string
+	SourceSubID string // ASIN para Amazon, MLB para Mercado Livre, etc
 }
 
 // Scraper é a interface que cada marketplace implementa.
@@ -123,6 +124,10 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 		if item.ImageURL != "" {
 			imgNull = models.NullString{NullString: sql.NullString{String: item.ImageURL, Valid: true}}
 		}
+		var subidNull models.NullString
+		if item.SourceSubID != "" {
+			subidNull = models.NullString{NullString: sql.NullString{String: item.SourceSubID, Valid: true}}
+		}
 		_, err := st.InsertCrawlResult(models.CrawlResult{
 			SearchTermID: term.ID,
 			Title:        item.Title,
@@ -130,6 +135,7 @@ func CrawlSearchTerm(ctx context.Context, st store.Store, term models.SearchTerm
 			URL:          item.URL,
 			ImageURL:     imgNull,
 			Source:       item.Source,
+			SourceSubID:  subidNull,
 		})
 		if err != nil {
 			log.Error("insert crawl result", "err", err)

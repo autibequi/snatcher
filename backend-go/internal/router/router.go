@@ -79,17 +79,21 @@ func Build(
 	dash        := adminhnd.NewDashboardHandler(st, db)
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
-	taxonomy    := adminhnd.NewTaxonomyHandler(st)
-	curation    := adminhnd.NewCurationHandler(st, db, nil) // llmFn preenchido abaixo após composeH
-	autoMatch   := adminhnd.NewAutoMatchHandler(st)
-	linksH      := adminhnd.NewLinksHandler(st)
-	automations := adminhnd.NewAutomationsHandler(st)
-	jonfrey     := adminhnd.NewJonfreyHandler(st, db)
+	taxonomy      := adminhnd.NewTaxonomyHandler(st)
+	curation      := adminhnd.NewCurationHandler(st, db, nil) // llmFn preenchido abaixo após composeH
+	autoMatch     := adminhnd.NewAutoMatchHandler(st)
+	linksH        := adminhnd.NewLinksHandler(st)
+	automations   := adminhnd.NewAutomationsHandler(st)
+	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
 	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled
 	if sched != nil {
 		sched.SetJonfreyTick(jonfrey.RunCycle)
 	}
-	ads         := adminhnd.NewAdsHandler(st)
+	ads           := adminhnd.NewAdsHandler(st)
+
+	// PR-1: triage-refactor handlers
+	taxonomyPatterns := handlers.NewTaxonomyPattern(st)
+	matchLogs        := handlers.NewMatchLog(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *adminhnd.ComposeHandler
@@ -367,6 +371,20 @@ func Build(
 		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
 		r.Post("/api/auto-match/run-now", autoMatch.RunNow)
 		r.Post("/api/auto-match/dispatch-one", autoMatch.DispatchOne)
+
+		// PR-1: Taxonomy Patterns (triage-refactor)
+		r.Get("/api/taxonomy/patterns", taxonomyPatterns.ListTaxonomyPatterns)
+		r.Get("/api/taxonomy/patterns/active", taxonomyPatterns.ListAllActivePatterns)
+		r.Get("/api/taxonomy/patterns/max-updated-at", taxonomyPatterns.MaxPatternUpdatedAt)
+
+		// PR-1: Match Logs and Product Taxonomy (triage-refactor)
+		r.Get("/api/match-logs/products/{product_id}/taxonomies", matchLogs.ListProductTaxonomies)
+		r.Post("/api/match-logs/products/{product_id}/taxonomies", matchLogs.UpsertProductTaxonomy)
+		r.Get("/api/match-logs/false-positives", matchLogs.ListFalsePositiveLogs)
+		r.Post("/api/match-logs/{log_id}/false-positive", matchLogs.MarkFalsePositive)
+		r.Post("/api/match-logs/{log_id}/score-breakdown", matchLogs.UpdateScoreBreakdown)
+		r.Put("/api/match-logs/products/{product_id}/attributes", matchLogs.UpdateProductAttributes)
+		r.Get("/api/match-logs/variants/{source}/{sub_id}", matchLogs.GetVariantBySourceSubID)
 
 		// Short Links
 		r.Post("/api/links/shorten", linksH.Shorten)

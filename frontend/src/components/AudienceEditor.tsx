@@ -274,6 +274,92 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
         </div>
       </div>
 
+      {/* ─── Filtros estruturados (categorias/marcas via IDs) ─── */}
+      <div className="border-t border-border pt-3 mt-6">
+        <h3 className="text-sm font-semibold text-fg mb-3">Filtros estruturados</h3>
+        <div className="space-y-3">
+          {/* Categorias incluídas (parent_id=null) */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Categorias incluídas <span className="text-fg-3">(raiz)</span>
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=category&parent_id=null</p>
+            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+              TODO: MultiSelectAsync component (audience.include_category_ids)
+            </div>
+          </div>
+
+          {/* Subcategorias incluídas */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Subcategorias incluídas
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=category&parent_id=X</p>
+            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+              TODO: MultiSelectAsync component (audience.include_subcategory_ids)
+            </div>
+          </div>
+
+          {/* Marcas incluídas */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Marcas incluídas
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=brand</p>
+            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+              TODO: MultiSelectAsync component (audience.include_brand_ids)
+            </div>
+          </div>
+
+          {/* Marcas/Categorias excluídas */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Marcas/Categorias excluídas (hard filter)
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Produtos com essas marcas/categorias NÃO passam (score=0)</p>
+            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+              TODO: MultiSelectAsync components (audience.exclude_brand_ids, audience.exclude_category_ids)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Atributos requeridos e preferidos ─── */}
+      <div className="border-t border-border pt-3">
+        <h3 className="text-sm font-semibold text-fg mb-3">Atributos do produto</h3>
+        <div className="space-y-3">
+          {/* Atributos requeridos */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Atributos requeridos (hard filter)
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Produto DEVE ter todos os atributos selecionados (score=0 se não tiver)</p>
+            <div className="grid grid-cols-2 gap-2">
+              {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
+                <div key={attr} className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+                  {attr}: TODO Dropdown
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Atributos preferidos */}
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">
+              Atributos preferidos (soft, contribui ao score)
+            </label>
+            <p className="text-xs text-fg-3 mb-2">Cada atributo satisfeito aumenta o score proporcionalmente</p>
+            <div className="grid grid-cols-2 gap-2">
+              {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
+                <div key={attr} className="text-xs text-fg-2 bg-surface-2 rounded p-2">
+                  {attr}: TODO Dropdown
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Gênero (não entra no score, é só metadado de audiência) */}
       <div className="border-t border-border pt-3">
         <label className="text-xs text-fg-2 block mb-1">

@@ -137,6 +137,13 @@ type AutoMatchLog struct {
 	ProductName string `db:"product_name" json:"product_name,omitempty"`
 	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
 	GroupNames  string `db:"group_names" json:"group_names,omitempty"` // CSV dos grupos que receberam o disparo
+
+	// migration 0113 — breakdown e false positive tracking
+	ScoreBreakdown        []byte        `db:"score_breakdown" json:"-"` // JSONB raw
+	MatchReasons          pq.StringArray `db:"match_reasons" json:"match_reasons,omitempty"`
+	FalsePositive         *bool         `db:"false_positive" json:"false_positive,omitempty"`
+	FalsePositiveReason   string        `db:"false_positive_reason" json:"false_positive_reason,omitempty"`
+	FalsePositiveMarkedAt NullTime      `db:"false_positive_marked_at" json:"false_positive_marked_at,omitempty"`
 }
 
 type WAAccount struct {
@@ -293,6 +300,8 @@ type CatalogProduct struct {
 	Inspected       bool       `db:"inspected" json:"inspected"`
 	InspectedAt     NullTime   `db:"inspected_at" json:"inspected_at,omitempty"`
 	InspectionNotes NullString `db:"inspection_notes" json:"inspection_notes,omitempty"`
+	// migration 0112 — atributos estruturados (cor, tamanho, voltagem, etc)
+	Attributes      []byte     `db:"attributes" json:"-"` // JSONB raw
 }
 
 func (p *CatalogProduct) GetTags() []string {
@@ -322,6 +331,7 @@ func (p CatalogProduct) MarshalJSON() ([]byte, error) {
 		Inspected           bool        `json:"inspected"`
 		InspectedAt         NullTime    `json:"inspected_at,omitempty"`
 		InspectionNotes     NullString  `json:"inspection_notes,omitempty"`
+		Attributes          json.RawMessage `json:"attributes,omitempty"`
 	}
 	return json.Marshal(shadow{
 		ID: p.ID, CanonicalName: p.CanonicalName, Brand: p.Brand,
@@ -331,6 +341,7 @@ func (p CatalogProduct) MarshalJSON() ([]byte, error) {
 		CurationStatus: p.CurationStatus, ConsecutiveFailures: p.ConsecutiveFailures,
 		Inactive: p.Inactive, Quantity: p.Quantity,
 		Inspected: p.Inspected, InspectedAt: p.InspectedAt, InspectionNotes: p.InspectionNotes,
+		Attributes: json.RawMessage(p.Attributes),
 	})
 }
 
@@ -407,6 +418,14 @@ type Audience struct {
 	// Weights — pontuação configurável por canal. Soma deve ficar próxima de 1.0.
 	// Se todos forem 0, usa defaults (Category 0.30, Brand 0.20, Drop 0.20, Price 0.15, History 0.15).
 	Weights AudienceWeights `json:"weights"`
+	// migration 0112 — taxonomy IDs para filtros estruturados
+	IncludeCategoryIDs    []int64               `json:"include_category_ids,omitempty"`
+	ExcludeCategoryIDs    []int64               `json:"exclude_category_ids,omitempty"`
+	IncludeSubcategoryIDs []int64               `json:"include_subcategory_ids,omitempty"`
+	IncludeBrandIDs       []int64               `json:"include_brand_ids,omitempty"`
+	ExcludeBrandIDs       []int64               `json:"exclude_brand_ids,omitempty"`
+	RequiredAttributes    map[string][]int64   `json:"required_attributes,omitempty"` // chaves: "color","size","voltage","capacity"
+	PreferredAttributes   map[string][]int64   `json:"preferred_attributes,omitempty"`
 }
 
 type AudienceWeights struct {
@@ -869,4 +888,28 @@ func (a Ad) IsActiveNow() bool {
 		return false
 	}
 	return true
+}
+
+// migration 0112 — TaxonomyPattern: padrões de matching para detection/enrichment
+type TaxonomyPattern struct {
+	ID         int64      `db:"id" json:"id"`
+	TaxonomyID int64      `db:"taxonomy_id" json:"taxonomy_id"`
+	Kind       string     `db:"kind" json:"kind"` // exact_keyword, contains_keyword, word_boundary, regex, exclude_regex, exclude_keyword
+	Value      string     `db:"value" json:"value"`
+	Weight     float64    `db:"weight" json:"weight"`
+	Locale     string     `db:"locale" json:"locale"`
+	Source     string     `db:"source" json:"source"` // seed, manual, llm, crawler
+	Active     bool       `db:"active" json:"active"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time  `db:"updated_at" json:"updated_at"`
+}
+
+// migration 0112 — CatalogProductTaxonomy: linking products to taxonomies com roles
+type CatalogProductTaxonomy struct {
+	ProductID  int64     `db:"product_id" json:"product_id"`
+	TaxonomyID int64     `db:"taxonomy_id" json:"taxonomy_id"`
+	Role       string    `db:"role" json:"role"` // primary_category, subcategory, brand, attribute_color, attribute_size, attribute_voltage, attribute_capacity, attribute_other
+	Confidence float64   `db:"confidence" json:"confidence"`
+	Source     string    `db:"source" json:"source"` // pipeline, manual, llm
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }

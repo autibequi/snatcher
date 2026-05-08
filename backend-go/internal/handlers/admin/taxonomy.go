@@ -29,14 +29,23 @@ func NewTaxonomyHandler(st store.Store) *TaxonomyHandler {
 func (h *TaxonomyHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 // List retorna entradas da taxonomia (categorias e/ou marcas) aprovadas.
-// GET /api/taxonomy?type=category|brand (type opcional)
+// GET /api/taxonomy?type=category|brand&parent_id=X (type, parent_id opcionais)
 func (h *TaxonomyHandler) List(w http.ResponseWriter, r *http.Request) {
 	taxType := r.URL.Query().Get("type")
 	if taxType != "" && taxType != "category" && taxType != "brand" {
 		writeErr(w, http.StatusBadRequest, "type must be 'category' or 'brand'")
 		return
 	}
-	out, err := h.store.ListTaxonomy(taxType)
+
+	parentIDStr := r.URL.Query().Get("parent_id")
+	var parentID *int64
+	if parentIDStr != "" {
+		if pid, err := strconv.ParseInt(parentIDStr, 10, 64); err == nil {
+			parentID = &pid
+		}
+	}
+
+	out, err := h.store.ListTaxonomyWithParent(taxType, parentID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

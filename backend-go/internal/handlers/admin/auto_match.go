@@ -386,7 +386,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 				errs = append(errs, dispErr.Error())
 				continue
 			}
-			_ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
+			_, _ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
 				ProductID:  p.ID,
 				ChannelID:  s.ChannelID,
 				DispatchID: dispatchID,
@@ -472,7 +472,7 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
+	_, _ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
 		ProductID:  req.ProductID,
 		ChannelID:  req.ChannelID,
 		DispatchID: dispatchID,

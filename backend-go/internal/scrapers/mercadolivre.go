@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"strconv"
@@ -60,6 +61,15 @@ func (s *MLScraper) Search(ctx context.Context, query string, minVal, maxVal flo
 
 func (s *MLScraper) Provider() string { return "mercadolivre" }
 
+// extractMercadoLivreID extrai MLB ID da URL
+func extractMercadoLivreID(rawURL string) string {
+	re := regexp.MustCompile(`MLB-?\d+`)
+	if m := re.FindString(rawURL); m != "" {
+		return strings.ReplaceAll(m, "-", "") // normaliza removendo dash
+	}
+	return ""
+}
+
 // searchAPI usa a API oficial do ML com OAuth2 client_credentials.
 func (s *MLScraper) searchAPI(ctx context.Context, query string, minVal, maxVal float64) ([]pipeline.Item, error) {
 	token, err := s.getToken(ctx)
@@ -101,11 +111,12 @@ func (s *MLScraper) searchAPI(ctx context.Context, query string, minVal, maxVal 
 			continue
 		}
 		out = append(out, pipeline.Item{
-			Title:    r.Title,
-			Price:    r.Price,
-			URL:      r.Permalink,
-			ImageURL: r.Thumbnail,
-			Source:   "mercadolivre",
+			Title:       r.Title,
+			Price:       r.Price,
+			URL:         r.Permalink,
+			ImageURL:    r.Thumbnail,
+			Source:      "mercadolivre",
+			SourceSubID: extractMercadoLivreID(r.Permalink),
 		})
 	}
 	return out, nil
@@ -193,11 +204,12 @@ func (s *MLScraper) searchHTML(ctx context.Context, query string, minVal, maxVal
 			link = u.String()
 		}
 		items = append(items, pipeline.Item{
-			Title:    title,
-			Price:    price,
-			URL:      link,
-			ImageURL: img,
-			Source:   "mercadolivre",
+			Title:       title,
+			Price:       price,
+			URL:         link,
+			ImageURL:    img,
+			Source:      "mercadolivre",
+			SourceSubID: extractMercadoLivreID(link),
 		})
 	})
 	return items, nil

@@ -252,6 +252,22 @@ function CatalogSidebar({
         </FilterSection>
       )}
 
+      {/* TODO: Subcategoria — filtro dinâmico */}
+      <FilterSection label="Subcategoria">
+        <div className="text-xs text-fg-3 p-2 bg-surface-2 rounded">
+          TODO: MultiSelect com subcategorias extraídas de catalogproduct_taxonomy
+        </div>
+      </FilterSection>
+
+      {/* TODO: Atributos — cor, tamanho, voltagem, capacidade */}
+      {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
+        <FilterSection key={attr} label={attr}>
+          <div className="text-xs text-fg-3 p-2 bg-surface-2 rounded">
+            TODO: MultiSelect com valores de catalogproduct.attributes.{attr.toLowerCase()}
+          </div>
+        </FilterSection>
+      ))}
+
       {/* Preço */}
       <FilterSection label="Preço (R$)" active={!!(priceMin || priceMax)}>
         <div className="flex items-center gap-1.5">
