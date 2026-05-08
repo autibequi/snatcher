@@ -3,7 +3,7 @@
 **Project root:** `/workspace/.cache/snatcher`
 **Plan source:** `/home/bardiel/.claude/plans/agora-avalie-todas-as-idempotent-milner.md`
 **Status:** PR-4 in progress (coder-haiku-2026-05-08)
-**Heartbeat:** 2026-05-08T23:07:00Z
+**Heartbeat:** 2026-05-09T00:15:00Z
 **Owner:** coder-haiku-20260508-0001
 
 ## Objetivo
@@ -21,6 +21,7 @@ Ler o plano completo em `/home/bardiel/.claude/plans/agora-avalie-todas-as-idemp
 
 ## Notas de Execução
 
+**Backend (PR-1,2,3 concluídos):**
 - [x] Migration 0114 criada: `/workspace/.cache/snatcher/backend-go/internal/db/migrations/0114_taxonomy_patterns_extra.sql`
 - [x] 362 patterns inseridos (word_boundary: 233, regex: 65, contains_keyword: 54, exclude_regex: 10)
 - [x] Brands (80 principais + 25 aliases + 10 excludes)
@@ -29,6 +30,19 @@ Ler o plano completo em `/home/bardiel/.claude/plans/agora-avalie-todas-as-idemp
 - [x] Raiz categorias (~30 patterns)
 - [x] Build/vet limpos
 - [x] Idempotência garantida (ON CONFLICT DO NOTHING em todos INSERTs)
+- [x] Handlers taxonomy-patterns e match-logs endpoints implementados (handlers/admin)
+- [x] Jonfrey actions (3 novas com stubs)
+
+**Frontend (PR-4 em progresso):**
+- [x] AudienceEditor.tsx: added filtros estruturados TODOs (include/exclude category/brand/subcategory, required/preferred attributes)
+- [x] Logs.tsx: MatchLogs component implementado com score breakdown visualization + false positive marking
+- [x] Catalog.tsx: added subcategory e attribute filters TODOs
+- [x] Taxonomy.tsx: implemented "Patterns" tab with full CRUD UI
+  - TaxonomySelector component para escolher taxonomy
+  - CreatePatternModal com kind/value/weight
+  - Patterns table mostra: kind | value | weight | status | source | edit/delete buttons
+  - TypeScript tipos e validações corretos
+  - Endpoints: GET /api/taxonomy/patterns?taxonomy_id=X, POST /api/taxonomy/patterns, DELETE /api/taxonomy/patterns/{id}
 
 ## Fases (executar em sequência, cada uma com build/vet limpos)
 
