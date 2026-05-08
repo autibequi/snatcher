@@ -40,8 +40,8 @@ const navGroups: NavGroup[] = [
     label: 'Fontes & Produtos',
     items: [
       { to: '/crawlers', label: 'Crawlers', icon: '🔄' },
+      { to: '/curation', label: 'Triagem', icon: '✋' },
       { to: '/catalog', label: 'Catálogo', icon: '📦' },
-      { to: '/curation', label: 'Curadoria', icon: '✋' },
     ],
   },
   {

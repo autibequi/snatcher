@@ -240,121 +240,129 @@ export default function Catalog() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Filtros (título vai no topbar) */}
-      <div className="px-6 py-2 flex gap-2 border-b border-border flex-shrink-0 flex-wrap items-center">
-        {selected.size > 0 && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              const ids = Array.from(selected).join(',')
-              navigate(`/compose?productIds=${ids}`)
-            }}
-          >
-            Disparar selecionados ({selected.size})
-          </Button>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            if (confirm('Inspecionar via LLM os próximos 30 produtos não auditados? Roda em background.')) {
-              inspectMut.mutate()
-            }
-          }}
-          loading={inspectMut.isPending}
-          title="LLM audita produtos não inspecionados, corrige nome/marca/tags e marca como inspecionado"
-        >
-          🔍 Inspecionar
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) {
-              reprocessMut.mutate()
-            }
-          }}
-          loading={reprocessMut.isPending}
-          title="Roda taxonomia + limpeza de título em todos os produtos"
-        >
-          🔄 Reprocessar
-        </Button>
-        <div className="w-48">
+    <div className="flex h-full overflow-hidden">
+
+      {/* ── Sidebar de filtros ── */}
+      <aside className="w-52 flex-shrink-0 border-r border-border overflow-y-auto bg-surface flex flex-col gap-5 px-4 py-5">
+        {/* Busca */}
+        <div>
           <Input
             placeholder="Buscar..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <select
-          className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
-          value={source}
-          onChange={e => setSource(e.target.value)}
-        >
-          <option value="">Todas as fontes</option>
-          <option value="amazon">Amazon</option>
-          <option value="mercadolivre">Mercado Livre</option>
-          <option value="magalu">Magalu</option>
-          <option value="shopee">Shopee</option>
-          <option value="aliexpress">AliExpress</option>
-          <option value="kabum">Kabum</option>
-          <option value="americanas">Americanas</option>
-          <option value="casasbahia">Casas Bahia</option>
-        </select>
-        {categories.length > 0 && (
-          <SearchSelect
-            placeholder="Todas as categorias"
-            value={tagFilter}
-            onChange={setTagFilter}
-            options={categories.map(c => ({ value: c, label: c }))}
-          />
-        )}
-        {brands.length > 0 && (
-          <SearchSelect
-            placeholder="Todas as marcas"
-            value={brandFilter}
-            onChange={setBrandFilter}
-            options={brands.map(b => ({ value: b, label: b }))}
-          />
-        )}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-fg-3">R$</span>
-          <input
-            type="number" min="0" placeholder="Mín"
-            value={priceMin}
-            onChange={e => setPriceMin(e.target.value)}
-            className="w-20 text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent h-8"
-          />
-          <span className="text-xs text-fg-3">–</span>
-          <input
-            type="number" min="0" placeholder="Máx"
-            value={priceMax}
-            onChange={e => setPriceMax(e.target.value)}
-            className="w-20 text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent h-8"
-          />
+
+        {/* Fonte */}
+        <div>
+          <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Fonte</p>
+          <div className="space-y-1">
+            {['', 'amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'kabum', 'americanas', 'casasbahia'].map(s => (
+              <button
+                key={s || '_all'}
+                type="button"
+                onClick={() => setSource(s)}
+                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${source === s ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
+              >
+                {s === '' ? 'Todas' : s === 'mercadolivre' ? 'Mercado Livre' : s === 'casasbahia' ? 'Casas Bahia' : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        <label className="flex items-center gap-2 h-8 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={e => setShowInactive(e.target.checked)}
-            className="accent-accent"
-          />
+
+        {/* Categorias */}
+        {categories.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Categoria</p>
+            <div className="space-y-1">
+              <button type="button" onClick={() => setTagFilter('')}
+                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!tagFilter ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+                Todas
+              </button>
+              {categories.slice(0, 20).map(c => (
+                <button key={c} type="button" onClick={() => setTagFilter(c === tagFilter ? '' : c)}
+                  className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${tagFilter === c ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Marcas */}
+        {brands.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Marca</p>
+            <div className="space-y-1">
+              <button type="button" onClick={() => setBrandFilter('')}
+                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!brandFilter ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+                Todas
+              </button>
+              {brands.slice(0, 20).map(b => (
+                <button key={b} type="button" onClick={() => setBrandFilter(b === brandFilter ? '' : b)}
+                  className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${brandFilter === b ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+                  {b}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Faixa de preço */}
+        <div>
+          <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Preço (R$)</p>
+          <div className="flex items-center gap-1.5">
+            <input type="number" min="0" placeholder="Mín"
+              value={priceMin} onChange={e => setPriceMin(e.target.value)}
+              className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+            <span className="text-fg-3 text-xs">–</span>
+            <input type="number" min="0" placeholder="Máx"
+              value={priceMax} onChange={e => setPriceMax(e.target.value)}
+              className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
+        </div>
+
+        {/* Mostrar inativos */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-accent" />
           <span className="text-xs text-fg-2">Mostrar inativos</span>
         </label>
+
+        {/* Limpar */}
         {(search || source || tagFilter || brandFilter || priceMin || priceMax) && (
-          <button type="button" onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax('') }}
-            className="text-xs text-fg-3 hover:text-danger">
+          <button type="button"
+            onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax('') }}
+            className="text-xs text-danger hover:underline text-left">
             × Limpar filtros
           </button>
         )}
-        <span className="text-xs text-fg-3 ml-auto">
-          {totalProducts} produto{totalProducts !== 1 ? 's' : ''}
-          {totalPages > 1 && ` · pág. ${page + 1}/${totalPages}`}
-        </span>
-      </div>
+      </aside>
+
+      {/* ── Conteúdo principal ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Barra de ações + contagem */}
+        <div className="px-4 py-2 flex gap-2 border-b border-border flex-shrink-0 flex-wrap items-center">
+          {selected.size > 0 && (
+            <Button variant="primary" size="sm"
+              onClick={() => { const ids = Array.from(selected).join(','); navigate(`/compose?productIds=${ids}`) }}>
+              Disparar selecionados ({selected.size})
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" loading={inspectMut.isPending}
+            title="LLM audita produtos não inspecionados"
+            onClick={() => { if (confirm('Inspecionar via LLM os próximos 30 produtos não auditados? Roda em background.')) inspectMut.mutate() }}>
+            🔍 Inspecionar
+          </Button>
+          <Button variant="secondary" size="sm" loading={reprocessMut.isPending}
+            title="Roda taxonomia + limpeza de título em todos os produtos"
+            onClick={() => { if (confirm('Reprocessar TODA a base do catálogo? Pode demorar alguns segundos.')) reprocessMut.mutate() }}>
+            🔄 Reprocessar
+          </Button>
+          <span className="text-xs text-fg-3 ml-auto">
+            {totalProducts} produto{totalProducts !== 1 ? 's' : ''}
+            {totalPages > 1 && ` · pág. ${page + 1}/${totalPages}`}
+          </span>
+        </div>
 
       {/* Tabela */}
       <div className="flex-1 overflow-y-auto">
@@ -598,6 +606,7 @@ export default function Catalog() {
             </button>
           </div>
         )}
+      </div>
       </div>
 
     </div>
