@@ -93,13 +93,26 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 
 func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts Options) (string, error) {
 	out, err := c.complete(ctx, prompt, opts)
-	// Retry: se WebSearch causou empty/erro, tenta sem o plugin (modelos free quebram com web plugin).
-	if err != nil && opts.WebSearch && (strings.Contains(err.Error(), "empty content") || strings.Contains(err.Error(), "no JSON found")) {
-		retryOpts := opts
-		retryOpts.WebSearch = false
-		retryOpts.Operation = opts.Operation + "_retry_nowebsearch"
-		if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
-			return out2, nil
+	if err != nil {
+		errStr := err.Error()
+		// Retry sem reasoning: modelo exige reasoning obrigatório e rejeita o disable
+		if !c.reasoningEnabled && strings.Contains(errStr, "Reasoning is mandatory") {
+			saved := c.reasoningEnabled
+			c.reasoningEnabled = true // não envia o bloco reasoning neste retry
+			out2, err2 := c.complete(ctx, prompt, opts)
+			c.reasoningEnabled = saved
+			if err2 == nil {
+				return out2, nil
+			}
+		}
+		// Retry sem web search: modelos free quebram com web plugin
+		if opts.WebSearch && (strings.Contains(errStr, "empty content") || strings.Contains(errStr, "no JSON found")) {
+			retryOpts := opts
+			retryOpts.WebSearch = false
+			retryOpts.Operation = opts.Operation + "_retry_nowebsearch"
+			if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
+				return out2, nil
+			}
 		}
 	}
 	return out, err

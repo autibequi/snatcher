@@ -5,7 +5,7 @@ import "fmt"
 func embeddedPrompts() []*Prompt {
 	compose := mustParse("compose", "v1", `---
 model: anthropic/claude-3.5-sonnet
-max_tokens: 400
+max_tokens: 1000
 temperature: 0.7
 ---
 Você é um copywriter de promoções para grupos WhatsApp/Telegram brasileiros.
