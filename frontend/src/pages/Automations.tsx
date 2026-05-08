@@ -693,6 +693,33 @@ export function Drawer({ row, onClose }: DrawerProps) {
 
 // ── Aba Visao Geral ──────────────────────────────────────────────────────────
 
+interface JonfreyActionLite {
+  id: number
+  action_type: string
+  status: string
+  reasoning?: string | null
+  triggered_by: string
+  created_at: string
+}
+
+const JONFREY_STATUS_COLORS: Record<string, string> = {
+  pending: 'text-fg-3 border-fg-3/30 bg-fg-3/5',
+  running: 'text-accent border-accent/30 bg-accent/5',
+  success: 'text-success border-success/30 bg-success/10',
+  failed:  'text-danger border-danger/30 bg-danger/10',
+  skipped: 'text-warning border-warning/30 bg-warning/10',
+}
+
+function relativeFromNow(s: string): string {
+  const ms = Date.now() - new Date(s).getTime()
+  const m = Math.floor(ms / 60000)
+  if (m < 1) return 'agora'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
+}
+
 export function TabOverview() {
   const qc = useQueryClient()
 
@@ -703,11 +730,37 @@ export function TabOverview() {
     staleTime: 15_000,
   })
 
+  // Mantém o toggle global sync com Jonfrey: ligar/desligar aqui afeta ambos.
   const toggleMut = useMutation({
-    mutationFn: (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) =>
-      apiClient.post('/api/auto-match/toggle', payload).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['auto-match'] }),
+    mutationFn: async (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) => {
+      const tasks: Promise<unknown>[] = [
+        apiClient.post('/api/auto-match/toggle', payload),
+      ]
+      // Espelha enabled também no Jonfrey
+      if (payload.enabled !== undefined) {
+        tasks.push(apiClient.put('/api/jonfrey/config', { enabled: payload.enabled }).catch(() => null))
+      }
+      const [r] = await Promise.all(tasks)
+      return (r as any)?.data
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto-match'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  // Lê config do Jonfrey para mostrar status sincronizado e últimas ações
+  const { data: jonfreyConfig } = useQuery<{ enabled: boolean; interval_minutes: number; last_run_at?: string | null }>({
+    queryKey: ['jonfrey-config'],
+    queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
+    refetchInterval: 30_000,
+  })
+
+  const { data: jonfreyActions = [] } = useQuery<JonfreyActionLite[]>({
+    queryKey: ['jonfrey-actions-recent'],
+    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => (Array.isArray(r.data) ? r.data : []).slice(0, 20)).catch(() => []),
+    refetchInterval: 15_000,
   })
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
@@ -731,52 +784,88 @@ export function TabOverview() {
   const h24ago = now - 24 * 3600 * 1000
   const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
+  const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Banner: Jonfrey assume orquestração */}
-      <div className="rounded-md border border-accent/40 bg-accent/5 p-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-sm font-medium text-fg">🤖 Orquestrado pelo Jonfrey</p>
-          <p className="text-xs text-fg-3">
-            Auto-match agora roda dentro do ciclo do Jonfrey (Automações → Jonfrey).
-            Aqui ficam só o kill-switch global e os defaults usados quando o canal não tem override.
+    <div className="p-6 space-y-5">
+      {/* Kill-switch global sincronizado com Jonfrey */}
+      <div className={`rounded-xl border-2 transition-colors p-4 flex items-center justify-between gap-3 flex-wrap ${fullyEnabled ? 'border-accent bg-accent/5' : 'border-border bg-surface'}`}>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-fg">
+            {fullyEnabled ? '🤖 Automações ativas' : 'Automações pausadas'}
+          </p>
+          <p className="text-xs text-fg-3 mt-0.5">
+            {fullyEnabled
+              ? `Jonfrey acorda a cada ${jonfreyConfig?.interval_minutes ?? 60}min · score min ${threshold} · max ${maxPerRun}/ciclo. ${jonfreyConfig?.last_run_at ? `Último ciclo há ${relativeFromNow(jonfreyConfig.last_run_at)}.` : ''}`
+              : 'Toggle desligado — auto-match e ciclos do Jonfrey pausados.'}
+            {' '}
+            <a href="/automations/jonfrey" className="text-accent hover:underline">Configurar →</a>
           </p>
         </div>
-        <a href="/automations/jonfrey" className="text-xs text-accent hover:underline whitespace-nowrap">
-          Abrir Jonfrey →
-        </a>
+        <button
+          type="button"
+          disabled={toggleMut.isPending}
+          onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
+          className={`relative w-14 h-7 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          aria-label={fullyEnabled ? 'Desativar automações' : 'Ativar automações'}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-7' : 'translate-x-0'}`} />
+        </button>
       </div>
 
-      {/* KPI mínimo: só disparos 24h */}
-      {isLoading ? (
-        <Skeleton className="h-20 w-full max-w-xs" />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
-          <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
-          <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
-        </div>
-      )}
+      {/* KPI compacto */}
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
+        <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
+      </div>
 
-      {/* Kill-switch global */}
-      <div className={`rounded-xl border-2 transition-colors p-5 ${enabled ? 'border-accent bg-accent/5' : 'border-border bg-surface'}`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-fg">{enabled ? 'Auto Match global ativado' : 'Auto Match global desativado'}</p>
-            <p className="text-xs text-fg-3 mt-0.5">
-              {enabled
-                ? `Score min ${threshold} · max ${maxPerRun}/ciclo (defaults — canais podem sobrescrever)`
-                : 'Desligado — Jonfrey vai pular a ação dispatch_auto_match.'}
-            </p>
-          </div>
+      {/* Log de automações — pega do Jonfrey */}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <p className="text-sm font-medium text-fg">Log de automações</p>
           <button
             type="button"
-            disabled={toggleMut.isPending}
-            onClick={() => toggleMut.mutate({ enabled: !enabled })}
-            className={`relative w-14 h-7 rounded-full transition-colors focus:outline-none overflow-hidden ${enabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            aria-label={enabled ? 'Desativar auto match global' : 'Ativar auto match global'}
+            onClick={() => qc.invalidateQueries({ queryKey: ['jonfrey-actions-recent'] })}
+            className="text-xs text-fg-3 hover:text-fg"
           >
-            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-7' : 'translate-x-0'}`} />
+            ↻
           </button>
+        </div>
+        {jonfreyActions.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-fg-3">Nenhuma ação registrada.</p>
+            <p className="text-xs text-fg-3 mt-1">
+              Ative o toggle acima ou{' '}
+              <a href="/automations/jonfrey" className="text-accent hover:underline">execute uma ação manualmente</a>.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {jonfreyActions.map(a => {
+              const cls = JONFREY_STATUS_COLORS[a.status] ?? JONFREY_STATUS_COLORS.pending
+              return (
+                <div key={a.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono uppercase tracking-wide flex-shrink-0 ${cls}`}>
+                    {a.status}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm text-fg font-mono truncate">{a.action_type}</p>
+                      <span className="text-[10px] text-fg-3">· {a.triggered_by}</span>
+                      <span className="text-[10px] text-fg-3 ml-auto whitespace-nowrap">{relativeFromNow(a.created_at)}</span>
+                    </div>
+                    {a.reasoning && (
+                      <p className="text-xs text-fg-3 mt-0.5 line-clamp-2">{a.reasoning}</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="px-4 py-2 border-t border-border bg-surface-2 text-xs text-fg-3 flex items-center justify-between">
+          <span>Mostra últimas {jonfreyActions.length} ações do Jonfrey</span>
+          <a href="/automations/jonfrey" className="text-accent hover:underline">Ver tudo →</a>
         </div>
       </div>
 

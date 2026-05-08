@@ -37,6 +37,7 @@ func (h *JonfreyHandler) SetCurationHandler(c *CurationHandler)      { h.curatio
 type actionDef struct {
 	Type        string
 	Description string
+	UsesLLM     bool // true = usa LLM (lento, custo); false = heurística/SQL pura (rápido, grátis)
 	// Run: executa a ação. Retorna (before, after, reasoning, err).
 	Run func(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error)
 }
@@ -45,51 +46,61 @@ var actionRegistry = map[string]actionDef{
 	"dispatch_auto_match": {
 		Type:        "dispatch_auto_match",
 		Description: "Roda o ciclo de auto-match: pontua produtos recentes contra canais ativos e dispara matches acima do threshold",
+		UsesLLM:     true, // o composer dentro do worker usa LLM pra gerar a copy do disparo
 		Run:         actionDispatchAutoMatch,
 	},
 	"expire_stale_dispatches": {
 		Type:        "expire_stale_dispatches",
 		Description: "Marca dispatch_targets pending há mais de 2h como failed",
+		UsesLLM:     false,
 		Run:         actionExpireStale,
 	},
 	"inspect_pending_products": {
 		Type:        "inspect_pending_products",
 		Description: "Audita via LLM os próximos 30 produtos não inspecionados",
+		UsesLLM:     true,
 		Run:         actionInspectPending,
 	},
 	"tune_thresholds": {
 		Type:        "tune_thresholds",
 		Description: "Avalia performance de cada automação ativa e ajusta thresholds via LLM",
+		UsesLLM:     true,
 		Run:         actionTuneThresholds,
 	},
 	"auto_curate_high_confidence": {
 		Type:        "auto_curate_high_confidence",
 		Description: "Auto-aprova produtos pending com sugestão LLM de alta confiança; rejeita lixo óbvio",
+		UsesLLM:     true,
 		Run:         actionAutoCurate,
 	},
 	"detect_failing_channel": {
 		Type:        "detect_failing_channel",
 		Description: "Detecta canais com CTR ruim ou delivery rate baixo nos últimos 14d e pausa automaticamente",
+		UsesLLM:     false,
 		Run:         actionDetectFailingChannel,
 	},
 	"mark_full_groups": {
 		Type:        "mark_full_groups",
 		Description: "Marca grupos WhatsApp com 1024+ membros como 'full' para entrarem em fallback",
+		UsesLLM:     false,
 		Run:         actionMarkFullGroups,
 	},
 	"cleanup_archived_groups": {
 		Type:        "cleanup_archived_groups",
 		Description: "Arquiva grupos com falhas recorrentes (last_error > 7d e múltiplas falhas)",
+		UsesLLM:     false,
 		Run:         actionCleanupGroups,
 	},
 	"audit_affiliate_coverage": {
 		Type:        "audit_affiliate_coverage",
 		Description: "Detecta marketplaces presentes no catálogo sem programa de afiliado configurado",
+		UsesLLM:     false,
 		Run:         actionAuditAffiliate,
 	},
 	"replenish_stagnant_crawlers": {
 		Type:        "replenish_stagnant_crawlers",
 		Description: "Identifica crawlers ativos sem produtos novos há 7+ dias para review/troca",
+		UsesLLM:     false,
 		Run:         actionReplenishCrawlers,
 	},
 }
@@ -325,10 +336,11 @@ func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	type item struct {
 		Type        string `json:"type"`
 		Description string `json:"description"`
+		UsesLLM     bool   `json:"uses_llm"`
 	}
 	out := []item{}
 	for _, a := range actionRegistry {
-		out = append(out, item{Type: a.Type, Description: a.Description})
+		out = append(out, item{Type: a.Type, Description: a.Description, UsesLLM: a.UsesLLM})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

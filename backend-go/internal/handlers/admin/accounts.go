@@ -812,6 +812,39 @@ func (e *evoClient) createGroup(ctx context.Context, name string) (map[string]an
 	return result, nil
 }
 
+// getGroupInviteCode busca o código de convite (e link) de um grupo via Evolution.
+func (e *evoClient) getGroupInviteCode(ctx context.Context, groupJID string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		e.baseURL+"/group/inviteCode/"+e.instance+"?groupJid="+groupJID, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("apiKey", e.apiKey)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("evolution inviteCode %d: %s", resp.StatusCode, string(body))
+	}
+	var body struct {
+		InviteCode string `json:"inviteCode"`
+		InviteUrl  string `json:"inviteUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	if body.InviteUrl != "" {
+		return body.InviteUrl, nil
+	}
+	if body.InviteCode != "" {
+		return "https://chat.whatsapp.com/" + body.InviteCode, nil
+	}
+	return "", fmt.Errorf("inviteCode vazio na resposta")
+}
+
 // createInstanceWithQR cria a instância pedindo QR code imediato.
 // Retorna base64 do QR se vier na resposta de criação (Evolution v2.3+).
 func (e *evoClient) createInstanceWithQR(ctx context.Context) (string, error) {

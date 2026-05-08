@@ -733,6 +733,29 @@ export default function GroupDetail() {
     enabled: !!id,
   })
 
+  // Hooks devem vir antes de qualquer early return (regra do React).
+  const audienceMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/groups/${id}/suggest-audience`)
+        .then(r => r.data as {
+          audience_summary?: string
+          age_range?: string
+          peak_hours?: string
+          interests?: string[]
+          best_categories?: string[]
+          engagement_tip?: string
+        }),
+  })
+
+  const fetchInviteMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/groups/${id}/fetch-invite`)
+        .then(r => r.data as { invite_link?: string; updated?: boolean }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', id] }),
+  })
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-4">
@@ -748,20 +771,6 @@ export default function GroupDetail() {
   }
 
   const memberCount = group.member_count ?? members.length
-
-  const audienceMut = useMutation({
-    mutationFn: () =>
-      apiClient
-        .post(`/api/groups/${id}/suggest-audience`)
-        .then(r => r.data as {
-          audience_summary?: string
-          age_range?: string
-          peak_hours?: string
-          interests?: string[]
-          best_categories?: string[]
-          engagement_tip?: string
-        }),
-  })
   const activeCount = group.active_members ?? members.filter(m => m.engagement === 'active' || m.engagement === 'engaged').length
   const dormantCount = group.dormant_members ?? members.filter(m => m.engagement === 'dormant').length
   const clicks30d = group.clicks_30d ?? 0
@@ -796,6 +805,17 @@ export default function GroupDetail() {
             >
               ✨ Inferir audiência
             </Button>
+            {group.platform === 'whatsapp' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={fetchInviteMut.isPending}
+                onClick={() => fetchInviteMut.mutate()}
+                title="Buscar invite link automaticamente via Evolution API"
+              >
+                🔗 Auto-buscar invite
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setShowInviteModal(true)}>
               Link de convite
             </Button>

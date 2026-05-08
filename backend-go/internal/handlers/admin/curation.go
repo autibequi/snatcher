@@ -624,7 +624,21 @@ func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client, job
 			src = *row.LowestPriceSource
 		}
 
-		prompt := fmt.Sprintf(`Você é um auditor de e-commerce. Inspecione este produto e indique se está pronto para envio em campanhas (precisa ter nome limpo, marca, categoria, preço e imagem).
+		prompt := fmt.Sprintf(`Você é um auditor de e-commerce que aprova produtos para anúncio em grupos de oferta WhatsApp/Telegram brasileiros.
+
+CRITÉRIO DE APROVAÇÃO (mínimo necessário pra publicar SEM postar algo errado):
+- Nome do produto está claro o suficiente pra leitor entender o que é (ex: "Whey Protein 900g Chocolate" — OK; "Produto Genérico" — NÃO).
+- Marca presente OU é dispensável (acessório genérico, item sem marca conhecida).
+- Preço presente e realista (> R$ 0).
+- Imagem presente.
+
+NÃO bloqueie por:
+- Quantidade ausente — opcional. Se conseguir extrair do título tudo bem, mas a falta dela NÃO impede aprovação.
+- Tags ausentes — opcional. Se conseguir sugerir tags úteis, ótimo, mas a falta NÃO impede aprovação.
+- Descrição curta — desde que o nome seja claro.
+
+ready_for_dispatch deve ser TRUE se o produto pode ser anunciado sem risco de informação enganosa. Seja LIBERAL.
+Use FALSE só quando há risco real de erro: nome confuso/ambíguo, preço suspeito, imagem quebrada.
 
 PRODUTO:
 - Nome: %s
@@ -638,14 +652,14 @@ PRODUTO:
 Responda SOMENTE em JSON:
 {
   "ready_for_dispatch": true|false,
-  "issues": ["lista de problemas encontrados"],
+  "issues": ["lista somente dos problemas BLOQUEANTES (vazia se aprovado)"],
   "corrections": {
     "canonical_name": "nome limpo e capitalizado, ou null se já está bom",
     "brand": "marca correta, ou null",
-    "add_tags": ["tags faltando para categorizar"],
+    "add_tags": ["tags úteis pra categorizar"],
     "quantity": "quantidade extraída, ou null"
   },
-  "summary": "uma frase explicando o estado"
+  "summary": "uma frase curta sobre o estado e a decisão"
 }
 
 Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)

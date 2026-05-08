@@ -308,6 +308,7 @@ func Build(
 		r.Delete("/api/groups/{id}", groups.Delete)
 		r.Get("/api/groups/{id}/members", groups.Members)
 		r.Post("/api/groups/{id}/suggest-audience", groups.SuggestAudience)
+		r.Post("/api/groups/{id}/fetch-invite", groups.FetchInvite)
 		r.Post("/api/groups/{id}/archive", groups.Archive)
 		r.Get("/api/groups/{id}/admins", groups.ListAdmins)
 		r.Post("/api/groups/{id}/admins", groups.AddAdmin)

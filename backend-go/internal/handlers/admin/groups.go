@@ -471,3 +471,64 @@ Responda EXCLUSIVAMENTE em JSON:
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+// FetchInvite POST /api/groups/{id}/fetch-invite
+// Busca o invite link do grupo via Evolution API e atualiza o registro.
+func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	g, err := h.store.GetRedesignGroup(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "grupo não encontrado")
+		return
+	}
+	if g.Platform != "whatsapp" {
+		writeErr(w, http.StatusBadRequest, "apenas grupos WhatsApp suportam fetch automático")
+		return
+	}
+	if !g.JID.Valid || g.JID.String == "" {
+		writeErr(w, http.StatusUnprocessableEntity, "grupo sem JID — importe via Contas → WhatsApp para preencher")
+		return
+	}
+	if !g.WAAccountID.Valid {
+		writeErr(w, http.StatusUnprocessableEntity, "grupo sem conta WhatsApp vinculada")
+		return
+	}
+	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conta WA não encontrada")
+		return
+	}
+	cfg, _ := h.store.GetConfig()
+	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
+	if baseURL == "" && cfg.WABaseURL.Valid {
+		baseURL = cfg.WABaseURL.String
+	}
+	if apiKey == "" && cfg.WAApiKey.Valid {
+		apiKey = cfg.WAApiKey.String
+	}
+	if instance == "" && cfg.WAInstance.Valid {
+		instance = cfg.WAInstance.String
+	}
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution não configurada")
+		return
+	}
+
+	evo := newEvolutionClient(baseURL, apiKey, instance)
+	link, err := evo.getGroupInviteCode(r.Context(), g.JID.String)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "falha Evolution: "+err.Error())
+		return
+	}
+
+	g.InviteLink = models.NullString{NullString: sql.NullString{String: link, Valid: true}}
+	if err := h.store.UpdateRedesignGroup(g); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"invite_link": link, "updated": true})
+}
