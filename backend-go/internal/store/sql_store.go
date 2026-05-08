@@ -2012,13 +2012,15 @@ func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) {
 	var ids []int64
 	// Match normalizado: lower + unaccent dos dois lados.
 	// "Fogão" (keyword) bate com "FOGAO" (título), evita duplicatas na taxonomia.
+	// Word-boundary match via regex PostgreSQL (\m = início de palavra, \M = fim de palavra).
+	// "acer" NÃO bate em "racer" porque 'r' antes de 'acer' não é início de palavra.
 	err := s.db.Select(&ids, `
 		WITH matched AS (
 			SELECT id FROM taxonomy
 			WHERE status = 'approved' AND active = TRUE
 			  AND EXISTS (
 			    SELECT 1 FROM unnest(keywords) AS kw
-			    WHERE position(lower(unaccent(kw)) IN lower(unaccent($1))) > 0
+			    WHERE lower(unaccent($1)) ~ ('\m' || lower(unaccent(kw)) || '\M')
 			  )
 		)
 		UPDATE taxonomy SET detect_count = detect_count + 1, last_detected_at = now()

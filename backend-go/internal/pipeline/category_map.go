@@ -31,7 +31,7 @@ func MatchCategories(title string) []string {
 	for cat, keywords := range CategoryMap {
 		for _, kw := range keywords {
 			kwNorm := strings.ToLower(Deaccent(kw))
-			if strings.Contains(norm, kwNorm) {
+			if MatchesWordBoundary(norm, kwNorm) {
 				seen[cat] = true
 				break
 			}

@@ -168,6 +168,18 @@ func levenshtein(a, b []rune) int {
 	return prev[lb]
 }
 
+// MatchesWordBoundary verifica se keyword aparece em text com word boundary.
+// Evita falsos positivos como "Acer" em "Racer" ou "LG" em "LEG".
+// Usa \b do RE2 (ASCII word boundary: [a-zA-Z0-9_]).
+func MatchesWordBoundary(text, keyword string) bool {
+	if keyword == "" {
+		return false
+	}
+	pattern := `(?i)\b` + regexp.QuoteMeta(keyword) + `\b`
+	matched, err := regexp.MatchString(pattern, text)
+	return err == nil && matched
+}
+
 func min3(a, b, c int) int {
 	if a < b {
 		if a < c {

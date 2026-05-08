@@ -205,7 +205,7 @@ func applyKeywords(st store.Store, p *models.CatalogProduct, title string, keywo
 		if !kw.Active {
 			continue
 		}
-		if strings.Contains(titleLower, strings.ToLower(kw.Keyword)) {
+		if MatchesWordBoundary(titleLower, strings.ToLower(kw.Keyword)) {
 			existing := p.GetTags()
 			found := false
 			for _, t := range existing {
