@@ -229,6 +229,21 @@ type CrawlResult struct {
 	SourceSubID      NullString `db:"source_subid" json:"source_subid,omitempty"`
 	CrawledAt        time.Time      `db:"crawled_at" json:"crawled_at"`
 	CatalogVariantID NullInt64  `db:"catalog_variant_id" json:"catalog_variant_id,omitempty"`
+	// Metadata (migration 0105): JSON livre — description, rating, reviews_count, seller, free_shipping, installments, etc.
+	Metadata         []byte         `db:"metadata" json:"-"`
+}
+
+// CrawlMetadata é a estrutura recomendada pra Metadata. Os scrapers preenchem só
+// os campos que conseguem extrair — todo o resto é opcional.
+type CrawlMetadata struct {
+	Description   string  `json:"description,omitempty"`
+	Rating        float64 `json:"rating,omitempty"`         // 0..5
+	ReviewsCount  int     `json:"reviews_count,omitempty"`
+	Seller        string  `json:"seller,omitempty"`         // "Loja Oficial Samsung"
+	OfficialStore bool    `json:"official_store,omitempty"`
+	FreeShipping  bool    `json:"free_shipping,omitempty"`
+	Installments  string  `json:"installments,omitempty"`   // "12x R$ 50 sem juros"
+	OriginalPrice float64 `json:"original_price,omitempty"` // pra calcular % de desconto
 }
 
 type CatalogProduct struct {
@@ -325,6 +340,8 @@ type CatalogVariant struct {
 	// Match metadata (migration 0104) — confidence do merge no momento da criação.
 	MatchConfidence  NullFloat64 `db:"match_confidence" json:"match_confidence,omitempty"`
 	MatchMethod      NullString  `db:"match_method" json:"match_method,omitempty"`
+	// Metadata enriquecido (migration 0105) — descrição, rating, vendedor, frete, etc.
+	Metadata         []byte      `db:"metadata" json:"-"`
 }
 
 type PriceHistoryV2 struct {
@@ -792,4 +809,33 @@ type JonfreyConfig struct {
 	EnabledActions  pq.StringArray `db:"enabled_actions" json:"enabled_actions"`
 	LastRunAt       NullTime       `db:"last_run_at" json:"last_run_at,omitempty"`
 	UpdatedAt       time.Time      `db:"updated_at" json:"updated_at"`
+}
+
+// Ad é um anúncio recorrente customizado (texto+imagem) que dispara num schedule
+// até atingir active_until. Diferente de Dispatch (one-shot).
+type Ad struct {
+	ID                int64          `db:"id" json:"id"`
+	Name              string         `db:"name" json:"name"`
+	MessageText       string         `db:"message_text" json:"message_text"`
+	ImageURL          NullString     `db:"image_url" json:"image_url,omitempty"`
+	ChannelIDs        pq.Int64Array  `db:"channel_ids" json:"channel_ids"`
+	GroupIDs          pq.Int64Array  `db:"group_ids" json:"group_ids"`
+	ScheduleCron      string         `db:"schedule_cron" json:"schedule_cron"`
+	ActiveUntil       NullTime       `db:"active_until" json:"active_until,omitempty"`
+	Enabled           bool           `db:"enabled" json:"enabled"`
+	LastDispatchedAt  NullTime       `db:"last_dispatched_at" json:"last_dispatched_at,omitempty"`
+	DispatchCount     int            `db:"dispatch_count" json:"dispatch_count"`
+	CreatedAt         time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt         time.Time      `db:"updated_at" json:"updated_at"`
+}
+
+// AdActive retorna true se o anúncio está dentro da janela de ativação.
+func (a Ad) IsActiveNow() bool {
+	if !a.Enabled {
+		return false
+	}
+	if a.ActiveUntil.Valid && a.ActiveUntil.Time.Before(time.Now()) {
+		return false
+	}
+	return true
 }

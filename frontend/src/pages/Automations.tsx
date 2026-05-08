@@ -786,16 +786,38 @@ export function TabOverview() {
   const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
   const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
-  void fullyEnabled
-  void toggleMut
   void jonfreyActions
 
   return (
     <div className="p-6 space-y-5">
-      {/* KPI compacto */}
-      <div className="grid grid-cols-2 gap-3 max-w-md">
+      {/* KPI + Kill-switch sincronizado com Jonfrey */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
         <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
+
+        {/* Kill-switch como 3ª caixa */}
+        <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled ? 'border-accent/40' : 'border-border'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Kill-switch</p>
+              <p className={`text-sm font-semibold mt-1 ${fullyEnabled ? 'text-success' : 'text-fg-2'}`}>
+                {fullyEnabled ? 'Ativo' : 'Pausado'}
+              </p>
+              <p className="text-[10px] text-fg-3 mt-1">
+                Sincronizado com <a href="/automations/jonfrey" className="text-accent hover:underline">Jonfrey</a>
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={toggleMut.isPending}
+              onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
+              className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              aria-label={fullyEnabled ? 'Desativar' : 'Ativar'}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Parâmetros globais — defaults usados quando canal não tem override */}
@@ -1030,9 +1052,6 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
 export default function Automations() {
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-3 border-b border-border">
-        <p className="text-sm text-fg-3">Kill-switch global e defaults — orquestração por canal vai pra <a href="/automations/channels" className="text-accent hover:underline">Por canal</a> ou <a href="/automations/jonfrey" className="text-accent hover:underline">Jonfrey</a>.</p>
-      </div>
       <div className="flex-1 overflow-y-auto">
         <TabOverview />
       </div>

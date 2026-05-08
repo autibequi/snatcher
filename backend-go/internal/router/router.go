@@ -85,6 +85,7 @@ func Build(
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
 	jonfrey     := adminhnd.NewJonfreyHandler(st, db)
+	ads         := adminhnd.NewAdsHandler(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *adminhnd.ComposeHandler
@@ -250,6 +251,13 @@ func Build(
 		r.Post("/api/automations/{channelId}/advise", automations.Advise)
 
 		// Jonfrey — orquestrador AI das automações
+		// Ads — disparos recorrentes
+		r.Get("/api/ads", ads.List)
+		r.Post("/api/ads", ads.Create)
+		r.Get("/api/ads/{id}", ads.Get)
+		r.Patch("/api/ads/{id}", ads.Update)
+		r.Delete("/api/ads/{id}", ads.Delete)
+
 		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
 		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
 		r.Post("/api/jonfrey/run", jonfrey.RunAction)

@@ -356,9 +356,12 @@ func (s *SQLStore) TouchSearchTerm(id int64, count int) error {
 // ---------------------------------------------------------------------------
 
 func (s *SQLStore) InsertCrawlResult(r models.CrawlResult) (int64, error) {
+	if len(r.Metadata) == 0 {
+		r.Metadata = []byte("{}")
+	}
 	return insertReturningID(s.db, `
-		INSERT INTO crawlresult (search_term_id, title, price, url, image_url, source, source_subid)
-		VALUES (:search_term_id, :title, :price, :url, :image_url, :source, :source_subid)`, r)
+		INSERT INTO crawlresult (search_term_id, title, price, url, image_url, source, source_subid, metadata)
+		VALUES (:search_term_id, :title, :price, :url, :image_url, :source, :source_subid, :metadata)`, r)
 }
 
 func (s *SQLStore) ListCrawlResultsByTerm(termID int64, limit, offset int) ([]models.CrawlResult, error) {
@@ -501,9 +504,12 @@ func (s *SQLStore) CreateCatalogVariant(v models.CatalogVariant) (int64, error) 
 	if !v.ShortID.Valid || v.ShortID.String == "" {
 		v.ShortID = models.NullString{NullString: sql.NullString{String: genShortID(), Valid: true}}
 	}
+	if len(v.Metadata) == 0 {
+		v.Metadata = []byte("{}")
+	}
 	return insertReturningID(s.db, `
-		INSERT INTO catalogvariant (catalog_product_id, title, variant_label, price, url, short_id, image_url, source)
-		VALUES (:catalog_product_id, :title, :variant_label, :price, :url, :short_id, :image_url, :source)`, v)
+		INSERT INTO catalogvariant (catalog_product_id, title, variant_label, price, url, short_id, image_url, source, match_confidence, match_method, metadata)
+		VALUES (:catalog_product_id, :title, :variant_label, :price, :url, :short_id, :image_url, :source, :match_confidence, :match_method, :metadata)`, v)
 }
 
 func (s *SQLStore) GetShortIDByURL(url string) string {

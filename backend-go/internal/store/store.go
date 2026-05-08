@@ -263,4 +263,12 @@ type Store interface {
 	ListJonfreyActions(limit int, actionType string) ([]models.JonfreyAction, error)
 	GetJonfreyConfig() (models.JonfreyConfig, error)
 	UpdateJonfreyConfig(c models.JonfreyConfig) error
+
+	// Ads — disparos recorrentes customizados
+	ListAds(activeOnly bool) ([]models.Ad, error)
+	GetAd(id int64) (models.Ad, error)
+	CreateAd(a models.Ad) (int64, error)
+	UpdateAd(a models.Ad) error
+	DeleteAd(id int64) error
+	MarkAdDispatched(id int64) error
 }
