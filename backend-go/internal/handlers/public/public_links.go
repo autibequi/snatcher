@@ -72,5 +72,9 @@ func (h *PublicLinksResolver) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fecha o loop de atribuição: registra que o link público foi resolvido.
+	// Best-effort: erro de update não deve impedir o redirect.
+	_ = h.store.IncrementPublicLinkClicks(link.ID)
+
 	http.Redirect(w, r, group.InviteLink.String, http.StatusFound)
 }
