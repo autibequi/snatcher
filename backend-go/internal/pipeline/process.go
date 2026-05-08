@@ -85,6 +85,11 @@ func processResult(
 		return existing.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, existing.ID)
 	}
 
+	// Descarta resultados sem preço — produto sem preço não pode ser disparado
+	if r.Price <= 0 {
+		return 0, st.MarkCrawlResultProcessed(r.ID, 0)
+	}
+
 	// Nova URL — normalizar e buscar produto matching
 	canonical := NormalizeTitle(r.Title)
 	weight := ExtractWeight(r.Title)

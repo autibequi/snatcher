@@ -262,11 +262,21 @@ func (h *CurationHandler) AutoHeuristic(w http.ResponseWriter, r *http.Request) 
 		processed++
 	}
 
+	// Desativa produtos sem preço — não podem ser disparados
+	var deactivated int64
+	if res, err := h.db.ExecContext(r.Context(), `
+		UPDATE catalogproduct SET inactive = true
+		WHERE inactive = false
+		  AND (lowest_price IS NULL OR lowest_price <= 0)`); err == nil {
+		deactivated, _ = res.RowsAffected()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"processed":   processed,
 		"categorized": categorized,
 		"branded":     branded,
 		"remaining":   len(products) - categorized,
+		"deactivated_no_price": deactivated,
 	})
 }
 
@@ -770,6 +780,17 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 		p.Inspected = true
 		p.InspectedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
 		p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: notes != ""}}
+
+		// Se LLM rejeitou o produto OU não tem preço → marca inativo para não ser disparado
+		hasNoPrice := !p.LowestPrice.Valid || p.LowestPrice.Float64 <= 0
+		if !result.ReadyForDispatch || hasNoPrice {
+			p.Inactive = true
+			if hasNoPrice && result.ReadyForDispatch {
+				notes += " · desativado: sem preço"
+				p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: true}}
+			}
+		}
+
 		if updErr := h.store.UpdateCatalogProduct(p); updErr != nil {
 			slog.Error("Inspect: UpdateCatalogProduct failed", "id", row.ID, "err", updErr)
 			llm.RecordHandlerError("inspect", "db", "UpdateCatalogProduct: "+updErr.Error(), notes)
