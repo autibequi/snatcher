@@ -322,6 +322,9 @@ type CatalogVariant struct {
 	Source           string         `db:"source" json:"source"`
 	FirstSeenAt      time.Time      `db:"first_seen_at" json:"first_seen_at"`
 	LastSeenAt       time.Time      `db:"last_seen_at" json:"last_seen_at"`
+	// Match metadata (migration 0104) — confidence do merge no momento da criação.
+	MatchConfidence  NullFloat64 `db:"match_confidence" json:"match_confidence,omitempty"`
+	MatchMethod      NullString  `db:"match_method" json:"match_method,omitempty"`
 }
 
 type PriceHistoryV2 struct {

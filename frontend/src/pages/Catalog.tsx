@@ -168,18 +168,18 @@ export default function Catalog() {
     onError: () => alert('Erro ao reprocessar'),
   })
 
-  // Categorias da taxonomia para o filtro
-  const { data: categories = [] } = useQuery<TaxonomyEntry[]>({
-    queryKey: ['taxonomy', 'category'],
-    queryFn: () => apiClient.get('/api/taxonomy?type=category').then(r => r.data ?? []).catch(() => []),
-    staleTime: 5 * 60_000,
+  // Categorias em uso no catálogo (não filtra taxonomia aprovada — pega tudo que está nos produtos)
+  const { data: categories = [] } = useQuery<string[]>({
+    queryKey: ['catalog', 'categories'],
+    queryFn: () => apiClient.get('/api/catalog/categories').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 60_000,
   })
 
-  // Buscar marcas da taxonomia
-  const { data: brands = [] } = useQuery<TaxonomyEntry[]>({
-    queryKey: ['taxonomy', 'brand'],
-    queryFn: () => apiClient.get('/api/taxonomy?type=brand').then(r => r.data ?? []).catch(() => []),
-    staleTime: 5 * 60_000,
+  // Marcas em uso no catálogo
+  const { data: brands = [] } = useQuery<string[]>({
+    queryKey: ['catalog', 'brands'],
+    queryFn: () => apiClient.get('/api/catalog/brands').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 60_000,
   })
 
   // Resetar página ao mudar filtros
@@ -302,7 +302,7 @@ export default function Catalog() {
             placeholder="Todas as categorias"
             value={tagFilter}
             onChange={setTagFilter}
-            options={categories.map(c => ({ value: c.slug, label: c.name }))}
+            options={categories.map(c => ({ value: c, label: c }))}
           />
         )}
         {brands.length > 0 && (
@@ -310,7 +310,7 @@ export default function Catalog() {
             placeholder="Todas as marcas"
             value={brandFilter}
             onChange={setBrandFilter}
-            options={brands.map(b => ({ value: b.name, label: b.name }))}
+            options={brands.map(b => ({ value: b, label: b }))}
           />
         )}
         <div className="flex items-center gap-1.5">

@@ -540,3 +540,63 @@ new_tags: subconjunto de tags que NÃO estão no vocabulário existente.`,
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+// ListBrands GET /api/catalog/brands
+// Retorna brands distintas em uso em produtos ativos (não filtra por taxonomy aprovada).
+// Útil pro dropdown de filtro do catálogo: mostra TUDO que existe.
+func (h *CatalogHandler) ListBrands(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	type row struct {
+		Name string `db:"name"`
+	}
+	var rows []row
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT DISTINCT brand AS name
+		FROM catalogproduct
+		WHERE brand IS NOT NULL AND brand <> '' AND inactive = false
+		ORDER BY brand`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Name)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListCategories GET /api/catalog/categories
+// Retorna categorias (tags) distintas em uso em produtos ativos.
+func (h *CatalogHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	// catalogproduct.tags é JSON array string. Extrai elementos via jsonb.
+	type row struct {
+		Tag string `db:"tag"`
+	}
+	var rows []row
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT DISTINCT jsonb_array_elements_text(tags::jsonb) AS tag
+		FROM catalogproduct
+		WHERE tags IS NOT NULL AND tags <> '' AND tags <> '[]'
+		  AND inactive = false
+		ORDER BY tag`)
+	if err != nil {
+		// fallback gracioso (caso tags esteja como TEXT, não JSON)
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Tag != "" {
+			out = append(out, r.Tag)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}

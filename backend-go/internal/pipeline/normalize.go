@@ -123,20 +123,25 @@ func NormalizeTitle(s string) string {
 // difflib.SequenceMatcher usa Ratcliff/Obershelp, mas Levenshtein normalizado é suficiente
 // para o caso de uso (produtos com small edits).
 func FuzzyMatch(a, b string, threshold float64) bool {
+	return FuzzyScore(a, b) >= threshold
+}
+
+// FuzzyScore retorna a similaridade Levenshtein normalizada entre a e b (0..1).
+// 0 = nada em comum, 1 = idênticos. Útil pra zonas de confiança no merge.
+func FuzzyScore(a, b string) float64 {
 	if a == b {
-		return true
+		return 1.0
 	}
 	la, lb := len([]rune(a)), len([]rune(b))
 	if la == 0 || lb == 0 {
-		return false
+		return 0.0
 	}
 	dist := levenshtein([]rune(a), []rune(b))
 	maxLen := la
 	if lb > maxLen {
 		maxLen = lb
 	}
-	sim := 1.0 - float64(dist)/float64(maxLen)
-	return sim >= threshold
+	return 1.0 - float64(dist)/float64(maxLen)
 }
 
 func levenshtein(a, b []rune) int {
