@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, KpiCard } from '../components/ui'
+import { Button, KpiCard, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Ad {
@@ -66,12 +66,32 @@ function CreateAdModal({
   )
   const [text, setText] = React.useState(initial?.message_text ?? '')
   const [imageURL, setImageURL] = React.useState(initial?.image_url ?? '')
+  const [uploading, setUploading] = React.useState(false)
   const [targetURL, setTargetURL] = React.useState(initial?.target_url ?? '')
   const [cron, setCron] = React.useState(initial?.schedule_cron ?? '0 12 * * *')
   const [activeUntil, setActiveUntil] = React.useState(
     initial?.active_until ? initial.active_until.slice(0, 16) : '',
   )
   const [selectedChannels, setSelectedChannels] = React.useState<number[]>(initial?.channel_ids ?? [])
+  const [showPreview, setShowPreview] = React.useState(false)
+
+  const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await apiClient.post('/api/uploads/image?subdir=ads', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setImageURL(res.data.url)
+    } catch {
+      alert('Erro ao fazer upload da imagem')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const saveMut = useMutation({
     mutationFn: () => {
@@ -138,15 +158,41 @@ function CreateAdModal({
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono" />
             <p className="text-[10px] text-fg-3 mt-1">Use <code>{'{link}'}</code> pra inserir a URL encurtada (rastreada).</p>
           </div>
+          {/* Imagem com upload ou URL */}
           <div>
             <label className="text-xs text-fg-2 block mb-1">Imagem (opcional)</label>
-            <input type="url" value={imageURL} onChange={e => setImageURL(e.target.value)} placeholder="https://…"
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+            <div className="flex items-start gap-2">
+              <div className="flex-1 space-y-1.5">
+                <label className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-md px-3 py-2 text-sm cursor-pointer transition-colors ${uploading ? 'opacity-50' : 'border-border hover:border-accent text-fg-2 hover:text-accent'}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {uploading ? 'Enviando…' : 'Clique pra subir imagem'}
+                  <input type="file" accept="image/*" onChange={handleImageFile} className="hidden" disabled={uploading} />
+                </label>
+                <input
+                  type="url"
+                  value={imageURL}
+                  onChange={e => setImageURL(e.target.value)}
+                  placeholder="ou cole URL da imagem…"
+                  className="w-full text-xs border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+              </div>
+              {imageURL && (
+                <img
+                  src={imageURL}
+                  alt="preview"
+                  onError={() => setImageURL('')}
+                  className="w-16 h-16 rounded-md object-cover border border-border flex-shrink-0 bg-surface-2"
+                />
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-fg-2 block mb-1">
+              <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
                 Schedule (cron)
+                <TooltipIcon content="Cron expression para quando disparar. '0 12 * * *' = todo dia às 12h. '0 9,21 * * *' = 9h e 21h. '0 12 * * 1-5' = seg–sex. Fuso UTC do servidor." side="right" />
               </label>
               <input value={cron} onChange={e => setCron(e.target.value)} placeholder="0 12 * * *"
                 className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono" />
@@ -175,14 +221,48 @@ function CreateAdModal({
             )}
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" loading={saveMut.isPending}
-            disabled={!name.trim() || !text.trim() || selectedChannels.length === 0}
-            onClick={() => saveMut.mutate()}>
-            {initial ? 'Salvar' : 'Criar anúncio'}
-          </Button>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border">
+          <button type="button" onClick={() => setShowPreview(v => !v)}
+            className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:text-fg">
+            {showPreview ? '← Editar' : '👁 Preview WA'}
+          </button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+            <Button variant="primary" size="sm" loading={saveMut.isPending}
+              disabled={!name.trim() || !text.trim() || selectedChannels.length === 0}
+              onClick={() => saveMut.mutate()}>
+              {initial ? 'Salvar' : 'Criar anúncio'}
+            </Button>
+          </div>
         </div>
+
+        {/* Preview WhatsApp */}
+        {showPreview && (
+          <div className="px-4 pb-4 border-t border-border bg-surface-2">
+            <p className="text-xs text-fg-3 py-2 font-medium">Preview — como vai aparecer no WhatsApp:</p>
+            <div className="bg-[#0b141a] rounded-lg p-3 max-w-sm mx-auto">
+              <p className="text-[10px] text-[#8696a0] mb-1 ml-1">Anúncio · {name || 'sem nome'}</p>
+              <div className="bg-[#005c4b] rounded-lg overflow-hidden shadow">
+                {imageURL && (
+                  <img
+                    src={imageURL}
+                    alt=""
+                    onError={e => (e.currentTarget.style.display = 'none')}
+                    className="w-full max-h-48 object-cover"
+                  />
+                )}
+                <div className="p-3">
+                  <p className="text-sm text-white whitespace-pre-wrap break-words">
+                    {text.replace(/\{link\}/g, targetURL ? `https://jon.promo/r/xxxxxx` : '{link}') || 'Texto do anúncio…'}
+                  </p>
+                  <p className="text-[10px] text-green-300 mt-1 text-right opacity-60">
+                    {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ✓✓
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

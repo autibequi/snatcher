@@ -25,6 +25,7 @@ const navGroups: NavGroup[] = [
       { to: '/', label: 'Dashboard', icon: '🏠' },
       { to: '/compose', label: 'Compor disparo', icon: '📤' },
       { to: '/logs', label: 'Logs', icon: '📋' },
+      { to: '/ads', label: 'Anúncios pagos', icon: '💸' },
     ],
   },
   {
@@ -48,7 +49,6 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/channels', label: 'Canais', icon: '📢' },
       { to: '/links', label: 'Links públicos', icon: '🔗' },
-      { to: '/ads', label: 'Anúncios pagos', icon: '💸' },
     ],
   },
   {

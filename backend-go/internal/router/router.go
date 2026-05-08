@@ -152,6 +152,11 @@ func Build(
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
 	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
 
+	// Serve arquivos de upload (imagens dos anúncios pagos, etc.)
+	r.Get("/uploads/*", func(w http.ResponseWriter, req *http.Request) {
+		http.StripPrefix("/uploads/", http.FileServer(http.Dir("/data/uploads"))).ServeHTTP(w, req)
+	})
+
 	r.Get("/canal/{slug}", canal.GroupPicker)
 	r.Get("/canal/{slug}/preview", canal.Preview)
 	r.Get("/join/{slug}", canal.JoinRedirect)
@@ -251,7 +256,10 @@ func Build(
 		r.Post("/api/automations/{channelId}/advise", automations.Advise)
 
 		// Jonfrey — orquestrador AI das automações
-		// Ads — disparos recorrentes
+		// Upload de imagens
+		r.Post("/api/uploads/image", adminhnd.UploadImage)
+
+		// Ads — disparos recorrentes pagos
 		r.Get("/api/ads", ads.List)
 		r.Post("/api/ads", ads.Create)
 		r.Get("/api/ads/{id}", ads.Get)

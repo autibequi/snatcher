@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Skeleton, EmptyState, Input, SearchSelect } from '../components/ui'
+import { Badge, Button, Skeleton, EmptyState, Input, SearchSelect, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ── Gráfico de histórico de preços (expandido ao clicar na linha) ─────────────
@@ -380,13 +380,22 @@ export default function Catalog() {
                   />
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Produto
+                  <span className="flex items-center gap-1">
+                    Produto
+                    <TooltipIcon content="Nome canônico do produto (sem marketplace jargon). Clique na linha pra expandir detalhes, tags e histórico de preço." side="bottom" />
+                  </span>
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-fg-2 uppercase tracking-wide hidden md:table-cell">
-                  Loja
+                  <span className="flex items-center gap-1">
+                    Loja
+                    <TooltipIcon content="Marketplace onde o menor preço foi encontrado. Cada produto pode ter variantes em múltiplas lojas." side="bottom" />
+                  </span>
                 </th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-fg-2 uppercase tracking-wide">
-                  Preço
+                  <span className="flex items-center justify-end gap-1">
+                    Preço
+                    <TooltipIcon content="Menor preço atual entre todas as fontes rastreadas. Atualizado a cada ciclo do crawler." side="bottom" />
+                  </span>
                 </th>
                 <th className="px-4 py-2.5"></th>
               </tr>

@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Switch } from '../components/ui'
+import { Button, Switch, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface JonfreyAction {
@@ -214,6 +214,11 @@ export default function Jonfrey() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-mono text-fg">{a.type}</p>
                     <p className="text-xs text-fg-3">{a.description}</p>
+                    {a.uses_llm && (
+                      <span className="text-[10px] text-warning font-medium flex items-center gap-1">
+                        🧠 Usa LLM <TooltipIcon content="Esta ação chama a IA configurada (OpenRouter). Gasta tokens e pode demorar mais. Desabilite se o LLM não estiver configurado ou pra economizar." side="right" />
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button

@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { describeError } from '../lib/errors'
-import { KpiCard, Skeleton, Tabs, Switch, Badge } from '../components/ui'
+import { KpiCard, Skeleton, Tabs, Switch, Badge, TooltipIcon } from '../components/ui'
 import AudienceEditor from '../components/AudienceEditor'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -336,8 +336,9 @@ export function Drawer({ row, onClose }: DrawerProps) {
               </div>
 
               <div>
-                <label className="text-xs text-fg-2 block mb-1">
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
                   Threshold de score (0–100)
+                  <TooltipIcon content="Score mínimo que um produto precisa ter para ser disparado neste canal. O score vai de 0 a 100 e reflete o quão bem o produto combina com a audiência do canal (categorias, marcas, faixa de preço, desconto). Score 50 = padrão conservador; 30 = mais volume; 70 = mais qualidade." />
                   <span className="text-fg-3 ml-1">
                     {form.threshold == null ? `(default: ${globalThreshold})` : ''}
                   </span>
@@ -365,8 +366,9 @@ export function Drawer({ row, onClose }: DrawerProps) {
               </div>
 
               <div>
-                <label className="text-xs text-fg-2 block mb-1">
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
                   Max disparos por ciclo
+                  <TooltipIcon content="Quantos produtos distintos podem ser disparados em um único ciclo automático. Evita spam: mesmo com 100 produtos elegíveis, só esse número será enviado por vez. Próximos ciclos pegarão os seguintes." />
                   <span className="text-fg-3 ml-1">
                     {form.max_per_run == null ? `(default: ${globalMaxPerRun})` : ''}
                   </span>
@@ -383,7 +385,10 @@ export function Drawer({ row, onClose }: DrawerProps) {
               </div>
 
               <div>
-                <label className="text-xs text-fg-2 block mb-1">Cooldown entre disparos (horas)</label>
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                  Cooldown entre disparos (horas)
+                  <TooltipIcon content="Após disparar um produto para este canal, o mesmo produto não será disparado novamente por este número de horas. Evita repetição e fadiga da audiência." />
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -565,7 +570,9 @@ export function Drawer({ row, onClose }: DrawerProps) {
                     <thead>
                       <tr className="bg-surface-2 border-b border-border">
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Score</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
+                          <span className="flex items-center gap-1">Score <TooltipIcon content="Afinidade produto-canal (0–100). Combina match de categorias (+30), marcas (+20), desconto (+20), faixa de preço (+15) e histórico (+15). Produto só é disparado se score ≥ threshold configurado." side="bottom" /></span>
+                        </th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Preco</th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Status</th>
                       </tr>
@@ -617,7 +624,9 @@ export function Drawer({ row, onClose }: DrawerProps) {
                       <tr className="bg-surface-2 border-b border-border">
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Grupos</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Score</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
+                          <span className="flex items-center gap-1">Score <TooltipIcon content="Afinidade produto-canal (0–100). Combina match de categorias (+30), marcas (+20), desconto (+20), faixa de preço (+15) e histórico (+15). Produto só é disparado se score ≥ threshold configurado." side="bottom" /></span>
+                        </th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Hora</th>
                         <th className="px-3 py-2"></th>
                       </tr>
@@ -792,8 +801,10 @@ export function TabOverview() {
     <div className="p-6 space-y-5">
       {/* KPI + Kill-switch sincronizado com Jonfrey */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
-        <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
-        <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
+        <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
+          tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h, somando todos os canais. Inclui todos os status (entregues, pendentes, falhos)." />
+        <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics"
+          tooltip="Cliques em links de disparos automáticos. Disponível em Análise → Insights de cliques." />
 
         {/* Kill-switch como 3ª caixa */}
         <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled ? 'border-accent/40' : 'border-border'}`}>

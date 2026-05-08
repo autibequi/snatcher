@@ -1,5 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Tooltip } from '../components/ui'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
@@ -60,6 +61,18 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'
   done: 'success',
   running: 'warning',
   error: 'danger',
+}
+
+// Explicações dos status de disparo — usadas em tooltips
+export const DISPATCH_STATUS_TOOLTIP: Record<string, string> = {
+  draft: 'Rascunho — salvo mas não enviado. Aguarda edição e disparo manual.',
+  queued: 'Na fila — agendado para envio. O sistema vai processar em breve.',
+  pending_approval: 'Aguardando aprovação — full_auto_mode está desligado. Clique em Aprovar pra liberar.',
+  scheduled: 'Agendado — será disparado no horário configurado.',
+  sending: 'Enviando — processo de entrega em andamento para os grupos alvo.',
+  completed: 'Concluído — todos os grupos receberam a mensagem com sucesso.',
+  failed: 'Falhou — um ou mais grupos não receberam. Veja o painel de erros.',
+  cancelled: 'Cancelado — disparo interrompido manualmente antes da entrega.',
 }
 
 function TypeBadge({ type }: { type: LogType }) {
@@ -245,9 +258,11 @@ function DispatchDrawer({
         </div>
 
         <div className="flex items-center gap-2">
-          <Badge variant={statusVariant[dispatch.status] ?? 'default'}>
-            {dispatch.status}
-          </Badge>
+          <Tooltip content={DISPATCH_STATUS_TOOLTIP[dispatch.status] ?? dispatch.status} side="right">
+            <Badge variant={statusVariant[dispatch.status] ?? 'default'}>
+              {dispatch.status}
+            </Badge>
+          </Tooltip>
           <span className="text-xs text-fg-3">
             {new Date(dispatch.created_at).toLocaleString('pt-BR')}
           </span>
