@@ -1,6 +1,7 @@
 package match
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -106,7 +107,8 @@ func ScoreChannel(product ProductInput, channel models.Channel, w Weights) Score
 // ScoreChannelDetailed calcula score com breakdown detalhado, hard filters, e taxonomias.
 // productTaxonomies: lista de taxonomias do produto (role='primary_category', 'subcategory', 'brand', 'attribute_*')
 // productAttrs: mapa de atributo → IDs. Ex: {"color": [1,2], "size": [3]} (pode ser nil)
-func ScoreChannelDetailed(product ProductInput, channel models.Channel, productTaxonomies []models.CatalogProductTaxonomy, productAttrs map[string][]int64, w Weights) ScoreResult {
+// clicksLast30d: número de cliques desse canal nos últimos 30 dias
+func ScoreChannelDetailed(product ProductInput, channel models.Channel, productTaxonomies []models.CatalogProductTaxonomy, productAttrs map[string][]int64, clicksLast30d int, w Weights) ScoreResult {
 	// Garantir que Audience está desserializada
 	ch := channel
 	if len(ch.AudienceRaw) > 0 {
@@ -408,9 +410,13 @@ func ScoreChannelDetailed(product ProductInput, channel models.Channel, productT
 	result.Breakdown.Drop = dropScore
 	total += dropScore * weights.Drop
 
-	// History: placeholder (0.5 neutro sem dados)
-	histScore := 0.5
-	result.Reasons = append(result.Reasons, "histórico: sem dados (placeholder)")
+	// History: cliques nos últimos 30 dias, normalized com cap em 10 → 1.0
+	histScore := math.Min(float64(clicksLast30d)/10.0, 1.0)
+	if clicksLast30d > 0 {
+		result.Reasons = append(result.Reasons, fmt.Sprintf("histórico: %d cliques últimos 30d (score=%.2f)", clicksLast30d, histScore))
+	} else {
+		result.Reasons = append(result.Reasons, "histórico: sem cliques nos últimos 30 dias")
+	}
 	result.Breakdown.History = histScore
 	total += histScore * weights.History
 

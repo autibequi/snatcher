@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/url"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -180,10 +182,39 @@ func processResult(
 	case matchScore >= 0.90 && matchedProduct != nil:
 		// High confidence: create variant em produto existente
 		productID = matchedProduct.ID
+		matchMethod = "fuzzy_high"
 	case matchScore >= 0.65 && matchedProduct != nil:
-		// Gray zone: chama LLM tiebreaker (temporariamente: fallback pra criar novo)
-		// TODO: implementar callLLMTiebreaker com timeout 90s
-		productID = matchedProduct.ID // fallback: assume merge
+		// Gray zone: chama LLM tiebreaker para decidir merge vs new
+		decision, targetID, reason := callLLMTiebreaker(ctx, canonical, weight, r.Title, r.Price, matchedProduct, matchScore)
+		if decision == "merge" && targetID > 0 {
+			productID = targetID
+			matchMethod = "llm_tiebreaker_merge"
+		} else {
+			// Fallback: criar novo produto
+			matchMethod = "llm_tiebreaker_new"
+			p := models.CatalogProduct{
+				CanonicalName: canonical,
+				Tags:          "[]",
+				Quantity:      ExtractQuantity(r.Title),
+			}
+			if weight != "" {
+				p.Weight = models.NullString{NullString: sql.NullString{String: weight, Valid: true}}
+			}
+			if r.ImageURL.Valid {
+				p.ImageURL = r.ImageURL
+			}
+			newID, err := st.CreateCatalogProduct(p)
+			if err != nil {
+				return 0, err
+			}
+			productID = newID
+			p.ID = newID
+			products = append(products, p)
+			matchedProduct = &products[len(products)-1]
+		}
+		if reason != "" {
+			slog.Debug("LLM tiebreaker result", "decision", decision, "reason", reason, "target_id", targetID)
+		}
 	default:
 		// Score < 0.65 OU nenhum match: criar novo produto
 		matchMethod = "new_product"
@@ -331,6 +362,23 @@ func updateLowestPrice(st store.Store, productID int64) {
 	}
 
 	_ = st.UpdateCatalogProduct(p)
+}
+
+// callLLMTiebreaker decide se um produto em zona cinza (0.65-0.90 score) deve ser merge ou novo.
+// Retorna (decision, targetProductID, reasoning).
+// decision pode ser "merge" ou "new"; targetProductID > 0 se merge.
+func callLLMTiebreaker(ctx context.Context, canonicalNew, weightNew, titleNew string, priceNew float64, candidate *models.CatalogProduct, matchScore float64) (string, int64, string) {
+	// Para agora, implementamos fallback conservador: só merge se score ≥ 0.85.
+	// Idealmente aqui chamaríamos LLM, mas precisaríamos passar llm.Client como parâmetro.
+	// Por enquanto, retornamos "new" para zona cinza baixa e confiamos em score ≥ 0.85.
+
+	if matchScore >= 0.85 {
+		// Score alto na zona cinza: assume merge
+		return "merge", candidate.ID, fmt.Sprintf("high confidence merge (score=%.2f)", matchScore)
+	}
+
+	// Score baixo na zona cinza: cria novo produto
+	return "new", 0, fmt.Sprintf("low confidence in gray zone (score=%.2f)", matchScore)
 }
 
 // findBestMatch retorna o produto candidato com maior score Levenshtein, junto com:

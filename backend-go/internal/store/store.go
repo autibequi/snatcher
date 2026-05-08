@@ -303,4 +303,5 @@ type Store interface {
 	// Product attributes (PR-1: triage-refactor)
 	UpdateProductAttributesJSON(productID int64, attrs []byte) error
 	GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error)
+	CountChannelClicksLast30d(channelID int64) (int, error)
 }

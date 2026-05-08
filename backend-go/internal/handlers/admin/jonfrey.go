@@ -1479,15 +1479,152 @@ func actionEnrichTaxonomyFromUnmatched(ctx context.Context, h *JonfreyHandler) (
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	// TODO: implementação completa
-	// 1. SELECT 100 produtos sem role='primary_category' em catalogproduct_taxonomy
-	// 2. Agrupar por similaridade (primeiras 2 palavras lowercase)
-	// 3. Para cada grupo, chamar LLM com batch de 20 produtos
-	// 4. LLM retorna JSON {groups: [{category_name, parent, patterns, confidence}]}
-	// 5. Se confidence ≥ 0.85, criar taxonomy entries + patterns
-	// 6. Retornar befre/after/reasoning
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
 
-	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
+	// Passo 1: SELECT 100 produtos sem role='primary_category'
+	type productRow struct {
+		ID    int64  `db:"id"`
+		Title string `db:"canonical_name"`
+	}
+	var products []productRow
+	err := h.db.SelectContext(ctx, &products, `
+		SELECT id, canonical_name
+		FROM catalogproduct
+		WHERE id NOT IN (SELECT product_id FROM catalogproduct_taxonomy WHERE role='primary_category')
+		ORDER BY id DESC
+		LIMIT 100
+	`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	beforeMap := map[string]any{"unmatched_count": len(products)}
+	if len(products) == 0 {
+		return beforeMap, map[string]any{"created_taxonomies": 0, "created_patterns": 0}, "Nenhum produto sem categoria primária.", nil
+	}
+
+	// Passo 2: Agrupar por primeiras 2 palavras
+	groups := make(map[string][]string)
+	for _, p := range products {
+		parts := strings.Fields(strings.ToLower(p.Title))
+		key := strings.Join(parts[:min(2, len(parts))], " ")
+		groups[key] = append(groups[key], p.Title)
+	}
+
+	createdTaxonomies := 0
+	createdPatterns := 0
+	var reasons []string
+
+	// Passo 3-5: Para cada grupo, chamar LLM e aplicar se confidence ≥ 0.85
+	for groupKey, titles := range groups {
+		// Limita a 20 títulos por chamada LLM
+		batch := titles
+		if len(batch) > 20 {
+			batch = batch[:20]
+		}
+
+		titleList := strings.Join(batch, "\n• ")
+		prompt := fmt.Sprintf(`Você é especialista em e-commerce. Aqui estão produtos sem categoria. Agrupe em categorias coerentes.
+
+TÍTULOS:
+• %s
+
+Retorne APENAS JSON válido:
+{"groups":[{"category_name":"Nome da Categoria","parent_slug":"categoria-pai","confidence":0.9,"sample_patterns":[{"kind":"word_boundary","value":"exemplo"}]}]}`, titleList)
+
+		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
+		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
+			MaxTokens:  500,
+			Temperature: 0.3,
+			Operation:  "jonfrey_enrich_taxonomy",
+			JSONMode:   true,
+		})
+		cancel()
+
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("grupo '%s': LLM erro — %v", groupKey, err))
+			continue
+		}
+
+		var result struct {
+			Groups []struct {
+				CategoryName string  `json:"category_name"`
+				ParentSlug   string  `json:"parent_slug"`
+				Confidence   float64 `json:"confidence"`
+				Patterns     []struct {
+					Kind  string `json:"kind"`
+					Value string `json:"value"`
+				} `json:"sample_patterns"`
+			} `json:"groups"`
+		}
+
+		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			reasons = append(reasons, fmt.Sprintf("grupo '%s': parse error", groupKey))
+			continue
+		}
+
+		for _, gr := range result.Groups {
+			if gr.Confidence < 0.85 {
+				continue
+			}
+
+			// Cria ou encontra a categoria-pai
+			var parentID *int64
+			if gr.ParentSlug != "" {
+				var pid int64
+				err := h.db.GetContext(ctx, &pid, `
+					SELECT id FROM taxonomy WHERE slug = $1 LIMIT 1
+				`, gr.ParentSlug)
+				if err == nil {
+					parentID = &pid
+				}
+			}
+
+			// Cria a nova taxonomy
+			var taxID int64
+			slug := strings.ToLower(strings.ReplaceAll(gr.CategoryName, " ", "-"))
+			err := h.db.GetContext(ctx, &taxID, `
+				INSERT INTO taxonomy(type, name, slug, parent_id, source, status)
+				VALUES('category', $1, $2, $3, 'jonfrey', 'approved')
+				ON CONFLICT (slug) DO UPDATE SET updated_at = now() RETURNING id
+			`, gr.CategoryName, slug, parentID)
+
+			if err == nil {
+				createdTaxonomies++
+
+				// Cria patterns associados
+				for _, p := range gr.Patterns {
+					_, _ = h.db.ExecContext(ctx, `
+						INSERT INTO taxonomy_pattern(taxonomy_id, kind, value, weight, source, active)
+						VALUES($1, $2, $3, 1.0, 'jonfrey', true)
+						ON CONFLICT DO NOTHING
+					`, taxID, p.Kind, p.Value)
+					createdPatterns++
+				}
+
+				reasons = append(reasons, fmt.Sprintf("categoria '%s' criada com confidence %.2f", gr.CategoryName, gr.Confidence))
+			}
+		}
+	}
+
+	afterMap := map[string]any{"created_taxonomies": createdTaxonomies, "created_patterns": createdPatterns}
+	reasoning := fmt.Sprintf("Analisei %d produtos sem categoria. Criei %d novas taxonomias e %d patterns com confidence ≥ 0.85.",
+		len(products), createdTaxonomies, createdPatterns)
+
+	return beforeMap, afterMap, reasoning, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // actionPruneFalsePositives: top 20 taxonomias com false_positive flags
@@ -1496,17 +1633,130 @@ func actionPruneFalsePositives(ctx context.Context, h *JonfreyHandler) (map[stri
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	// TODO: implementação completa
-	// 1. SELECT taxonomy_id, COUNT(*) FROM auto_match_logs aml
-	//    JOIN catalogproduct_taxonomy cpt ON cpt.product_id = aml.product_id
-	//    WHERE aml.false_positive = true AND aml.created_at > now() - interval '30 days'
-	//    GROUP BY cpt.taxonomy_id ORDER BY COUNT DESC LIMIT 20
-	// 2. Para cada taxonomy_id top, pega 50 títulos de produtos com false_positive=true
-	// 3. Chama LLM: {exclude_regex_suggestions: [{pattern, reasoning}]}
-	// 4. Cria taxonomy_pattern com kind='exclude_regex', source='jonfrey', active=false (pendente aprovação)
-	// 5. Retornar before/after/reasoning
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
 
-	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
+	// Passo 1: Top 20 taxonomias com false_positive
+	type topTaxRow struct {
+		TaxonomyID int64 `db:"taxonomy_id"`
+		Count      int64 `db:"count"`
+	}
+	var topTaxonomies []topTaxRow
+	err := h.db.SelectContext(ctx, &topTaxonomies, `
+		SELECT cpt.taxonomy_id, COUNT(*) AS count
+		FROM auto_match_logs aml
+		JOIN catalogproduct_taxonomy cpt ON cpt.product_id = aml.product_id
+		WHERE aml.false_positive = true AND aml.created_at > now() - interval '30 days'
+		GROUP BY cpt.taxonomy_id
+		ORDER BY count DESC
+		LIMIT 20
+	`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	beforeMap := map[string]any{"fp_count": 0}
+	if len(topTaxonomies) == 0 {
+		return beforeMap, map[string]any{"suggestions_created": 0}, "Nenhum false positive nos últimos 30 dias.", nil
+	}
+
+	// Contar total de FP
+	var totalFP int64
+	_ = h.db.GetContext(ctx, &totalFP, `
+		SELECT COUNT(*) FROM auto_match_logs
+		WHERE false_positive = true AND created_at > now() - interval '30 days'
+	`)
+	beforeMap["fp_count"] = totalFP
+
+	suggestionsCreated := 0
+
+	// Passo 2-4: Para cada taxonomy, pegar 50 títulos com false_positive e pedir LLM
+	for _, tt := range topTaxonomies {
+		type productTitle struct {
+			Title string `db:"title"`
+		}
+		var titles []productTitle
+		err := h.db.SelectContext(ctx, &titles, `
+			SELECT DISTINCT cp.canonical_name AS title
+			FROM auto_match_logs aml
+			JOIN catalogproduct_taxonomy cpt ON cpt.product_id = aml.product_id
+			JOIN catalogproduct cp ON cp.id = aml.product_id
+			WHERE cpt.taxonomy_id = $1
+			  AND aml.false_positive = true
+			  AND aml.created_at > now() - interval '30 days'
+			LIMIT 50
+		`, tt.TaxonomyID)
+		if err != nil || len(titles) == 0 {
+			continue
+		}
+
+		// Get taxonomy name
+		var taxName string
+		_ = h.db.GetContext(ctx, &taxName, `
+			SELECT name FROM taxonomy WHERE id = $1
+		`, tt.TaxonomyID)
+
+		titleList := ""
+		for i, t := range titles {
+			if i > 0 {
+				titleList += "\n• "
+			} else {
+				titleList = "• "
+			}
+			titleList += t.Title
+		}
+
+		prompt := fmt.Sprintf(`Taxonomy "%s" foi marcada como false positive nesses produtos:
+
+%s
+
+Sugira regex patterns de EXCLUSÃO que descartariam esses produtos. Retorne JSON:
+{"exclude_patterns":[{"pattern":"\\\\bregex\\\\b","reasoning":"por que descartar"}]}`, taxName, titleList)
+
+		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
+		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
+			MaxTokens:  400,
+			Temperature: 0.2,
+			Operation:  "jonfrey_prune_fp",
+			JSONMode:   true,
+		})
+		cancel()
+
+		if err != nil {
+			continue
+		}
+
+		var result struct {
+			ExcludePatterns []struct {
+				Pattern   string `json:"pattern"`
+				Reasoning string `json:"reasoning"`
+			} `json:"exclude_patterns"`
+		}
+
+		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			continue
+		}
+
+		for _, ep := range result.ExcludePatterns {
+			_, _ = h.db.ExecContext(ctx, `
+				INSERT INTO taxonomy_pattern(taxonomy_id, kind, value, weight, source, active)
+				VALUES($1, 'exclude_regex', $2, 1.0, 'jonfrey', false)
+				ON CONFLICT DO NOTHING
+			`, tt.TaxonomyID, ep.Pattern)
+			suggestionsCreated++
+		}
+	}
+
+	afterMap := map[string]any{"suggestions_created": suggestionsCreated}
+	reasoning := fmt.Sprintf("Detectei %d false positives nos últimos 30d em %d taxonomias. Criei %d sugestões de exclude_regex (pendentes aprovação).",
+		totalFP, len(topTaxonomies), suggestionsCreated)
+
+	return beforeMap, afterMap, reasoning, nil
 }
 
 // actionRefineSubcategories: para cada categoria-raiz com >100 produtos sem subcategory
@@ -1515,15 +1765,161 @@ func actionRefineSubcategories(ctx context.Context, h *JonfreyHandler) (map[stri
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	// TODO: implementação completa
-	// 1. SELECT t.id FROM taxonomy t WHERE t.type='category' AND t.parent_id IS NULL
-	// 2. Para cada categoria-raiz, contar produtos com role='primary_category' = $cat AND sem role='subcategory'
-	// 3. Se COUNT > 100, pegar 50 amostras de canonical_name
-	// 4. Chamar LLM com prompt: "agrupa esses títulos em 3-7 subcategorias coerentes"
-	//    Retorna JSON {subcategories: [{name, slug, patterns: [{kind, value}]}]}
-	// 5. Se confidence ≥ 0.85, criar taxonomy entries para cada subcategoria + patterns
-	// 6. Retornar before/after/reasoning
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
 
-	return map[string]any{"status": "todo"}, map[string]any{"status": "pending_implementation"}, "Ação pendente de implementação completa", nil
+	// Passo 1: Categorias-raiz
+	type rootCat struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+		Slug string `db:"slug"`
+	}
+	var rootCats []rootCat
+	err := h.db.SelectContext(ctx, &rootCats, `
+		SELECT id, name, slug FROM taxonomy
+		WHERE type = 'category' AND parent_id IS NULL
+		ORDER BY id DESC
+	`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	beforeMap := map[string]any{"candidate_categories": 0}
+	if len(rootCats) == 0 {
+		return beforeMap, map[string]any{"subcategories_created": 0, "patterns_created": 0}, "Nenhuma categoria-raiz encontrada.", nil
+	}
+
+	subCatsCreated := 0
+	patternsCreated := 0
+	candidateCount := 0
+
+	// Passo 2-5: Para cada raiz, contar produtos sem subcategoria
+	for _, rc := range rootCats {
+		// Contar produtos da categoria SEM subcategoria
+		var countNoSubcat int64
+		err := h.db.GetContext(ctx, &countNoSubcat, `
+			SELECT COUNT(DISTINCT cpt.product_id)
+			FROM catalogproduct_taxonomy cpt
+			WHERE cpt.taxonomy_id = $1
+			  AND cpt.role = 'primary_category'
+			  AND cpt.product_id NOT IN (
+				  SELECT product_id FROM catalogproduct_taxonomy WHERE role = 'subcategory'
+			  )
+		`, rc.ID)
+
+		if err != nil || countNoSubcat <= 100 {
+			continue
+		}
+
+		candidateCount++
+
+		// Pega 50 amostras de títulos
+		type prodTitle struct {
+			Title string `db:"title"`
+		}
+		var titles []prodTitle
+		err = h.db.SelectContext(ctx, &titles, `
+			SELECT DISTINCT cp.canonical_name AS title
+			FROM catalogproduct_taxonomy cpt
+			JOIN catalogproduct cp ON cp.id = cpt.product_id
+			WHERE cpt.taxonomy_id = $1
+			  AND cpt.role = 'primary_category'
+			  AND cpt.product_id NOT IN (
+				  SELECT product_id FROM catalogproduct_taxonomy WHERE role = 'subcategory'
+			  )
+			ORDER BY RANDOM()
+			LIMIT 50
+		`, rc.ID)
+
+		if err != nil || len(titles) == 0 {
+			continue
+		}
+
+		titleList := ""
+		for i, t := range titles {
+			if i > 0 {
+				titleList += "\n• "
+			} else {
+				titleList = "• "
+			}
+			titleList += t.Title
+		}
+
+		prompt := fmt.Sprintf(`Categoria "%s" tem %d produtos sem subcategoria. Agrupe esses 50 exemplos em 3-7 subcategorias coerentes:
+
+%s
+
+Retorne JSON:
+{"subcategories":[{"name":"Nome","slug":"slug","confidence":0.9,"patterns":[{"kind":"word_boundary","value":"palavra"}]}]}`, rc.Name, countNoSubcat, titleList)
+
+		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
+		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
+			MaxTokens:  600,
+			Temperature: 0.3,
+			Operation:  "jonfrey_refine_subcats",
+			JSONMode:   true,
+		})
+		cancel()
+
+		if err != nil {
+			continue
+		}
+
+		var result struct {
+			Subcategories []struct {
+				Name       string  `json:"name"`
+				Slug       string  `json:"slug"`
+				Confidence float64 `json:"confidence"`
+				Patterns   []struct {
+					Kind  string `json:"kind"`
+					Value string `json:"value"`
+				} `json:"patterns"`
+			} `json:"subcategories"`
+		}
+
+		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			continue
+		}
+
+		for _, sub := range result.Subcategories {
+			if sub.Confidence < 0.85 {
+				continue
+			}
+
+			// Cria a subcategoria com parent_id = rc.ID
+			var subID int64
+			err := h.db.GetContext(ctx, &subID, `
+				INSERT INTO taxonomy(type, name, slug, parent_id, source, status)
+				VALUES('category', $1, $2, $3, 'jonfrey', 'approved')
+				ON CONFLICT (slug) DO UPDATE SET updated_at = now() RETURNING id
+			`, sub.Name, sub.Slug, rc.ID)
+
+			if err == nil {
+				subCatsCreated++
+
+				// Cria patterns
+				for _, p := range sub.Patterns {
+					_, _ = h.db.ExecContext(ctx, `
+						INSERT INTO taxonomy_pattern(taxonomy_id, kind, value, weight, source, active)
+						VALUES($1, $2, $3, 1.0, 'jonfrey', true)
+						ON CONFLICT DO NOTHING
+					`, subID, p.Kind, p.Value)
+					patternsCreated++
+				}
+			}
+		}
+	}
+
+	beforeMap["candidate_categories"] = candidateCount
+	afterMap := map[string]any{"subcategories_created": subCatsCreated, "patterns_created": patternsCreated}
+	reasoning := fmt.Sprintf("Encontrei %d categorias-raiz com >100 produtos sem subcategoria. Criei %d subcategorias e %d patterns com LLM.",
+		candidateCount, subCatsCreated, patternsCreated)
+
+	return beforeMap, afterMap, reasoning, nil
 }
 

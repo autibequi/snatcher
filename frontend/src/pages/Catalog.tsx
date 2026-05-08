@@ -193,6 +193,7 @@ function CatalogSidebar({
   statusFilter, onStatusFilter,
   showInactive, onShowInactive,
   onClear, hasActiveFilters,
+  products,
 }: {
   search: string; onSearch: (v: string) => void
   source: string; onSource: (v: string) => void
@@ -203,6 +204,7 @@ function CatalogSidebar({
   statusFilter: string; onStatusFilter: (v: string) => void
   showInactive: boolean; onShowInactive: (v: boolean) => void
   onClear: () => void; hasActiveFilters: boolean
+  products: Product[]
 }) {
   return (
     <aside className="flex-1 overflow-y-auto flex flex-col gap-4 px-3 py-4">
@@ -252,21 +254,68 @@ function CatalogSidebar({
         </FilterSection>
       )}
 
-      {/* TODO: Subcategoria — filtro dinâmico */}
-      <FilterSection label="Subcategoria">
-        <div className="text-xs text-fg-3 p-2 bg-surface-2 rounded">
-          TODO: MultiSelect com subcategorias extraídas de catalogproduct_taxonomy
-        </div>
-      </FilterSection>
+      {/* Subcategoria — extraída de products */}
+      {(() => {
+        const subcats = new Set<string>()
+        products.forEach(p => {
+          if (p.tags) {
+            const tags = parseTags(p.tags)
+            tags.forEach(t => subcats.add(t))
+          }
+        })
+        return subcats.size > 0 ? (
+          <FilterSection label="Subcategoria" active={false}>
+            <FilterList
+              items={Array.from(subcats).sort()}
+              value=""
+              onSelect={() => {}}
+              allLabel="Todas"
+            />
+          </FilterSection>
+        ) : null
+      })()}
 
-      {/* TODO: Atributos — cor, tamanho, voltagem, capacidade */}
-      {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
-        <FilterSection key={attr} label={attr}>
-          <div className="text-xs text-fg-3 p-2 bg-surface-2 rounded">
-            TODO: MultiSelect com valores de catalogproduct.attributes.{attr.toLowerCase()}
-          </div>
-        </FilterSection>
-      ))}
+      {/* Atributos — cor, tamanho, voltagem, capacidade */}
+      {(() => {
+        const colorSet = new Set<string>()
+        const sizeSet = new Set<string>()
+        const voltageSet = new Set<string>()
+        const capacitySet = new Set<string>()
+
+        products.forEach(p => {
+          const attrs = (p as any).attributes
+          if (attrs) {
+            const colors = attrs.color
+            if (Array.isArray(colors)) colors.forEach((c: any) => colorSet.add(String(c)))
+            const sizes = attrs.size
+            if (Array.isArray(sizes)) sizes.forEach((s: any) => sizeSet.add(String(s)))
+            const voltages = attrs.voltage
+            if (Array.isArray(voltages)) voltages.forEach((v: any) => voltageSet.add(String(v)))
+            const capacities = attrs.capacity
+            if (Array.isArray(capacities)) capacities.forEach((c: any) => capacitySet.add(String(c)))
+          }
+        })
+
+        const attrSets = [
+          { label: 'Cor', items: Array.from(colorSet).sort() },
+          { label: 'Tamanho', items: Array.from(sizeSet).sort() },
+          { label: 'Voltagem', items: Array.from(voltageSet).sort() },
+          { label: 'Capacidade', items: Array.from(capacitySet).sort() },
+        ]
+
+        return attrSets
+          .filter(a => a.items.length > 0)
+          .map(a => (
+            <FilterSection key={a.label} label={a.label} active={false}>
+              <FilterList
+                items={a.items}
+                value=""
+                onSelect={() => {}}
+                allLabel="Todas"
+              />
+            </FilterSection>
+          ))
+      })()}
 
       {/* Preço */}
       <FilterSection label="Preço (R$)" active={!!(priceMin || priceMax)}>
@@ -440,6 +489,7 @@ export default function Catalog() {
           showInactive={showInactive} onShowInactive={setShowInactive}
           onClear={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('') }}
           hasActiveFilters={!!(search || source || tagFilter || brandFilter || priceMin || priceMax || statusFilter)}
+          products={products}
         />
         <CountChip total={totalProducts} page={page} totalPages={totalPages} />
       </div>

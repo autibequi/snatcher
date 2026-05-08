@@ -2375,6 +2375,20 @@ func (s *SQLStore) UpdateProductAttributesJSON(productID int64, attrs []byte) er
 	return err
 }
 
+// CountChannelClicksLast30d conta cliques de um canal nos últimos 30 dias.
+func (s *SQLStore) CountChannelClicksLast30d(channelID int64) (int, error) {
+	var count int
+	err := s.db.Get(&count, `
+		SELECT COUNT(*)
+		FROM shortlink_clicks
+		WHERE channel_id = $1 AND clicked_at > now() - interval '30 days'
+	`, channelID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return count, err
+}
+
 // GetVariantBySourceSubID retorna uma variante por source e sub_id.
 func (s *SQLStore) GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error) {
 	var v models.CatalogVariant

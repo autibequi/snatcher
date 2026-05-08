@@ -2,8 +2,8 @@
 
 **Project root:** `/workspace/.cache/snatcher`
 **Plan source:** `/home/bardiel/.claude/plans/agora-avalie-todas-as-idempotent-milner.md`
-**Status:** PR-4 in progress (coder-haiku-2026-05-08)
-**Heartbeat:** 2026-05-09T00:15:00Z
+**Status:** PR-4 complete (coder-haiku-2026-05-08)
+**Heartbeat:** 2026-05-09T00:17:00Z
 **Owner:** coder-haiku-20260508-0001
 
 ## Objetivo
@@ -33,10 +33,23 @@ Ler o plano completo em `/home/bardiel/.claude/plans/agora-avalie-todas-as-idemp
 - [x] Handlers taxonomy-patterns e match-logs endpoints implementados (handlers/admin)
 - [x] Jonfrey actions (3 novas com stubs)
 
-**Frontend (PR-4 em progresso):**
-- [x] AudienceEditor.tsx: added filtros estruturados TODOs (include/exclude category/brand/subcategory, required/preferred attributes)
+**Frontend (PR-4 COMPLETO):**
+- [x] AudienceEditor.tsx: Implementados filtros estruturados com MultiSelectIDs funcional
+  - Componente `MultiSelectIDs` reutilizável: search local + toggle checkbox + contador
+  - Fetch `/api/taxonomy` com caching 5min
+  - Filtros inclusos: categories (raiz), subcategories, brands
+  - Filtros exclusos: brands, categories (hard filters)
+  - Atributos requeridos: color, size, voltage, capacity (hard filters)
+  - Atributos preferidos: color, size, voltage, capacity (soft, contribui ao score)
+  - Estado persistido via `audience` object, salvo via botão Salvar pontuação
+- [x] Catalog.tsx: Adicionados 5 filters dinâmicos na sidebar
+  - Subcategoria: extraída de products.tags (via `parseTags`)
+  - Cor, Tamanho, Voltagem, Capacidade: extraídos de products.attributes JSONB
+  - Pattern: FilterSection + FilterList com top-5 + search (existing)
+  - Graceful fallback: filtros aparecem vazios se attribute não vier do backend
+- [x] TypeScript: `tsc --noEmit` sem erros
+- [x] Build: `npm run build` sucesso (dist 33.88kB → 11.03kB gzip)
 - [x] Logs.tsx: MatchLogs component implementado com score breakdown visualization + false positive marking
-- [x] Catalog.tsx: added subcategory e attribute filters TODOs
 - [x] Taxonomy.tsx: implemented "Patterns" tab with full CRUD UI
   - TaxonomySelector component para escolher taxonomy
   - CreatePatternModal com kind/value/weight

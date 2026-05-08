@@ -1,8 +1,53 @@
 import React from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from './ui'
 import { apiClient } from '../lib/apiClient'
 import TagInput from './TagInput'
+
+// ── MultiSelectIDs component — busca dinâmica com search local ──────────────────
+function MultiSelectIDs({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: { id: number; name: string }[]
+  value: number[]
+  onChange: (next: number[]) => void
+}) {
+  const [search, setSearch] = React.useState('')
+  const filtered = React.useMemo(
+    () => options.filter(o => o.name.toLowerCase().includes(search.toLowerCase())),
+    [options, search]
+  )
+  const toggle = (id: number) =>
+    onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id])
+
+  return (
+    <div>
+      <label className="text-xs text-fg-2 block mb-1">{label}</label>
+      <input
+        type="text"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Buscar..."
+        className="w-full text-sm border border-border rounded-md px-2 py-1 bg-surface mb-1"
+      />
+      <div className="max-h-40 overflow-y-auto border border-border rounded-md">
+        {filtered.slice(0, 20).map(o => (
+          <label key={o.id} className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-surface-2 cursor-pointer">
+            <input type="checkbox" checked={value.includes(o.id)} onChange={() => toggle(o.id)} />
+            {o.name}
+          </label>
+        ))}
+      </div>
+      {value.length > 0 && (
+        <div className="text-xs text-fg-3 mt-1">{value.length} selecionado(s)</div>
+      )}
+    </div>
+  )
+}
 
 // Pesos default do scoring — refletir do backend (match/score.go defaultWeights)
 const DEFAULT_WEIGHTS = {
@@ -275,90 +320,7 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
       </div>
 
       {/* ─── Filtros estruturados (categorias/marcas via IDs) ─── */}
-      <div className="border-t border-border pt-3 mt-6">
-        <h3 className="text-sm font-semibold text-fg mb-3">Filtros estruturados</h3>
-        <div className="space-y-3">
-          {/* Categorias incluídas (parent_id=null) */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Categorias incluídas <span className="text-fg-3">(raiz)</span>
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=category&parent_id=null</p>
-            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-              TODO: MultiSelectAsync component (audience.include_category_ids)
-            </div>
-          </div>
-
-          {/* Subcategorias incluídas */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Subcategorias incluídas
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=category&parent_id=X</p>
-            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-              TODO: MultiSelectAsync component (audience.include_subcategory_ids)
-            </div>
-          </div>
-
-          {/* Marcas incluídas */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Marcas incluídas
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Busca dinâmica em /api/taxonomy?type=brand</p>
-            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-              TODO: MultiSelectAsync component (audience.include_brand_ids)
-            </div>
-          </div>
-
-          {/* Marcas/Categorias excluídas */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Marcas/Categorias excluídas (hard filter)
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Produtos com essas marcas/categorias NÃO passam (score=0)</p>
-            <div className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-              TODO: MultiSelectAsync components (audience.exclude_brand_ids, audience.exclude_category_ids)
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Atributos requeridos e preferidos ─── */}
-      <div className="border-t border-border pt-3">
-        <h3 className="text-sm font-semibold text-fg mb-3">Atributos do produto</h3>
-        <div className="space-y-3">
-          {/* Atributos requeridos */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Atributos requeridos (hard filter)
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Produto DEVE ter todos os atributos selecionados (score=0 se não tiver)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
-                <div key={attr} className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-                  {attr}: TODO Dropdown
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Atributos preferidos */}
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">
-              Atributos preferidos (soft, contribui ao score)
-            </label>
-            <p className="text-xs text-fg-3 mb-2">Cada atributo satisfeito aumenta o score proporcionalmente</p>
-            <div className="grid grid-cols-2 gap-2">
-              {['Cor', 'Tamanho', 'Voltagem', 'Capacidade'].map(attr => (
-                <div key={attr} className="text-xs text-fg-2 bg-surface-2 rounded p-2">
-                  {attr}: TODO Dropdown
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      <TaxonomySection audience={audience} />
 
       {/* Gênero (não entra no score, é só metadado de audiência) */}
       <div className="border-t border-border pt-3">
@@ -390,6 +352,166 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
       <div className="bg-surface-2 rounded-md p-3 text-xs text-fg-2 font-mono">
         <p className="font-medium text-fg mb-1 font-sans">Fórmula:</p>
         score = {form.w_category}·cat + {form.w_brand}·brand + {form.w_drop}·drop + {form.w_price}·price + {form.w_history}·hist
+      </div>
+    </div>
+  )
+}
+
+// ── Seção de filtros estruturados (taxonomias) ──────────────────────────────
+function TaxonomySection({ audience }: { audience: any }) {
+  const { data: allTaxonomies = [] } = useQuery({
+    queryKey: ['taxonomy', 'all'],
+    queryFn: () =>
+      apiClient
+        .get('/api/taxonomy')
+        .then(r =>
+          Array.isArray(r.data)
+            ? r.data
+            : []
+        )
+        .catch(() => []),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const rootCategories = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'category' && !t.parent_id),
+    [allTaxonomies]
+  )
+  const subCategories = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'category' && t.parent_id),
+    [allTaxonomies]
+  )
+  const brands = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'brand'),
+    [allTaxonomies]
+  )
+  const colors = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'color'),
+    [allTaxonomies]
+  )
+  const sizes = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'size'),
+    [allTaxonomies]
+  )
+  const voltages = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'voltage'),
+    [allTaxonomies]
+  )
+  const capacities = React.useMemo(
+    () => allTaxonomies.filter((t: any) => t.type === 'capacity'),
+    [allTaxonomies]
+  )
+
+  const handleTaxonomyChange = (field: string, ids: number[]) => {
+    // Update audience object directly (parent component handles save)
+    audience[field] = ids
+  }
+
+  return (
+    <div className="border-t border-border pt-3 mt-6">
+      <h3 className="text-sm font-semibold text-fg mb-3">Filtros estruturados</h3>
+      <div className="space-y-4">
+        {/* Categorias incluídas (parent_id=null) */}
+        <MultiSelectIDs
+          label="Categorias incluídas (raiz)"
+          options={rootCategories}
+          value={audience.include_category_ids ?? []}
+          onChange={ids => handleTaxonomyChange('include_category_ids', ids)}
+        />
+
+        {/* Subcategorias incluídas */}
+        <MultiSelectIDs
+          label="Subcategorias incluídas"
+          options={subCategories}
+          value={audience.include_subcategory_ids ?? []}
+          onChange={ids => handleTaxonomyChange('include_subcategory_ids', ids)}
+        />
+
+        {/* Marcas incluídas */}
+        <MultiSelectIDs
+          label="Marcas incluídas"
+          options={brands}
+          value={audience.include_brand_ids ?? []}
+          onChange={ids => handleTaxonomyChange('include_brand_ids', ids)}
+        />
+
+        {/* Marcas excluídas */}
+        <MultiSelectIDs
+          label="Marcas excluídas (hard filter)"
+          options={brands}
+          value={audience.exclude_brand_ids ?? []}
+          onChange={ids => handleTaxonomyChange('exclude_brand_ids', ids)}
+        />
+
+        {/* Categorias excluídas */}
+        <MultiSelectIDs
+          label="Categorias excluídas (hard filter)"
+          options={rootCategories}
+          value={audience.exclude_category_ids ?? []}
+          onChange={ids => handleTaxonomyChange('exclude_category_ids', ids)}
+        />
+
+        {/* Atributos requeridos */}
+        <div className="border-t border-border pt-3">
+          <h4 className="text-xs font-semibold text-fg mb-2">Atributos requeridos (hard filter)</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <MultiSelectIDs
+              label="Cores"
+              options={colors}
+              value={audience.required_attributes?.color ?? []}
+              onChange={ids => handleTaxonomyChange('required_attributes', { ...audience.required_attributes, color: ids })}
+            />
+            <MultiSelectIDs
+              label="Tamanhos"
+              options={sizes}
+              value={audience.required_attributes?.size ?? []}
+              onChange={ids => handleTaxonomyChange('required_attributes', { ...audience.required_attributes, size: ids })}
+            />
+            <MultiSelectIDs
+              label="Voltagens"
+              options={voltages}
+              value={audience.required_attributes?.voltage ?? []}
+              onChange={ids => handleTaxonomyChange('required_attributes', { ...audience.required_attributes, voltage: ids })}
+            />
+            <MultiSelectIDs
+              label="Capacidades"
+              options={capacities}
+              value={audience.required_attributes?.capacity ?? []}
+              onChange={ids => handleTaxonomyChange('required_attributes', { ...audience.required_attributes, capacity: ids })}
+            />
+          </div>
+        </div>
+
+        {/* Atributos preferidos */}
+        <div className="border-t border-border pt-3">
+          <h4 className="text-xs font-semibold text-fg mb-2">Atributos preferidos (soft, contribui ao score)</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <MultiSelectIDs
+              label="Cores"
+              options={colors}
+              value={audience.preferred_attributes?.color ?? []}
+              onChange={ids => handleTaxonomyChange('preferred_attributes', { ...audience.preferred_attributes, color: ids })}
+            />
+            <MultiSelectIDs
+              label="Tamanhos"
+              options={sizes}
+              value={audience.preferred_attributes?.size ?? []}
+              onChange={ids => handleTaxonomyChange('preferred_attributes', { ...audience.preferred_attributes, size: ids })}
+            />
+            <MultiSelectIDs
+              label="Voltagens"
+              options={voltages}
+              value={audience.preferred_attributes?.voltage ?? []}
+              onChange={ids => handleTaxonomyChange('preferred_attributes', { ...audience.preferred_attributes, voltage: ids })}
+            />
+            <MultiSelectIDs
+              label="Capacidades"
+              options={capacities}
+              value={audience.preferred_attributes?.capacity ?? []}
+              onChange={ids => handleTaxonomyChange('preferred_attributes', { ...audience.preferred_attributes, capacity: ids })}
+            />
+          </div>
+        </div>
       </div>
     </div>
   )

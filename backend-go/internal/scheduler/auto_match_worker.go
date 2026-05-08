@@ -251,7 +251,9 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			if err == nil && logID > 0 {
 				// Calcular score detalhado com breakdown e persisti-lo
 				ch := channelsByID[s.ChannelID]
-				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, match.Weights{})
+				// Query cliques nos últimos 30 dias para calcular history score
+				clicksLast30d, _ := st.CountChannelClicksLast30d(s.ChannelID)
+				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, clicksLast30d, match.Weights{})
 				breakdownJSON, _ := json.Marshal(detailedResult.Breakdown)
 				_ = st.UpdateAutoMatchScoreBreakdown(logID, breakdownJSON, detailedResult.Reasons)
 			}
