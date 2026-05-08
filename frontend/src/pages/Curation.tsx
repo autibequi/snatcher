@@ -111,6 +111,8 @@ export default function Curation() {
         </div>
       </div>
 
+      <JonfreyCurationCard />
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         <KpiCard label="Pendentes" value={totalPending} />
@@ -351,6 +353,97 @@ function ProductRow({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Jonfrey integration ─────────────────────────────────────────────────────
+
+interface JonfreyConfigLite {
+  enabled: boolean
+  interval_minutes: number
+  enabled_actions: string[]
+  last_run_at?: string | null
+}
+
+interface JonfreyActionLite {
+  id: number
+  action_type: string
+  status: string
+  reasoning?: string | null
+  after?: Record<string, unknown> | null
+  triggered_by: string
+  created_at: string
+}
+
+const AUTO_CURATE_ACTION = 'auto_curate_high_confidence'
+
+function relMin(s: string): string {
+  const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000)
+  if (m < 1) return 'agora'
+  if (m < 60) return `${m}m atrás`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h atrás`
+  return `${Math.floor(h / 24)}d atrás`
+}
+
+function JonfreyCurationCard() {
+  const { data: config } = useQuery<JonfreyConfigLite | null>({
+    queryKey: ['jonfrey-config'],
+    queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
+    staleTime: 30_000,
+  })
+  const { data: actions = [] } = useQuery<JonfreyActionLite[]>({
+    queryKey: ['jonfrey-actions', AUTO_CURATE_ACTION],
+    queryFn: () =>
+      apiClient
+        .get(`/api/jonfrey/actions?type=${AUTO_CURATE_ACTION}`)
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
+    refetchInterval: 30_000,
+  })
+
+  const last = actions[0]
+  const enabled = !!config?.enabled
+  const actionEnabled = config?.enabled_actions?.includes(AUTO_CURATE_ACTION) ?? false
+  const fullyOn = enabled && actionEnabled
+
+  const stateLabel = fullyOn
+    ? `Ligado · ciclo a cada ${config?.interval_minutes ?? 60} min`
+    : enabled
+      ? 'Auto-pilot ligado, mas auto-curadoria desabilitada na lista de ações'
+      : 'Auto-pilot desligado'
+
+  const stateCls = fullyOn
+    ? 'border-success/30 bg-success/5'
+    : enabled
+      ? 'border-warning/40 bg-warning/5'
+      : 'border-border bg-surface-2'
+
+  return (
+    <div className={`border rounded-md p-3 mb-4 flex items-start gap-3 ${stateCls}`}>
+      <span className="text-base leading-none mt-0.5">🤵</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-fg">Auto-curadoria do Jonfrey</p>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono uppercase ${fullyOn ? 'border-success/40 text-success' : 'border-fg-3/40 text-fg-3'}`}>
+            {fullyOn ? 'ligado' : 'pausado'}
+          </span>
+        </div>
+        <p className="text-xs text-fg-3 mt-0.5">{stateLabel}</p>
+        {last && (
+          <p className="text-[11px] text-fg-2 mt-1 truncate" title={last.reasoning ?? ''}>
+            <span className="text-fg-3">Última ação ({relMin(last.created_at)}):</span>{' '}
+            {last.reasoning ?? `status=${last.status}`}
+          </p>
+        )}
+      </div>
+      <a
+        href="/automations/jonfrey"
+        className="text-xs text-accent hover:underline whitespace-nowrap flex-shrink-0 mt-0.5"
+      >
+        Configurar →
+      </a>
     </div>
   )
 }

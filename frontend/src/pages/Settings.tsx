@@ -354,20 +354,16 @@ function LLMTab() {
         />
       )}
 
-      <div className="border border-border rounded-md p-3 space-y-2">
-        <p className="text-sm font-medium text-fg">Automação com IA</p>
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <div>
-            <p className="text-sm text-fg">Auto-curar produtos com LLM</p>
-            <p className="text-xs text-fg-3">A cada 15 min, categoriza automaticamente produtos pendentes de curadoria usando IA.</p>
-          </div>
-          <input
-            type="checkbox"
-            className="accent-accent w-4 h-4"
-            checked={!!form.auto_curate_llm}
-            onChange={e => set('auto_curate_llm', String(e.target.checked))}
-          />
-        </label>
+      <div className="border border-accent/30 bg-accent/5 rounded-md p-3 flex items-start gap-3">
+        <span className="text-base leading-none mt-0.5">🤵</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-fg">Automações com IA são geridas pelo Jonfrey</p>
+          <p className="text-xs text-fg-3 mt-0.5">
+            Auto-curadoria, ajuste de thresholds, auditoria de produtos e outras ações zero-touch ficam em{' '}
+            <a href="/automations/jonfrey" className="text-accent hover:underline font-medium">Jonfrey</a>.
+            O provider e a API key configurados aqui são usados por todas as ações que tocam LLM.
+          </p>
+        </div>
       </div>
 
       <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
