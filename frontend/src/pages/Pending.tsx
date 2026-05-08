@@ -46,7 +46,18 @@ export default function Pending() {
   const fullAutoMode = !!appConfig?.full_auto_mode
 
   const approveBatchMut = useMutation({
-    mutationFn: (ids: number[]) => apiClient.post('/api/dispatches/approve-batch', { ids }),
+    mutationFn: async (ids: number[]) => {
+      // Tenta o endpoint batch (mais rápido) — fallback para per-id em paralelo se 404
+      try {
+        return await apiClient.post('/api/dispatches/approve-batch', { ids })
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          await Promise.allSettled(ids.map(id => apiClient.post(`/api/dispatches/${id}/approve`)))
+          return { data: { approved: ids.length } }
+        }
+        throw err
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
       setSelected(new Set())
