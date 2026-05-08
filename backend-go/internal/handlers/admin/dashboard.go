@@ -277,8 +277,8 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 			// H1: erros consecutivos — crawler quebrado
 			severity = "critico"
 			subtitle = fmt.Sprintf("%d/%d execuções recentes falharam — reparar imediatamente", e.ErrCount, e.TotalRecent)
-		} else if t.LastCrawledAt.Valid && now.Sub(t.LastCrawledAt.Time) > time.Duration(interval*2)*time.Minute {
-			// H2: overdue — parou de executar
+		} else if t.LastCrawledAt.Valid && now.Sub(t.LastCrawledAt.Time) > time.Duration(interval*3)*time.Minute {
+			// H2: overdue — parou de executar (3× evita falsos positivos após restart do scheduler)
 			hoursLate := now.Sub(t.LastCrawledAt.Time).Hours()
 			severity = "atencao"
 			subtitle = fmt.Sprintf("não executa há %.0fh (esperado a cada %dmin)", hoursLate, interval)
