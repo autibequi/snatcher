@@ -1719,10 +1719,12 @@ func (s *SQLStore) ListChannelDispatchHistory(channelID int64, limit int) ([]mod
 		SELECT dt.dispatch_id, g.id as group_id, g.name as group_name,
 		       dt.status, dt.delivered_at,
 		       COALESCE((d.message->>'text')::text, '') as message_text,
-		       d.created_at
+		       d.created_at,
+		       aml.score
 		FROM dispatch_targets dt
 		JOIN dispatches d ON d.id = dt.dispatch_id
 		JOIN groups g ON g.id = dt.group_id
+		LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
 		WHERE g.channel_id = $1
 		ORDER BY d.created_at DESC
 		LIMIT $2`, channelID, limit)

@@ -920,11 +920,16 @@ func actionResetStaleCooldown(ctx context.Context, h *JonfreyHandler) (map[strin
 	var before int
 	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM auto_match_logs`)
 
+	// Remove logs de dispatches não entregues: pending_approval, queued, pending (em fila mas não chegou), failed
 	res, err := h.db.ExecContext(ctx, `
 		DELETE FROM auto_match_logs
 		WHERE dispatch_id IN (
-			SELECT id FROM dispatches
-			WHERE status IN ('pending_approval', 'failed', 'cancelled')
+			SELECT d.id FROM dispatches d
+			WHERE d.status IN ('pending_approval', 'failed', 'cancelled')
+			   OR NOT EXISTS (
+			       SELECT 1 FROM dispatch_targets dt
+			       WHERE dt.dispatch_id = d.id AND dt.status = 'delivered'
+			   )
 		)`)
 	if err != nil {
 		return nil, nil, "", err

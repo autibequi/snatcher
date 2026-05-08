@@ -754,6 +754,7 @@ type ChannelHistoryEntry struct {
 	DeliveredAt NullTime  `db:"delivered_at" json:"delivered_at,omitempty"`
 	MessageText string    `db:"message_text" json:"message_text"`
 	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+	Score       NullFloat64 `db:"score"      json:"score,omitempty"`
 }
 
 // AffiliateConversion representa uma conversão de afiliado (tabela affiliate_conversions).
