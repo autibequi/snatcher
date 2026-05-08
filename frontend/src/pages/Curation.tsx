@@ -89,26 +89,6 @@ export default function Curation() {
             Produtos sem marca, categoria ou atributos completos — mesmo que já estejam no catálogo.
           </p>
         </div>
-        <div className="flex gap-2 flex-shrink-0 flex-wrap">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => autoHeuristicMut.mutate()}
-            loading={autoHeuristicMut.isPending}
-            title="Roda taxonomy matching nos produtos pendentes/incompletos"
-          >
-            ⚡ Auto (heurísticas)
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => autoLLMMut.mutate()}
-            loading={autoLLMMut.isPending}
-            title="Usa LLM para inferir categoria, marca e quantidade (até 20 por rodada)"
-          >
-            🤖 Auto (LLM)
-          </Button>
-        </div>
       </div>
 
       <JonfreyCurationCard />
