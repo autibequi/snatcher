@@ -110,6 +110,12 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     true,
 		Run:         actionDedupBrandsCategories,
 	},
+	"enable_full_auto": {
+		Type:        "enable_full_auto",
+		Description: "Ativa full_auto_mode diretamente no banco — mensagens passam a ser enviadas imediatamente sem precisar de aprovação humana",
+		UsesLLM:     false,
+		Run:         actionEnableFullAuto,
+	},
 	"reset_stale_cooldown": {
 		Type:        "reset_stale_cooldown",
 		Description: "Limpa cooldown de produtos cujos dispatches nunca foram entregues (pending_approval ou failed) — desbloqueia fila de auto-match imediatamente",
@@ -888,6 +894,23 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
 		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
 	)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionEnableFullAuto: seta full_auto_mode=true e approve_all diretamente no banco.
+// Bypassa o bug do UpdateConfig que não persistia o campo.
+func actionEnableFullAuto(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	_, err := h.db.ExecContext(ctx, `UPDATE appconfig SET full_auto_mode = true WHERE id = 1`)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("UPDATE appconfig: %w", err)
+	}
+	// Aprova todos os pending_approval para envio imediato
+	res, _ := h.db.ExecContext(ctx, `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
+	approved, _ := res.RowsAffected()
+
+	beforeMap := map[string]any{"full_auto_mode": false}
+	afterMap := map[string]any{"full_auto_mode": true, "approved_dispatches": approved}
+	reasoning := fmt.Sprintf("Ativei full_auto_mode no banco e aprovei %d dispatches pendentes. Mensagens passarão a ser enviadas automaticamente.", approved)
 	return beforeMap, afterMap, reasoning, nil
 }
 
