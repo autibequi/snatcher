@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -108,6 +109,12 @@ var actionRegistry = map[string]actionDef{
 		Description: "Detecta marcas e categorias duplicadas com nomes muito próximos (ex: 'Adaptogen' vs 'Adaptogen Science') e consolida nos produtos afetados",
 		UsesLLM:     true,
 		Run:         actionDedupBrandsCategories,
+	},
+	"curate_taxonomy": {
+		Type:        "curate_taxonomy",
+		Description: "Revisa taxonomia pendente: aprova, rejeita e melhora keywords das entradas para maximizar o match heurístico e reduzir trabalho manual futuro",
+		UsesLLM:     true,
+		Run:         actionCurateTaxonomy,
 	},
 }
 
@@ -874,6 +881,174 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 	reasoning := fmt.Sprintf(
 		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
 		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
+	)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionCurateTaxonomy: revisa taxonomia pendente com LLM.
+// Aprova entradas válidas, rejeita genéricas/inúteis, enriquece keywords das aprovadas
+// e funde duplicatas de pendentes com entradas existentes.
+// Objetivo: maximizar match heurístico pra reduzir trabalho manual futuro.
+func actionCurateTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+
+	pending, err := h.store.ListPendingTaxonomy()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if len(pending) == 0 {
+		return map[string]any{"pending": 0}, map[string]any{"approved": 0, "rejected": 0, "enriched": 0},
+			"Nenhuma entrada pendente na taxonomia.", nil
+	}
+
+	// Carrega entradas aprovadas para contexto (evita rejeitar algo já aprovado)
+	approved, _ := h.store.ListTaxonomy("")
+
+	// Compacta pendentes: id, tipo, nome, keywords, sample (min contexto)
+	type compactEntry struct {
+		ID       int64    `json:"id"`
+		Type     string   `json:"type"`
+		Name     string   `json:"name"`
+		Keywords []string `json:"keywords"`
+	}
+	compactPending := make([]compactEntry, 0, len(pending))
+	for _, t := range pending {
+		compactPending = append(compactPending, compactEntry{
+			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+		})
+	}
+	compactApproved := make([]compactEntry, 0, len(approved))
+	for _, t := range approved {
+		compactApproved = append(compactApproved, compactEntry{
+			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+		})
+	}
+
+	prompt := fmt.Sprintf(`Você é curador de taxonomia de um sistema de promoções brasileiro (e-commerce, WA/TG).
+Seu único objetivo: MAXIMIZAR o match heurístico automático de produtos — quanto mais keywords precisas, menos trabalho manual.
+
+APROVADAS ATUAIS (%d entradas): %v
+
+PENDENTES (%d entradas): %v
+
+Para cada PENDENTE, decida:
+- "approve": entrada útil e distinta, approve como está
+- "reject": genérica demais ("Sem Fio", "Nova Geração"), atributo de produto (não uma marca/categoria), ou duplicata exata de aprovada
+- "merge_into": pendente é variante/alias de uma entrada aprovada (informe "merge_id" da aprovada) — keywords serão absorvidas
+- "approve_with_keywords": válida mas keywords pobres — forneça keywords extras pra melhorar o match
+
+Responda SOMENTE JSON (mín contexto):
+{
+  "decisions": [
+    {"id": 123, "action": "approve"},
+    {"id": 124, "action": "reject"},
+    {"id": 125, "action": "merge_into", "merge_id": 45},
+    {"id": 126, "action": "approve_with_keywords", "extra_keywords": ["keyword1", "keyword2"]}
+  ]
+}
+
+Seja AGRESSIVO a aprovar marcas reais e categorias úteis. Rejeite só o que genuinamente não ajuda no match.`,
+		len(compactApproved), compactApproved,
+		len(compactPending), compactPending,
+	)
+
+	ctxC, cancel := context.WithTimeout(ctx, 60*time.Second)
+	resp, err := cli.Complete(ctxC, prompt, llm.Options{
+		MaxTokens: 2000, Temperature: 0.1, Operation: "jonfrey_curate_taxonomy", JSONMode: true,
+	})
+	cancel()
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("LLM: %w", err)
+	}
+
+	var parsed struct {
+		Decisions []struct {
+			ID            int64    `json:"id"`
+			Action        string   `json:"action"`
+			MergeInto     int64    `json:"merge_id"`
+			ExtraKeywords []string `json:"extra_keywords"`
+		} `json:"decisions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		return nil, nil, "", fmt.Errorf("parse: %w", err)
+	}
+
+	// Mapa id→entrada pendente para lookup rápido
+	pendingByID := make(map[int64]models.Taxonomy, len(pending))
+	for _, t := range pending { pendingByID[t.ID] = t }
+	// Mapa id→entrada aprovada
+	approvedByID := make(map[int64]models.Taxonomy, len(approved))
+	for _, t := range approved { approvedByID[t.ID] = t }
+
+	approved_count, rejected_count, merged_count, enriched_count := 0, 0, 0, 0
+
+	for _, d := range parsed.Decisions {
+		t, ok := pendingByID[d.ID]
+		if !ok { continue }
+
+		switch d.Action {
+		case "approve":
+			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
+			approved_count++
+
+		case "reject":
+			_ = h.store.SetTaxonomyStatus(t.ID, "rejected")
+			rejected_count++
+
+		case "merge_into":
+			target, ok := approvedByID[d.MergeInto]
+			if !ok { break }
+			// Absorve keywords da pendente na aprovada (sem duplicar)
+			seen := map[string]bool{}
+			for _, k := range target.Keywords { seen[k] = true }
+			added := false
+			for _, k := range t.Keywords {
+				if !seen[strings.ToLower(k)] {
+					target.Keywords = append(target.Keywords, k)
+					seen[strings.ToLower(k)] = true
+					added = true
+				}
+			}
+			if added {
+				_ = h.store.UpdateTaxonomy(target)
+			}
+			_ = h.store.SetTaxonomyStatus(t.ID, "rejected") // pendente virou obsoleta
+			merged_count++
+
+		case "approve_with_keywords":
+			// Adiciona keywords extras antes de aprovar
+			seen := map[string]bool{}
+			for _, k := range t.Keywords { seen[strings.ToLower(k)] = true }
+			for _, k := range d.ExtraKeywords {
+				if k != "" && !seen[strings.ToLower(k)] {
+					t.Keywords = append(t.Keywords, k)
+					seen[strings.ToLower(k)] = true
+				}
+			}
+			t.Active = true
+			_ = h.store.UpdateTaxonomy(t)
+			_ = h.store.SetTaxonomyStatus(t.ID, "approved")
+			enriched_count++
+		}
+	}
+
+	beforeMap := map[string]any{"pending_count": len(pending), "approved_existing": len(approved)}
+	afterMap := map[string]any{
+		"approved":    approved_count,
+		"rejected":    rejected_count,
+		"merged":      merged_count,
+		"enriched":    enriched_count,
+		"total_acted": approved_count + rejected_count + merged_count + enriched_count,
+	}
+	reasoning := fmt.Sprintf(
+		"Revisei %d entradas pendentes: %d aprovadas, %d aprovadas com keywords extras, %d fundidas em entradas existentes, %d rejeitadas. Taxonomia heurística melhorada.",
+		len(pending), approved_count, enriched_count, merged_count, rejected_count,
 	)
 	return beforeMap, afterMap, reasoning, nil
 }
