@@ -494,15 +494,16 @@ func (h *DashboardHandler) UpcomingDispatches(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, items)
 }
 
-const recommendationTTL = 1 * time.Hour
+const recommendationTTL = 24 * time.Hour
 
 // GET /api/dashboard/recommendation — sugere próxima ação operacional.
-// Cacheado por 1h em memória. Usa LLM com web search habilitado.
+// TTL 24h. Cache em memória (hit rápido) + persistido no banco (sobrevive reboots).
 //
 // ?force=1 invalida o cache e força regeneração.
 func (h *DashboardHandler) Recommendation(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("force") == "1"
 
+	// 1) Tenta memória
 	h.recoMu.Lock()
 	cached := h.recoCache
 	cachedAt := h.recoCachedAt
@@ -513,6 +514,36 @@ func (h *DashboardHandler) Recommendation(w http.ResponseWriter, r *http.Request
 		out.CachedFor = int(recommendationTTL.Seconds() - time.Since(cachedAt).Seconds())
 		writeJSON(w, http.StatusOK, out)
 		return
+	}
+
+	// 2) Tenta banco (persiste entre reboots)
+	if !force {
+		var dbRec struct {
+			Headline    string    `db:"headline"`
+			Reason      string    `db:"reason"`
+			Actions     []byte    `db:"actions"`
+			CachedAt    time.Time `db:"cached_at"`
+		}
+		if err := h.db.GetContext(r.Context(), &dbRec,
+			`SELECT headline, reason, actions, cached_at FROM recommendation_cache WHERE id = 1`); err == nil {
+			if time.Since(dbRec.CachedAt) < recommendationTTL {
+				var actions []string
+				_ = json.Unmarshal(dbRec.Actions, &actions)
+				out := recommendationResp{
+					Headline:    dbRec.Headline,
+					Reason:      dbRec.Reason,
+					Actions:     actions,
+					GeneratedAt: dbRec.CachedAt.Format(time.RFC3339),
+					CachedFor:   int(recommendationTTL.Seconds() - time.Since(dbRec.CachedAt).Seconds()),
+				}
+				h.recoMu.Lock()
+				h.recoCache = &out
+				h.recoCachedAt = dbRec.CachedAt
+				h.recoMu.Unlock()
+				writeJSON(w, http.StatusOK, out)
+				return
+			}
+		}
 	}
 
 	if h.llmFn == nil {
@@ -565,12 +596,26 @@ Use a busca online se útil pra contextualizar tendências de e-commerce/promoç
 		writeErr(w, http.StatusBadGateway, "LLM resposta inválida: "+err.Error())
 		return
 	}
-	parsed.GeneratedAt = time.Now().Format(time.RFC3339)
+	now := time.Now()
+	parsed.GeneratedAt = now.Format(time.RFC3339)
 	parsed.CachedFor = int(recommendationTTL.Seconds())
+
+	// Persiste no banco para sobreviver reboots
+	actionsJSON, _ := json.Marshal(parsed.Actions)
+	_, _ = h.db.ExecContext(r.Context(), `
+		INSERT INTO recommendation_cache (id, headline, reason, actions, generated_at, cached_at)
+		VALUES (1, $1, $2, $3, $4, $4)
+		ON CONFLICT (id) DO UPDATE SET
+			headline = EXCLUDED.headline,
+			reason = EXCLUDED.reason,
+			actions = EXCLUDED.actions,
+			generated_at = EXCLUDED.generated_at,
+			cached_at = EXCLUDED.cached_at`,
+		parsed.Headline, parsed.Reason, actionsJSON, now)
 
 	h.recoMu.Lock()
 	h.recoCache = &parsed
-	h.recoCachedAt = time.Now()
+	h.recoCachedAt = now
 	h.recoMu.Unlock()
 
 	writeJSON(w, http.StatusOK, parsed)
