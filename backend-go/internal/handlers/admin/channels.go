@@ -959,7 +959,13 @@ func (h *ChannelsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 	intentCtx := ""
 	if req.Intent != "" { intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent) }
 
-	prompt := fmt.Sprintf(`Você é um especialista em marketing digital para e-commerce brasileiro via grupos de WhatsApp e Telegram.
+	prompt := fmt.Sprintf(`Você é um especialista em marketing de afiliados brasileiro via grupos de WhatsApp e Telegram.
+
+Você TEM ACESSO À INTERNET — use-a para:
+- Pesquisar quais NICHOS de grupos de ofertas WA/TG têm mais engajamento no Brasil (suplementos, moda feminina, eletrônicos, pet, bebê, casa, cosméticos, etc.)
+- Verificar tendências de compra sazonais atuais (mês em curso, feriados próximos, eventos)
+- Confirmar quais perfis de audiência convertem melhor em grupos de link de afiliado
+- Descobrir marcas e produtos específicos que estão viralizando em grupos de desconto
 
 CANAIS JÁ EXISTENTES:
 %s
@@ -968,10 +974,10 @@ PRODUTOS NO CATÁLOGO (sample):
 %s
 %s%s
 
-Recomende UM canal otimizado. Responda SOMENTE em JSON:
+Com base na sua pesquisa e nos canais existentes, recomende UM canal. Responda SOMENTE em JSON:
 {
   "name": "Nome do canal (ex: Suplementos Fitness SP)",
-  "description": "Descrição em 1 frase",
+  "description": "Descrição em 1 frase — quem é a audiência e que tipo de oferta receberá",
   "audience_categories": ["categoria1", "categoria2"],
   "audience_brands": ["Marca1", "Marca2"],
   "audience_min_price": 0,
@@ -980,17 +986,18 @@ Recomende UM canal otimizado. Responda SOMENTE em JSON:
   "send_start_hour": 8,
   "send_end_hour": 21,
   "digest_mode": false,
-  "rationale": "Por que este canal faz sentido agora, em 2 frases",
-  "target_profile": "Perfil da audiência ideal (ex: Homens 25-40 interessados em musculação)"
+  "rationale": "Por que este canal tem potencial de conversão AGORA — cite dados/tendências que você buscou",
+  "target_profile": "Perfil detalhado: gênero, faixa etária, poder aquisitivo, plataforma (WA ou TG)",
+  "conversion_tip": "Uma dica específica de como maximizar conversão neste canal (horário, frequência, tipo de oferta)"
 }
 
 REGRAS:
-- audience_categories: categorias de produtos que este canal deve receber (match com taxonomy)
-- audience_brands: marcas preferidas desta audiência (empty = aceita tudo)
-- audience_min_drop: percentual mínimo de desconto para disparar (10 = só ofertas com 10+ por cento off)
-- send_start_hour/end_hour: horário de envio em BRT (8-21 para público geral, 7-23 para jovens)
-- digest_mode: true se preferir 1 mensagem por dia com lista; false para envio imediato
-- rationale: mencione o gap que este canal preenche nos canais atuais
+- audience_categories: categorias com match na taxonomy do catálogo
+- audience_brands: marcas conhecidas do nicho (vazio = aceita tudo)
+- audience_min_drop: mínimo 10%% de desconto para disparar (aumentar pra nichos premium)
+- send_start_hour/end_hour: horário BRT — 7-22 jovens/tech, 8-21 geral, 9-20 para públicos mais velhos
+- digest_mode: true para audiências que preferem 1 resumo diário; false para disparo imediato
+- rationale: mencione dados concretos da sua pesquisa online (ex: "grupos de whey no WA têm média de X membros")
 
 JSON:`, channelCtx, productCtx, modeInst, intentCtx)
 

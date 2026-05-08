@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Skeleton, EmptyState, Input } from '../components/ui'
+import { Badge, Button, Skeleton, EmptyState, Input, SearchSelect } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ── Gráfico de histórico de preços (expandido ao clicar na linha) ─────────────
@@ -298,28 +298,20 @@ export default function Catalog() {
           <option value="casasbahia">Casas Bahia</option>
         </select>
         {categories.length > 0 && (
-          <select
-            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
+          <SearchSelect
+            placeholder="Todas as categorias"
             value={tagFilter}
-            onChange={e => setTagFilter(e.target.value)}
-          >
-            <option value="">Todas as categorias</option>
-            {categories.map(c => (
-              <option key={c.id} value={c.slug}>{c.name}</option>
-            ))}
-          </select>
+            onChange={setTagFilter}
+            options={categories.map(c => ({ value: c.slug, label: c.name }))}
+          />
         )}
         {brands.length > 0 && (
-          <select
-            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-8"
+          <SearchSelect
+            placeholder="Todas as marcas"
             value={brandFilter}
-            onChange={e => setBrandFilter(e.target.value)}
-          >
-            <option value="">Todas as marcas</option>
-            {brands.map(b => (
-              <option key={b.id} value={b.name}>{b.name}</option>
-            ))}
-          </select>
+            onChange={setBrandFilter}
+            options={brands.map(b => ({ value: b.name, label: b.name }))}
+          />
         )}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-fg-3">R$</span>

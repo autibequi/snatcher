@@ -469,6 +469,7 @@ export default function Groups() {
   const [importAccountId, setImportAccountId] = useState('')
   const [importChannelId, setImportChannelId] = useState('')
   const [selectedJID, setSelectedJID] = useState('')
+  const [importInviteLink, setImportInviteLink] = useState('')
   const [groupSearch, setGroupSearch] = useState('')
 
   // Busca grupos da Evolution API ao trocar de conta
@@ -512,12 +513,14 @@ export default function Groups() {
           wa_account_id: Number(importAccountId),
           jid: selectedGroup.id,
           member_count: selectedGroup.size,
+          invite_link: importInviteLink.trim() || undefined,
         })
         .then(r => r.data)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setShowImport(false)
+      setImportInviteLink('')
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao importar grupo'
@@ -698,6 +701,22 @@ export default function Groups() {
                 )}
               </div>
             </div>
+
+            {/* Invite link — obrigatório para o link público funcionar */}
+            {selectedJID && (
+              <div className="mt-3">
+                <label className="text-xs text-fg-2 block mb-1">
+                  Link de convite <span className="text-fg-3">(cole aqui para o Link Público funcionar)</span>
+                </label>
+                <input
+                  type="url"
+                  value={importInviteLink}
+                  onChange={e => setImportInviteLink(e.target.value)}
+                  placeholder="https://chat.whatsapp.com/..."
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end mt-4">
               <Button variant="secondary" size="sm" onClick={() => setShowImport(false)}>

@@ -543,6 +543,15 @@ export default function Logs() {
     refetchInterval: 15_000,
   })
 
+  const qc = useQueryClient()
+  const expireStale = useMutation({
+    mutationFn: () => apiClient.post('/api/dispatches/expire-stale').then(r => r.data as { expired_targets: number }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['dispatches'] })
+      alert(`${data.expired_targets} targets expirados.`)
+    },
+  })
+
   const { data: scheduledItems = [] } = useQuery({
     queryKey: ['dispatches', 'scheduled'],
     queryFn: () =>
@@ -666,7 +675,19 @@ export default function Logs() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={expireStale.isPending}
+          onClick={() => {
+            if (confirm('Marcar como "failed" todos os targets pending há mais de 2h?'))
+              expireStale.mutate()
+          }}
+          title="Limpa targets presos em 'pending' que nunca foram processados"
+        >
+          Expirar stale
+        </Button>
         <Button variant="secondary" size="sm" onClick={handleExport}>
           Exportar CSV
         </Button>

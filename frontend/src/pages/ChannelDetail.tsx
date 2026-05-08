@@ -613,7 +613,7 @@ export default function ChannelDetail() {
             <Button
               variant="primary"
               size="sm"
-              onClick={() => navigate(`/automations?channel=${id}`)}
+              onClick={() => navigate(`/automations/channels`)}
             >
               Configurar em Automações →
             </Button>

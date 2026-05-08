@@ -260,3 +260,35 @@ func (h *DispatchHandler) ApproveAllDispatch(w http.ResponseWriter, r *http.Requ
 	n, _ := res.RowsAffected()
 	writeJSON(w, http.StatusOK, map[string]any{"approved": n})
 }
+
+// ExpireStaleTargets POST /api/dispatches/expire-stale
+// Marca como 'failed' todos os dispatch_targets com status='pending' há mais de 2h.
+// Também atualiza dispatches para 'failed' se todos os targets estiverem concluídos.
+func (h *DispatchHandler) ExpireStaleTargets(w http.ResponseWriter, r *http.Request) {
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE dispatch_targets
+		SET status = 'failed',
+		    error_reason = 'expirado automaticamente (pendente há mais de 2h)'
+		WHERE status = 'pending'
+		  AND created_at < now() - interval '2 hours'`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	expired, _ := res.RowsAffected()
+
+	// Atualiza dispatches que agora não têm mais targets pending
+	_, _ = h.db.ExecContext(r.Context(), `
+		UPDATE dispatches d SET status = 'failed'
+		WHERE d.status IN ('sending', 'queued', 'scheduled')
+		  AND NOT EXISTS (
+		      SELECT 1 FROM dispatch_targets dt
+		      WHERE dt.dispatch_id = d.id AND dt.status IN ('pending', 'sending')
+		  )
+		  AND EXISTS (
+		      SELECT 1 FROM dispatch_targets dt
+		      WHERE dt.dispatch_id = d.id AND dt.status = 'failed'
+		  )`)
+
+	writeJSON(w, http.StatusOK, map[string]any{"expired_targets": expired})
+}

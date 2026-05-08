@@ -1042,7 +1042,7 @@ func (s *SQLStore) ListAutoMatchLogsByChannel(channelID int64, limit int) ([]mod
 		       ) AS group_names
 		FROM auto_match_logs l
 		LEFT JOIN catalogproduct p ON p.id = l.product_id
-		LEFT JOIN channels ch ON ch.id = l.channel_id
+		LEFT JOIN channel ch ON ch.id = l.channel_id
 		WHERE l.channel_id = $1
 		ORDER BY l.created_at DESC
 		LIMIT $2`, channelID, limit)

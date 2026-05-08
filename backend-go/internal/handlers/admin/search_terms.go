@@ -301,32 +301,39 @@ func (h *SearchTermsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 		intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent)
 	}
 
-	prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro e configuração de crawlers de preço.
+	prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro, grupos de afiliados (WhatsApp/Telegram) e configuração de crawlers de preço.
+
+Você TEM ACESSO À INTERNET — use-a para:
+- Verificar produtos e marcas em alta no Brasil agora (tendências reais, não suposições)
+- Conferir faixas de preço atuais no Mercado Livre, Amazon BR, Magalu
+- Identificar nichos com alta demanda em grupos de link de afiliados brasileiros (suplementos, eletrônicos, moda plus size, itens de casa, pet, etc.)
+- Confirmar se o mercado sugerido tem volume suficiente pra valer o crawler
 
 CRAWLERS JÁ CONFIGURADOS:
 %s
 %s%s
 
-Recomende UMA configuração de crawler otimizada para o contexto acima. Responda SOMENTE em JSON:
+Com base na sua pesquisa online e nos crawlers existentes, recomende UMA configuração de crawler. Responda SOMENTE em JSON:
 {
-  "query": "termo de busca principal (ex: whey protein 900g)",
-  "queries": ["variação 1", "variação 2", "variação 3"],
+  "query": "termo de busca principal otimizado para afiliados (ex: whey protein 900g isolado)",
+  "queries": ["variação 1", "variação 2", "variação 3", "variação 4"],
   "sources": ["amazon", "mercadolivre"],
   "min_val": 0,
   "max_val": 500,
   "crawl_interval": 60,
-  "rationale": "Explicação em 1-2 frases do por que essa configuração faz sentido",
+  "rationale": "Por que este mercado é lucrativo pra grupos de link agora — baseado em dados reais que você buscou",
   "expected_products": "estimativa de quantos produtos por ciclo (ex: 10-30)",
+  "market_insight": "tendência atual ou sazonalidade que justifica este crawler agora",
   "category": "ecommerce"
 }
 
 REGRAS:
-- query deve ser específica o suficiente pra encontrar bons produtos mas não muito restrita
-- queries deve ter 3-5 variações (marcas, sinônimos, formatos)
-- sources: use ["amazon","mercadolivre"] como padrão; Magalu/Shopee pra categorias fashion/eletro
-- min_val/max_val: faixa de preço realista pra categoria (0 = sem limite)
-- crawl_interval: 30 pra mercados voláteis (tech, jogos), 60-120 pra mercados estáveis (moda, suplementos)
-- rationale: seja específico sobre o gap que está preenchendo nos crawlers atuais
+- query específica o suficiente pra encontrar produtos com desconto real (não genérica demais)
+- queries: 4-6 variações com marcas conhecidas, formatos e sinônimos
+- sources: ["amazon","mercadolivre"] como padrão; Shopee pra moda/acessórios; Magalu pra eletrodomésticos
+- min_val/max_val: faixa realista baseada nos preços atuais que você pesquisou
+- crawl_interval: 30 pra tech/games voláteis, 60 pra suplementos, 120 pra itens estáveis
+- rationale: cite especificamente o gap nos crawlers atuais E o potencial de conversão em grupos WA/TG
 
 JSON:`, existingCtx, modeInstruction, intentCtx)
 
