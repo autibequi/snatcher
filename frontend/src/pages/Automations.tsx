@@ -805,155 +805,131 @@ export function TabOverview() {
   const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
   void jonfreyActions
 
+  // Countdown pro próximo ciclo
+  const nextRunMs = data?.last_run_at && data?.interval_seconds
+    ? new Date(data.last_run_at).getTime() + data.interval_seconds * 1000
+    : null
+  const [nextRunSecs, setNextRunSecs] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    const tick = () => {
+      if (nextRunMs) setNextRunSecs(Math.max(0, Math.round((nextRunMs - Date.now()) / 1000)))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [nextRunMs])
+  const countdownLabel = nextRunSecs === null ? '—' : nextRunSecs === 0 ? 'executando…' : `${nextRunSecs}s`
+
+  // Separa logs: últimos 30min = "a enviar neste ciclo", anteriores = "já enviados"
+  const cutoffRecent = Date.now() - 30 * 60_000
+  const logsRecent = logs.filter(l => new Date(l.created_at).getTime() > cutoffRecent)
+  const logsOlder  = logs.filter(l => new Date(l.created_at).getTime() <= cutoffRecent)
+
+  const renderLogRow = (log: AutoMatchLog) => {
+    const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
+    return (
+      <div key={log.id} className="px-4 py-2.5 flex items-start gap-3">
+        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${log.score >= 70 ? 'bg-success/10 text-success' : log.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
+          {fmtScore(log.score)}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-fg truncate">{log.product_name || `Produto #${log.product_id}`}</p>
+          {log.channel_name && <p className="text-[10px] text-fg-3">canal: {log.channel_name}</p>}
+          {groups.length > 0 ? (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {groups.map(g => (
+                <span key={g} className="text-[10px] bg-accent/10 border border-accent/30 rounded px-1.5 py-0.5 text-accent truncate max-w-[140px]" title={g}>{g}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-fg-3 mt-0.5">— sem grupos</p>
+          )}
+        </div>
+        <div className="text-right shrink-0 flex flex-col items-end gap-1">
+          <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</span>
+          <a href={`/logs?dispatchId=${log.dispatch_id}`} className="text-[10px] text-accent hover:underline">ver →</a>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-5">
-      {/* Aviso de modo de aprovação */}
-      {!fullAutoMode && (
-        <div className="flex items-start gap-3 border border-warning/40 bg-warning/5 rounded-md px-4 py-3">
-          <span className="text-base leading-none mt-0.5">⚠️</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-fg">Modo manual (aprovação humana)</p>
-            <p className="text-xs text-fg-3 mt-0.5">
-              Disparos automáticos estão sendo criados mas <strong>aguardam aprovação</strong> antes de enviar.
-              Ative o <strong>Full-auto</strong> em <a href="/settings" className="text-accent hover:underline">Configurações → Geral</a> para enviar sem revisar,
-              ou aprove os pendentes no <a href="/" className="text-accent hover:underline">Dashboard → Inbox</a>.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* KPI + Kill-switch sincronizado com Jonfrey */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
+      {/* KPI + Parâmetros globais inline */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
-          tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h, somando todos os canais. Inclui todos os status (entregues, pendentes, falhos)." />
-        <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics"
-          tooltip="Cliques em links de disparos automáticos. Disponível em Análise → Insights de cliques." />
-
-        {/* Kill-switch como 3ª caixa */}
+          tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h." />
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card flex flex-col gap-1">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Próx. ciclo</p>
+          <p className="text-lg font-bold text-fg leading-none">{countdownLabel}</p>
+          <p className="text-[10px] text-fg-3">{data?.interval_seconds ? `a cada ${data.interval_seconds / 60 | 0}min` : '—'}</p>
+        </div>
+        {/* Kill-switch */}
         <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled ? 'border-accent/40' : 'border-border'}`}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Kill-switch</p>
-              <p className={`text-sm font-semibold mt-1 ${fullyEnabled ? 'text-success' : 'text-fg-2'}`}>
-                {fullyEnabled ? 'Ativo' : 'Pausado'}
-              </p>
-              <p className="text-[10px] text-fg-3 mt-1">
-                Sincronizado com <a href="/automations/jonfrey" className="text-accent hover:underline">Jonfrey</a>
-              </p>
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Auto-pilot</p>
+              <p className={`text-sm font-semibold mt-1 ${fullyEnabled ? 'text-success' : 'text-fg-2'}`}>{fullyEnabled ? 'Ativo' : 'Pausado'}</p>
             </div>
-            <button
-              type="button"
-              disabled={toggleMut.isPending}
-              onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
-              className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              aria-label={fullyEnabled ? 'Desativar' : 'Ativar'}
-            >
+            <button type="button" disabled={toggleMut.isPending} onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
+              className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Parâmetros globais — defaults usados quando canal não tem override */}
-      <div className="bg-surface border border-border rounded-md p-4 space-y-3">
-        <div>
-          <p className="text-sm font-medium text-fg">Parâmetros globais</p>
-          <p className="text-xs text-fg-3 mt-0.5">Defaults — canais podem sobrescrever em "Por canal".</p>
+        {/* Score mínimo */}
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1.5">Score mínimo</p>
+          <input type="number" min={0} max={100} value={threshold}
+            onChange={e => setLocalThreshold(Number(e.target.value))}
+            onBlur={() => toggleMut.mutate({ threshold })}
+            className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="space-y-1">
-            <span className="text-xs text-fg-2">Score mínimo (0–100)</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={threshold}
-              onChange={e => setLocalThreshold(Number(e.target.value))}
-              onBlur={() => toggleMut.mutate({ threshold })}
-              className="w-full text-sm border border-border rounded-md px-3 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs text-fg-2">Max. disparos por ciclo</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={maxPerRun}
-              onChange={e => setLocalMaxPerRun(Number(e.target.value))}
-              onBlur={() => toggleMut.mutate({ max_per_run: maxPerRun })}
-              className="w-full text-sm border border-border rounded-md px-3 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </label>
+        {/* Max por ciclo */}
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1.5">Max/ciclo</p>
+          <input type="number" min={1} max={20} value={maxPerRun}
+            onChange={e => setLocalMaxPerRun(Number(e.target.value))}
+            onBlur={() => toggleMut.mutate({ max_per_run: maxPerRun })}
+            className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
         </div>
       </div>
 
-      {/* Disparos automáticos por grupo */}
+      {/* Disparos: A enviar (recentes) */}
       <div className="bg-surface border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <p className="text-sm font-medium text-fg">Disparos automáticos · por grupo</p>
-          <button
-            type="button"
-            onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })}
-            className="text-xs text-fg-3 hover:text-fg"
-            title="Atualizar"
-          >
-            ↻
-          </button>
-        </div>
-        {logs.length === 0 ? (
-          <div className="px-4 py-8 text-center">
-            <p className="text-sm text-fg-3">Nenhum disparo automático registrado ainda.</p>
-            <p className="text-xs text-fg-3 mt-1">
-              Quando os canais começarem a disparar, cada produto/grupo aparece aqui.
-            </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-fg">A enviar · próximos</p>
+            {!fullAutoMode && (
+              <span className="text-[10px] bg-warning/10 text-warning border border-warning/30 rounded px-1.5 py-0.5">
+                aguardando aprovação — <a href="/" className="underline">aprovar</a>
+              </span>
+            )}
           </div>
+          <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
+        </div>
+        {logsRecent.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo nos últimos 30min.</p>
         ) : (
-          <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
-            {logs.slice(0, 30).map(log => {
-              const groups = log.group_names
-                ? log.group_names.split(', ').filter(Boolean)
-                : []
-              return (
-                <div key={log.id} className="px-4 py-2.5 flex items-start gap-3">
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${log.score >= 70 ? 'bg-success/10 text-success' : log.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
-                    {fmtScore(log.score)}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-fg truncate">{log.product_name || `Produto #${log.product_id}`}</p>
-                    {log.channel_name && (
-                      <p className="text-[10px] text-fg-3">canal: {log.channel_name}</p>
-                    )}
-                    {groups.length > 0 ? (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {groups.map(g => (
-                          <span key={g} className="text-[10px] bg-accent/10 border border-accent/30 rounded px-1.5 py-0.5 text-accent truncate max-w-[140px]" title={g}>
-                            {g}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-fg-3 mt-0.5">— sem grupos joinados</p>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                    <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</span>
-                    <a
-                      href={`/logs?dispatchId=${log.dispatch_id}`}
-                      className="text-[10px] text-accent hover:underline"
-                    >
-                      ver →
-                    </a>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
+            {logsRecent.map(renderLogRow)}
           </div>
         )}
-        <div className="px-4 py-2 border-t border-border bg-surface-2 text-xs text-fg-3 flex items-center justify-between">
-          <span>Últimos {Math.min(logs.length, 30)} disparos · auto-match</span>
-          <a href="/logs" className="text-accent hover:underline">Ver Logs →</a>
+      </div>
+
+      {/* Disparos: Já enviados (histórico) */}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <p className="text-sm font-medium text-fg">Já disparados · histórico</p>
+          <a href="/logs" className="text-xs text-accent hover:underline">Ver todos →</a>
         </div>
+        {logsOlder.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo anterior.</p>
+        ) : (
+          <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
+            {logsOlder.slice(0, 20).map(renderLogRow)}
+          </div>
+        )}
       </div>
     </div>
   )
