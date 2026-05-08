@@ -136,7 +136,7 @@ export default function App() {
               <Route path="catalog" element={<Catalog />} />
               <Route path="crawlers" element={<Crawlers />} />
               <Route path="crawlers/:id" element={<CrawlerDetail />} />
-              <Route path="channels" element={<Channels />} />
+              <Route path="channels" element={<Navigate to="/automations/channels" replace />} />
               <Route path="channels/:id" element={<ChannelDetail />} />
               <Route path="links" element={<PublicLinks />} />
               <Route path="groups" element={<Groups />} />

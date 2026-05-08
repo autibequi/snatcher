@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/apiClient'
 
@@ -19,19 +20,25 @@ function formatRemaining(seconds: number): string {
 
 export function RecommendationCard() {
   const qc = useQueryClient()
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const { data, isLoading, isError, isFetching } = useQuery<Recommendation>({
     queryKey: ['dashboard', 'recommendation'],
     queryFn: () =>
       apiClient.get('/api/dashboard/recommendation').then(r => r.data),
-    staleTime: 60 * 60 * 1000, // 1h — backend já cacheia
+    staleTime: 24 * 60 * 60 * 1000, // 24h — backend já cacheia
     retry: 0,
   })
 
-  const refresh = () => {
-    apiClient
-      .get('/api/dashboard/recommendation?force=1')
-      .then(() => qc.invalidateQueries({ queryKey: ['dashboard', 'recommendation'] }))
+  const refresh = async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await apiClient.get('/api/dashboard/recommendation?force=1')
+      await qc.invalidateQueries({ queryKey: ['dashboard', 'recommendation'] })
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   if (isLoading) {
@@ -71,11 +78,11 @@ export function RecommendationCard() {
           <button
             type="button"
             onClick={refresh}
-            disabled={isFetching}
+            disabled={isRefreshing || isFetching}
             title="Forçar nova recomendação"
-            className="text-xs text-fg-2 hover:text-fg border border-border rounded px-2 py-1 disabled:opacity-50"
+            className="text-xs text-fg-2 hover:text-fg border border-border rounded px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            ↻
+            {isRefreshing ? '⏳' : '↻'}
           </button>
         </div>
       </div>

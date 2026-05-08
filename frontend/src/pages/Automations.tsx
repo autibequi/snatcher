@@ -740,6 +740,13 @@ export function TabOverview() {
     staleTime: 15_000,
   })
 
+  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean }>({
+    queryKey: ['config'],
+    queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
+    staleTime: 60_000,
+  })
+  const fullAutoMode = !!appConfig?.full_auto_mode
+
   // Mantém o toggle global sync com Jonfrey: ligar/desligar aqui afeta ambos.
   const toggleMut = useMutation({
     mutationFn: async (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) => {
@@ -799,6 +806,21 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Aviso de modo de aprovação */}
+      {!fullAutoMode && (
+        <div className="flex items-start gap-3 border border-warning/40 bg-warning/5 rounded-md px-4 py-3">
+          <span className="text-base leading-none mt-0.5">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-fg">Modo manual (aprovação humana)</p>
+            <p className="text-xs text-fg-3 mt-0.5">
+              Disparos automáticos estão sendo criados mas <strong>aguardam aprovação</strong> antes de enviar.
+              Ative o <strong>Full-auto</strong> em <a href="/settings" className="text-accent hover:underline">Configurações → Geral</a> para enviar sem revisar,
+              ou aprove os pendentes no <a href="/" className="text-accent hover:underline">Dashboard → Inbox</a>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* KPI + Kill-switch sincronizado com Jonfrey */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"

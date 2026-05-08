@@ -313,7 +313,6 @@ const TABS = [
   { id: 'overview', label: 'Visão geral' },
   { id: 'audience', label: 'Audiência' },
   { id: 'groups', label: 'Grupos' },
-  { id: 'rules', label: 'Regras' },
   { id: 'history', label: 'Histórico' },
   { id: 'publiclink', label: 'Link público' },
 ]
@@ -646,25 +645,7 @@ export default function ChannelDetail() {
           </div>
         )}
 
-        {tab === 'rules' && (
-          <div className="border border-border rounded-md p-6 bg-surface">
-            <p className="text-sm text-fg mb-2">
-              As regras deste canal foram movidas para a área de <strong>Automações</strong>.
-            </p>
-            <p className="text-xs text-fg-3 mb-4">
-              Lá você pode ligar/desligar o canal, configurar threshold, filtros e notificações em um só lugar.
-            </p>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => navigate(`/automations/channels`)}
-            >
-              Configurar em Automações →
-            </Button>
-          </div>
-        )}
-
-        {tab === 'history' && (
+{tab === 'history' && (
           <ChannelHistory channelId={id!} />
         )}
 
