@@ -1,23 +1,31 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
-	"github.com/go-chi/chi/v5"
 )
 
 type GroupsHandler struct {
 	store store.Store
+	llmFn func() llm.Client
 }
 
 func NewGroupsHandler(st store.Store) *GroupsHandler {
 	return &GroupsHandler{store: st}
 }
+
+func (h *GroupsHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 type groupRequest struct {
 	ChannelID   int64   `json:"channel_id"   validate:"required"`
@@ -384,4 +392,82 @@ func (h *GroupsHandler) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SuggestAudience POST /api/groups/{id}/suggest-audience
+// Infere perfil da audiência via LLM com WebSearch (tendências reais).
+func (h *GroupsHandler) SuggestAudience(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	g, err := h.store.GetRedesignGroup(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "grupo não encontrado")
+		return
+	}
+
+	channelName := ""
+	if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
+		channelName = ch.Name
+	}
+
+	prompt := fmt.Sprintf(`Você é especialista em audiências de grupos WhatsApp/Telegram de ofertas brasileiros.
+
+Use a busca online para investigar:
+- Padrão típico de membros em grupos com nomes similares
+- Faixa etária dominante e horários de maior engajamento
+- Categorias de produto que mais convertem nesta audiência
+
+GRUPO:
+- Nome: "%s"
+- Plataforma: %s
+- Canal pai: "%s"
+- Membros: %d
+
+Responda EXCLUSIVAMENTE em JSON:
+{
+  "audience_summary": "descrição em 1-2 frases do perfil predominante",
+  "age_range": "ex: 25-40",
+  "peak_hours": "ex: 19h-22h em dias de semana",
+  "interests": ["interesse1", "interesse2", "interesse3"],
+  "best_categories": ["categoria1", "categoria2"],
+  "engagement_tip": "1 dica concreta para maximizar conversão neste grupo"
+}`,
+		g.Name, g.Platform, channelName, g.MemberCount,
+	)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   500,
+		Temperature: 0.4,
+		Operation:   "suggest_audience",
+		JSONMode:    true,
+		WebSearch:   true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

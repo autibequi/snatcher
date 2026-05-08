@@ -1,25 +1,32 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
 
 type TaxonomyHandler struct {
 	store store.Store
+	llmFn func() llm.Client
 }
 
 func NewTaxonomyHandler(st store.Store) *TaxonomyHandler {
 	return &TaxonomyHandler{store: st}
 }
+
+func (h *TaxonomyHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 // List retorna entradas da taxonomia (categorias e/ou marcas) aprovadas.
 // GET /api/taxonomy?type=category|brand (type opcional)
@@ -173,4 +180,88 @@ func (h *TaxonomyHandler) Reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// Suggest POST /api/taxonomy/suggest
+// Body: { title: string, brand?: string }
+// Retorna: { category, brand, tags[], confidence }
+func (h *TaxonomyHandler) Suggest(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	var req struct {
+		Title string `json:"title"`
+		Brand string `json:"brand"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if strings.TrimSpace(req.Title) == "" {
+		writeErr(w, http.StatusBadRequest, "title obrigatório")
+		return
+	}
+
+	cats, _ := h.store.ListTaxonomy("category")
+	brands, _ := h.store.ListTaxonomy("brand")
+	var catNames, brandNames []string
+	for _, c := range cats {
+		catNames = append(catNames, c.Name)
+	}
+	for _, b := range brands {
+		brandNames = append(brandNames, b.Name)
+	}
+	if len(catNames) > 50 {
+		catNames = catNames[:50]
+	}
+	if len(brandNames) > 50 {
+		brandNames = brandNames[:50]
+	}
+
+	prompt := fmt.Sprintf(`Classifique este produto de e-commerce brasileiro.
+
+Título: "%s"
+Marca informada: "%s"
+
+Categorias existentes (use uma quando aplicável): %s
+Marcas existentes (use uma quando aplicável): %s
+
+Responda EXCLUSIVAMENTE em JSON:
+{
+  "category": "slug-da-categoria",
+  "brand": "Nome Da Marca",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "confidence": 0.85
+}
+
+Regras:
+- category: prefira slugs já existentes; se não houver match, sugira um novo slug em snake_case
+- brand: use a marca existente se reconhecer; senão, extraia do título; null se incerto
+- tags: 3-7 tags relevantes em pt-BR (categoria mais específica, atributo do produto)
+- confidence: 0.0 a 1.0`, req.Title, req.Brand, strings.Join(catNames, ", "), strings.Join(brandNames, ", "))
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   300,
+		Temperature: 0.2,
+		Operation:   "suggest_taxonomy",
+		JSONMode:    true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

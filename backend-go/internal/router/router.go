@@ -99,6 +99,9 @@ func Build(
 	dash.SetLLMFn(composeH.BuildLLMClient)
 	dispatches.SetLLMFn(composeH.BuildLLMClient)
 	automations.SetLLMFn(composeH.BuildLLMClient)
+	taxonomy.SetLLMFn(composeH.BuildLLMClient)
+	groups.SetLLMFn(composeH.BuildLLMClient)
+	catalog.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
@@ -206,6 +209,7 @@ func Build(
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
+		r.Post("/api/catalog/{id}/suggest-tags", catalog.SuggestTags)
 		// Reprocess pode demorar minutos em catálogos grandes — sobrescreve timeout global de 30s
 		r.With(chimw.Timeout(10 * time.Minute)).Post("/api/catalog/reprocess", catalog.Reprocess)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
@@ -293,6 +297,7 @@ func Build(
 		r.Patch("/api/groups/{id}", groups.Update)
 		r.Delete("/api/groups/{id}", groups.Delete)
 		r.Get("/api/groups/{id}/members", groups.Members)
+		r.Post("/api/groups/{id}/suggest-audience", groups.SuggestAudience)
 		r.Post("/api/groups/{id}/archive", groups.Archive)
 		r.Get("/api/groups/{id}/admins", groups.ListAdmins)
 		r.Post("/api/groups/{id}/admins", groups.AddAdmin)
@@ -304,6 +309,7 @@ func Build(
 		// Taxonomy (categorias e marcas para autocomplete + admin)
 		r.Get("/api/taxonomy", taxonomy.List)
 		r.Get("/api/taxonomy/pending", taxonomy.ListPending)
+		r.Post("/api/taxonomy/suggest", taxonomy.Suggest)
 		r.Post("/api/taxonomy", taxonomy.Create)
 		r.Patch("/api/taxonomy/{id}", taxonomy.Update)
 		r.Delete("/api/taxonomy/{id}", taxonomy.Delete)

@@ -1,26 +1,34 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
-	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/pipeline"
-	"snatcher/backendv2/internal/store"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/pipeline"
+	"snatcher/backendv2/internal/store"
 )
 
 type CatalogHandler struct {
 	store store.Store
 	db    *sqlx.DB
+	llmFn func() llm.Client
 }
 
 func NewCatalog(st store.Store) *CatalogHandler {
 	return &CatalogHandler{store: st}
 }
+
+func (h *CatalogHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 // NewCatalogDB cria o handler com acesso direto ao DB para queries agregadas.
 func NewCatalogDB(st store.Store, db *sqlx.DB) *CatalogHandler {
@@ -438,4 +446,97 @@ func (h *CatalogHandler) Reprocess(w http.ResponseWriter, r *http.Request) {
 		"categorized": categorized,
 		"total":       len(products),
 	})
+}
+
+// SuggestTags POST /api/catalog/{id}/suggest-tags
+// Sugere 5-10 tags relevantes via LLM usando vocabulário existente.
+func (h *CatalogHandler) SuggestTags(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	prod, err := h.store.GetCatalogProduct(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "produto não encontrado")
+		return
+	}
+
+	// Vocabulário existente (top 50 categorias) — para reutilização
+	cats, _ := h.store.ListTaxonomy("category")
+	var vocab []string
+	for _, c := range cats {
+		vocab = append(vocab, c.Name)
+	}
+	if len(vocab) > 50 {
+		vocab = vocab[:50]
+	}
+
+	brand := ""
+	if prod.Brand.Valid {
+		brand = prod.Brand.String
+	}
+	price := 0.0
+	if prod.LowestPrice.Valid {
+		price = prod.LowestPrice.Float64
+	}
+	currentTags := strings.Join(prod.GetTags(), ", ")
+
+	prompt := fmt.Sprintf(`Você é especialista em SEO e classificação de produtos para e-commerce brasileiro.
+
+PRODUTO:
+- Título: "%s"
+- Marca: "%s"
+- Preço: R$ %.2f
+- Tags atuais: [%s]
+
+VOCABULÁRIO EXISTENTE (use estas tags quando aplicável): %s
+
+Sugira 5-10 tags relevantes em pt-BR. Tags devem capturar:
+- Categoria mais específica
+- Atributo principal (ex: peso, sabor, cor)
+- Tipo de uso ou benefício
+- Marca (se notável)
+
+Responda EXCLUSIVAMENTE em JSON:
+{
+  "tags": ["tag1", "tag2", ...],
+  "new_tags": ["tag-nova-1", ...]
+}
+
+new_tags: subconjunto de tags que NÃO estão no vocabulário existente.`,
+		prod.CanonicalName, brand, price, currentTags, strings.Join(vocab, ", "),
+	)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   300,
+		Temperature: 0.3,
+		Operation:   "suggest_tags",
+		JSONMode:    true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

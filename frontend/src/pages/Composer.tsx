@@ -205,6 +205,16 @@ export default function Composer() {
     onSuccess: () => alert('Rascunho salvo! Acesse em Logs > Rascunhos.'),
   })
 
+  // P7: verifica cobertura de afiliado para o marketplace do produto
+  const { data: affCoverage } = useQuery<{ has_affiliate: boolean }>({
+    queryKey: ['affiliate-coverage', realSource],
+    queryFn: () =>
+      apiClient.get(`/api/affiliates/coverage?marketplace=${encodeURIComponent(realSource)}`).then(r => r.data),
+    enabled: !!realSource,
+    staleTime: 30_000,
+  })
+  const missingAffiliate = !!realSource && affCoverage && !affCoverage.has_affiliate
+
   // Gerar short link rastreável com domínio próprio e tag de afiliado no redirect
   const { data: affiliateUrl = '' } = useQuery<string>({
     queryKey: ['short-link', productIds[0], realUrl, realSource],
@@ -625,13 +635,34 @@ export default function Composer() {
             )}
           </div>
 
+          {/* P7: Aviso bloqueante de afiliado faltando */}
+          {missingAffiliate && (
+            <div className="rounded-md p-3 bg-danger/10 border border-danger/40">
+              <p className="text-xs font-semibold text-danger mb-1">
+                🔒 Sem código de afiliado para "{realSource}"
+              </p>
+              <p className="text-xs text-fg-2 mb-2">
+                Configure um programa em <strong>Afiliados</strong> antes de disparar.
+                Disparos sem código não geram comissão.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/affiliates')}
+                className="text-xs text-accent underline"
+              >
+                Ir para Afiliados →
+              </button>
+            </div>
+          )}
+
           {/* Ações */}
           <div className="space-y-2">
             <Button
               variant="primary"
               className="w-full"
-              disabled={!text || channels.length === 0 || dispatch.isPending}
+              disabled={!text || channels.length === 0 || dispatch.isPending || missingAffiliate}
               onClick={() => setShowConfirm(true)}
+              title={missingAffiliate ? 'Configure um programa de afiliado primeiro' : undefined}
             >
               {dispatch.isPending ? '⌛ Enviando...' : scheduledFor ? '📅 Agendar disparo' : '✈ Disparar agora'}
             </Button>

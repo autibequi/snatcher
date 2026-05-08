@@ -748,6 +748,20 @@ export default function GroupDetail() {
   }
 
   const memberCount = group.member_count ?? members.length
+
+  const audienceMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/groups/${id}/suggest-audience`)
+        .then(r => r.data as {
+          audience_summary?: string
+          age_range?: string
+          peak_hours?: string
+          interests?: string[]
+          best_categories?: string[]
+          engagement_tip?: string
+        }),
+  })
   const activeCount = group.active_members ?? members.filter(m => m.engagement === 'active' || m.engagement === 'engaged').length
   const dormantCount = group.dormant_members ?? members.filter(m => m.engagement === 'dormant').length
   const clicks30d = group.clicks_30d ?? 0
@@ -773,6 +787,15 @@ export default function GroupDetail() {
             ← Grupos
           </button>
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={audienceMut.isPending}
+              onClick={() => audienceMut.mutate()}
+              title="Inferir perfil da audiência via IA"
+            >
+              ✨ Inferir audiência
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowInviteModal(true)}>
               Link de convite
             </Button>
@@ -809,6 +832,51 @@ export default function GroupDetail() {
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto p-6">
+        {audienceMut.data && (
+          <div className="bg-accent/5 border border-accent/30 rounded-md p-4 mb-6">
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-sm font-semibold text-fg">🎯 Perfil inferido da audiência</p>
+              <button
+                type="button"
+                onClick={() => audienceMut.reset()}
+                className="text-xs text-fg-3 hover:text-fg"
+              >
+                ×
+              </button>
+            </div>
+            {audienceMut.data.audience_summary && (
+              <p className="text-sm text-fg-2 mb-2">{audienceMut.data.audience_summary}</p>
+            )}
+            <div className="grid grid-cols-2 gap-3 mb-2 text-xs">
+              {audienceMut.data.age_range && (
+                <p><span className="text-fg-3">Faixa etária:</span> <strong className="text-fg">{audienceMut.data.age_range}</strong></p>
+              )}
+              {audienceMut.data.peak_hours && (
+                <p><span className="text-fg-3">Pico de atividade:</span> <strong className="text-fg">{audienceMut.data.peak_hours}</strong></p>
+              )}
+            </div>
+            {(audienceMut.data.interests?.length || audienceMut.data.best_categories?.length) ? (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {audienceMut.data.interests?.map(t => (
+                  <span key={t} className="text-[10px] px-1.5 py-0.5 bg-surface-2 border border-border rounded text-fg-2">{t}</span>
+                ))}
+                {audienceMut.data.best_categories?.map(t => (
+                  <span key={t} className="text-[10px] px-1.5 py-0.5 bg-accent/10 border border-accent/30 rounded text-accent">{t}</span>
+                ))}
+              </div>
+            ) : null}
+            {audienceMut.data.engagement_tip && (
+              <p className="text-xs text-fg-2 mt-2 italic">💡 {audienceMut.data.engagement_tip}</p>
+            )}
+          </div>
+        )}
+        {audienceMut.isError && (
+          <div className="bg-danger/10 border border-danger/30 rounded-md p-3 mb-6">
+            <p className="text-xs text-danger">
+              Erro ao inferir audiência: {(audienceMut.error as any)?.response?.data?.error ?? 'falha desconhecida'}
+            </p>
+          </div>
+        )}
         {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KpiCard

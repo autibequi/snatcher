@@ -182,6 +182,32 @@ function ProductRow({
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
+  // P3: sugestão de taxonomia via LLM
+  const suggestMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post('/api/taxonomy/suggest', { title: product.canonical_name, brand: product.brand ?? '' })
+        .then(r => r.data as { category?: string; brand?: string; tags?: string[]; confidence?: number }),
+    onSuccess: (data) => {
+      if (data.category) setCategories(prev => prev.includes(data.category!) ? prev : [...prev, data.category!])
+      if (data.brand) setBrand([data.brand])
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao pedir sugestão'),
+  })
+
+  // P5: sugestão de tags via LLM
+  const tagsMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/catalog/${product.id}/suggest-tags`)
+        .then(r => r.data as { tags?: string[]; new_tags?: string[] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao pedir tags'),
+  })
+
+  const toggleTagInCategories = (tag: string) => {
+    setCategories(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
+  }
+
   return (
     <div className="border border-border rounded-md p-3 bg-surface flex gap-4">
       {product.image_url ? (
@@ -252,23 +278,78 @@ function ProductRow({
             />
           </div>
         </div>
-        <div className="flex justify-end gap-2 mt-2">
-          <button
-            onClick={onRejected}
-            className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
-          >
-            Rejeitar
-          </button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => saveMut.mutate()}
-            loading={saveMut.isPending}
-            disabled={categories.length === 0 && brand.length === 0}
-          >
-            {saved ? '✓ Salvo' : 'Salvar'}
-          </Button>
+        <div className="flex justify-between gap-2 mt-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => suggestMut.mutate()}
+              disabled={suggestMut.isPending}
+              className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50"
+              title="Sugerir categoria e marca via IA"
+            >
+              {suggestMut.isPending ? '⏳' : '✨ Categoria/Marca'}
+            </button>
+            <button
+              type="button"
+              onClick={() => tagsMut.mutate()}
+              disabled={tagsMut.isPending}
+              className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50"
+              title="Sugerir tags via IA"
+            >
+              {tagsMut.isPending ? '⏳' : '🏷️ Tags'}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onRejected}
+              className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
+            >
+              Rejeitar
+            </button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => saveMut.mutate()}
+              loading={saveMut.isPending}
+              disabled={categories.length === 0 && brand.length === 0}
+            >
+              {saved ? '✓ Salvo' : 'Salvar'}
+            </Button>
+          </div>
         </div>
+        {suggestMut.data?.confidence !== undefined && (
+          <p className="text-[10px] text-fg-3 mt-1 text-right">
+            confiança: {Math.round((suggestMut.data.confidence ?? 0) * 100)}%
+          </p>
+        )}
+        {tagsMut.data?.tags && tagsMut.data.tags.length > 0 && (
+          <div className="mt-2 bg-accent/5 border border-accent/30 rounded p-2">
+            <p className="text-[10px] text-fg-3 mb-1">Tags sugeridas (clique pra adicionar à categoria):</p>
+            <div className="flex flex-wrap gap-1">
+              {tagsMut.data.tags.map(tag => {
+                const isSelected = categories.includes(tag)
+                const isNew = tagsMut.data?.new_tags?.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTagInCategories(tag)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                      isSelected
+                        ? 'bg-accent text-white border-accent'
+                        : isNew
+                        ? 'bg-warning/10 text-warning border-warning/40'
+                        : 'bg-surface-2 text-fg-2 border-border hover:border-accent'
+                    }`}
+                    title={isNew ? 'Tag nova (não está na taxonomia)' : 'Tag existente'}
+                  >
+                    {isNew ? '+ ' : ''}{tag}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
