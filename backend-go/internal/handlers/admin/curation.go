@@ -675,7 +675,7 @@ Responda SOMENTE em JSON:
 Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
 
 		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   8000, // tokens altos pra modelos thinking (reasoning pode consumir 4k+ antes do JSON)
+			MaxTokens:   16000, // modelos free com reasoning gastam 5k-10k antes do JSON
 			Temperature: 0.1,
 			Operation:   "inspect",
 			JSONMode:    true,

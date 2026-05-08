@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { describeError } from '../lib/errors'
@@ -961,6 +962,7 @@ export function TabOverview() {
 // ── Aba Por Canal ────────────────────────────────────────────────────────────
 
 export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void }) {
+  const navigate = useNavigate()
   const { data: rows = [], isLoading } = useQuery<ChannelRow[]>({
     queryKey: ['automations'],
     queryFn: () => apiClient.get('/api/automations').then(r => r.data),
@@ -1062,13 +1064,23 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                   ) : '—'}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); onOpenDrawer(row) }}
-                    className="text-xs text-accent hover:underline"
-                  >
-                    Configurar &rarr;
-                  </button>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onOpenDrawer(row) }}
+                      className="text-xs text-fg-3 hover:text-fg border border-border rounded px-2 py-1"
+                      title="Edição rápida de automação"
+                    >
+                      ⚡ Automação
+                    </button>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); navigate(`/channels/${row.channel_id}`) }}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      Configurar &rarr;
+                    </button>
+                  </div>
                 </td>
               </tr>
             )

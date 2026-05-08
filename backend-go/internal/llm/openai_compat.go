@@ -105,6 +105,15 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 				return out2, nil
 			}
 		}
+		// Retry com max_tokens dobrado quando truncado (modelo de reasoning gasta tudo em chain-of-thought)
+		if strings.Contains(errStr, "response truncated") && opts.MaxTokens > 0 && opts.MaxTokens < 32000 {
+			retryOpts := opts
+			retryOpts.MaxTokens = opts.MaxTokens * 2
+			retryOpts.Operation = opts.Operation + "_retry_tokens"
+			if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
+				return out2, nil
+			}
+		}
 		// Retry sem web search: modelos free quebram com web plugin
 		if opts.WebSearch && (strings.Contains(errStr, "empty content") || strings.Contains(errStr, "no JSON found")) {
 			retryOpts := opts
