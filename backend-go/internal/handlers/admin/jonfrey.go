@@ -110,6 +110,12 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     true,
 		Run:         actionDedupBrandsCategories,
 	},
+	"dedup_pending": {
+		Type:        "dedup_pending",
+		Description: "Remove dispatches duplicados na fila (mesmo produto+canal). Mantém o mais recente, rejeita os antigos",
+		UsesLLM:     false,
+		Run:         actionDedupPending,
+	},
 	"auto_release_pending": {
 		Type:        "auto_release_pending",
 		Description: "Quando full_auto_mode estiver ON, libera todos os dispatches em pending_approval para envio. Roda no ciclo regular do auto-pilot",
@@ -918,6 +924,41 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
 		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
 	)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionDedupPending: remove dispatches duplicados (mesmo produto+canal) na fila pending/queued.
+// Mantém o mais recente por par (product_id, channel_id), rejeita os antigos.
+func actionDedupPending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// Identifica grupos de duplicatas: dispatches com mesmo product_id + channel_id em pending/queued
+	res, err := h.db.ExecContext(ctx, `
+		UPDATE dispatches SET status = 'rejected'
+		WHERE id IN (
+			SELECT d.id FROM dispatches d
+			JOIN auto_match_logs aml ON aml.dispatch_id = d.id
+			WHERE d.status IN ('pending_approval', 'queued')
+			  AND d.id NOT IN (
+			      -- mantém o mais novo de cada (product_id, channel_id)
+			      SELECT (
+			          SELECT d2.id FROM dispatches d2
+			          JOIN auto_match_logs aml2 ON aml2.dispatch_id = d2.id
+			          WHERE aml2.product_id = aml.product_id
+			            AND aml2.channel_id = aml.channel_id
+			            AND d2.status IN ('pending_approval', 'queued')
+			          ORDER BY d2.created_at DESC
+			          LIMIT 1
+			      )
+			      FROM auto_match_logs aml
+			      GROUP BY aml.product_id, aml.channel_id
+			  )
+		)`)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("dedup: %w", err)
+	}
+	rejected, _ := res.RowsAffected()
+	beforeMap := map[string]any{"checked": "all pending+queued"}
+	afterMap := map[string]any{"rejected_duplicates": rejected}
+	reasoning := fmt.Sprintf("Encontrei e rejeitei %d dispatches duplicados na fila (mesmo produto+canal). Mantive sempre o mais recente.", rejected)
 	return beforeMap, afterMap, reasoning, nil
 }
 
