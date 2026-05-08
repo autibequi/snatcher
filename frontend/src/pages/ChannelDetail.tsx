@@ -116,7 +116,14 @@ function ChannelHistory({ channelId }: { channelId: string }) {
       {toSend.length > 0 && (
         <div className="border border-warning/40 rounded-md overflow-hidden">
           <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
+            <div>
             <p className="text-sm font-medium text-fg">A enviar · na fila de entrega ({toSend.length})</p>
+            <p className="text-[10px] text-fg-3">
+              {toSend.some((e: any) => e.status === 'pending_approval')
+                ? 'Alguns aguardam aprovação — clique "Aprovar" para enviar'
+                : 'Na fila do worker de entrega WA/TG — enviando automaticamente'}
+            </p>
+          </div>
             <a href="/automations" className="text-xs text-accent hover:underline">Aprovar em Automações →</a>
           </div>
           <div className="overflow-x-auto">
