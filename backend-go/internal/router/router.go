@@ -376,6 +376,7 @@ func Build(
 		r.Post("/api/dispatches/{id}/cancel", dispatches.Cancel)
 		r.Get("/api/dispatches/pending-approval", dispatches.ListPendingApproval)
 		r.Post("/api/dispatches/approve-all", dispatches.ApproveAllDispatch)
+		r.Post("/api/dispatches/approve-batch", dispatches.ApproveBatch)
 		r.Post("/api/dispatches/expire-stale", dispatches.ExpireStaleTargets)
 		r.Post("/api/dispatches/{id}/diagnose", dispatches.Diagnose)
 		r.Post("/api/dispatches/{id}/approve", dispatches.ApproveDispatch)

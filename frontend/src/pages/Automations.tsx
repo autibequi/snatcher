@@ -761,13 +761,18 @@ export function TabOverview() {
     },
   })
 
-  // Conta pendentes
-  const { data: pendingCount } = useQuery<number>({
-    queryKey: ['dispatches', 'pending-count'],
-    queryFn: () => apiClient.get('/api/dispatches/pending').then(r =>
-      Array.isArray(r.data) ? r.data.length : (r.data?.total ?? 0)).catch(() => 0),
+  // Lista completa de pendentes (com score/canal/produto)
+  interface PendingDispatch {
+    id: number; status: string; composed_by: string; affiliate_link: string;
+    channel_id?: number; channel_name?: string; product_name?: string;
+    score?: number; created_at: string;
+  }
+  const { data: pendingList = [] } = useQuery<PendingDispatch[]>({
+    queryKey: ['dispatches', 'pending-approval'],
+    queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     refetchInterval: 15_000,
   })
+  const pendingCount = pendingList.length
 
   // Mantém o toggle global sync com Jonfrey: ligar/desligar aqui afeta ambos.
   const toggleMut = useMutation({
@@ -959,11 +964,27 @@ export function TabOverview() {
           </div>
           <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
         </div>
-        {logsRecent.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo nos últimos 30min.</p>
+        {pendingList.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo aguardando.</p>
         ) : (
-          <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
-            {logsRecent.map(renderLogRow)}
+          <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+            {pendingList.map(d => (
+              <div key={d.id} className="px-4 py-2.5 flex items-start gap-3">
+                {d.score !== undefined && d.score !== null && (
+                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${d.score >= 70 ? 'bg-success/10 text-success' : d.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
+                    {d.score.toFixed(0)}
+                  </span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-fg truncate">{d.product_name || `Dispatch #${d.id}`}</p>
+                  {d.channel_name && <p className="text-[10px] text-fg-3">canal: {d.channel_name}</p>}
+                </div>
+                <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                  <Badge variant="warning" size="sm">{d.status}</Badge>
+                  <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(d.created_at)}</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

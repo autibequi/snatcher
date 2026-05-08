@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/llm"
@@ -219,7 +220,12 @@ func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Req
 		ChannelID     *int64   `db:"channel_id" json:"channel_id,omitempty"`
 		ChannelName   *string  `db:"channel_name" json:"channel_name,omitempty"`
 		ProductName   *string  `db:"product_name" json:"product_name,omitempty"`
+		ProductImage  *string  `db:"product_image" json:"product_image,omitempty"`
+		Price         *float64 `db:"price" json:"price,omitempty"`
+		Source        *string  `db:"source" json:"source,omitempty"`
+		Brand         *string  `db:"brand" json:"brand,omitempty"`
 		Score         *float64 `db:"score" json:"score,omitempty"`
+		MessageText   string   `db:"message_text" json:"message_text"`
 		CreatedAt     string   `db:"created_at" json:"created_at"`
 	}
 	err := h.db.SelectContext(r.Context(), &rows, `
@@ -228,7 +234,12 @@ func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Req
 		       aml.channel_id,
 		       ch.name AS channel_name,
 		       cp.canonical_name AS product_name,
+		       cp.image_url AS product_image,
+		       cp.lowest_price AS price,
+		       cp.lowest_price_source AS source,
+		       cp.brand AS brand,
 		       aml.score,
+		       COALESCE((d.message->>'text')::text, '') AS message_text,
 		       to_char(d.created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS created_at
 		FROM dispatches d
 		LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
@@ -236,7 +247,7 @@ func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Req
 		LEFT JOIN catalogproduct cp ON cp.id = aml.product_id
 		WHERE d.status = 'pending_approval'
 		ORDER BY d.created_at DESC
-		LIMIT 50`)
+		LIMIT 100`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -279,6 +290,28 @@ func (h *DispatchHandler) RejectDispatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ApproveBatch POST /api/dispatches/approve-batch
+// Aprova uma lista específica de dispatches por ID.
+// Body: { "ids": [1,2,3] }
+func (h *DispatchHandler) ApproveBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.IDs) == 0 {
+		writeErr(w, http.StatusBadRequest, "invalid body — need ids array")
+		return
+	}
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE dispatches SET status = 'queued'
+		WHERE id = ANY($1) AND status = 'pending_approval'`, pq.Array(req.IDs))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	writeJSON(w, http.StatusOK, map[string]any{"approved": n})
 }
 
 // ApproveAllDispatch POST /api/dispatches/approve-all

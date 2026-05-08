@@ -110,6 +110,12 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     true,
 		Run:         actionDedupBrandsCategories,
 	},
+	"auto_release_pending": {
+		Type:        "auto_release_pending",
+		Description: "Quando full_auto_mode estiver ON, libera todos os dispatches em pending_approval para envio. Roda no ciclo regular do auto-pilot",
+		UsesLLM:     false,
+		Run:         actionAutoReleasePending,
+	},
 	"enable_full_auto": {
 		Type:        "enable_full_auto",
 		Description: "Ativa full_auto_mode diretamente no banco — mensagens passam a ser enviadas imediatamente sem precisar de aprovação humana",
@@ -894,6 +900,32 @@ Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne 
 		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
 		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
 	)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionAutoReleasePending: libera dispatches em pending_approval se full_auto_mode estiver ON.
+// Permite que o Jonfrey faça o auto-release sozinho no ciclo regular.
+func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if !cfg.FullAutoMode {
+		return map[string]any{"full_auto_mode": false},
+			map[string]any{"released": 0, "skipped": "full_auto_mode desligado"},
+			"Full-auto desligado — sem release automático. Aprove manualmente ou ative em Configurações.",
+			nil
+	}
+	var before int
+	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
+	res, err := h.db.ExecContext(ctx, `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	released, _ := res.RowsAffected()
+	beforeMap := map[string]any{"pending_approval_count": before}
+	afterMap := map[string]any{"released": released, "now_status": "queued"}
+	reasoning := fmt.Sprintf("Full-auto ON. Liberei %d dispatches que estavam em pending_approval. O dispatch worker enviará respeitando rotação de contas WA e throttling.", released)
 	return beforeMap, afterMap, reasoning, nil
 }
 

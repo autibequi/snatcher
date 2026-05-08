@@ -74,6 +74,7 @@ const Groups = lazy(() => import('./pages/Groups'))
 const Crawlers = lazy(() => import('./pages/Crawlers'))
 const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
 const Logs = lazy(() => import('./pages/Logs'))
+const Pending = lazy(() => import('./pages/Pending'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Taxonomy = lazy(() => import('./pages/Taxonomy'))
 const Curation = lazy(() => import('./pages/Curation'))
@@ -130,6 +131,7 @@ export default function App() {
               <Route path="automations" element={<Automations />} />
               <Route path="automations/channels" element={<AutomationsByChannel />} />
               <Route path="automations/jonfrey" element={<Jonfrey />} />
+              <Route path="automations/pending" element={<Pending />} />
               <Route path="ads" element={<Ads />} />
               <Route path="compose" element={<Composer />} />
               <Route path="logs" element={<Logs />} />
