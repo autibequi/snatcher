@@ -146,7 +146,15 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	var out []models.AutoMatchLog
 	err := s.db.Select(&out, `
 		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
-		       p.canonical_name as product_name, c.name as channel_name
+		       COALESCE(p.canonical_name, '') as product_name,
+		       COALESCE(c.name, '') as channel_name,
+		       COALESCE(
+		           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+		            FROM dispatch_targets dt
+		            JOIN groups g ON g.id = dt.group_id
+		            WHERE dt.dispatch_id = l.dispatch_id),
+		           ''
+		       ) AS group_names
 		FROM auto_match_logs l
 		LEFT JOIN catalogproduct p ON p.id = l.product_id
 		LEFT JOIN channel c ON c.id = l.channel_id

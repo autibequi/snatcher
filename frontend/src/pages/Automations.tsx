@@ -786,96 +786,27 @@ export function TabOverview() {
   const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
   const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
+  void fullyEnabled
+  void toggleMut
+  void jonfreyActions
 
   return (
     <div className="p-6 space-y-5">
-      {/* Kill-switch global sincronizado com Jonfrey */}
-      <div className={`rounded-xl border-2 transition-colors p-4 flex items-center justify-between gap-3 flex-wrap ${fullyEnabled ? 'border-accent bg-accent/5' : 'border-border bg-surface'}`}>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-fg">
-            {fullyEnabled ? '🤖 Automações ativas' : 'Automações pausadas'}
-          </p>
-          <p className="text-xs text-fg-3 mt-0.5">
-            {fullyEnabled
-              ? `Jonfrey acorda a cada ${jonfreyConfig?.interval_minutes ?? 60}min · score min ${threshold} · max ${maxPerRun}/ciclo. ${jonfreyConfig?.last_run_at ? `Último ciclo há ${relativeFromNow(jonfreyConfig.last_run_at)}.` : ''}`
-              : 'Toggle desligado — auto-match e ciclos do Jonfrey pausados.'}
-            {' '}
-            <a href="/automations/jonfrey" className="text-accent hover:underline">Configurar →</a>
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={toggleMut.isPending}
-          onClick={() => toggleMut.mutate({ enabled: !fullyEnabled })}
-          className={`relative w-14 h-7 rounded-full transition-colors focus:outline-none overflow-hidden flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} ${toggleMut.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-          aria-label={fullyEnabled ? 'Desativar automações' : 'Ativar automações'}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-7' : 'translate-x-0'}`} />
-        </button>
-      </div>
-
       {/* KPI compacto */}
       <div className="grid grid-cols-2 gap-3 max-w-md">
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match" />
         <KpiCard label="Cliques 24h" value="—" subtitle="ver Analytics" />
       </div>
 
-      {/* Log de automações — pega do Jonfrey */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <p className="text-sm font-medium text-fg">Log de automações</p>
-          <button
-            type="button"
-            onClick={() => qc.invalidateQueries({ queryKey: ['jonfrey-actions-recent'] })}
-            className="text-xs text-fg-3 hover:text-fg"
-          >
-            ↻
-          </button>
+      {/* Parâmetros globais — defaults usados quando canal não tem override */}
+      <div className="bg-surface border border-border rounded-md p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-fg">Parâmetros globais</p>
+          <p className="text-xs text-fg-3 mt-0.5">Defaults — canais podem sobrescrever em "Por canal".</p>
         </div>
-        {jonfreyActions.length === 0 ? (
-          <div className="px-4 py-8 text-center">
-            <p className="text-sm text-fg-3">Nenhuma ação registrada.</p>
-            <p className="text-xs text-fg-3 mt-1">
-              Ative o toggle acima ou{' '}
-              <a href="/automations/jonfrey" className="text-accent hover:underline">execute uma ação manualmente</a>.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {jonfreyActions.map(a => {
-              const cls = JONFREY_STATUS_COLORS[a.status] ?? JONFREY_STATUS_COLORS.pending
-              return (
-                <div key={a.id} className="flex items-start gap-3 px-4 py-2.5">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono uppercase tracking-wide flex-shrink-0 ${cls}`}>
-                    {a.status}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm text-fg font-mono truncate">{a.action_type}</p>
-                      <span className="text-[10px] text-fg-3">· {a.triggered_by}</span>
-                      <span className="text-[10px] text-fg-3 ml-auto whitespace-nowrap">{relativeFromNow(a.created_at)}</span>
-                    </div>
-                    {a.reasoning && (
-                      <p className="text-xs text-fg-3 mt-0.5 line-clamp-2">{a.reasoning}</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        <div className="px-4 py-2 border-t border-border bg-surface-2 text-xs text-fg-3 flex items-center justify-between">
-          <span>Mostra últimas {jonfreyActions.length} ações do Jonfrey</span>
-          <a href="/automations/jonfrey" className="text-accent hover:underline">Ver tudo →</a>
-        </div>
-      </div>
-
-      {/* Defaults globais */}
-      <div className="bg-surface border border-border rounded-md p-4 space-y-4">
-        <p className="text-sm font-medium text-fg">Parametros globais</p>
         <div className="grid grid-cols-2 gap-4">
           <label className="space-y-1">
-            <span className="text-xs text-fg-2">Score minimo (0–100)</span>
+            <span className="text-xs text-fg-2">Score mínimo (0–100)</span>
             <input
               type="number"
               min={0}
@@ -901,12 +832,73 @@ export function TabOverview() {
         </div>
       </div>
 
-      <p className="text-xs text-fg-3">
-        Histórico de disparos automáticos: ver{' '}
-        <a href="/automations/jonfrey" className="text-accent hover:underline">changelog do Jonfrey</a>
-        {' '}ou{' '}
-        <a href="/logs" className="text-accent hover:underline">Logs</a>.
-      </p>
+      {/* Disparos automáticos por grupo */}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <p className="text-sm font-medium text-fg">Disparos automáticos · por grupo</p>
+          <button
+            type="button"
+            onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })}
+            className="text-xs text-fg-3 hover:text-fg"
+            title="Atualizar"
+          >
+            ↻
+          </button>
+        </div>
+        {logs.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-fg-3">Nenhum disparo automático registrado ainda.</p>
+            <p className="text-xs text-fg-3 mt-1">
+              Quando os canais começarem a disparar, cada produto/grupo aparece aqui.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
+            {logs.slice(0, 30).map(log => {
+              const groups = log.group_names
+                ? log.group_names.split(', ').filter(Boolean)
+                : []
+              return (
+                <div key={log.id} className="px-4 py-2.5 flex items-start gap-3">
+                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${log.score >= 70 ? 'bg-success/10 text-success' : log.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
+                    {fmtScore(log.score)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-fg truncate">{log.product_name || `Produto #${log.product_id}`}</p>
+                    {log.channel_name && (
+                      <p className="text-[10px] text-fg-3">canal: {log.channel_name}</p>
+                    )}
+                    {groups.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {groups.map(g => (
+                          <span key={g} className="text-[10px] bg-accent/10 border border-accent/30 rounded px-1.5 py-0.5 text-accent truncate max-w-[140px]" title={g}>
+                            {g}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-fg-3 mt-0.5">— sem grupos joinados</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                    <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</span>
+                    <a
+                      href={`/logs?dispatchId=${log.dispatch_id}`}
+                      className="text-[10px] text-accent hover:underline"
+                    >
+                      ver →
+                    </a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="px-4 py-2 border-t border-border bg-surface-2 text-xs text-fg-3 flex items-center justify-between">
+          <span>Últimos {Math.min(logs.length, 30)} disparos · auto-match</span>
+          <a href="/logs" className="text-accent hover:underline">Ver Logs →</a>
+        </div>
+      </div>
     </div>
   )
 }
