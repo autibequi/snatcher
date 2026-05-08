@@ -39,11 +39,30 @@ export default function Pending() {
     refetchInterval: 15_000,
   })
 
-  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean }>({
+  const { data: appConfig } = useQuery<any>({
     queryKey: ['config'],
     queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
   })
   const fullAutoMode = !!appConfig?.full_auto_mode
+
+  const toggleFullAuto = useMutation({
+    mutationFn: async (v: boolean) => {
+      // Tenta direto via PUT config (precisa do fix do UpdateConfig)
+      try { await apiClient.put('/api/config', { ...appConfig, full_auto_mode: v }) } catch {}
+      // Fallback robusto: se ligando, dispara a action Jonfrey enable_full_auto
+      if (v) { try { await apiClient.post('/api/jonfrey/run', { action_type: 'enable_full_auto' }) } catch {} }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+  })
+
+  // Ordenação
+  type SortKey = 'channel'|'source'|'price'|'score'|'created_at'
+  const [sortKey, setSortKey] = React.useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = React.useState<'asc'|'desc'>('desc')
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(k); setSortDir(k === 'created_at' ? 'desc' : 'asc') }
+  }
 
   const approveBatchMut = useMutation({
     mutationFn: async (ids: number[]) => {
@@ -78,6 +97,16 @@ export default function Pending() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] }),
   })
 
+  const rejectBatchMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await Promise.allSettled(ids.map(id => apiClient.post(`/api/dispatches/${id}/reject`)))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      setSelected(new Set())
+    },
+  })
+
   const toggleSelect = (id: number) => {
     setSelected(prev => {
       const next = new Set(prev)
@@ -97,6 +126,32 @@ export default function Pending() {
     casasbahia: 'Casas Bahia', kabum: 'Kabum', americanas: 'Americanas',
   }
 
+  // Sort items
+  const sortedItems = React.useMemo(() => {
+    const sorted = [...items]
+    sorted.sort((a, b) => {
+      let av: any, bv: any
+      switch (sortKey) {
+        case 'channel': av = a.channel_name ?? ''; bv = b.channel_name ?? ''; break
+        case 'source': av = a.source ?? ''; bv = b.source ?? ''; break
+        case 'price': av = a.price ?? 0; bv = b.price ?? 0; break
+        case 'score': av = a.score ?? 0; bv = b.score ?? 0; break
+        case 'created_at': av = new Date(a.created_at).getTime(); bv = new Date(b.created_at).getTime(); break
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return sorted
+  }, [items, sortKey, sortDir])
+
+  const SortHeader = ({ k, label, align }: { k: SortKey; label: string; align?: string }) => (
+    <th className={`px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide cursor-pointer select-none hover:text-fg ${align ?? 'text-left'}`}
+      onClick={() => toggleSort(k)}>
+      {label}{sortKey === k ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+    </th>
+  )
+
   return (
     <div className="p-6 space-y-4">
       {/* Header + ações */}
@@ -107,32 +162,59 @@ export default function Pending() {
             Dispatches criados pelo auto-match, aguardando aprovação. Quando aprovados, entram na fila do worker WA/TG (respeita rotação de contas e throttle).
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
           {selected.size > 0 && (
-            <Button variant="primary" size="sm"
-              loading={approveBatchMut.isPending}
-              onClick={() => approveBatchMut.mutate(Array.from(selected))}>
-              ✓ Aprovar {selected.size} selecionados
-            </Button>
+            <>
+              <Button variant="primary" size="sm"
+                loading={approveBatchMut.isPending}
+                onClick={() => approveBatchMut.mutate(Array.from(selected))}>
+                ✓ Aprovar {selected.size}
+              </Button>
+              <Button variant="danger" size="sm"
+                loading={rejectBatchMut.isPending}
+                onClick={() => { if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected)) }}>
+                ✕ Rejeitar {selected.size}
+              </Button>
+            </>
           )}
           {items.length > 0 && (
-            <Button variant="secondary" size="sm"
-              loading={approveAllMut.isPending}
-              onClick={() => { if (confirm(`Aprovar TODOS os ${items.length} pendentes?`)) approveAllMut.mutate() }}>
-              Aprovar todos ({items.length})
-            </Button>
+            <>
+              <Button variant="secondary" size="sm"
+                loading={approveAllMut.isPending}
+                onClick={() => { if (confirm(`Aprovar TODOS os ${items.length} pendentes?`)) approveAllMut.mutate() }}>
+                Aprovar todos ({items.length})
+              </Button>
+              <Button variant="secondary" size="sm"
+                loading={rejectBatchMut.isPending}
+                onClick={() => { if (confirm(`Rejeitar TODOS os ${items.length} pendentes?`)) rejectBatchMut.mutate(items.map(i => i.id)) }}>
+                Rejeitar todos
+              </Button>
+            </>
           )}
         </div>
       </div>
 
-      {/* Aviso modo */}
-      {!fullAutoMode && items.length > 0 && (
-        <div className="border border-warning/40 bg-warning/5 rounded-md p-3 text-xs text-fg-2">
-          ⚠️ <strong>Modo manual ativo</strong> — disparos novos vão se acumular aqui até serem aprovados.
-          Para auto-aprovação contínua, ative <strong>Full-auto</strong> em Configurações → Geral.
-          O Jonfrey também pode liberar via action <strong>auto_release_pending</strong>.
+      {/* Painel de modo: toggle Full-auto sincronizado */}
+      <div className={`flex items-start gap-3 border rounded-md p-3 ${fullAutoMode ? 'border-success/40 bg-success/5' : 'border-warning/40 bg-warning/5'}`}>
+        <span className="text-base leading-none mt-0.5">{fullAutoMode ? '✅' : '⚠️'}</span>
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${fullAutoMode ? 'text-success' : 'text-fg'}`}>
+            {fullAutoMode ? 'Full-auto ativo — envio automático sem aprovação' : 'Modo manual ativo — aprovação humana necessária'}
+          </p>
+          <p className="text-xs text-fg-3 mt-0.5">
+            {fullAutoMode
+              ? 'Todo dispatch novo é aprovado e enviado automaticamente. Esta lista deve esvaziar sozinha conforme o Jonfrey roda auto_release_pending.'
+              : 'Disparos novos vão se acumular aqui. Aprove manualmente ou ative o Full-auto para auto-aprovação contínua.'}
+          </p>
         </div>
-      )}
+        <button type="button"
+          disabled={toggleFullAuto.isPending}
+          onClick={() => toggleFullAuto.mutate(!fullAutoMode)}
+          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullAutoMode ? 'bg-success' : 'bg-border'} disabled:opacity-50`}>
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullAutoMode ? 'translate-x-5' : 'translate-x-0'}`} />
+        </button>
+      </div>
+
 
       {/* Tabela */}
       {isLoading ? (
@@ -155,16 +237,16 @@ export default function Pending() {
                     className="accent-accent" />
                 </th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Produto</th>
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Canal</th>
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Loja</th>
-                <th className="text-right px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Preço</th>
-                <th className="text-center px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Score</th>
-                <th className="text-right px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Quando</th>
+                <SortHeader k="channel" label="Canal" />
+                <SortHeader k="source" label="Loja" />
+                <SortHeader k="price" label="Preço" align="text-right" />
+                <SortHeader k="score" label="Score" align="text-center" />
+                <SortHeader k="created_at" label="Quando" align="text-right" />
                 <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
-              {items.map(d => {
+              {sortedItems.map(d => {
                 const isSelected = selected.has(d.id)
                 return (
                   <tr key={d.id}
@@ -204,9 +286,12 @@ export default function Pending() {
                     <td className="px-3 py-2.5 text-right text-xs text-fg-3 whitespace-nowrap">{relTime(d.created_at)}</td>
                     <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                       <button type="button"
-                        title="Rejeitar"
+                        title="Rejeitar este dispatch"
+                        disabled={rejectMut.isPending}
                         onClick={() => { if (confirm('Rejeitar este dispatch?')) rejectMut.mutate(d.id) }}
-                        className="text-xs text-danger hover:underline">Rejeitar</button>
+                        className="text-xs px-2 py-1 rounded border border-danger/30 text-danger hover:bg-danger/10 transition-colors disabled:opacity-50">
+                        ✕ Rejeitar
+                      </button>
                     </td>
                   </tr>
                 )
