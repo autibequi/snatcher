@@ -133,6 +133,7 @@ function CreateMarketplaceModal({ open, onClose }: { open: boolean; onClose: () 
       max_val: form.max_val ? Number(form.max_val) : 9999,
       crawl_interval: form.crawl_interval,
       active: form.active,
+      category: 'ecommerce',
     }
 
     createMut.mutate(payload)
@@ -493,7 +494,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
         max_val: Number(form.max_val) || 9999,
         crawl_interval: Number(form.crawl_interval),
         sources: form.sources.length > 0 ? form.sources.join(',') : 'all',
-        category: term!.category ?? 'ecommerce',
+        category: term!.category || 'ecommerce',
         active: form.active,
       }).then(r => r.data)
     },
@@ -602,7 +603,7 @@ function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: (
         min_val: term.min_val ?? 0,
         max_val: term.max_val ?? 9999,
         sources: term.sources ?? 'all',
-        category: term.category ?? 'ecommerce',
+        category: term.category || 'ecommerce',
         crawl_interval: term.crawl_interval ?? 30,
         active,
       }).then(r => r.data)
