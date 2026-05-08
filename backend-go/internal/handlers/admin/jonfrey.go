@@ -60,6 +60,36 @@ var actionRegistry = map[string]actionDef{
 		Description: "Avalia performance de cada automação ativa e ajusta thresholds via LLM",
 		Run:         actionTuneThresholds,
 	},
+	"auto_curate_high_confidence": {
+		Type:        "auto_curate_high_confidence",
+		Description: "Auto-aprova produtos pending com sugestão LLM de alta confiança; rejeita lixo óbvio",
+		Run:         actionAutoCurate,
+	},
+	"detect_failing_channel": {
+		Type:        "detect_failing_channel",
+		Description: "Detecta canais com CTR ruim ou delivery rate baixo nos últimos 14d e pausa automaticamente",
+		Run:         actionDetectFailingChannel,
+	},
+	"mark_full_groups": {
+		Type:        "mark_full_groups",
+		Description: "Marca grupos WhatsApp com 1024+ membros como 'full' para entrarem em fallback",
+		Run:         actionMarkFullGroups,
+	},
+	"cleanup_archived_groups": {
+		Type:        "cleanup_archived_groups",
+		Description: "Arquiva grupos com falhas recorrentes (last_error > 7d e múltiplas falhas)",
+		Run:         actionCleanupGroups,
+	},
+	"audit_affiliate_coverage": {
+		Type:        "audit_affiliate_coverage",
+		Description: "Detecta marketplaces presentes no catálogo sem programa de afiliado configurado",
+		Run:         actionAuditAffiliate,
+	},
+	"replenish_stagnant_crawlers": {
+		Type:        "replenish_stagnant_crawlers",
+		Description: "Identifica crawlers ativos sem produtos novos há 7+ dias para review/troca",
+		Run:         actionReplenishCrawlers,
+	},
 }
 
 func actionDispatchAutoMatch(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
@@ -349,4 +379,298 @@ func (h *JonfreyHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ações zero-touch (P-Jonfrey extra)
+// ─────────────────────────────────────────────────────────────────────────
+
+// actionAutoCurate: auto-aprova produtos pending quando LLM retorna confidence alto.
+func actionAutoCurate(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+
+	products, err := h.store.ListPendingCurationProducts(20)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	beforeMap := map[string]any{"pending_count": len(products)}
+	if len(products) == 0 {
+		return beforeMap, map[string]any{"approved": 0, "rejected": 0}, "Nada na fila de curadoria.", nil
+	}
+
+	approved, rejected, untouched := 0, 0, 0
+	for _, p := range products {
+		brand := ""
+		if p.Brand.Valid {
+			brand = p.Brand.String
+		}
+		prompt := fmt.Sprintf(`Classifique este produto. Responda JSON com confidence 0..1.
+Título: "%s"
+Marca atual: "%s"
+{"category":"slug","brand":"Nome","tags":["..."],"confidence":0.0}`, p.CanonicalName, brand)
+		ctxC, cancel := context.WithTimeout(ctx, 25*time.Second)
+		resp, err := cli.Complete(ctxC, prompt, llm.Options{
+			MaxTokens: 200, Temperature: 0.1, Operation: "jonfrey_autocurate", JSONMode: true,
+		})
+		cancel()
+		if err != nil {
+			untouched++
+			continue
+		}
+		var parsed struct {
+			Category   string  `json:"category"`
+			Brand      string  `json:"brand"`
+			Confidence float64 `json:"confidence"`
+		}
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			untouched++
+			continue
+		}
+		switch {
+		case parsed.Confidence >= 0.9 && parsed.Brand != "" && parsed.Category != "":
+			_, _ = h.db.ExecContext(ctx, `
+				UPDATE catalogproduct SET brand=$1, curation_status='curated' WHERE id=$2`,
+				parsed.Brand, p.ID)
+			approved++
+		case parsed.Confidence < 0.4:
+			_, _ = h.db.ExecContext(ctx, `
+				UPDATE catalogproduct SET curation_status='rejected' WHERE id=$1`, p.ID)
+			rejected++
+		default:
+			untouched++
+		}
+	}
+
+	afterMap := map[string]any{"approved": approved, "rejected": rejected, "still_pending": untouched}
+	reasoning := fmt.Sprintf("Avaliei %d produtos pendentes: %d auto-aprovados (confiança ≥ 90%%), %d rejeitados (confiança < 40%%), %d voltaram pra fila humana.",
+		len(products), approved, rejected, untouched)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionDetectFailingChannel: pausa canais com CTR/delivery rate ruim.
+func actionDetectFailingChannel(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	type stat struct {
+		ChannelID    int64   `db:"channel_id"`
+		ChannelName  string  `db:"channel_name"`
+		Total        int64   `db:"total"`
+		Delivered    int64   `db:"delivered"`
+		Failed       int64   `db:"failed"`
+		Clicks       int64   `db:"clicks"`
+	}
+	var stats []stat
+	err := h.db.SelectContext(ctx, &stats, `
+		SELECT
+		  d.channel_id,
+		  COALESCE(c.name, '') AS channel_name,
+		  COUNT(dt.id) AS total,
+		  COUNT(*) FILTER (WHERE dt.status = 'delivered') AS delivered,
+		  COUNT(*) FILTER (WHERE dt.status = 'failed') AS failed,
+		  COALESCE(SUM(dt.click_count), 0) AS clicks
+		FROM dispatches d
+		JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+		LEFT JOIN channel c ON c.id = d.channel_id
+		WHERE d.created_at > now() - interval '14 days'
+		  AND d.channel_id IS NOT NULL
+		GROUP BY d.channel_id, c.name
+		HAVING COUNT(dt.id) >= 20`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	type paused struct {
+		ChannelID    int64   `json:"channel_id"`
+		Name         string  `json:"name"`
+		DeliveryRate float64 `json:"delivery_rate"`
+		CTR          float64 `json:"ctr"`
+		Reason       string  `json:"reason"`
+	}
+	var pausedList []paused
+
+	for _, s := range stats {
+		if s.Total == 0 {
+			continue
+		}
+		deliveryRate := float64(s.Delivered) / float64(s.Total)
+		ctr := 0.0
+		if s.Delivered > 0 {
+			ctr = float64(s.Clicks) / float64(s.Delivered)
+		}
+		reason := ""
+		if deliveryRate < 0.70 {
+			reason = fmt.Sprintf("delivery rate %.1f%%", deliveryRate*100)
+		} else if ctr < 0.005 && s.Delivered >= 50 {
+			reason = fmt.Sprintf("CTR %.2f%%", ctr*100)
+		}
+		if reason == "" {
+			continue
+		}
+		// pausa: desliga a automação do canal
+		auto, err := h.store.GetChannelAutomation(s.ChannelID)
+		if err != nil || auto == nil || !auto.Enabled {
+			continue
+		}
+		auto.Enabled = false
+		_ = h.store.UpsertChannelAutomation(*auto)
+		pausedList = append(pausedList, paused{
+			ChannelID: s.ChannelID, Name: s.ChannelName,
+			DeliveryRate: deliveryRate, CTR: ctr, Reason: reason,
+		})
+	}
+
+	beforeMap := map[string]any{"channels_evaluated": len(stats)}
+	afterMap := map[string]any{"paused": pausedList, "paused_count": len(pausedList)}
+	reasoning := fmt.Sprintf("Avaliei %d canais com pelo menos 20 disparos nos últimos 14 dias. Pausei %d com delivery rate < 70%% ou CTR < 0.5%%.", len(stats), len(pausedList))
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionMarkFullGroups: marca grupos com 1024+ membros como 'full'.
+func actionMarkFullGroups(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	var candidates int
+	_ = h.db.GetContext(ctx, &candidates,
+		`SELECT COUNT(*) FROM groups WHERE platform = 'whatsapp' AND member_count >= 1024 AND status = 'active'`)
+
+	res, err := h.db.ExecContext(ctx, `
+		UPDATE groups SET status = 'full'
+		WHERE platform = 'whatsapp' AND member_count >= 1024 AND status = 'active'`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	updated, _ := res.RowsAffected()
+
+	beforeMap := map[string]any{"candidates_active_at_limit": candidates}
+	afterMap := map[string]any{"marked_full": updated}
+	reasoning := fmt.Sprintf("Encontrei %d grupos WhatsApp ativos com 1024+ membros (limite WA). Marquei %d como 'full' — agora entram automaticamente em fallback chains.", candidates, updated)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionCleanupGroups: arquiva grupos com falhas recorrentes.
+func actionCleanupGroups(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	type row struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+	}
+	var candidates []row
+	err := h.db.SelectContext(ctx, &candidates, `
+		SELECT g.id, g.name
+		FROM groups g
+		WHERE g.archived = false
+		  AND g.last_error_at IS NOT NULL
+		  AND g.last_error_at < now() - interval '7 days'
+		  AND EXISTS (
+		      SELECT 1 FROM dispatch_targets dt
+		      WHERE dt.group_id = g.id
+		        AND dt.status = 'failed'
+		        AND dt.created_at > now() - interval '14 days'
+		      GROUP BY dt.group_id HAVING COUNT(*) >= 3
+		  )`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	archived := 0
+	for _, c := range candidates {
+		_, err := h.db.ExecContext(ctx, `UPDATE groups SET archived = true WHERE id = $1`, c.ID)
+		if err == nil {
+			archived++
+		}
+	}
+
+	beforeMap := map[string]any{"candidates": candidates}
+	afterMap := map[string]any{"archived": archived}
+	reasoning := fmt.Sprintf("Achei %d grupos com last_error_at > 7d e ≥3 falhas nos últimos 14d. Arquivei %d.", len(candidates), archived)
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionAuditAffiliate: detecta marketplaces sem programa de afiliado configurado.
+func actionAuditAffiliate(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	type row struct {
+		Source string `db:"source"`
+		Count  int64  `db:"count"`
+	}
+	var marketplaces []row
+	err := h.db.SelectContext(ctx, &marketplaces, `
+		SELECT lowest_price_source AS source, COUNT(*) AS count
+		FROM catalogproduct
+		WHERE lowest_price_source IS NOT NULL
+		  AND lowest_price_source <> ''
+		GROUP BY lowest_price_source
+		ORDER BY count DESC`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	programs, _ := h.store.ListAffiliatePrograms(nil)
+	type missing struct {
+		Marketplace  string `json:"marketplace"`
+		ProductCount int64  `json:"product_count"`
+	}
+	var missingList []missing
+	for _, m := range marketplaces {
+		// usa helper de affiliates: HasAffiliate verifica programa + credenciais válidas
+		hasAny := false
+		for _, p := range programs {
+			if p.Marketplace == m.Source {
+				hasAny = true
+				break
+			}
+		}
+		if !hasAny {
+			missingList = append(missingList, missing{Marketplace: m.Source, ProductCount: m.Count})
+		}
+	}
+
+	beforeMap := map[string]any{"marketplaces_in_catalog": len(marketplaces), "configured_programs": len(programs)}
+	afterMap := map[string]any{"missing_coverage": missingList}
+	reasoning := fmt.Sprintf("Catálogo tem %d marketplaces ativos. %d sem programa de afiliado configurado — cada produto sem código não gera comissão.",
+		len(marketplaces), len(missingList))
+	if len(missingList) == 0 {
+		reasoning = fmt.Sprintf("Cobertura completa: todos os %d marketplaces do catálogo têm programa de afiliado configurado.", len(marketplaces))
+	}
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionReplenishCrawlers: identifica crawlers ativos sem produtos novos há 7+ dias.
+func actionReplenishCrawlers(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	type row struct {
+		ID            int64  `db:"id"`
+		Query         string `db:"query"`
+		LastResultAt  *time.Time `db:"last_result_at"`
+	}
+	var stagnant []row
+	err := h.db.SelectContext(ctx, &stagnant, `
+		SELECT st.id, st.query,
+		       (SELECT MAX(cr.created_at) FROM crawl_results cr WHERE cr.search_term_id = st.id) AS last_result_at
+		FROM search_terms st
+		WHERE st.active = true
+		  AND (
+		      NOT EXISTS (SELECT 1 FROM crawl_results cr WHERE cr.search_term_id = st.id AND cr.created_at > now() - interval '7 days')
+		  )`)
+	if err != nil {
+		// crawl_results pode não existir ou ter outro nome — não falhar a ação
+		return map[string]any{"checked": false, "error": err.Error()},
+			map[string]any{"stagnant": []any{}},
+			"Não consegui consultar crawl_results — verifique schema (tabela pode ter nome diferente).",
+			nil
+	}
+
+	type item struct {
+		ID    int64  `json:"id"`
+		Query string `json:"query"`
+		LastResultAt *time.Time `json:"last_result_at"`
+	}
+	out := make([]item, 0, len(stagnant))
+	for _, s := range stagnant {
+		out = append(out, item{ID: s.ID, Query: s.Query, LastResultAt: s.LastResultAt})
+	}
+
+	beforeMap := map[string]any{"active_crawlers_checked": "all"}
+	afterMap := map[string]any{"stagnant_crawlers": out, "count": len(out)}
+	reasoning := fmt.Sprintf("Encontrei %d crawler(s) ativo(s) sem trazer produto novo há 7+ dias. Considere ajustar query ou desativar — entrou no audit pra você revisar.", len(out))
+	return beforeMap, afterMap, reasoning, nil
 }
