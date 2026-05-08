@@ -1185,8 +1185,16 @@ func (s *SQLStore) ListTelegramChats() ([]models.TelegramChat, error) {
 
 func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]any, error) {
 	var total, unique int64
-	_ = s.db.Get(&total, `SELECT COUNT(*) FROM clicklog WHERE clicked_at >= $1`, since)
-	_ = s.db.Get(&unique, `SELECT COUNT(DISTINCT ip_hash) FROM clicklog WHERE clicked_at >= $1`, since)
+	// Soma clicks legados (clicklog) + novos (shortlink_clicks)
+	_ = s.db.Get(&total, `
+		SELECT COALESCE((SELECT COUNT(*) FROM clicklog WHERE clicked_at >= $1), 0)
+		     + COALESCE((SELECT COUNT(*) FROM shortlink_clicks WHERE clicked_at >= $1), 0)`, since)
+	_ = s.db.Get(&unique, `
+		SELECT COUNT(DISTINCT ip_hash) FROM (
+			SELECT ip_hash FROM clicklog WHERE clicked_at >= $1
+			UNION ALL
+			SELECT ip_hash FROM shortlink_clicks WHERE clicked_at >= $1
+		) u`, since)
 
 	type dailyRow struct {
 		Day    string `db:"day"`
@@ -1194,8 +1202,13 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	}
 	var daily []dailyRow
 	_ = s.db.Select(&daily, `
-		SELECT TO_CHAR(clicked_at, 'YYYY-MM-DD') AS day, COUNT(*) AS clicks
-		FROM clicklog WHERE clicked_at >= $1 GROUP BY day ORDER BY day`, since)
+		SELECT day, SUM(clicks) AS clicks FROM (
+			SELECT TO_CHAR(clicked_at, 'YYYY-MM-DD') AS day, COUNT(*) AS clicks
+			FROM clicklog WHERE clicked_at >= $1 GROUP BY day
+			UNION ALL
+			SELECT TO_CHAR(clicked_at, 'YYYY-MM-DD') AS day, COUNT(*) AS clicks
+			FROM shortlink_clicks WHERE clicked_at >= $1 GROUP BY day
+		) u GROUP BY day ORDER BY day`, since)
 
 	type sourceRow struct {
 		Source string `db:"source"`

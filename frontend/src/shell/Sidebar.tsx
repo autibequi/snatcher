@@ -46,12 +46,6 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Destinos',
-    items: [
-      { to: '/links', label: 'Links públicos', icon: '🔗' },
-    ],
-  },
-  {
     label: 'Provedores',
     items: [
       { to: '/groups', label: 'Grupos', icon: '👥' },
@@ -63,6 +57,7 @@ const navGroups: NavGroup[] = [
     label: 'Análise',
     items: [
       { to: '/analytics', label: 'Insights de cliques', icon: '📊' },
+      { to: '/links', label: 'Links públicos', icon: '🔗' },
       { to: '/clusters', label: 'Clusters', icon: '🧩' },
     ],
   },
