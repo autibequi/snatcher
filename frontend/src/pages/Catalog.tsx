@@ -120,6 +120,164 @@ function extractWeight(title: string): string | null {
   const m = title.match(WEIGHT_RE)
   return m ? m[0] : null
 }
+// ── Sidebar helper components ─────────────────────────────────────────────────
+
+function FilterSection({ label, active, children }: { label: string; active?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(true)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between mb-1.5 group"
+      >
+        <span className={`text-[11px] font-semibold uppercase tracking-wide ${active ? 'text-accent' : 'text-fg-3'}`}>
+          {label}{active ? ' ·' : ''}
+        </span>
+        <span className={`text-fg-3 text-[10px] transition-transform ${open ? '' : '-rotate-90'}`}>▾</span>
+      </button>
+      {open && children}
+    </div>
+  )
+}
+
+function FilterList({
+  items, value, onSelect, allLabel = 'Todos',
+}: {
+  items: string[]
+  value: string
+  onSelect: (v: string) => void
+  allLabel?: string
+}) {
+  const [q, setQ] = React.useState('')
+  const TOP = 5
+  const filtered = q ? items.filter(i => i.toLowerCase().includes(q.toLowerCase())) : items
+  const visible = q ? filtered : filtered.slice(0, TOP)
+  const hasMore = !q && items.length > TOP
+  const labelFor = (s: string) =>
+    s === 'mercadolivre' ? 'Mercado Livre' : s === 'casasbahia' ? 'Casas Bahia' : s
+
+  return (
+    <div className="space-y-0.5">
+      <button type="button" onClick={() => onSelect('')}
+        className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!value ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+        {allLabel}
+      </button>
+      {visible.map(item => (
+        <button key={item} type="button" onClick={() => onSelect(item === value ? '' : item)}
+          className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${value === item ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
+          title={item}>
+          {labelFor(item)}
+        </button>
+      ))}
+      {(hasMore || q) && (
+        <input
+          type="text"
+          placeholder={`Buscar…`}
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          className="w-full text-xs border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent mt-1"
+        />
+      )}
+    </div>
+  )
+}
+
+function CatalogSidebar({
+  search, onSearch,
+  source, onSource,
+  tagFilter, onTagFilter, categories,
+  brandFilter, onBrandFilter, brands,
+  priceMin, onPriceMin,
+  priceMax, onPriceMax,
+  statusFilter, onStatusFilter,
+  showInactive, onShowInactive,
+  onClear, hasActiveFilters,
+}: {
+  search: string; onSearch: (v: string) => void
+  source: string; onSource: (v: string) => void
+  tagFilter: string; onTagFilter: (v: string) => void; categories: string[]
+  brandFilter: string; onBrandFilter: (v: string) => void; brands: string[]
+  priceMin: string; onPriceMin: (v: string) => void
+  priceMax: string; onPriceMax: (v: string) => void
+  statusFilter: string; onStatusFilter: (v: string) => void
+  showInactive: boolean; onShowInactive: (v: boolean) => void
+  onClear: () => void; hasActiveFilters: boolean
+}) {
+  return (
+    <aside className="w-52 flex-shrink-0 border-r border-border overflow-y-auto bg-surface flex flex-col gap-4 px-3 py-4">
+      {/* Busca */}
+      <input
+        type="text"
+        placeholder="Buscar produto..."
+        value={search}
+        onChange={e => onSearch(e.target.value)}
+        className="w-full text-xs border border-border rounded px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+      />
+
+      {/* Status */}
+      <FilterSection label="Status" active={!!statusFilter}>
+        {[
+          { v: '', l: 'Todos' },
+          { v: 'novos', l: 'Novos (7d)' },
+          { v: 'curados', l: 'Curados' },
+          { v: 'disparados_7d', l: 'Disparados 7d' },
+        ].map(({ v, l }) => (
+          <button key={v || '_all'} type="button" onClick={() => onStatusFilter(v)}
+            className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${statusFilter === v ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
+            {l}
+          </button>
+        ))}
+      </FilterSection>
+
+      {/* Fonte */}
+      <FilterSection label="Fonte" active={!!source}>
+        <FilterList
+          items={['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'kabum', 'americanas', 'casasbahia']}
+          value={source} onSelect={onSource} allLabel="Todas"
+        />
+      </FilterSection>
+
+      {/* Tags / Categoria */}
+      {categories.length > 0 && (
+        <FilterSection label="Tag / Categoria" active={!!tagFilter}>
+          <FilterList items={categories} value={tagFilter} onSelect={onTagFilter} allLabel="Todas" />
+        </FilterSection>
+      )}
+
+      {/* Marca */}
+      {brands.length > 0 && (
+        <FilterSection label="Marca" active={!!brandFilter}>
+          <FilterList items={brands} value={brandFilter} onSelect={onBrandFilter} allLabel="Todas" />
+        </FilterSection>
+      )}
+
+      {/* Preço */}
+      <FilterSection label="Preço (R$)" active={!!(priceMin || priceMax)}>
+        <div className="flex items-center gap-1.5">
+          <input type="number" min="0" placeholder="Mín" value={priceMin} onChange={e => onPriceMin(e.target.value)}
+            className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+          <span className="text-fg-3 text-xs flex-shrink-0">–</span>
+          <input type="number" min="0" placeholder="Máx" value={priceMax} onChange={e => onPriceMax(e.target.value)}
+            className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+        </div>
+      </FilterSection>
+
+      {/* Inativos */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={showInactive} onChange={e => onShowInactive(e.target.checked)} className="accent-accent" />
+        <span className="text-xs text-fg-2">Mostrar inativos</span>
+      </label>
+
+      {hasActiveFilters && (
+        <button type="button" onClick={onClear} className="text-xs text-danger hover:underline text-left">
+          × Limpar filtros
+        </button>
+      )}
+    </aside>
+  )
+}
+
 export default function Catalog() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -134,6 +292,7 @@ export default function Catalog() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
   const [showInactive, setShowInactive] = React.useState(false)
+  const [statusFilter, setStatusFilter] = React.useState('')
 
   const curateMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
@@ -189,16 +348,17 @@ export default function Catalog() {
   })
 
   // Resetar página ao mudar filtros
-  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, brandFilter, showInactive])
+  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, brandFilter, showInactive, statusFilter])
 
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
-    queryKey: ['catalog', search, source, tagFilter, brandFilter, showInactive, page],
+    queryKey: ['catalog', search, source, tagFilter, brandFilter, showInactive, statusFilter, page],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
       if (tagFilter) params.set('tag', tagFilter)
       if (brandFilter) params.set('brand', brandFilter)
+      if (statusFilter) params.set('status', statusFilter)
       if (showInactive) params.set('include_inactive', 'true')
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String(page * PAGE_SIZE))
@@ -243,100 +403,18 @@ export default function Catalog() {
     <div className="flex h-full overflow-hidden">
 
       {/* ── Sidebar de filtros ── */}
-      <aside className="w-52 flex-shrink-0 border-r border-border overflow-y-auto bg-surface flex flex-col gap-5 px-4 py-5">
-        {/* Busca */}
-        <div>
-          <Input
-            placeholder="Buscar..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-
-        {/* Fonte */}
-        <div>
-          <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Fonte</p>
-          <div className="space-y-1">
-            {['', 'amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'kabum', 'americanas', 'casasbahia'].map(s => (
-              <button
-                key={s || '_all'}
-                type="button"
-                onClick={() => setSource(s)}
-                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${source === s ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
-              >
-                {s === '' ? 'Todas' : s === 'mercadolivre' ? 'Mercado Livre' : s === 'casasbahia' ? 'Casas Bahia' : s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Categorias */}
-        {categories.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Categoria</p>
-            <div className="space-y-1">
-              <button type="button" onClick={() => setTagFilter('')}
-                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!tagFilter ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
-                Todas
-              </button>
-              {categories.slice(0, 20).map(c => (
-                <button key={c} type="button" onClick={() => setTagFilter(c === tagFilter ? '' : c)}
-                  className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${tagFilter === c ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Marcas */}
-        {brands.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Marca</p>
-            <div className="space-y-1">
-              <button type="button" onClick={() => setBrandFilter('')}
-                className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!brandFilter ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
-                Todas
-              </button>
-              {brands.slice(0, 20).map(b => (
-                <button key={b} type="button" onClick={() => setBrandFilter(b === brandFilter ? '' : b)}
-                  className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${brandFilter === b ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}>
-                  {b}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Faixa de preço */}
-        <div>
-          <p className="text-[11px] font-semibold text-fg-3 uppercase tracking-wide mb-2">Preço (R$)</p>
-          <div className="flex items-center gap-1.5">
-            <input type="number" min="0" placeholder="Mín"
-              value={priceMin} onChange={e => setPriceMin(e.target.value)}
-              className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
-            <span className="text-fg-3 text-xs">–</span>
-            <input type="number" min="0" placeholder="Máx"
-              value={priceMax} onChange={e => setPriceMax(e.target.value)}
-              className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
-          </div>
-        </div>
-
-        {/* Mostrar inativos */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-accent" />
-          <span className="text-xs text-fg-2">Mostrar inativos</span>
-        </label>
-
-        {/* Limpar */}
-        {(search || source || tagFilter || brandFilter || priceMin || priceMax) && (
-          <button type="button"
-            onClick={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax('') }}
-            className="text-xs text-danger hover:underline text-left">
-            × Limpar filtros
-          </button>
-        )}
-      </aside>
+      <CatalogSidebar
+        search={search} onSearch={setSearch}
+        source={source} onSource={setSource}
+        tagFilter={tagFilter} onTagFilter={setTagFilter} categories={categories}
+        brandFilter={brandFilter} onBrandFilter={setBrandFilter} brands={brands}
+        priceMin={priceMin} onPriceMin={setPriceMin}
+        priceMax={priceMax} onPriceMax={setPriceMax}
+        statusFilter={statusFilter} onStatusFilter={setStatusFilter}
+        showInactive={showInactive} onShowInactive={setShowInactive}
+        onClear={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('') }}
+        hasActiveFilters={!!(search || source || tagFilter || brandFilter || priceMin || priceMax || statusFilter)}
+      />
 
       {/* ── Conteúdo principal ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
