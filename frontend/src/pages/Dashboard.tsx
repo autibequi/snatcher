@@ -151,7 +151,10 @@ export default function Dashboard() {
           <button
             type="button"
             onClick={() => {
-              qc.invalidateQueries({ queryKey: ['dashboard'] })
+              // Exclui recommendation do refresh — ela só atualiza via botão ↻ próprio
+              qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
+              qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+              qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
               qc.invalidateQueries({ queryKey: ['catalog'] })
             }}
             className="text-sm text-fg-2 border border-border rounded-md px-3 py-1.5 hover:bg-surface-2"
