@@ -315,8 +315,8 @@ CRAWLERS JÁ CONFIGURADOS:
 
 Com base na sua pesquisa online e nos crawlers existentes, recomende UMA configuração de crawler. Responda SOMENTE em JSON:
 {
-  "query": "termo de busca principal otimizado para afiliados (ex: whey protein 900g isolado)",
-  "queries": ["variação 1", "variação 2", "variação 3", "variação 4"],
+  "query": "termo curto 1-3 palavras otimizado para busca em marketplace (ex: whey protein, fone anc, nintendo switch)",
+  "queries": ["variação 1 curta", "variação 2 curta", "variação 3 curta", "variação 4 curta"],
   "sources": ["amazon", "mercadolivre"],
   "min_val": 0,
   "max_val": 500,
@@ -328,8 +328,8 @@ Com base na sua pesquisa online e nos crawlers existentes, recomende UMA configu
 }
 
 REGRAS:
-- query específica o suficiente pra encontrar produtos com desconto real (não genérica demais)
-- queries: 4-6 variações com marcas conhecidas, formatos e sinônimos
+- query: MÁXIMO 3 PALAVRAS — curto como os usuários digitam em marketplace (ex: "whey protein", "fone anc", "ps5 controle"). Frases longas retornam 0 resultados nos scrapers.
+- queries: 4-6 variações CURTAS (1-3 palavras cada) com marcas conhecidas, abreviações e sinônimos. Ex: ["fone jbl", "headphone anc", "fone sem fio"], NÃO ["fone de ouvido bluetooth cancelamento de ruido"]
 - sources: ["amazon","mercadolivre"] como padrão; Shopee pra moda/acessórios; Magalu pra eletrodomésticos
 - min_val/max_val: faixa realista baseada nos preços atuais que você pesquisou
 - crawl_interval: 30 pra tech/games voláteis, 60 pra suplementos, 120 pra itens estáveis

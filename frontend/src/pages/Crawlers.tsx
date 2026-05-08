@@ -121,7 +121,7 @@ function CreateMarketplaceModal({ open, onClose }: { open: boolean; onClose: () 
     if (!validate()) return
 
     const queriesArray = form.queries
-      .split('\n')
+      .split(/[;\n]/)
       .map(s => s.trim())
       .filter(Boolean)
 
@@ -175,7 +175,7 @@ function CreateMarketplaceModal({ open, onClose }: { open: boolean; onClose: () 
         />
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-fg-2">Termos adicionais (um por linha)</label>
+          <label className="text-xs font-medium text-fg-2">Termos adicionais (separados por ;)</label>
           <textarea
             placeholder={'iphone 15 pro\niphone 15 pro max\napple iphone 15'}
             value={form.queries}
@@ -468,7 +468,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
     const additionalQueries = parsedQueries.filter((q: string) => q !== term.query)
     setForm({
       query: term.query,
-      queries: additionalQueries.join('\n'),
+      queries: additionalQueries.join('; '),
       min_val: String(term.min_val ?? ''),
       max_val: String(term.max_val ?? ''),
       crawl_interval: term.crawl_interval ?? 60,
@@ -516,7 +516,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
             value={form.query} onChange={e => setForm(f => ({...f, query: e.target.value}))} />
         </div>
         <div>
-          <label className="text-xs text-fg-2 block mb-1">Termos adicionais (um por linha)</label>
+          <label className="text-xs text-fg-2 block mb-1">Termos adicionais (separados por ;)</label>
           <textarea rows={3} className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
             placeholder={"iphone 15 pro\niphone 15 pro max"}
             value={form.queries} onChange={e => setForm(f => ({...f, queries: e.target.value}))} />
