@@ -1513,7 +1513,11 @@ func actionEnrichTaxonomyFromUnmatched(ctx context.Context, h *JonfreyHandler) (
 	groups := make(map[string][]string)
 	for _, p := range products {
 		parts := strings.Fields(strings.ToLower(p.Title))
-		key := strings.Join(parts[:min(2, len(parts))], " ")
+		n := 2
+		if len(parts) < 2 {
+			n = len(parts)
+		}
+		key := strings.Join(parts[:n], " ")
 		groups[key] = append(groups[key], p.Title)
 	}
 
@@ -1618,13 +1622,6 @@ Retorne APENAS JSON válido:
 		len(products), createdTaxonomies, createdPatterns)
 
 	return beforeMap, afterMap, reasoning, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // actionPruneFalsePositives: top 20 taxonomias com false_positive flags

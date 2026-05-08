@@ -95,7 +95,7 @@ type ProductInput struct {
 // ScoreChannel calcula o score de afinidade entre produto e canal (backward compat).
 // Wrapper que chama ScoreChannelDetailed e retorna apenas o valor.
 func ScoreChannel(product ProductInput, channel models.Channel, w Weights) Score {
-	result := ScoreChannelDetailed(product, channel, nil, nil, w)
+	result := ScoreChannelDetailed(product, channel, nil, nil, 0, w)
 	return Score{
 		ChannelID:   result.ChannelID,
 		ChannelName: result.ChannelName,
