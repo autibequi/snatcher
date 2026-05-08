@@ -80,6 +80,16 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal (avaliado por canal com cooldown próprio)
 	recentLogs, _ := st.ListAutoMatchLogs(500)
 
+	// Backpressure: não criar novos dispatches se grupo já tem fila grande pendente.
+	// Default: limit de 10 targets pending+sending por grupo. Acima disso, skip.
+	const maxPendingPerGroup = 10
+	pendingByGroup := make(map[int64]int)
+	if cs, err := st.CountPendingTargetsByGroup(); err == nil {
+		for _, c := range cs {
+			pendingByGroup[c.GroupID] = c.Count
+		}
+	}
+
 	sentByChannel := make(map[int64]int, len(channelsByID))
 	for _, p := range products {
 		input := match.ProductInput{
@@ -160,9 +170,17 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				continue
 			}
 
+			// Backpressure: filtra só grupos abaixo do limite de fila
 			targets := make([]models.DispatchTarget, 0, len(groups))
 			for _, g := range groups {
+				if pendingByGroup[g.ID] >= maxPendingPerGroup {
+					continue // grupo saturado, deixa o worker drenar antes de criar mais
+				}
 				targets = append(targets, models.DispatchTarget{GroupID: g.ID})
+				pendingByGroup[g.ID]++ // counta o que vamos criar
+			}
+			if len(targets) == 0 {
+				continue // todos os grupos saturados, skip este produto/canal
 			}
 
 			msgText := buildAutoMatchMessage(p)

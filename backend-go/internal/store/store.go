@@ -21,6 +21,12 @@ type ChannelDayStat struct {
 	Value int    `db:"value" json:"value"`
 }
 
+// GroupDeliveryCount agrega quantos dispatches por grupo (usado para rate limit / backpressure).
+type GroupDeliveryCount struct {
+	GroupID int64 `db:"group_id"`
+	Count   int   `db:"count"`
+}
+
 // CatalogFilters agrupa filtros para listagem do catálogo.
 type CatalogFilters struct {
 	Search          string
@@ -241,6 +247,10 @@ type Store interface {
 	// Catalog com filtros
 	FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error)
 	ListPendingCurationProducts(limit int) ([]models.CatalogProduct, error)
+
+	// Rate limit / backpressure
+	CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCount, error)
+	CountPendingTargetsByGroup() ([]GroupDeliveryCount, error)
 
 	// Product failures (purge 404)
 	IncrementProductFailures(id int64) error

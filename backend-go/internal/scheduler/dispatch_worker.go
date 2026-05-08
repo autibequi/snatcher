@@ -58,8 +58,36 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
+	// Rate limit por grupo: default 3 mensagens/hora por grupo (anti-spam, evita ban WA).
+	// Conta dispatches já entregues nas últimas 60min para o grupo. Se >= limit, pula este target neste ciclo.
+	const maxPerGroupPerHour = 3
+	type groupCount struct {
+		GroupID int64 `db:"group_id"`
+		Count   int   `db:"count"`
+	}
+	deliveredByGroup := make(map[int64]int, len(targets))
+	if hdb, ok := st.(interface{ DB() interface{} }); ok {
+		_ = hdb // placeholder se store expõe db
+	}
+	// Usa método helper se disponível, senão conta via store
+	var counts []groupCount
+	if cs, err := st.CountRecentDeliveriesByGroup(60); err == nil {
+		counts = make([]groupCount, len(cs))
+		for i, c := range cs {
+			counts[i] = groupCount{GroupID: c.GroupID, Count: c.Count}
+		}
+	}
+	for _, c := range counts {
+		deliveredByGroup[c.GroupID] = c.Count
+	}
+
 	for _, t := range targets {
+		if deliveredByGroup[t.GroupID] >= maxPerGroupPerHour {
+			slog.Debug("rate limit por grupo: pulando target", "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID])
+			continue // deixa pending — próximo ciclo tenta de novo
+		}
 		processTarget(ctx, st, t, baseURL, apiKey, instance, accountID)
+		deliveredByGroup[t.GroupID]++
 	}
 }
 

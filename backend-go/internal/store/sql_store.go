@@ -1685,6 +1685,32 @@ func (s *SQLStore) CancelDispatch(id int64) error {
 	return err
 }
 
+// CountRecentDeliveriesByGroup retorna quantos dispatches foram entregues por grupo
+// nos últimos `minutes`. Usado pelo dispatch worker para aplicar rate limit por grupo.
+func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCount, error) {
+	if minutes <= 0 { minutes = 60 }
+	var out []GroupDeliveryCount
+	err := s.db.Select(&out, `
+		SELECT group_id, COUNT(*) AS count
+		FROM dispatch_targets
+		WHERE status IN ('delivered', 'sending')
+		  AND COALESCE(delivered_at, updated_at, created_at) > now() - ($1 || ' minutes')::interval
+		GROUP BY group_id`, minutes)
+	return out, err
+}
+
+// CountPendingTargetsByGroup retorna quantos targets pending+queued+sending estão pendentes por grupo.
+// Usado pelo auto-match para backpressure (não criar novos dispatches se grupo já tem fila grande).
+func (s *SQLStore) CountPendingTargetsByGroup() ([]GroupDeliveryCount, error) {
+	var out []GroupDeliveryCount
+	err := s.db.Select(&out, `
+		SELECT group_id, COUNT(*) AS count
+		FROM dispatch_targets
+		WHERE status IN ('pending', 'sending')
+		GROUP BY group_id`)
+	return out, err
+}
+
 func (s *SQLStore) ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error) {
 	if limit <= 0 { limit = 20 }
 	var out []models.DispatchTarget
