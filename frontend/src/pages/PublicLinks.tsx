@@ -478,38 +478,6 @@ export default function PublicLinks() {
         </Button>
       </div>
 
-      {/* ── Links de canal (página /canal/{slug} com picker de grupos) ── */}
-      {channels.filter(c => c.slug && c.active !== false).length > 0 && (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border">
-            <p className="text-sm font-medium text-fg">Links automáticos por canal</p>
-            <p className="text-xs text-fg-3 mt-0.5">Cada canal tem uma página pública com os grupos disponíveis para entrar</p>
-          </div>
-          <div className="divide-y divide-border">
-            {channels.filter(c => c.slug && c.active !== false).map(c => {
-              const url = `${linkBaseURL}/canal/${c.slug}`
-              return (
-                <div key={c.id} className="flex items-center justify-between px-4 py-2 gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-fg truncate">{c.name}</p>
-                    <a href={url} target="_blank" rel="noopener" className="text-xs text-accent hover:underline font-mono truncate block">
-                      {url}
-                    </a>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => { navigator.clipboard.writeText(url); }}
-                  >
-                    Copiar
-                  </Button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Links ativos" value={activeCount} />
@@ -526,6 +494,30 @@ export default function PublicLinks() {
           delta={noFallback > 0 ? { value: -1, tone: 'danger', displayText: 'sem fallback' } : undefined}
         />
       </div>
+
+      {/* ── Links automáticos por canal ── */}
+      {channels.filter(c => c.slug && c.active !== false).length > 0 && (
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border">
+            <p className="text-sm font-medium text-fg">Links automáticos por canal</p>
+            <p className="text-xs text-fg-3 mt-0.5">Cada canal tem uma página pública com os grupos disponíveis para entrar</p>
+          </div>
+          <div className="divide-y divide-border">
+            {channels.filter(c => c.slug && c.active !== false).map(c => {
+              const url = `${linkBaseURL}/canal/${c.slug}`
+              return (
+                <div key={c.id} className="flex items-center justify-between px-4 py-2 gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-fg truncate">{c.name}</p>
+                    <a href={url} target="_blank" rel="noopener" className="text-xs text-accent hover:underline font-mono truncate block">{url}</a>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(url) }}>Copiar</Button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Stacked bar chart ── */}
       {links.length > 0 && !isLoading && <ClicksChart links={links} />}

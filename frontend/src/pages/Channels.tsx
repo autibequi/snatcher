@@ -356,19 +356,73 @@ export default function Channels() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({length:6}).map((_,i) => <Skeleton key={i} variant="card" className="h-36" />)}
-        </div>
+        <div className="space-y-2">{Array.from({length:4}).map((_,i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
       ) : !channels.length ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <NewChannelPlaceholder onClick={() => setShowModal(true)} />
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowModal(true)}
+          className="w-full border-2 border-dashed border-border rounded-md py-10 text-sm text-fg-3 hover:border-accent hover:text-accent transition-colors"
+        >
+          + Novo canal
+        </button>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {channels.map((ch, i) => (
-            <ChannelCard key={ch.id} channel={ch} onClick={() => navigate(`/channels/${ch.id}`)} index={i} />
-          ))}
-          <NewChannelPlaceholder onClick={() => setShowModal(true)} />
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                {['Canal', 'Status', 'Membros', 'CTR 30d', 'Receita 30d', 'Disparos 7d', 'Categorias', ''].map(h => (
+                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {channels.map(ch => (
+                <tr
+                  key={ch.id}
+                  className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer transition-colors"
+                  onClick={() => navigate(`/channels/${ch.id}`)}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-fg">{ch.name}</span>
+                      {ch.platform && <PlatformPill platform={ch.platform} />}
+                    </div>
+                    {ch.description && <p className="text-xs text-fg-3 truncate max-w-xs mt-0.5">{ch.description}</p>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={ch.active ? 'success' : 'default'} size="sm">
+                      {ch.active ? 'ativo' : 'inativo'}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-fg">{ch.member_count ?? 0}</td>
+                  <td className="px-4 py-3 text-fg">{ch.ctr_30d ? `${(ch.ctr_30d * 100).toFixed(1)}%` : '—'}</td>
+                  <td className="px-4 py-3 text-fg">{ch.revenue_30d ? `R$ ${ch.revenue_30d.toFixed(0)}` : '—'}</td>
+                  <td className="px-4 py-3">
+                    <ChannelMiniChart channelId={ch.id} series={ch.dispatches_7d_series} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1 flex-wrap">
+                      {ch.audience?.categories?.slice(0, 3).map(c => (
+                        <Badge key={c} size="sm" variant="accent">{c}</Badge>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-xs text-accent hover:underline">Abrir →</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="px-4 py-2.5 border-t border-border">
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setShowModal(true) }}
+              className="text-sm text-fg-3 hover:text-accent"
+            >
+              + Novo canal
+            </button>
+          </div>
         </div>
       )}
 
