@@ -16,6 +16,8 @@ interface SearchTerm {
   min_val?: number
   max_val?: number
   category?: string
+  last_error?: string
+  last_error_at?: string
 }
 
 interface Account {
@@ -739,8 +741,8 @@ function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: (
                 <td className="p-3 text-xs text-fg-2">
                   {!t.active ? (
                     <span className="text-fg-3">pausado</span>
-                  ) : t.last_crawled_at && t.result_count === 0 ? (
-                    <Badge variant="danger" size="sm">erro</Badge>
+                  ) : t.last_error ? (
+                    <span title={t.last_error}><Badge variant="danger" size="sm">erro</Badge></span>
                   ) : t.last_crawled_at ? (
                     <span className="text-fg-3">
                       {(() => {
@@ -1119,7 +1121,7 @@ function SuggestCrawlerModal({ onClose, onCreated }: { onClose: () => void; onCr
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-fg">✨ Sugerir crawler com IA</h3>
           <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg">×</button>
