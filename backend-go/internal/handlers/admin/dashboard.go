@@ -634,18 +634,18 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	_ = h.db.GetContext(ctx, &dispatches24h, `SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '24 hours'`)
 	lines = append(lines, fmt.Sprintf("- disparos nas últimas 24h: %d", dispatches24h))
 
-	// Próximo disparo agendado
-	var nextDispatchETA *int
-	_ = h.db.GetContext(ctx, &nextDispatchETA, `SELECT EXTRACT(EPOCH FROM (MIN(scheduled_for) - now()))::int FROM dispatches WHERE status='scheduled' AND scheduled_for > now()`)
-	if nextDispatchETA != nil {
-		lines = append(lines, fmt.Sprintf("- próximo disparo agendado em: %d minutos", *nextDispatchETA/60))
-	} else {
-		lines = append(lines, "- nenhum disparo agendado")
+	// Dispatches em fila (queued/pending = a enviar; pending_approval = aguardando aprovação)
+	var dispatchesQueued, dispatchesPendingApproval int
+	_ = h.db.GetContext(ctx, &dispatchesQueued, `SELECT COUNT(*) FROM dispatches WHERE status IN ('queued','pending')`)
+	_ = h.db.GetContext(ctx, &dispatchesPendingApproval, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
+	lines = append(lines, fmt.Sprintf("- disparos em fila (a enviar): %d", dispatchesQueued))
+	if dispatchesPendingApproval > 0 {
+		lines = append(lines, fmt.Sprintf("- disparos aguardando aprovação manual: %d (full_auto_mode desligado)", dispatchesPendingApproval))
 	}
 
-	// Crawlers ativos
+	// Crawlers ativos — tabela: searchterm (sem underscore)
 	var crawlersActive int
-	_ = h.db.GetContext(ctx, &crawlersActive, `SELECT COUNT(*) FROM search_terms WHERE active = true`)
+	_ = h.db.GetContext(ctx, &crawlersActive, `SELECT COUNT(*) FROM searchterm WHERE active = true`)
 	lines = append(lines, fmt.Sprintf("- crawlers ativos: %d", crawlersActive))
 
 	// Produtos auditados
