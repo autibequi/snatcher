@@ -42,6 +42,7 @@ interface AutoMatchLog {
   created_at: string
   product_name?: string
   channel_name?: string
+  group_names?: string // CSV dos grupos que receberam
 }
 
 interface ChannelPreviewItem {
@@ -561,6 +562,7 @@ export function Drawer({ row, onClose }: DrawerProps) {
                     <thead>
                       <tr className="bg-surface-2 border-b border-border">
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Grupos</th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Score</th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Hora</th>
                         <th className="px-3 py-2"></th>
@@ -571,6 +573,19 @@ export function Drawer({ row, onClose }: DrawerProps) {
                         <tr key={log.id} className="border-b border-border last:border-0 hover:bg-surface-2">
                           <td className="px-3 py-2">
                             <p className="text-xs text-fg truncate max-w-[160px]">{log.product_name || `#${log.product_id}`}</p>
+                          </td>
+                          <td className="px-3 py-2 max-w-[200px]">
+                            {log.group_names ? (
+                              <div className="flex flex-wrap gap-1">
+                                {log.group_names.split(', ').map(g => (
+                                  <span key={g} className="text-[10px] bg-surface-2 border border-border rounded px-1.5 py-0.5 text-fg-2 truncate max-w-[96px]" title={g}>
+                                    {g}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-fg-3">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <span className={`text-xs font-semibold ${log.score >= 70 ? 'text-success' : log.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>

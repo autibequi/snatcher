@@ -130,6 +130,7 @@ type AutoMatchLog struct {
 	// Joinados para exibição
 	ProductName string `db:"product_name" json:"product_name,omitempty"`
 	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
+	GroupNames  string `db:"group_names" json:"group_names,omitempty"` // CSV dos grupos que receberam o disparo
 }
 
 type WAAccount struct {

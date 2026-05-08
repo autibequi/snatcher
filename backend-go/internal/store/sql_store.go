@@ -1030,9 +1030,21 @@ func (s *SQLStore) ListAutoMatchLogsByChannel(channelID int64, limit int) ([]mod
 	}
 	var out []models.AutoMatchLog
 	err := s.db.Select(&out, `
-		SELECT * FROM auto_match_logs
-		WHERE channel_id = $1
-		ORDER BY created_at DESC
+		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+		       COALESCE(p.canonical_name, '') AS product_name,
+		       COALESCE(ch.name, '') AS channel_name,
+		       COALESCE(
+		           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+		            FROM dispatch_targets dt
+		            JOIN groups g ON g.id = dt.group_id
+		            WHERE dt.dispatch_id = l.dispatch_id),
+		           ''
+		       ) AS group_names
+		FROM auto_match_logs l
+		LEFT JOIN catalogproduct p ON p.id = l.product_id
+		LEFT JOIN channels ch ON ch.id = l.channel_id
+		WHERE l.channel_id = $1
+		ORDER BY l.created_at DESC
 		LIMIT $2`, channelID, limit)
 	return out, err
 }
