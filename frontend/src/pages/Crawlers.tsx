@@ -477,6 +477,12 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
     })
   }, [term])
 
+  const deleteMut = useMutation({
+    mutationFn: () => apiClient.delete(`/api/search-terms/${term!.id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['search-terms'] }); onClose() },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao excluir'),
+  })
+
   const saveMut = useMutation({
     mutationFn: () => {
       const queriesArray = form.queries.split('\n').map(s => s.trim()).filter(Boolean)
@@ -503,10 +509,22 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
 
   return (
     <Modal open onClose={onClose} title="Editar crawler" footer={
-      <>
-        <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-        <Button variant="primary" size="sm" loading={saveMut.isPending} disabled={!form.query.trim()} onClick={() => saveMut.mutate()}>Salvar</Button>
-      </>
+      <div className="flex items-center justify-between w-full gap-2">
+        <Button
+          variant="danger"
+          size="sm"
+          loading={deleteMut.isPending}
+          onClick={() => {
+            if (confirm(`Excluir crawler "${term!.query}"? Esta ação não pode ser desfeita.`)) deleteMut.mutate()
+          }}
+        >
+          Excluir
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" size="sm" loading={saveMut.isPending} disabled={!form.query.trim()} onClick={() => saveMut.mutate()}>Salvar</Button>
+        </div>
+      </div>
     }>
       <div className="space-y-4">
         <div>

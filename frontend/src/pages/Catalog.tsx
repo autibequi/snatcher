@@ -142,6 +142,12 @@ export default function Catalog() {
     onError: () => alert('Erro ao salvar'),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiClient.delete(`/api/catalog/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['catalog'] }),
+    onError: () => alert('Erro ao excluir produto'),
+  })
+
   // Inspecionar via LLM — auditoria de produtos não inspecionados
   const inspectMut = useMutation({
     mutationFn: () => apiClient.post('/api/curation/inspect-all').then(r => r.data as { started: boolean; message?: string }),
@@ -539,6 +545,18 @@ export default function Catalog() {
                             🔗
                           </a>
                         )}
+                        <button
+                          type="button"
+                          title="Excluir produto"
+                          onClick={e => {
+                            e.stopPropagation()
+                            if (confirm(`Excluir "${title}"?`)) deleteMutation.mutate(p.id)
+                          }}
+                          disabled={deleteMutation.isPending && deleteMutation.variables === p.id}
+                          className="text-fg-3 hover:text-danger p-1 disabled:opacity-40"
+                        >
+                          🗑
+                        </button>
                       </div>
                     </td>
                   </tr>
