@@ -237,10 +237,13 @@ function ChannelQueue({ channelId }: { channelId: string }) {
       {/* Próximos ciclo */}
       <div className="border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-          <p className="text-sm font-medium text-fg">Próximos · score suficiente</p>
-          <p className="text-xs text-fg-3">Produtos que serão disparados no próximo ciclo de auto-match</p>
+          <p className="text-sm font-medium text-fg">Próximos disparos · próximo ciclo de auto-match</p>
+          <p className="text-xs text-fg-3">
+            Produtos do catálogo com score ≥ threshold que ainda não foram disparados.
+            {queueItems.length === 0 && ' Se vazio, provavelmente todos estão em cooldown — rode "reset_stale_cooldown" no Jonfrey.'}
+          </p>
         </div>
-        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila agora.</p> : (
+        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila (todos em cooldown ou sem score suficiente).</p> : (
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Produto</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Score</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Preço</th></tr></thead>
             <tbody>
@@ -259,7 +262,10 @@ function ChannelQueue({ channelId }: { channelId: string }) {
       {toSend.length > 0 && (
         <div className="border border-warning/40 rounded-md overflow-hidden">
           <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
-            <p className="text-sm font-medium text-fg">A entregar ({toSend.length})</p>
+            <div>
+              <p className="text-sm font-medium text-fg">A entregar ({toSend.length})</p>
+              <p className="text-xs text-fg-3">Já foram matchados e criados — aguardando worker WA/TG enviar para o grupo</p>
+            </div>
             <a href="/automations" className="text-xs text-accent hover:underline">Ver em Automações →</a>
           </div>
           <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
