@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -197,30 +198,48 @@ func (s *SearchTerm) GetQueries() []string {
 	return out
 }
 
-// GetSources returns the list of source IDs for this search term.
-// It parses the Sources field as JSON if possible, falling back to legacy ad-hoc values.
-func (s *SearchTerm) GetSources() []string {
-	// Try to parse as JSON array first
-	var sources []string
-	if err := json.Unmarshal([]byte(s.Sources), &sources); err == nil && len(sources) > 0 {
-		return sources
-	}
+// srcAlias normaliza nomes longos pra IDs curtos do registry de scrapers.
+var srcAlias = map[string]string{
+	"amazon": "amz", "mercadolivre": "ml", "mercado livre": "ml",
+	"magalu": "magalu", "shopee": "shopee", "aliexpress": "aliexpress",
+	"casasbahia": "casasbahia", "casas bahia": "casasbahia",
+	"kabum": "kabum", "americanas": "americanas",
+}
 
-	// Fallback to legacy ad-hoc values
-	switch s.Sources {
-	case "all":
+func normSource(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if a, ok := srcAlias[s]; ok { return a }
+	return s
+}
+
+// GetSources returns the list of source IDs for this search term.
+// Handles JSON array, comma-separated, legacy strings and long names (amazon→amz, etc.)
+func (s *SearchTerm) GetSources() []string {
+	if s.Sources == "" || s.Sources == "all" {
 		return []string{"ml", "amz"}
-	case "mercadolivre":
-		return []string{"ml"}
-	case "amazon":
-		return []string{"amz"}
-	default:
-		// Return as-is if not recognized (for future extensibility)
-		if s.Sources != "" {
-			return []string{s.Sources}
-		}
-		return []string{}
 	}
+	var raw []string
+	if err := json.Unmarshal([]byte(s.Sources), &raw); err != nil {
+		// comma-separated fallback
+		for _, p := range strings.Split(s.Sources, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				raw = append(raw, p)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, v := range raw {
+		id := normSource(v)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"ml", "amz"}
+	}
+	return out
 }
 
 type CrawlResult struct {

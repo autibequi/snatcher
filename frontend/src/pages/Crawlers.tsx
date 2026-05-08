@@ -4,6 +4,21 @@ import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCar
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
+// Normaliza nomes longos de fonte pra IDs curtos que o backend registra
+const SRC_ALIAS: Record<string, string> = {
+  amazon: 'amz', mercadolivre: 'ml', 'mercado livre': 'ml',
+  magalu: 'magalu', shopee: 'shopee', aliexpress: 'aliexpress',
+  casasbahia: 'casasbahia', 'casas bahia': 'casasbahia',
+  kabum: 'kabum', americanas: 'americanas',
+}
+function normSrc(s: string): string { return SRC_ALIAS[s.toLowerCase().trim()] ?? s.toLowerCase().trim() }
+function parseSources(raw: string | undefined): string[] {
+  if (!raw || raw === 'all') return []
+  let list: string[] = []
+  try { list = JSON.parse(raw) } catch { list = raw.split(',').map(s => s.trim()).filter(Boolean) }
+  return [...new Set(list.map(normSrc).filter(Boolean))]
+}
+
 interface SearchTerm {
   id: number
   query: string
@@ -462,8 +477,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
 
   React.useEffect(() => {
     if (!term) return
-    let srcs: string[] = []
-    try { srcs = JSON.parse(term.sources ?? '[]') } catch { srcs = (term.sources ?? 'all') === 'all' ? [] : (term.sources ?? '').split(',').map((s: string) => s.trim()).filter(Boolean) }
+    const srcs = parseSources(term.sources)
     let parsedQueries: string[] = []
     try { parsedQueries = JSON.parse(term.queries ?? '[]') } catch { parsedQueries = [] }
     const additionalQueries = parsedQueries.filter((q: string) => q !== term.query)
@@ -739,12 +753,7 @@ function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: (
                 <td className="p-3 font-medium text-fg">"{t.query}"</td>
                 <td className="p-3">
                   <div className="flex flex-wrap gap-1">
-                    {(() => {
-                      const raw = t.sources ?? 'all'
-                      let list: string[] = []
-                      try { list = JSON.parse(raw) } catch { list = raw.split(',').map((s: string) => s.trim()) }
-                      return list.map((s: string) => <SourcePill key={s} source={s} />)
-                    })()}
+                    {parseSources(t.sources).map((s: string) => <SourcePill key={s} source={s} />)}
                   </div>
                 </td>
                 <td className="p-3 text-fg-2 text-xs whitespace-nowrap">
@@ -1124,7 +1133,7 @@ function SuggestCrawlerModal({ onClose, onCreated }: { onClose: () => void; onCr
       await apiClient.post('/api/search-terms', {
         query: suggestion.query,
         queries: suggestion.queries,
-        sources: suggestion.sources.join(','),
+        sources: suggestion.sources.map(normSrc).join(','),
         min_val: suggestion.min_val,
         max_val: suggestion.max_val,
         crawl_interval: suggestion.crawl_interval,
