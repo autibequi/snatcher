@@ -74,13 +74,13 @@ func (c *OpenRouterClient) Complete(ctx context.Context, prompt string, opts Opt
 		temp = 0.3
 	}
 
-	reasoningOff := false
 	payload := orRequest{
 		Model:       model,
 		Messages:    []orMessage{{Role: "user", Content: prompt}},
 		MaxTokens:   maxTokens,
 		Temperature: temp,
-		Reasoning:   &orReasoning{Enabled: &reasoningOff, Effort: "minimal"},
+		// Default off pra evitar truncamento. Doc: https://openrouter.ai/docs/use-cases/reasoning-tokens
+		Reasoning: map[string]any{"enabled": false, "effort": "minimal"},
 	}
 
 	var lastErr error
