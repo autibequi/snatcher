@@ -256,4 +256,11 @@ type Store interface {
 	DetectAndUpsertTaxonomy(text string) ([]int64, error)
 	GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error)
 	SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error)
+
+	// Jonfrey assistant (orquestrador AI)
+	CreateJonfreyAction(a models.JonfreyAction) (int64, error)
+	UpdateJonfreyAction(a models.JonfreyAction) error
+	ListJonfreyActions(limit int, actionType string) ([]models.JonfreyAction, error)
+	GetJonfreyConfig() (models.JonfreyConfig, error)
+	UpdateJonfreyConfig(c models.JonfreyConfig) error
 }

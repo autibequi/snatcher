@@ -91,6 +91,7 @@ const DevAtoms = lazy(() => import('./pages/DevAtoms'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Automations = lazy(() => import('./pages/Automations'))
 const AutomationsByChannel = lazy(() => import('./pages/AutomationsByChannel'))
+const Jonfrey = lazy(() => import('./pages/Jonfrey'))
 const Setup = lazy(() => import('./pages/Setup'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
@@ -127,6 +128,7 @@ export default function App() {
               <Route path="auto-match" element={<Navigate to="/automations" replace />} />
               <Route path="automations" element={<Automations />} />
               <Route path="automations/channels" element={<AutomationsByChannel />} />
+              <Route path="automations/jonfrey" element={<Jonfrey />} />
               <Route path="compose" element={<Composer />} />
               <Route path="logs" element={<Logs />} />
               <Route path="catalog" element={<Catalog />} />

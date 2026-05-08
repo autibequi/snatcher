@@ -1,0 +1,282 @@
+import React from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Button, Switch } from '../components/ui'
+import { apiClient } from '../lib/apiClient'
+
+interface JonfreyAction {
+  id: number
+  action_type: string
+  target?: string | null
+  status: string
+  reasoning?: string | null
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  error_message?: string | null
+  triggered_by: string
+  created_at: string
+  finished_at?: string | null
+}
+
+interface JonfreyConfig {
+  enabled: boolean
+  interval_minutes: number
+  enabled_actions: string[]
+  last_run_at?: string | null
+}
+
+interface AvailableAction {
+  type: string
+  description: string
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: 'bg-fg-3/10 text-fg-3 border-fg-3/30',
+  running: 'bg-accent/10 text-accent border-accent/30',
+  success: 'bg-success/10 text-success border-success/30',
+  failed:  'bg-danger/10 text-danger border-danger/30',
+  skipped: 'bg-warning/10 text-warning border-warning/30',
+}
+
+function fmtDate(s: string): string {
+  return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function relTime(s: string): string {
+  const ms = Date.now() - new Date(s).getTime()
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `${min}m atrás`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h atrás`
+  const d = Math.floor(h / 24)
+  return `${d}d atrás`
+}
+
+function ActionCard({ action }: { action: JonfreyAction }) {
+  const [open, setOpen] = React.useState(false)
+  const statusCls = STATUS_COLORS[action.status] ?? STATUS_COLORS.pending
+
+  return (
+    <div className="border border-border rounded-md bg-surface overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-start gap-3 p-3 text-left hover:bg-surface-2 transition-colors"
+      >
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono uppercase tracking-wide flex-shrink-0 ${statusCls}`}>
+          {action.status}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-fg font-mono">{action.action_type}</p>
+            {action.target && (
+              <span className="text-[10px] text-fg-3 font-mono">target={action.target}</span>
+            )}
+            <span className="text-[10px] text-fg-3 ml-auto">{action.triggered_by}</span>
+          </div>
+          {action.reasoning && (
+            <p className="text-xs text-fg-2 mt-1 truncate">{action.reasoning}</p>
+          )}
+          <p className="text-[10px] text-fg-3 mt-0.5">
+            {fmtDate(action.created_at)} · {relTime(action.created_at)}
+          </p>
+        </div>
+        <span className="text-fg-3 flex-shrink-0">{open ? '▼' : '▶'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border bg-surface-2 p-3 space-y-2">
+          {action.error_message && (
+            <div className="bg-danger/5 border border-danger/30 rounded p-2">
+              <p className="text-[10px] text-danger font-mono">{action.error_message}</p>
+            </div>
+          )}
+          {action.reasoning && (
+            <div>
+              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Raciocínio</p>
+              <p className="text-xs text-fg-2">{action.reasoning}</p>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Antes</p>
+              <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2">
+                {JSON.stringify(action.before ?? {}, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Depois</p>
+              <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2">
+                {JSON.stringify(action.after ?? {}, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Jonfrey() {
+  const qc = useQueryClient()
+
+  const { data: actions = [], isLoading } = useQuery<JonfreyAction[]>({
+    queryKey: ['jonfrey-actions'],
+    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => r.data ?? []).catch(() => []),
+    refetchInterval: 10_000,
+  })
+
+  const { data: config } = useQuery<JonfreyConfig>({
+    queryKey: ['jonfrey-config'],
+    queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data),
+  })
+
+  const { data: available = [] } = useQuery<AvailableAction[]>({
+    queryKey: ['jonfrey-available'],
+    queryFn: () => apiClient.get('/api/jonfrey/available').then(r => r.data ?? []).catch(() => []),
+  })
+
+  const runMut = useMutation({
+    mutationFn: (actionType?: string) =>
+      apiClient
+        .post('/api/jonfrey/run', actionType ? { action_type: actionType } : {})
+        .then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-actions'] }),
+  })
+
+  const updateConfigMut = useMutation({
+    mutationFn: (patch: Partial<JonfreyConfig>) =>
+      apiClient.put('/api/jonfrey/config', patch).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
+  })
+
+  const toggleEnabledAction = (type: string) => {
+    if (!config) return
+    const next = config.enabled_actions.includes(type)
+      ? config.enabled_actions.filter(t => t !== type)
+      : [...config.enabled_actions, type]
+    updateConfigMut.mutate({ enabled_actions: next })
+  }
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <p className="text-sm text-fg-3">
+          Jonfrey é um assistente de IA que orquestra automaticamente as outras automações —
+          configura crawlers, audita pendências, ajusta thresholds e mantém um changelog de auditoria
+          para você entender o que ele fez e por quê.
+        </p>
+      </div>
+
+      {/* Painel de controle */}
+      <div className="bg-surface border border-border rounded-md p-4 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-fg">Auto-pilot</p>
+            <p className="text-xs text-fg-3">
+              Quando ligado, Jonfrey acorda a cada{' '}
+              <strong>{config?.interval_minutes ?? 60} min</strong>
+              {' '}e executa as ações habilitadas.
+              {config?.last_run_at && (
+                <span> Último ciclo: {relTime(config.last_run_at)}.</span>
+              )}
+            </p>
+          </div>
+          <Switch
+            checked={config?.enabled ?? false}
+            onChange={v => updateConfigMut.mutate({ enabled: v })}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Intervalo (minutos)</label>
+          <input
+            type="number"
+            min={5}
+            max={1440}
+            value={config?.interval_minutes ?? 60}
+            onChange={e => {
+              const n = Number(e.target.value)
+              if (n >= 5) updateConfigMut.mutate({ interval_minutes: n })
+            }}
+            className="w-32 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+          />
+        </div>
+
+        <div className="border-t border-border pt-3">
+          <p className="text-xs text-fg-2 font-medium mb-2">Ações disponíveis</p>
+          <div className="space-y-1.5">
+            {available.map(a => {
+              const enabled = config?.enabled_actions.includes(a.type) ?? false
+              return (
+                <div key={a.type} className="flex items-center justify-between gap-3 py-1.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-mono text-fg">{a.type}</p>
+                    <p className="text-xs text-fg-3">{a.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => runMut.mutate(a.type)}
+                      disabled={runMut.isPending}
+                      className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50"
+                    >
+                      ▶ Rodar
+                    </button>
+                    <Switch
+                      checked={enabled}
+                      onChange={() => toggleEnabledAction(a.type)}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-3 flex items-center justify-between gap-2 flex-wrap">
+          <p className="text-xs text-fg-3">
+            Executa todas as ações habilitadas agora, sem esperar o próximo ciclo.
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={runMut.isPending}
+            onClick={() => runMut.mutate(undefined)}
+          >
+            ▶ Executar agora
+          </Button>
+        </div>
+      </div>
+
+      {/* Changelog */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-fg">Changelog de auditoria</p>
+          <button
+            type="button"
+            onClick={() => qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })}
+            className="text-xs text-fg-3 hover:text-fg"
+          >
+            ↻ Atualizar
+          </button>
+        </div>
+        {isLoading ? (
+          <p className="text-xs text-fg-3">Carregando…</p>
+        ) : actions.length === 0 ? (
+          <div className="bg-surface border border-border rounded-md p-6 text-center">
+            <p className="text-sm text-fg-2">Nenhuma ação registrada ainda.</p>
+            <p className="text-xs text-fg-3 mt-1">
+              Use "Executar agora" ou ligue o auto-pilot para o Jonfrey começar a agir.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {actions.map(a => <ActionCard key={a.id} action={a} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

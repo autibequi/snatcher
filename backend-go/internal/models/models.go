@@ -741,3 +741,52 @@ type Taxonomy struct {
 	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
 }
 
+
+// JonfreyAction é uma ação tomada pelo assistente Jonfrey, com auditoria
+// completa (estado antes/depois, reasoning).
+type JonfreyAction struct {
+	ID             int64      `db:"id" json:"id"`
+	ActionType     string     `db:"action_type" json:"action_type"`
+	Target         NullString `db:"target" json:"target,omitempty"`
+	Status         string     `db:"status" json:"status"` // pending|running|success|failed|skipped
+	Reasoning      NullString `db:"reasoning" json:"reasoning,omitempty"`
+	BeforeSnapshot []byte     `db:"before_snapshot" json:"-"`
+	AfterSnapshot  []byte     `db:"after_snapshot" json:"-"`
+	ErrorMessage   NullString `db:"error_message" json:"error_message,omitempty"`
+	TriggeredBy    string     `db:"triggered_by" json:"triggered_by"` // manual|auto|scheduled
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	FinishedAt     NullTime   `db:"finished_at" json:"finished_at,omitempty"`
+}
+
+// MarshalJSON expõe before/after como objeto JSON (não base64).
+func (a JonfreyAction) MarshalJSON() ([]byte, error) {
+	var before, after map[string]any
+	if len(a.BeforeSnapshot) > 0 {
+		_ = json.Unmarshal(a.BeforeSnapshot, &before)
+	}
+	if len(a.AfterSnapshot) > 0 {
+		_ = json.Unmarshal(a.AfterSnapshot, &after)
+	}
+	if before == nil {
+		before = map[string]any{}
+	}
+	if after == nil {
+		after = map[string]any{}
+	}
+	type alias JonfreyAction
+	return json.Marshal(&struct {
+		alias
+		Before map[string]any `json:"before"`
+		After  map[string]any `json:"after"`
+	}{alias: alias(a), Before: before, After: after})
+}
+
+// JonfreyConfig é a configuração singleton do assistente.
+type JonfreyConfig struct {
+	ID              int            `db:"id" json:"id"`
+	Enabled         bool           `db:"enabled" json:"enabled"`
+	IntervalMinutes int            `db:"interval_minutes" json:"interval_minutes"`
+	EnabledActions  pq.StringArray `db:"enabled_actions" json:"enabled_actions"`
+	LastRunAt       NullTime       `db:"last_run_at" json:"last_run_at,omitempty"`
+	UpdatedAt       time.Time      `db:"updated_at" json:"updated_at"`
+}

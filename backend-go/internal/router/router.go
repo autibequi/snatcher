@@ -84,6 +84,7 @@ func Build(
 	autoMatch   := adminhnd.NewAutoMatchHandler(st)
 	linksH      := adminhnd.NewLinksHandler(st)
 	automations := adminhnd.NewAutomationsHandler(st)
+	jonfrey     := adminhnd.NewJonfreyHandler(st, db)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *adminhnd.ComposeHandler
@@ -102,6 +103,7 @@ func Build(
 	taxonomy.SetLLMFn(composeH.BuildLLMClient)
 	groups.SetLLMFn(composeH.BuildLLMClient)
 	catalog.SetLLMFn(composeH.BuildLLMClient)
+	jonfrey.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
@@ -243,6 +245,13 @@ func Build(
 		r.Put("/api/automations/{channelId}", automations.Upsert)
 		r.Get("/api/automations/{channelId}/preview", automations.Preview)
 		r.Post("/api/automations/{channelId}/advise", automations.Advise)
+
+		// Jonfrey — orquestrador AI das automações
+		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
+		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
+		r.Post("/api/jonfrey/run", jonfrey.RunAction)
+		r.Get("/api/jonfrey/config", jonfrey.GetConfig)
+		r.Put("/api/jonfrey/config", jonfrey.UpdateConfig)
 
 		// Config
 		r.Get("/api/config", config.Get)
