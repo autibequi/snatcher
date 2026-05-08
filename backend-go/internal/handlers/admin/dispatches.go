@@ -1,14 +1,20 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 
+	"snatcher/backendv2/internal/affiliates"
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
@@ -17,12 +23,15 @@ import (
 type DispatchHandler struct {
 	store store.Store
 	db    *sqlx.DB
+	llmFn func() llm.Client
 }
 
 // NewDispatchHandler cria um DispatchHandler.
 func NewDispatchHandler(st store.Store, db *sqlx.DB) *DispatchHandler {
 	return &DispatchHandler{store: st, db: db}
 }
+
+func (h *DispatchHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 type dispatchTargetReq struct {
 	GroupID   *int64 `json:"group_id"`
@@ -45,6 +54,30 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isDraft := len(req.Targets) == 0
+
+	// Validação P7: envio (não-rascunho) exige link com código de afiliado.
+	// Se o link já vem pronto (req.AffiliateLink), aceitamos. Senão, exige produto + programa configurado.
+	if !isDraft {
+		hasLink := req.AffiliateLink != ""
+		if !hasLink && req.ProductID != nil {
+			prod, err := h.store.GetCatalogProduct(*req.ProductID)
+			if err == nil && prod.LowestPriceURL.Valid && prod.LowestPriceURL.String != "" {
+				src := ""
+				if prod.LowestPriceSource.Valid {
+					src = prod.LowestPriceSource.String
+				}
+				progs, _ := h.store.ListAffiliatePrograms(nil)
+				if affiliates.HasAffiliate(src, progs) {
+					hasLink = true
+				}
+			}
+		}
+		if !hasLink {
+			writeErr(w, http.StatusUnprocessableEntity,
+				"código de afiliado obrigatório — configure um programa para o marketplace deste produto antes de disparar")
+			return
+		}
+	}
 
 	msgBytes, _ := json.Marshal(req.Message)
 	if msgBytes == nil {
@@ -291,4 +324,102 @@ func (h *DispatchHandler) ExpireStaleTargets(w http.ResponseWriter, r *http.Requ
 		  )`)
 
 	writeJSON(w, http.StatusOK, map[string]any{"expired_targets": expired})
+}
+
+// Diagnose POST /api/dispatches/:id/diagnose
+// Usa LLM para analisar targets com falha e sugerir causa raiz e ações corretivas.
+func (h *DispatchHandler) Diagnose(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	dispatch, err := h.store.GetDispatch(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "dispatch não encontrado")
+		return
+	}
+
+	targets, err := h.store.ListDispatchTargets(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar targets")
+		return
+	}
+
+	// Sumarizar erros únicos
+	errCount := map[string]int{}
+	for _, t := range targets {
+		if t.Status == "failed" && t.ErrorReason.Valid && t.ErrorReason.String != "" {
+			errCount[t.ErrorReason.String]++
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Status < targets[j].Status })
+
+	totalFailed := 0
+	for _, t := range targets {
+		if t.Status == "failed" {
+			totalFailed++
+		}
+	}
+
+	var errLines []string
+	for reason, count := range errCount {
+		errLines = append(errLines, fmt.Sprintf("- %dx: %s", count, reason))
+	}
+	sort.Strings(errLines)
+
+	snapshot := fmt.Sprintf(`Dispatch #%d — status: %s — criado: %s
+Targets: %d total, %d falhas, %d entregues
+Erros encontrados:
+%s`,
+		dispatch.ID, dispatch.Status, dispatch.CreatedAt.Format("02/01 15:04"),
+		len(targets), totalFailed, len(targets)-totalFailed,
+		strings.Join(errLines, "\n"),
+	)
+
+	prompt := fmt.Sprintf(`Você é engenheiro de confiabilidade de sistemas de mensageria WhatsApp/Telegram.
+Analise este snapshot de disparo com falhas e identifique: causa raiz, se é problema transiente ou estrutural, e ações corretivas concretas.
+
+SNAPSHOT:
+%s
+
+Responda EXCLUSIVAMENTE em JSON:
+{
+  "likely_cause": "causa raiz em 1 frase",
+  "diagnosis": "análise técnica em 2-3 frases",
+  "is_transient": true/false,
+  "actions": ["ação 1", "ação 2", "ação 3"]
+}`, snapshot)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   400,
+		Temperature: 0.2,
+		Operation:   "diagnose_dispatch",
+		JSONMode:    true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

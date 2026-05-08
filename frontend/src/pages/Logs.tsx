@@ -213,6 +213,13 @@ function DispatchDrawer({
   const failedTargets = targets.filter((t: any) => t.status === 'failed' && t.error_reason)
   const deliveredTargets = targets.filter((t: any) => t.status === 'delivered')
 
+  const diagnoseMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/dispatches/${dispatch.id}/diagnose`)
+        .then(r => r.data as { likely_cause?: string; diagnosis?: string; is_transient?: boolean; actions?: string[] }),
+  })
+
   return (
     <div className="fixed inset-0 z-40 flex" role="dialog" aria-modal="true">
       {/* Backdrop */}
@@ -290,7 +297,47 @@ function DispatchDrawer({
         {/* Erros detalhados por target */}
         {failedTargets.length > 0 && (
           <div>
-            <p className="text-xs text-fg-3 font-medium mb-2">❌ Erros de envio</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-fg-3 font-medium">❌ Erros de envio</p>
+              <button
+                type="button"
+                disabled={diagnoseMut.isPending}
+                onClick={() => diagnoseMut.mutate()}
+                className="text-xs border border-border rounded px-2 py-1 text-accent hover:bg-accent/5 disabled:opacity-50"
+              >
+                {diagnoseMut.isPending ? '⏳ Analisando…' : '🔍 Diagnosticar'}
+              </button>
+            </div>
+            {diagnoseMut.data && (
+              <div className="bg-accent/5 border border-accent/30 rounded-md p-3 mb-3">
+                {diagnoseMut.data.likely_cause && (
+                  <p className="text-sm font-semibold text-fg mb-1">{diagnoseMut.data.likely_cause}</p>
+                )}
+                {diagnoseMut.data.diagnosis && (
+                  <p className="text-xs text-fg-2 mb-2">{diagnoseMut.data.diagnosis}</p>
+                )}
+                {diagnoseMut.data.is_transient !== undefined && (
+                  <p className="text-[10px] text-fg-3 mb-2">
+                    {diagnoseMut.data.is_transient ? '🔄 Falha transiente — retry pode resolver' : '⚠️ Falha estrutural — requer intervenção'}
+                  </p>
+                )}
+                {diagnoseMut.data.actions && diagnoseMut.data.actions.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {diagnoseMut.data.actions.map((a, i) => (
+                      <li key={i} className="text-xs text-fg-2 flex gap-1.5">
+                        <span className="text-accent">{i + 1}.</span>
+                        <span>{a}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {diagnoseMut.isError && (
+              <p className="text-xs text-danger mb-2">
+                Erro ao diagnosticar: {(diagnoseMut.error as any)?.response?.data?.error ?? 'falha desconhecida'}
+              </p>
+            )}
             <div className="space-y-2">
               {failedTargets.map((t: any) => (
                 <div key={t.id} className="bg-danger/5 border border-danger/20 rounded-md p-3">

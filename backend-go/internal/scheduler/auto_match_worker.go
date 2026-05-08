@@ -172,28 +172,28 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			}
 			msgBytes, _ := json.Marshal(msgMap)
 
-			// Gerar affiliate link encurtado a partir da URL do menor preço
-			affiliateLink := ""
-			if p.LowestPriceURL.Valid && p.LowestPriceURL.String != "" {
-				src := ""
-				if p.LowestPriceSource.Valid {
-					src = p.LowestPriceSource.String
+			// Gerar affiliate link encurtado — MANDATÓRIO ter código de afiliado.
+			// Sem afiliado configurado para o marketplace do produto, pula este produto.
+			if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
+				continue
+			}
+			src := ""
+			if p.LowestPriceSource.Valid {
+				src = p.LowestPriceSource.String
+			}
+			programs, _ := st.ListAffiliatePrograms(nil)
+			if !affiliates.HasAffiliate(src, programs) {
+				continue // pula: sem código de afiliado configurado para esta fonte
+			}
+			builtLink, _, _ := affiliates.BuildLink(p.LowestPriceURL.String, src, programs)
+			affiliateLink := builtLink
+			// Encurtar e usar como link de afiliado
+			if shortID, err := st.GetOrCreateShortLink(builtLink, src); err == nil {
+				domain := "beta.autibequi.com"
+				if cfg.AppDomain.Valid && cfg.AppDomain.String != "" {
+					domain = cfg.AppDomain.String
 				}
-				programs, _ := st.ListAffiliatePrograms(nil)
-				builtLink := p.LowestPriceURL.String
-				if link, _, err := affiliates.BuildLink(p.LowestPriceURL.String, src, programs); err == nil {
-					builtLink = link
-				}
-				// Encurtar e usar como link de afiliado
-				if shortID, err := st.GetOrCreateShortLink(builtLink, src); err == nil {
-					domain := "beta.autibequi.com"
-					if cfg.AppDomain.Valid && cfg.AppDomain.String != "" {
-						domain = cfg.AppDomain.String
-					}
-					affiliateLink = "https://" + domain + "/v/" + shortID
-				} else {
-					affiliateLink = builtLink
-				}
+				affiliateLink = "https://" + domain + "/v/" + shortID
 			}
 
 			// full_auto_mode=true → envia direto; false → aguarda aprovação humana

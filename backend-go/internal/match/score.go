@@ -187,12 +187,33 @@ func MatchesChannelFilter(inp ProductInput, productPrice float64, matchType, mat
 	return true
 }
 
+// resolveWeights retorna pesos do canal se algum estiver definido, caso contrário usa default.
+func resolveWeights(ch models.Channel) Weights {
+	w := ch.Audience.Weights
+	sum := w.Category + w.Brand + w.Drop + w.Price + w.History
+	if sum <= 0 {
+		return defaultWeights
+	}
+	return Weights{
+		Category: w.Category,
+		Brand:    w.Brand,
+		Drop:     w.Drop,
+		Price:    w.Price,
+		History:  w.History,
+	}
+}
+
 // RankChannels calcula scores para uma lista de canais e ordena por score desc.
 // Retorna no máximo 50 resultados com score > 0.
 func RankChannels(product ProductInput, channels []models.Channel) []Score {
 	scores := make([]Score, 0, len(channels))
 	for _, ch := range channels {
-		s := ScoreChannel(product, ch, defaultWeights)
+		// Garante que Audience está desserializada antes de resolver pesos
+		c := ch
+		if len(c.AudienceRaw) > 0 {
+			_ = c.UnmarshalAudience()
+		}
+		s := ScoreChannel(product, c, resolveWeights(c))
 		if s.Value > 0 {
 			scores = append(scores, s)
 		}

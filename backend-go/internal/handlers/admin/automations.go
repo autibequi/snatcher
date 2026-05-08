@@ -1,11 +1,14 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
 
+	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -13,11 +16,14 @@ import (
 
 type AutomationsHandler struct {
 	store store.Store
+	llmFn func() llm.Client
 }
 
 func NewAutomationsHandler(st store.Store) *AutomationsHandler {
 	return &AutomationsHandler{store: st}
 }
+
+func (h *AutomationsHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 // GET /api/automations
 // Retorna todos os canais com seu status de automação (registro pode não existir → enabled=false)
@@ -223,4 +229,105 @@ func (h *AutomationsHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 	saved, _ := h.store.GetChannelAutomation(channelID)
 	writeJSON(w, http.StatusOK, saved)
+}
+
+// Advise POST /api/automations/{channelId}/advise
+// Analisa logs recentes e sugere ajustes na automação via LLM com WebSearch.
+func (h *AutomationsHandler) Advise(w http.ResponseWriter, r *http.Request) {
+	if h.llmFn == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		writeErr(w, http.StatusServiceUnavailable, "LLM não configurado")
+		return
+	}
+
+	channelID, ok := pathInt(r, "channelId")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	auto, err := h.store.GetChannelAutomation(channelID)
+	if err != nil || auto == nil {
+		writeErr(w, http.StatusNotFound, "automação não encontrada")
+		return
+	}
+
+	ch, _ := h.store.GetChannel(channelID)
+
+	// Logs recentes
+	logs, _ := h.store.ListAutoMatchLogsByChannel(channelID, 50)
+	scoreSum := 0.0
+	for _, l := range logs {
+		scoreSum += l.Score
+	}
+	avgScore := 0.0
+	if len(logs) > 0 {
+		avgScore = scoreSum / float64(len(logs))
+	}
+
+	threshold := 60.0
+	if auto.Threshold.Valid {
+		threshold = auto.Threshold.Float64
+	}
+	maxPerRun := int64(0)
+	if auto.MaxPerRun.Valid {
+		maxPerRun = auto.MaxPerRun.Int64
+	}
+
+	channelName := ""
+	if ch.ID != 0 {
+		channelName = ch.Name
+	}
+
+	snapshot := fmt.Sprintf(`Canal: %s
+Auto-match habilitado: %v | Eventos habilitados: %v
+Threshold atual: %.0f | Cooldown: %dh | Max/run: %d | DropThreshold: %.2f
+Logs últimos %d disparos: score médio = %.1f`,
+		channelName, auto.AutoMatchEnabled, auto.EventsEnabled,
+		threshold, auto.CooldownHours, maxPerRun, auto.DropThreshold,
+		len(logs), avgScore,
+	)
+
+	prompt := fmt.Sprintf(`Você é especialista em otimização de automações de afiliados WhatsApp/Telegram no Brasil.
+Use a busca online para entender sazonalidade atual, tendências de e-commerce e melhores práticas para grupos de oferta.
+
+ESTADO DA AUTOMAÇÃO:
+%s
+
+Analise e sugira ajustes concretos. Responda EXCLUSIVAMENTE em JSON:
+{
+  "summary": "diagnóstico geral em 1 frase",
+  "suggestions": [
+    {"field": "threshold", "current": "60", "recommended": "55", "reason": "..." }
+  ]
+}
+
+Campos válidos: threshold, cooldown_hours, max_per_run, drop_threshold, auto_match_enabled, events_enabled.
+Sugira somente o que faz sentido mudar — não preencha por preencher.`, snapshot)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	resp, err := cli.Complete(ctx, prompt, llm.Options{
+		MaxTokens:   600,
+		Temperature: 0.3,
+		Operation:   "advise_automation",
+		JSONMode:    true,
+		WebSearch:   true,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		writeErr(w, http.StatusBadGateway, "LLM resposta inválida")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

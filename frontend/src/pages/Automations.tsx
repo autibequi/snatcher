@@ -160,11 +160,11 @@ function defaultAutomation(channelId: number): ChannelAutomation {
 // ── Drawer ───────────────────────────────────────────────────────────────────
 
 const DRAWER_TABS = [
-  { id: 'config',  label: 'Configuracao' },
-  { id: 'filters', label: 'Filtros' },
-  { id: 'notif',   label: 'Notificacoes' },
+  { id: 'config',  label: 'Configuração' },
+  { id: 'filters', label: 'Pontuação' },
+  { id: 'notif',   label: 'Notificações' },
   { id: 'monitor', label: 'Monitor' },
-  { id: 'next',    label: 'Proximos Produtos' },
+  { id: 'next',    label: 'Próximos Produtos' },
 ]
 
 interface DrawerProps {
@@ -213,6 +213,13 @@ export function Drawer({ row, onClose }: DrawerProps) {
   const previewItems = channelPreview?.items ?? []
 
   // Mutacao de save
+  const adviseMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/automations/${row.channel_id}/advise`)
+        .then(r => r.data as { summary?: string; suggestions?: { field: string; current: string; recommended: string; reason: string }[] }),
+  })
+
   const saveMut = useMutation({
     mutationFn: () => apiClient.put(`/api/automations/${row.channel_id}`, form).then(r => r.data),
     onSuccess: () => {
@@ -263,6 +270,46 @@ export function Drawer({ row, onClose }: DrawerProps) {
           {/* ── Configuracao ── */}
           {drawerTab === 'config' && (
             <div className="space-y-4">
+              {/* Advisor LLM */}
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+                <div className="flex-1">
+                  <p className="text-xs text-fg-3">
+                    Pedir conselho à IA com base nos últimos 50 disparos + tendências online.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={adviseMut.isPending}
+                  onClick={() => adviseMut.mutate()}
+                  className="text-xs border border-border rounded px-2 py-1.5 text-accent hover:bg-accent/5 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {adviseMut.isPending ? '⏳ Analisando…' : '✨ Pedir conselho'}
+                </button>
+              </div>
+              {adviseMut.data && (
+                <div className="bg-accent/5 border border-accent/30 rounded-md p-3 space-y-2">
+                  {adviseMut.data.summary && (
+                    <p className="text-sm font-medium text-fg">{adviseMut.data.summary}</p>
+                  )}
+                  {adviseMut.data.suggestions?.map((s, i) => (
+                    <div key={i} className="text-xs">
+                      <p className="text-fg-2">
+                        <span className="font-mono text-accent">{s.field}</span>{' '}
+                        <span className="text-fg-3">atual:</span> <span className="font-mono">{s.current}</span>
+                        {' → '}
+                        <span className="text-fg-3">sugerido:</span> <span className="font-mono text-success">{s.recommended}</span>
+                      </p>
+                      <p className="text-fg-3 mt-0.5">{s.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {adviseMut.isError && (
+                <p className="text-xs text-danger">
+                  Erro ao pedir conselho: {(adviseMut.error as any)?.response?.data?.error ?? 'falha desconhecida'}
+                </p>
+              )}
+
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>
                   <p className="text-sm font-medium text-fg">Canal ativo</p>
@@ -367,52 +414,58 @@ export function Drawer({ row, onClose }: DrawerProps) {
             </div>
           )}
 
-          {/* ── Filtros ── */}
+          {/* ── Pontuação ── */}
           {drawerTab === 'filters' && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
-                <select
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={form.match_type}
-                  onChange={e => set('match_type', e.target.value)}
-                >
-                  {MATCH_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {needsMatchValue && (
-                <div>
-                  <label className="text-xs text-fg-2 block mb-1">
-                    Valor ({MATCH_TYPES.find(t => t.value === form.match_type)?.label.toLowerCase() ?? form.match_type})
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: suplementos / growth / whey"
-                    value={form.match_value ?? ''}
-                    onChange={e => set('match_value', e.target.value || null)}
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Preco maximo (R$, opcional)</label>
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="ex: 199.90"
-                  value={form.max_price ?? ''}
-                  onChange={e => set('max_price', e.target.value === '' ? null : Number(e.target.value))}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
+            <div className="space-y-5">
+              <AudienceEditor channelId={String(row.channel_id)} audience={audience} />
 
               <div className="border-t border-border pt-4">
-                <p className="text-xs text-fg-2 font-medium mb-3">Audiencia do canal</p>
-                <AudienceEditor channelId={String(row.channel_id)} audience={audience} />
+                <p className="text-xs font-medium text-fg mb-1">Filtro estrito (descarta antes de pontuar)</p>
+                <p className="text-xs text-fg-3 mb-3">
+                  Produtos que não passam neste filtro nem entram na pontuação.
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
+                    <select
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                      value={form.match_type}
+                      onChange={e => set('match_type', e.target.value)}
+                    >
+                      {MATCH_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {needsMatchValue && (
+                    <div>
+                      <label className="text-xs text-fg-2 block mb-1">
+                        Valor ({MATCH_TYPES.find(t => t.value === form.match_type)?.label.toLowerCase() ?? form.match_type})
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: suplementos / growth / whey"
+                        value={form.match_value ?? ''}
+                        onChange={e => set('match_value', e.target.value || null)}
+                        className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Preço máximo absoluto (R$, opcional)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="ex: 199.90"
+                      value={form.max_price ?? ''}
+                      onChange={e => set('max_price', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}

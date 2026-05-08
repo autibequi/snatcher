@@ -95,10 +95,10 @@ func Build(
 	// Injeta factory LLM nos handlers que precisam
 	terms.SetLLMFn(composeH.BuildLLMClient)
 	channels.SetLLMFn(composeH.BuildLLMClient)
-	// Injeta factory LLM no curation handler (precisa do composeH já criado)
 	curation.SetLLMFn(composeH.BuildLLMClient)
-	// Injeta factory LLM no dashboard pra recomendação "o que fazer agora"
 	dash.SetLLMFn(composeH.BuildLLMClient)
+	dispatches.SetLLMFn(composeH.BuildLLMClient)
+	automations.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
@@ -238,6 +238,7 @@ func Build(
 		r.Get("/api/automations/{channelId}", automations.Get)
 		r.Put("/api/automations/{channelId}", automations.Upsert)
 		r.Get("/api/automations/{channelId}/preview", automations.Preview)
+		r.Post("/api/automations/{channelId}/advise", automations.Advise)
 
 		// Config
 		r.Get("/api/config", config.Get)
@@ -340,6 +341,7 @@ func Build(
 		r.Get("/api/dispatches/pending-approval", dispatches.ListPendingApproval)
 		r.Post("/api/dispatches/approve-all", dispatches.ApproveAllDispatch)
 		r.Post("/api/dispatches/expire-stale", dispatches.ExpireStaleTargets)
+		r.Post("/api/dispatches/{id}/diagnose", dispatches.Diagnose)
 		r.Post("/api/dispatches/{id}/approve", dispatches.ApproveDispatch)
 		r.Post("/api/dispatches/{id}/reject", dispatches.RejectDispatch)
 
@@ -358,6 +360,7 @@ func Build(
 		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
 		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
 		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)
+		r.Get("/api/affiliates/coverage", affPrograms.CheckCoverage)
 
 		// ReDesign: Channels extras (audience + metrics)
 		r.Get("/api/channels/{id}/audience", channels.GetAudience)

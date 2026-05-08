@@ -195,3 +195,18 @@ func (h *AffiliateProgramsHandler) BuildLink(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": link, "program": programName})
 }
+
+// CheckCoverage GET /api/affiliates/coverage?marketplace=amazon
+// Retorna se há programa configurado e com credenciais para o marketplace.
+func (h *AffiliateProgramsHandler) CheckCoverage(w http.ResponseWriter, r *http.Request) {
+	marketplace := r.URL.Query().Get("marketplace")
+	if marketplace == "" {
+		writeErr(w, http.StatusBadRequest, "marketplace obrigatório")
+		return
+	}
+	programs, _ := h.store.ListAffiliatePrograms(nil)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"marketplace":   marketplace,
+		"has_affiliate": affiliates.HasAffiliate(marketplace, programs),
+	})
+}

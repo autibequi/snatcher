@@ -2,6 +2,7 @@ package affiliates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -9,6 +10,46 @@ import (
 
 	"snatcher/backendv2/internal/models"
 )
+
+// ErrNoAffiliate é retornado quando nenhum programa de afiliado cobre o marketplace
+// ou quando o programa encontrado não tem credenciais configuradas.
+var ErrNoAffiliate = errors.New("nenhum código de afiliado configurado para este marketplace")
+
+// HasAffiliate verifica se há programa ativo com credenciais para o marketplace.
+// Retorna true só quando o link seria efetivamente reescrito com tag/affiliate_id.
+func HasAffiliate(marketplace string, programs []models.AffiliateProgram) bool {
+	for _, p := range programs {
+		if !strings.EqualFold(p.Marketplace, marketplace) {
+			continue
+		}
+		var creds map[string]string
+		_ = json.Unmarshal(p.Credentials, &creds)
+		switch strings.ToLower(marketplace) {
+		case "amazon":
+			if creds["tag"] != "" {
+				return true
+			}
+		case "mercadolivre":
+			if creds["affiliate_id"] != "" {
+				return true
+			}
+		default:
+			if creds["affiliate_id"] != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// BuildLinkStrict retorna ErrNoAffiliate quando nenhum programa cobre o marketplace
+// com credenciais válidas. Use quando a presença de afiliado é mandatória.
+func BuildLinkStrict(productURL, marketplace string, programs []models.AffiliateProgram) (string, string, error) {
+	if !HasAffiliate(marketplace, programs) {
+		return productURL, "", ErrNoAffiliate
+	}
+	return BuildLink(productURL, marketplace, programs)
+}
 
 // BuildLink constrói o link de afiliado para um produto dado uma lista de programas ativos.
 // Retorna o URL com o tag/ID do programa de maior prioridade que cobre o marketplace.

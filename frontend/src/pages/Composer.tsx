@@ -182,6 +182,15 @@ export default function Composer() {
         .then((r) => r.data)
     },
     onSuccess: (data) => navigate(`/logs?dispatchId=${data.id}`),
+    onError: (err: any) => {
+      const status = err?.response?.status
+      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      if (status === 422) {
+        alert(`⚠️ ${detail}\n\nVá em "Afiliados" para configurar o programa do marketplace deste produto.`)
+      } else {
+        alert(`Erro ao disparar (HTTP ${status ?? '?'}): ${detail}`)
+      }
+    },
   })
 
   const saveRascunho = useMutation({

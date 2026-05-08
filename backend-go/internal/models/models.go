@@ -360,6 +360,17 @@ type Audience struct {
 	MinPrice   float64  `json:"min_price"`
 	MaxPrice   float64  `json:"max_price"`
 	Locales    []string `json:"locales"`
+	// Weights — pontuação configurável por canal. Soma deve ficar próxima de 1.0.
+	// Se todos forem 0, usa defaults (Category 0.30, Brand 0.20, Drop 0.20, Price 0.15, History 0.15).
+	Weights AudienceWeights `json:"weights"`
+}
+
+type AudienceWeights struct {
+	Category float64 `json:"category"`
+	Brand    float64 `json:"brand"`
+	Drop     float64 `json:"drop"`
+	Price    float64 `json:"price"`
+	History  float64 `json:"history"`
 }
 
 type Channel struct {
