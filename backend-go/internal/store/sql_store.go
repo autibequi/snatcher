@@ -341,6 +341,10 @@ func (s *SQLStore) UpdateSearchTerm(t models.SearchTerm) error {
 }
 
 func (s *SQLStore) DeleteSearchTerm(id int64) error {
+	// Remove logs filhos antes — crawllog tem FK sem CASCADE
+	if _, err := s.db.Exec(`DELETE FROM crawllog WHERE search_term_id = $1`, id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM searchterm WHERE id = $1`, id)
 	return err
 }

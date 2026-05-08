@@ -103,6 +103,12 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionReplenishCrawlers,
 	},
+	"dedup_brands_categories": {
+		Type:        "dedup_brands_categories",
+		Description: "Detecta marcas e categorias duplicadas com nomes muito próximos (ex: 'Adaptogen' vs 'Adaptogen Science') e consolida nos produtos afetados",
+		UsesLLM:     true,
+		Run:         actionDedupBrandsCategories,
+	},
 }
 
 func actionDispatchAutoMatch(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
@@ -745,5 +751,129 @@ func actionReplenishCrawlers(ctx context.Context, h *JonfreyHandler) (map[string
 	beforeMap := map[string]any{"active_crawlers_checked": "all"}
 	afterMap := map[string]any{"stagnant_crawlers": out, "count": len(out)}
 	reasoning := fmt.Sprintf("Encontrei %d crawler(s) ativo(s) sem trazer produto novo há 7+ dias. Considere ajustar query ou desativar — entrou no audit pra você revisar.", len(out))
+	return beforeMap, afterMap, reasoning, nil
+}
+
+// actionDedupBrandsCategories detecta marcas e categorias duplicadas/próximas
+// (ex: "Adaptogen" vs "Adaptogen Science") e consolida nos produtos afetados.
+// Envia listas compactas ao LLM em batch único para minimizar tokens.
+func actionDedupBrandsCategories(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+
+	// Busca marcas e tags distintas do catálogo (máx 150 cada — contexto mínimo)
+	type strRow struct{ Val string `db:"val"` }
+	var brandRows, tagRows []strRow
+
+	_ = h.db.SelectContext(ctx, &brandRows, `
+		SELECT DISTINCT brand AS val FROM catalogproduct
+		WHERE brand IS NOT NULL AND brand != '' AND inactive = false
+		ORDER BY val LIMIT 150`)
+
+	_ = h.db.SelectContext(ctx, &tagRows, `
+		SELECT DISTINCT jsonb_array_elements_text(tags) AS val FROM catalogproduct
+		WHERE tags IS NOT NULL AND tags != '[]'::jsonb AND inactive = false
+		ORDER BY val LIMIT 150`)
+
+	brands := make([]string, 0, len(brandRows))
+	for _, r := range brandRows { brands = append(brands, r.Val) }
+	tags := make([]string, 0, len(tagRows))
+	for _, r := range tagRows { tags = append(tags, r.Val) }
+
+	if len(brands)+len(tags) == 0 {
+		return map[string]any{"brands": 0, "tags": 0}, map[string]any{"groups": []any{}}, "Catálogo vazio — nada a deduplicar.", nil
+	}
+
+	prompt := fmt.Sprintf(`Dado duas listas de valores de um catálogo de e-commerce brasileiro, identifique grupos de duplicatas/variantes do mesmo item (nomes muito próximos, abreviações, com/sem sufixo comercial).
+
+MARCAS (%d): %v
+
+CATEGORIAS (%d): %v
+
+Responda SOMENTE JSON — sem texto extra:
+{
+  "brand_groups": [
+    {"canonical": "nome canônico escolhido", "aliases": ["variante1", "variante2"]}
+  ],
+  "tag_groups": [
+    {"canonical": "nome canônico escolhido", "aliases": ["variante1", "variante2"]}
+  ]
+}
+
+Regras: só retorne grupos com ≥2 membros. Se não houver duplicatas, retorne listas vazias. Prefira o nome mais completo como canônico.`,
+		len(brands), brands, len(tags), tags)
+
+	ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
+	resp, err := cli.Complete(ctxC, prompt, llm.Options{
+		MaxTokens: 1000, Temperature: 0.1, Operation: "jonfrey_dedup", JSONMode: true,
+	})
+	cancel()
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("LLM: %w", err)
+	}
+
+	var parsed struct {
+		BrandGroups []struct {
+			Canonical string   `json:"canonical"`
+			Aliases   []string `json:"aliases"`
+		} `json:"brand_groups"`
+		TagGroups []struct {
+			Canonical string   `json:"canonical"`
+			Aliases   []string `json:"aliases"`
+		} `json:"tag_groups"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		return nil, nil, "", fmt.Errorf("parse: %w", err)
+	}
+
+	brandsMerged, tagsMerged := 0, 0
+
+	// Consolida marcas: atualiza catalogproduct.brand onde brand IN (aliases) → canonical
+	for _, g := range parsed.BrandGroups {
+		if len(g.Aliases) == 0 || g.Canonical == "" { continue }
+		placeholders := ""
+		args := []any{g.Canonical}
+		for i, a := range g.Aliases {
+			if i > 0 { placeholders += "," }
+			placeholders += fmt.Sprintf("$%d", i+2)
+			args = append(args, a)
+		}
+		res, _ := h.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE catalogproduct SET brand = $1 WHERE brand IN (%s)`, placeholders), args...)
+		if n, _ := res.RowsAffected(); n > 0 { brandsMerged++ }
+	}
+
+	// Consolida categorias: substitui alias por canonical nas tags JSONB de cada produto afetado
+	for _, g := range parsed.TagGroups {
+		if len(g.Aliases) == 0 || g.Canonical == "" { continue }
+		for _, alias := range g.Aliases {
+			// Substitui ocorrência do alias pelo canonical em todos os arrays de tags
+			_, _ = h.db.ExecContext(ctx, `
+				UPDATE catalogproduct
+				SET tags = (
+					SELECT jsonb_agg(CASE WHEN elem = $1 THEN $2::text ELSE elem END)
+					FROM jsonb_array_elements_text(tags) AS elem
+				)
+				WHERE tags @> $3::jsonb`, alias, g.Canonical, fmt.Sprintf(`[%q]`, alias))
+			tagsMerged++
+		}
+	}
+
+	beforeMap := map[string]any{"brands_evaluated": len(brands), "tags_evaluated": len(tags)}
+	afterMap := map[string]any{
+		"brand_groups_found": len(parsed.BrandGroups),
+		"tag_groups_found":   len(parsed.TagGroups),
+		"brands_merged":      brandsMerged,
+		"tags_merged":        tagsMerged,
+	}
+	reasoning := fmt.Sprintf(
+		"LLM avaliou %d marcas e %d categorias. Encontrou %d grupos de marcas e %d grupos de categorias duplicadas. Consolidei %d marcas e %d variantes de categoria nos produtos.",
+		len(brands), len(tags), len(parsed.BrandGroups), len(parsed.TagGroups), brandsMerged, tagsMerged,
+	)
 	return beforeMap, afterMap, reasoning, nil
 }
