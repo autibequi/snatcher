@@ -1,5 +1,10 @@
 -- migrate:up
 
+-- Expandir taxonomy_type_check para suportar 'voltage' e 'capacity' (mig 0099 só tem até quantity)
+ALTER TABLE taxonomy DROP CONSTRAINT IF EXISTS taxonomy_type_check;
+ALTER TABLE taxonomy ADD CONSTRAINT taxonomy_type_check
+    CHECK (type IN ('category', 'brand', 'weight', 'flavor', 'color', 'size', 'quantity', 'voltage', 'capacity'));
+
 -- TABLE 1: taxonomy_pattern (pattern matching library)
 CREATE TABLE IF NOT EXISTS taxonomy_pattern (
   id BIGSERIAL PRIMARY KEY,
@@ -418,3 +423,7 @@ SELECT id, 'regex', '\b256\s*gb\b', 1.0, 'seed' FROM taxonomy WHERE slug='256gb'
 DROP TABLE IF EXISTS catalogproduct_taxonomy;
 DROP TABLE IF EXISTS taxonomy_pattern;
 ALTER TABLE catalogproduct DROP COLUMN IF EXISTS attributes;
+DELETE FROM taxonomy WHERE type IN ('voltage', 'capacity');
+ALTER TABLE taxonomy DROP CONSTRAINT IF EXISTS taxonomy_type_check;
+ALTER TABLE taxonomy ADD CONSTRAINT taxonomy_type_check
+    CHECK (type IN ('category', 'brand', 'weight', 'flavor', 'color', 'size', 'quantity'));
