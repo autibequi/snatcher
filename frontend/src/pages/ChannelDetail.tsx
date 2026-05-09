@@ -7,6 +7,31 @@ import { apiClient } from '../lib/apiClient'
 import { usePublicLinkBaseURL } from '../hooks/useBrand'
 import AudienceEditor from '../components/AudienceEditor'
 
+/** Garante URL https://chat.whatsapp.com/… (só código, URL sem scheme, etc.) */
+function normalizeWhatsAppInvite(raw: string): string {
+  const s = raw.trim()
+  if (!s) return ''
+  const low = s.toLowerCase()
+  if (low.startsWith('http://') || low.startsWith('https://')) return s
+  if (low.startsWith('//')) return `https:${s}`
+  const marker = 'chat.whatsapp.com/'
+  const i = low.indexOf(marker)
+  if (i >= 0) {
+    let rest = s.slice(i + marker.length).trim()
+    rest = rest.replace(/^invite\//, '').replace(/^c\//, '')
+    const q = rest.indexOf('?')
+    if (q >= 0) rest = rest.slice(0, q)
+    if (rest) return `https://chat.whatsapp.com/${rest}`
+  }
+  const tokenOk = /^[\w-]{10,512}$/.test(s) && !s.includes('/') && !s.includes(':') && !/\s/.test(s)
+  return tokenOk ? `https://chat.whatsapp.com/${s}` : s
+}
+
+function waInviteHref(link: string | null | undefined): string | null {
+  if (!link?.trim()) return null
+  return normalizeWhatsAppInvite(link)
+}
+
 // ── Preview WA inline (bolha verde) ──────────────────────────────────────────
 function WAMessagePreview({ text, onClose }: { text: string; onClose: () => void }) {
   return (
@@ -596,8 +621,13 @@ export default function ChannelDetail() {
   }
 
   const updateInviteLinkMut = useMutation({
-    mutationFn: ({ groupId, link }: { groupId: number; link: string }) =>
-      apiClient.patch(`/api/groups/${groupId}`, { invite_link: link }),
+    mutationFn: ({ groupId, link }: { groupId: number; link: string }) => {
+      const list = (qc.getQueryData(['groups', { channelId: id }]) as any[]) ?? []
+      const g = list.find((x: any) => x.id === groupId)
+      const normalized =
+        g?.platform === 'whatsapp' && link.trim() ? normalizeWhatsAppInvite(link) : link.trim()
+      return apiClient.patch(`/api/groups/${groupId}`, { invite_link: normalized })
+    },
     onSuccess: (_, { groupId }) => {
       qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
       setEditingInviteLink(prev => { const n = { ...prev }; delete n[groupId]; return n })
@@ -649,13 +679,20 @@ export default function ChannelDetail() {
         name: g.name,
         platform: 'whatsapp',
         jid: g.jid,
-        account_id: g.accountId,
+        wa_account_id: g.accountId,
         status: 'active',
       }).then(r => r.data),
-    onSuccess: () => {
+    onSuccess: async (data: any) => {
       qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
       setShowAddGroup(false)
       setSearch('')
+      if (!data?.id || data.platform !== 'whatsapp' || !data.jid) return
+      try {
+        await apiClient.post(`/api/groups/${data.id}/fetch-invite`)
+        qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
+      } catch {
+        /* Evolution indisponível ou sem permissão — usar 🔄 WA ou colar link */
+      }
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao adicionar grupo'),
   })
@@ -901,14 +938,45 @@ export default function ChannelDetail() {
                                 className="text-xs text-fg-3 hover:text-fg">✕</button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <button type="button"
-                                onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: g.invite_link ?? '' }))}
-                                className="text-xs text-left truncate max-w-[180px] block">
-                                {g.invite_link
-                                  ? <span className="text-accent font-mono truncate">{g.invite_link}</span>
-                                  : <span className="text-fg-3 italic">+ definir link</span>}
-                              </button>
+                            <div className="flex items-center gap-2 min-w-0 max-w-[280px]">
+                              {g.platform === 'whatsapp' && waInviteHref(g.invite_link) ? (
+                                <a
+                                  href={waInviteHref(g.invite_link)!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-accent font-mono truncate hover:underline min-w-0 flex-1"
+                                  title="Abrir convite no WhatsApp"
+                                >
+                                  {waInviteHref(g.invite_link)}
+                                </a>
+                              ) : g.invite_link ? (
+                                <a
+                                  href={g.invite_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-accent font-mono truncate hover:underline min-w-0 flex-1"
+                                >
+                                  {g.invite_link}
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: '' }))}
+                                  className="text-xs text-fg-3 italic hover:text-fg text-left flex-1 min-w-0"
+                                >
+                                  + definir link
+                                </button>
+                              )}
+                              {Boolean(String(g.invite_link ?? '').trim()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInviteLink(prev => ({ ...prev, [g.id]: g.invite_link ?? '' }))}
+                                  className="text-[10px] text-fg-3 hover:text-fg shrink-0"
+                                  title="Editar link"
+                                >
+                                  ✎
+                                </button>
+                              )}
                               {g.platform === 'whatsapp' && g.jid && (
                                 <button type="button"
                                   onClick={() => fetchInviteMut.mutate(g.id)}

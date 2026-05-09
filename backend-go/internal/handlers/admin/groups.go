@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -33,9 +34,11 @@ type groupRequest struct {
 	Platform    string  `json:"platform"     validate:"required,oneof=whatsapp telegram"`
 	WAAccountID *int64  `json:"wa_account_id"`
 	TGAccountID *int64  `json:"tg_account_id"`
-	InviteLink  string  `json:"invite_link"`
-	JID         string  `json:"jid"`
-	Status      string  `json:"status"`
+	// AccountID: alias aceito pela UI antiga ao vincular WA no detalhe do canal (equivalente a wa_account_id).
+	AccountID  *int64 `json:"account_id"`
+	InviteLink string `json:"invite_link"`
+	JID        string `json:"jid"`
+	Status     string `json:"status"`
 }
 
 // groupEnriched estende RedesignGroup com campos calculados para o redesign.
@@ -97,6 +100,13 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if g.Platform == "whatsapp" && g.InviteLink.Valid && g.InviteLink.String != "" {
+			norm := invitelinks.NormalizeWhatsAppInvite(g.InviteLink.String)
+			if norm != g.InviteLink.String {
+				enriched.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: true}}
+			}
+		}
+
 		out = append(out, enriched)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -122,11 +132,18 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeValidationErr(w, err)
 		return
 	}
+	if req.WAAccountID == nil && req.AccountID != nil && *req.AccountID != 0 && req.Platform == "whatsapp" {
+		req.WAAccountID = req.AccountID
+	}
+	invite := req.InviteLink
+	if invite != "" && req.Platform == "whatsapp" {
+		invite = invitelinks.NormalizeWhatsAppInvite(invite)
+	}
 	g := models.RedesignGroup{
 		ChannelID:  req.ChannelID,
 		Name:       req.Name,
 		Platform:   req.Platform,
-		InviteLink: models.NullString{NullString: sql.NullString{String: req.InviteLink, Valid: req.InviteLink != ""}},
+		InviteLink: models.NullString{NullString: sql.NullString{String: invite, Valid: invite != ""}},
 		JID:        models.NullString{NullString: sql.NullString{String: req.JID, Valid: req.JID != ""}},
 		Status:     "active",
 		Overrides:  []byte("{}"),
@@ -177,7 +194,11 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		existing.Platform = v
 	}
 	if v, ok := patch["invite_link"].(string); ok {
-		existing.InviteLink = models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
+		norm := v
+		if norm != "" && existing.Platform == "whatsapp" {
+			norm = invitelinks.NormalizeWhatsAppInvite(norm)
+		}
+		existing.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: norm != ""}}
 	}
 	if v, ok := patch["jid"].(string); ok {
 		existing.JID = models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
@@ -526,6 +547,7 @@ func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	link = invitelinks.NormalizeWhatsAppInvite(link)
 	g.InviteLink = models.NullString{NullString: sql.NullString{String: link, Valid: true}}
 	if err := h.store.UpdateRedesignGroup(g); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

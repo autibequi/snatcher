@@ -658,9 +658,13 @@ func actionAutoCurate(ctx context.Context, h *JonfreyHandler) (map[string]any, m
 titulo:%q marca:%q marketplace:%q preco_low:%s tags_csv:%s
 {"category":"slug","brand":"Nome","tags":[""],"confidence":0.0}`,
 			p.CanonicalName, brand, mkt, priceStr, tags)
-		ctxC, cancel := context.WithTimeout(ctx, 25*time.Second)
+		ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
 		resp, err := cli.Complete(ctxC, prompt, llm.Options{
-			MaxTokens: 200, Temperature: 0.1, Operation: "jonfrey_autocurate", JSONMode: true,
+			// ≥512: JSON com tags longas costuma estourar 200 tok e vira finish_reason=length (truncado).
+			MaxTokens:   768,
+			Temperature: 0.1,
+			Operation:   "jonfrey_autocurate",
+			JSONMode:    true,
 		})
 		cancel()
 		if err != nil {

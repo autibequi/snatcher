@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+
+	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -38,9 +40,13 @@ func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				name = "Grupo"
 			}
+			u := g.InviteLink.String
+			if g.Platform == "whatsapp" {
+				u = invitelinks.NormalizeWhatsAppInvite(u)
+			}
 			withInvite = append(withInvite, pickerEntry{
 				Name:      name,
-				InviteURL: g.InviteLink.String,
+				InviteURL: u,
 				Provider:  g.Platform,
 			})
 		}
