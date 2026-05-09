@@ -808,6 +808,9 @@ func actionDetectFailingChannel(ctx context.Context, h *JonfreyHandler) (map[str
 	var pausedList []paused
 
 	for _, s := range stats {
+		if ctx.Err() != nil {
+			return nil, nil, "", ctx.Err()
+		}
 		if s.Total == 0 {
 			continue
 		}
@@ -860,40 +863,39 @@ func actionManageGroupHealth(ctx context.Context, h *JonfreyHandler) (map[string
 	}
 	markedFull, _ := resFull.RowsAffected()
 
-	// Passo 2: arquivar grupos com falhas recorrentes
-	type row struct {
-		ID   int64  `db:"id"`
-		Name string `db:"name"`
-	}
-	var candidates []row
-	err = h.db.SelectContext(ctx, &candidates, `
-		SELECT g.id, g.name
-		FROM groups g
+	// Passo 2: arquivar grupos com falhas recorrentes (um único UPDATE — evita N round-trips)
+	var candidatesArchived int
+	_ = h.db.GetContext(ctx, &candidatesArchived, `
+		SELECT COUNT(*) FROM groups g
 		WHERE g.archived = false
 		  AND g.last_error_at IS NOT NULL
 		  AND g.last_error_at < now() - interval '7 days'
-		  AND EXISTS (
-		      SELECT 1 FROM dispatch_targets dt
+		  AND (
+		      SELECT COUNT(*) FROM dispatch_targets dt
 		      WHERE dt.group_id = g.id
 		        AND dt.status = 'failed'
 		        AND dt.created_at > now() - interval '14 days'
-		      GROUP BY dt.group_id HAVING COUNT(*) >= 3
-		  )`)
+		  ) >= 3`)
+
+	resArch, err := h.db.ExecContext(ctx, `
+		UPDATE groups g SET archived = true
+		WHERE g.archived = false
+		  AND g.last_error_at IS NOT NULL
+		  AND g.last_error_at < now() - interval '7 days'
+		  AND (
+		      SELECT COUNT(*) FROM dispatch_targets dt
+		      WHERE dt.group_id = g.id
+		        AND dt.status = 'failed'
+		        AND dt.created_at > now() - interval '14 days'
+		  ) >= 3`)
 	if err != nil {
 		return nil, nil, "", err
 	}
+	archived, _ := resArch.RowsAffected()
 
-	archived := 0
-	for _, c := range candidates {
-		_, err := h.db.ExecContext(ctx, `UPDATE groups SET archived = true WHERE id = $1`, c.ID)
-		if err == nil {
-			archived++
-		}
-	}
-
-	beforeMap := map[string]any{"candidates_full": candidatesFull, "candidates_archived": len(candidates)}
+	beforeMap := map[string]any{"candidates_full": candidatesFull, "candidates_archived": candidatesArchived}
 	afterMap := map[string]any{"marked_full": markedFull, "archived": archived}
-	reasoning := fmt.Sprintf("Encontrei %d grupos WhatsApp ativos com 1024+ membros — marquei como 'full'. Achei %d grupos com last_error_at > 7d e ≥3 falhas nos últimos 14d — arquivei %d.", candidatesFull, len(candidates), archived)
+	reasoning := fmt.Sprintf("Encontrei %d grupos WhatsApp ativos com 1024+ membros — marquei como 'full'. Achei %d grupos com last_error_at > 7d e ≥3 falhas nos últimos 14d — arquivei %d.", candidatesFull, candidatesArchived, archived)
 	return beforeMap, afterMap, reasoning, nil
 }
 
@@ -988,27 +990,20 @@ func actionReplenishCrawlers(ctx context.Context, h *JonfreyHandler) (map[string
 // actionCleanupDispatchQueue: remove duplicatas da fila (mesmo produto+canal) depois marca targets stale como failed.
 // Combina dedup_pending e expire_stale_dispatches numa única action.
 func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	// Passo 1: remover duplicatas
+	// Passo 1: remover duplicatas — ROW_NUMBER por (product_id, channel_id), mantém só o dispatch mais recente
 	resDedup, err := h.db.ExecContext(ctx, `
-		UPDATE dispatches SET status = 'rejected'
-		WHERE id IN (
-			SELECT d.id FROM dispatches d
+		WITH ranked AS (
+			SELECT d.id,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY aml.product_id, aml.channel_id
+			           ORDER BY d.created_at DESC
+			       ) AS rn
+			FROM dispatches d
 			JOIN auto_match_logs aml ON aml.dispatch_id = d.id
 			WHERE d.status IN ('pending_approval', 'queued')
-			  AND d.id NOT IN (
-			      SELECT (
-			          SELECT d2.id FROM dispatches d2
-			          JOIN auto_match_logs aml2 ON aml2.dispatch_id = d2.id
-			          WHERE aml2.product_id = aml.product_id
-			            AND aml2.channel_id = aml.channel_id
-			            AND d2.status IN ('pending_approval', 'queued')
-			          ORDER BY d2.created_at DESC
-			          LIMIT 1
-			      )
-			      FROM auto_match_logs aml
-			      GROUP BY aml.product_id, aml.channel_id
-			  )
-		)`)
+		)
+		UPDATE dispatches SET status = 'rejected'
+		WHERE id IN (SELECT id FROM ranked WHERE rn > 1)`)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("dedup: %w", err)
 	}
@@ -1643,48 +1638,51 @@ func actionPurgeInactiveProducts(ctx context.Context, h *JonfreyHandler) (map[st
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionPauseDeadCrawlers: pausa searchterms ativos sem resultados há 14+ dias (5+ logs com result_count=0)
+// actionPauseDeadCrawlers: pausa searchterms ativos com crawls sem produtos (ml+amz=0), último crawl há 14+ dias e ≥5 crawls vazios em 30d.
 func actionPauseDeadCrawlers(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	type searchTermRow struct {
-		ID   int64  `db:"id"`
-		Term string `db:"search_term"`
-	}
-
-	// Encontrar searchterms ativos sem novos resultados há 14d e com 5+ logs zerados
-	var deadTerms []searchTermRow
-	err := h.db.SelectContext(ctx, &deadTerms, `
-		SELECT s.id, s.search_term
-		FROM searchterm s
+	// Schema: searchterm.query, crawllog.search_term_id, started_at/finished_at, ml_count/amz_count (sem result_count/created_at).
+	// “Sem resultados” = ml_count+amz_count = 0 no log; última atividade = maior timestamp de crawl conhecido.
+	var deadCount int
+	err := h.db.GetContext(ctx, &deadCount, `
+		SELECT COUNT(*) FROM searchterm s
 		WHERE s.active = true
-		  AND (
-		      SELECT MAX(cl.created_at) FROM crawllog cl
-		      WHERE cl.searchterm_id = s.id
-		  ) < now() - interval '14 days'
+		  AND COALESCE((
+		      SELECT MAX(GREATEST(cl.started_at, COALESCE(cl.finished_at, cl.started_at)))
+		      FROM crawllog cl
+		      WHERE cl.search_term_id = s.id
+		  ), '-infinity'::timestamptz) < now() - interval '14 days'
 		  AND (
 		      SELECT COUNT(*) FROM crawllog cl
-		      WHERE cl.searchterm_id = s.id
-		        AND cl.result_count = 0
-		        AND cl.created_at > now() - interval '30 days'
+		      WHERE cl.search_term_id = s.id
+		        AND (cl.ml_count + cl.amz_count) = 0
+		        AND cl.started_at > now() - interval '30 days'
 		  ) >= 5`)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
-	paused := 0
-	var pausedIDs []int64
-	for _, t := range deadTerms {
-		res, err := h.db.ExecContext(ctx, `UPDATE searchterm SET active = false WHERE id = $1`, t.ID)
-		if err == nil {
-			if n, _ := res.RowsAffected(); n > 0 {
-				paused++
-				pausedIDs = append(pausedIDs, t.ID)
-			}
-		}
+	resPause, err := h.db.ExecContext(ctx, `
+		UPDATE searchterm s SET active = false
+		WHERE s.active = true
+		  AND COALESCE((
+		      SELECT MAX(GREATEST(cl.started_at, COALESCE(cl.finished_at, cl.started_at)))
+		      FROM crawllog cl
+		      WHERE cl.search_term_id = s.id
+		  ), '-infinity'::timestamptz) < now() - interval '14 days'
+		  AND (
+		      SELECT COUNT(*) FROM crawllog cl
+		      WHERE cl.search_term_id = s.id
+		        AND (cl.ml_count + cl.amz_count) = 0
+		        AND cl.started_at > now() - interval '30 days'
+		  ) >= 5`)
+	if err != nil {
+		return nil, nil, "", err
 	}
+	paused, _ := resPause.RowsAffected()
 
-	beforeMap := map[string]any{"dead_candidates": len(deadTerms)}
-	afterMap := map[string]any{"paused": paused, "paused_ids": pausedIDs}
-	reasoning := fmt.Sprintf("Identifiquei %d searchterms ativos sem resultados há 14+ dias e com 5+ tentativas falhadas — pausei %d para revisão manual.", len(deadTerms), paused)
+	beforeMap := map[string]any{"dead_candidates": deadCount}
+	afterMap := map[string]any{"paused": paused}
+	reasoning := fmt.Sprintf("Identifiquei %d searchterms ativos sem crawls com produtos há 14+ dias e com ≥5 crawls vazios nos últimos 30d — pausei %d para revisão manual.", deadCount, paused)
 	return beforeMap, afterMap, reasoning, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"time"
 
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
@@ -50,7 +51,11 @@ func Compute(ctx context.Context, st store.Store, llmCli llm.Client) error {
 	// Gerar labels via LLM e preparar modelos
 	labeler := NewLabeler(llmCli)
 	var clusterModels []models.Cluster
+	const labelTimeout = 45 * time.Second
 	for _, group := range clustered {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if len(group) == 0 {
 			continue
 		}
@@ -73,7 +78,9 @@ func Compute(ctx context.Context, st store.Store, llmCli llm.Client) error {
 			MemberCount:   len(group),
 		}
 
-		label := labeler.Label(ctx, input)
+		ctxLabel, cancelLabel := context.WithTimeout(ctx, labelTimeout)
+		label := labeler.Label(ctxLabel, input)
+		cancelLabel()
 
 		// Serializar campos
 		memberIDs := make([]int64, len(group))
