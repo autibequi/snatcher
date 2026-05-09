@@ -75,7 +75,8 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			auto_match_threshold=:auto_match_threshold,
 			auto_match_max_per_run=:auto_match_max_per_run,
 			full_auto_mode=:full_auto_mode,
-			notify_approval_webhook=:notify_approval_webhook
+			notify_approval_webhook=:notify_approval_webhook,
+			auto_match_only_curated=:auto_match_only_curated
 		WHERE id = 1`, cfg)
 	return err
 }

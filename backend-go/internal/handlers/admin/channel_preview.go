@@ -78,6 +78,7 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 	if err != nil {
 		return nil, 0, 0, "", err
 	}
+	products = store.FilterCatalogProductsForAutoMatch(products, cfg.AutoMatchOnlyCurated)
 
 	recentLogs, _ := st.ListAutoMatchLogsByChannel(channelID, 200)
 	cutoff := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)

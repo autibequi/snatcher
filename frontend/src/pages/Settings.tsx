@@ -723,6 +723,8 @@ interface AppConfig {
   notify_on_error?: boolean
   notify_on_new_product?: boolean
   alert_webhook_url?: string
+  full_auto_mode?: boolean
+  auto_match_only_curated?: boolean
   [key: string]: unknown
 }
 
@@ -809,6 +811,21 @@ function GeneralTab() {
             className="accent-accent w-4 h-4"
             checked={merged.full_auto_mode === true}
             onChange={e => updateField('full_auto_mode', e.target.checked)}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 cursor-pointer border-t border-border pt-3 mt-1">
+          <div>
+            <p className="text-sm text-fg">Auto-match só curated / auto</p>
+            <p className="text-xs text-fg-3">
+              Quando ligado, o worker e a prévia ignoram produtos que não estão com curação <code className="text-[10px]">curated</code> ou{' '}
+              <code className="text-[10px]">auto</code>.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            className="accent-accent w-4 h-4"
+            checked={merged.auto_match_only_curated === true}
+            onChange={e => updateField('auto_match_only_curated', e.target.checked)}
           />
         </label>
         <div>

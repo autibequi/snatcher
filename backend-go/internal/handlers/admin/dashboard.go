@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/jmoiron/sqlx"
@@ -458,6 +459,220 @@ func (h *DashboardHandler) Performance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, rows)
+}
+
+// GET /api/dashboard/automation-diagnostics — flags, contagens de dispatch, Evolution, rate limit WA, backpressure, Jonfrey e qualidade do catálogo.
+func (h *DashboardHandler) AutomationDiagnostics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	type stRow struct {
+		Status string `db:"status"`
+		Cnt    int    `db:"cnt"`
+	}
+	var stRows []stRow
+	_ = h.db.SelectContext(ctx, &stRows, `SELECT COALESCE(status::text,'') AS status, COUNT(*)::int AS cnt FROM dispatches GROUP BY status`)
+	dispatchCounts := make(map[string]int)
+	for _, row := range stRows {
+		k := row.Status
+		if k == "" {
+			k = "(null)"
+		}
+		dispatchCounts[k] = row.Cnt
+	}
+
+	evolutionOK, evolutionReason, evolutionAccountID := h.evolutionSnapshot(cfg)
+
+	type grpDelivery struct {
+		GroupID   int64  `db:"group_id"`
+		GroupName string `db:"group_name"`
+		Count     int    `db:"cnt"`
+	}
+	var topDeliveries []grpDelivery
+	_ = h.db.SelectContext(ctx, &topDeliveries, `
+		SELECT g.id AS group_id, g.name AS group_name, COUNT(*)::int AS cnt
+		FROM dispatch_targets dt
+		JOIN groups g ON g.id = dt.group_id
+		WHERE dt.status IN ('delivered','sending')
+		  AND COALESCE(dt.delivered_at, dt.updated_at, dt.created_at) > now() - interval '60 minutes'
+		GROUP BY g.id, g.name
+		ORDER BY cnt DESC
+		LIMIT 12`)
+
+	topSlice := make([]map[string]any, 0, len(topDeliveries))
+	for _, g := range topDeliveries {
+		topSlice = append(topSlice, map[string]any{
+			"group_id":             g.GroupID,
+			"group_name":           g.GroupName,
+			"delivered_last_60min": g.Count,
+		})
+	}
+
+	const maxPendingPerGroup = 10
+	type grpPending struct {
+		GroupID   int64  `db:"group_id"`
+		GroupName string `db:"group_name"`
+		Cnt       int    `db:"cnt"`
+	}
+	var backpressure []grpPending
+	_ = h.db.SelectContext(ctx, &backpressure, `
+		SELECT g.id AS group_id, g.name AS group_name, COUNT(*)::int AS cnt
+		FROM dispatch_targets dt
+		JOIN groups g ON g.id = dt.group_id
+		WHERE dt.status IN ('pending','sending')
+		GROUP BY g.id, g.name
+		HAVING COUNT(*) >= $1
+		ORDER BY cnt DESC
+		LIMIT 20`, maxPendingPerGroup)
+
+	bpSlice := make([]map[string]any, 0, len(backpressure))
+	for _, g := range backpressure {
+		bpSlice = append(bpSlice, map[string]any{
+			"group_id":         g.GroupID,
+			"group_name":       g.GroupName,
+			"pending_targets":  g.Cnt,
+		})
+	}
+
+	autos, _ := h.store.ListChannelAutomations(false)
+	autoMatchCh := 0
+	autoMatchPaused := 0
+	now := time.Now()
+	for _, a := range autos {
+		if !a.AutoMatchEnabled {
+			continue
+		}
+		autoMatchCh++
+		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
+			autoMatchPaused++
+		}
+	}
+
+	channelsTextNoTax := 0
+	var channelsMismatchSamples []map[string]any
+	chans, _ := h.store.ListChannels()
+	for _, ch := range chans {
+		if !ch.Active {
+			continue
+		}
+		a := ch.Audience
+		hasTextCat := len(a.Categories) > 0
+		hasTax := len(a.IncludeCategoryIDs) > 0 || len(a.IncludeSubcategoryIDs) > 0
+		if hasTextCat && !hasTax {
+			channelsTextNoTax++
+			if len(channelsMismatchSamples) < 8 {
+				channelsMismatchSamples = append(channelsMismatchSamples, map[string]any{
+					"channel_id": ch.ID,
+					"name":       ch.Name,
+				})
+			}
+		}
+	}
+
+	jfCfg, _ := h.store.GetJonfreyConfig()
+	type jfRow struct {
+		ActionType string    `json:"action_type"`
+		Status     string    `json:"status"`
+		CreatedAt  time.Time `json:"created_at"`
+	}
+	var jfRecent []jfRow
+	_ = h.db.SelectContext(ctx, &jfRecent, `
+		SELECT action_type, status, created_at FROM jonfrey_actions
+		ORDER BY id DESC LIMIT 8`)
+
+	var noPrimaryTax, totalProd, inspected int
+	_ = h.db.GetContext(ctx, &noPrimaryTax, `
+		SELECT COUNT(*) FROM catalogproduct cp WHERE NOT EXISTS (
+		  SELECT 1 FROM catalogproduct_taxonomy cpt WHERE cpt.product_id = cp.id AND cpt.role = 'primary_category')`)
+	_ = h.db.GetContext(ctx, &totalProd, `SELECT COUNT(*) FROM catalogproduct WHERE inactive = false`)
+	_ = h.db.GetContext(ctx, &inspected, `SELECT COUNT(*) FROM catalogproduct WHERE inactive = false AND inspected = true`)
+
+	inspectedPct := 0.0
+	if totalProd > 0 {
+		inspectedPct = float64(inspected) * 100.0 / float64(totalProd)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"flags": map[string]any{
+			"auto_match_enabled":      cfg.AutoMatchEnabled,
+			"full_auto_mode":          cfg.FullAutoMode,
+			"auto_match_only_curated": cfg.AutoMatchOnlyCurated,
+		},
+		"dispatches_by_status": dispatchCounts,
+		"evolution": map[string]any{
+			"configured":           evolutionOK,
+			"reason_if_not":        evolutionReason,
+			"active_wa_account_id": evolutionAccountID,
+		},
+		"rate_limit_whatsapp": map[string]any{
+			"max_messages_per_group_per_hour": 3,
+			"window_minutes":                  60,
+			"groups_most_active_last_hour":    topSlice,
+		},
+		"auto_match_channels": map[string]any{
+			"with_auto_match_enabled": autoMatchCh,
+			"paused_until_future":     autoMatchPaused,
+		},
+		"backpressure": map[string]any{
+			"max_pending_targets_per_group": maxPendingPerGroup,
+			"groups_at_or_over_cap":         bpSlice,
+		},
+		"audience_taxonomy_alignment": map[string]any{
+			"active_channels_with_text_categories_but_no_taxonomy_ids": channelsTextNoTax,
+			"sample_channels": channelsMismatchSamples,
+			"hint":            "Prefira include_category_ids na audiência para match estável com produtos taxonomizados.",
+		},
+		"jonfrey": map[string]any{
+			"enabled":          jfCfg.Enabled,
+			"interval_minutes": jfCfg.IntervalMinutes,
+			"recent_actions":   jfRecent,
+		},
+		"catalog_quality": map[string]any{
+			"active_products_total":             totalProd,
+			"active_products_inspected":           inspected,
+			"active_products_inspected_pct":       inspectedPct,
+			"products_missing_primary_taxonomy":   noPrimaryTax,
+		},
+	})
+}
+
+func (h *DashboardHandler) evolutionSnapshot(cfg models.AppConfig) (ok bool, reason string, accountID int64) {
+	accounts, err := h.store.ListWAAccounts()
+	if err != nil {
+		return false, "erro ao listar contas WA: " + err.Error(), 0
+	}
+	baseURL := cfg.WABaseURL.String
+	apiKey := cfg.WAApiKey.String
+	instance := cfg.WAInstance.String
+
+	for _, acc := range accounts {
+		if !acc.Active {
+			continue
+		}
+		u := baseURL
+		if acc.BaseURL.Valid && acc.BaseURL.String != "" {
+			u = acc.BaseURL.String
+		}
+		k := apiKey
+		if acc.APIKey.Valid && acc.APIKey.String != "" {
+			k = acc.APIKey.String
+		}
+		if !acc.Instance.Valid || acc.Instance.String == "" {
+			continue
+		}
+		in := acc.Instance.String
+		if u != "" && k != "" && in != "" {
+			return true, "", acc.ID
+		}
+	}
+	if baseURL != "" && apiKey != "" && instance != "" {
+		return true, "", 0
+	}
+	return false, "Evolution não configurada: defina URL/chave/instância na config global ou numa conta WA ativa com instância.", 0
 }
 
 // UpcomingDispatches retorna os próximos disparos agendados.

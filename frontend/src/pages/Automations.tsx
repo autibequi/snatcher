@@ -882,6 +882,21 @@ export function TabOverview() {
   return (
     <div className="p-6 space-y-5">
 
+      <div className="rounded-lg border border-border bg-surface-2/30 px-4 py-3 text-xs text-fg-2 leading-relaxed space-y-2">
+        <p className="font-semibold text-fg text-sm">Dois caminhos de automação</p>
+        <p>
+          <strong className="text-fg">Pipeline agendado</strong> (scan → process → evaluate): dentro da janela de envio e com{' '}
+          <code className="text-[10px] bg-surface px-1 rounded">events_enabled</code>, detecta novidades/quedas/mínimos e dispara por adapters — é o caminho de{' '}
+          <em>eventos</em>, não é a fila contínua do auto-match.
+        </p>
+        <p>
+          <strong className="text-fg">Auto-match</strong> (a cada ~1 min): lê os últimos produtos do catálogo, pontua contra audiência dos canais e cria dispatches{' '}
+          <code className="text-[10px] bg-surface px-1 rounded">composed_by=auto-match</code>. Se <strong>full-auto</strong> estiver desligado em Config, o status fica{' '}
+          <code className="text-[10px] bg-surface px-1 rounded">pending_approval</code> até aprovação; só <code className="text-[10px] bg-surface px-1 rounded">queued</code>{' '}
+          entra no worker Evolution (WhatsApp). Rate limit: 3 mensagens/hora/grupo.
+        </p>
+      </div>
+
       {/* ── KPI + controles num grid único ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
 

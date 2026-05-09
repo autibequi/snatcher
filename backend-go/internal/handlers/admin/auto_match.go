@@ -213,6 +213,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar produtos")
 		return
 	}
+	products = store.FilterCatalogProductsForAutoMatch(products, cfg.AutoMatchOnlyCurated)
 	channels, err := h.store.ListChannels()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar canais")
@@ -359,6 +360,11 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 	}
 	if targetProduct == nil {
 		writeErr(w, http.StatusNotFound, "produto nao encontrado")
+		return
+	}
+	filtered := store.FilterCatalogProductsForAutoMatch([]models.CatalogProduct{*targetProduct}, cfg.AutoMatchOnlyCurated)
+	if len(filtered) == 0 {
+		writeErr(w, http.StatusBadRequest, "política auto_match_only_curated ativa: produto precisa estar curated ou auto")
 		return
 	}
 

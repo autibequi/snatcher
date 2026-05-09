@@ -27,6 +27,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		slog.Error("auto match: list products", "err", err)
 		return
 	}
+	products = store.FilterCatalogProductsForAutoMatch(products, cfg.AutoMatchOnlyCurated)
 	if len(products) == 0 {
 		return
 	}

@@ -195,6 +195,7 @@ export default function Pending() {
             <strong className="text-fg-2">Fila WA</strong> = dispatches <code className="text-xs bg-surface-2 px-1 rounded">queued</code> aguardando o worker Evolution (~15s).
             <strong className="text-fg-2"> Auto-match</strong> (quem cria esses dispatches) roda <strong className="text-fg-2">a cada 1 min</strong> se estiver ligado em Config — não confundir com o intervalo do Jonfrey (manutenção / <code className="text-xs bg-surface-2 px-1">auto_release_pending</code>).
             <strong className="text-fg-2"> Prévia</strong> = candidatos por score; <strong className="text-fg-2">aprovação manual</strong> = <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code> só sem full-auto.
+            {' '}No <strong className="text-fg-2">Dashboard</strong>, o cartão <strong className="text-fg-2">Por que não saiu mensagem?</strong> consolida flags Evolution, contagens por status e rate limit.
           </>
         }
         actions={

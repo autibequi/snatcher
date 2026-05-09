@@ -453,6 +453,7 @@ func Build(
 		r.Get("/api/dashboard/channel-performance", dash.Performance)
 		r.Get("/api/dashboard/upcoming-dispatches", dash.UpcomingDispatches)
 		r.Get("/api/dashboard/recommendation", dash.Recommendation)
+		r.Get("/api/dashboard/automation-diagnostics", dash.AutomationDiagnostics)
 
 		// Team (operadores)
 		r.Get("/api/team", team.List)

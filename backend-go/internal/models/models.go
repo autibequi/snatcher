@@ -121,6 +121,8 @@ type AppConfig struct {
 	AutoMatchEnabled   bool    `db:"auto_match_enabled" json:"auto_match_enabled"`
 	AutoMatchThreshold float64 `db:"auto_match_threshold" json:"auto_match_threshold"`
 	AutoMatchMaxPerRun int     `db:"auto_match_max_per_run" json:"auto_match_max_per_run"`
+	// migration 0120 — só considerar produtos curated/auto no worker de auto-match
+	AutoMatchOnlyCurated bool `db:"auto_match_only_curated" json:"auto_match_only_curated"`
 
 	// Automation mode — migration 0096
 	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`
