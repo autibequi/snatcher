@@ -637,6 +637,48 @@ func (s *SQLStore) ListVariantsByProduct(productID int64) ([]models.CatalogVaria
 	return out, err
 }
 
+// HydrateVariantPricesFromHistory copia o último preço registrado quando variant.price está zerado.
+func (s *SQLStore) HydrateVariantPricesFromHistory(variants []models.CatalogVariant) error {
+	if len(variants) == 0 {
+		return nil
+	}
+	need := make([]int64, 0)
+	idx := make(map[int64]int)
+	for i := range variants {
+		id := variants[i].ID
+		if id == 0 || variants[i].Price > 0 {
+			continue
+		}
+		need = append(need, id)
+		idx[id] = i
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	query, args, err := sqlx.In(`
+		SELECT DISTINCT ON (variant_id) variant_id, price
+		FROM pricehistoryv2
+		WHERE variant_id IN (?)
+		ORDER BY variant_id, recorded_at DESC`, need)
+	if err != nil {
+		return err
+	}
+	query = s.db.Rebind(query)
+	var rows []struct {
+		VariantID int64   `db:"variant_id"`
+		Price     float64 `db:"price"`
+	}
+	if err := s.db.Select(&rows, query, args...); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if i, ok := idx[r.VariantID]; ok && r.Price > 0 {
+			variants[i].Price = r.Price
+		}
+	}
+	return nil
+}
+
 func (s *SQLStore) InsertPriceHistoryV2(h models.PriceHistoryV2) error {
 	_, err := s.db.NamedExec(`
 		INSERT INTO pricehistoryv2 (variant_id, price) VALUES (:variant_id, :price)`, h)

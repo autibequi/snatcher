@@ -340,24 +340,16 @@ func updateLowestPrice(st store.Store, productID int64) {
 	if err != nil || len(variants) == 0 {
 		return
 	}
+	_ = st.HydrateVariantPricesFromHistory(variants)
 
 	p, err := st.GetCatalogProduct(productID)
 	if err != nil {
 		return
 	}
 
-	lowest := variants[0]
-	for _, v := range variants[1:] {
-		if v.Price < lowest.Price {
-			lowest = v
-		}
-	}
-
-	p.LowestPrice = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: lowest.Price, Valid: true}}
-	p.LowestPriceURL = models.NullString{NullString: sql.NullString{String: lowest.URL, Valid: true}}
-	p.LowestPriceSource = models.NullString{NullString: sql.NullString{String: lowest.Source, Valid: true}}
-	if !p.ImageURL.Valid && lowest.ImageURL.Valid {
-		p.ImageURL = lowest.ImageURL
+	p = store.MergeEffectiveLowestPrice(p, variants)
+	if !p.LowestPrice.Valid {
+		return
 	}
 
 	_ = st.UpdateCatalogProduct(p)

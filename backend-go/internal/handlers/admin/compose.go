@@ -46,6 +46,10 @@ func hydrateComposePricesFromCatalog(st store.Store, productID int64, req *compo
 	if err != nil {
 		variants = nil
 	}
+	if len(variants) > 0 {
+		_ = st.HydrateVariantPricesFromHistory(variants)
+		p = store.MergeEffectiveLowestPrice(p, variants)
+	}
 
 	if req.Price <= 0 && p.LowestPrice.Valid && p.LowestPrice.Float64 > 0 {
 		req.Price = p.LowestPrice.Float64
@@ -105,9 +109,6 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		if p, err := h.store.GetCatalogProduct(*req.ProductID); err == nil {
 			if req.Title == "" {
 				req.Title = p.CanonicalName
-			}
-			if req.Price == 0 && p.LowestPrice.Valid {
-				req.Price = p.LowestPrice.Float64
 			}
 			if req.Marketplace == "" && p.LowestPriceSource.Valid {
 				req.Marketplace = p.LowestPriceSource.String

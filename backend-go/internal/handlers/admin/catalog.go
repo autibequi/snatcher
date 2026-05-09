@@ -188,6 +188,8 @@ func (h *CatalogHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if variants == nil {
 		variants = []models.CatalogVariant{}
 	}
+	_ = h.store.HydrateVariantPricesFromHistory(variants)
+	p = store.MergeEffectiveLowestPrice(p, variants)
 	writeJSON(w, http.StatusOK, map[string]any{"product": p, "variants": variants})
 }
 

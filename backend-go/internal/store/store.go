@@ -110,6 +110,8 @@ type Store interface {
 	CreateCatalogVariant(v models.CatalogVariant) (int64, error)
 	UpdateCatalogVariant(v models.CatalogVariant) error
 	ListVariantsByProduct(productID int64) ([]models.CatalogVariant, error)
+	// HydrateVariantPricesFromHistory preenche variant.Price com o último preço em pricehistoryv2 quando Price<=0.
+	HydrateVariantPricesFromHistory(variants []models.CatalogVariant) error
 	InsertPriceHistoryV2(h models.PriceHistoryV2) error
 	ListPriceHistoryV2(variantID int64) ([]models.PriceHistoryV2, error)
 	GetVariantStats(variantID int64, windowDays int) (*models.VariantStats, error)
