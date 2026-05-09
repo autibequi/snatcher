@@ -152,9 +152,13 @@ function StatusDot({ status }: { status?: string }) {
   )
 }
 
+function hasAudienceProfile(audienceStatus?: string): boolean {
+  return audienceStatus === 'profile' || audienceStatus === 'perfil'
+}
+
 function AudienceBadge({ audienceStatus }: { audienceStatus?: string }) {
   if (!audienceStatus) return <span className="text-xs text-fg-3">—</span>
-  const hasProfile = audienceStatus === 'profile'
+  const hasProfile = hasAudienceProfile(audienceStatus)
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border ${
       hasProfile
@@ -177,6 +181,64 @@ function effectiveAdminRiskCount(g: GroupRow): number {
 function formatCanaisLabel(count?: number): string {
   if (count == null || count === 0) return '—'
   return count === 1 ? '1 canal' : `${count} canais`
+}
+
+/** Um mesmo JID (grupo WA físico) pode ter N linhas no DB (N canais); a listagem mostra 1 linha por grupo físico. */
+function mergeDuplicateGroupRows(a: GroupRow, b: GroupRow): GroupRow {
+  const idNum = (x: string | number) => Number(x)
+  const first = idNum(a.id) <= idNum(b.id) ? a : b
+  const second = idNum(a.id) <= idNum(b.id) ? b : a
+
+  const mem = (g: GroupRow) => Math.max(g.member_count ?? 0, g.size ?? 0)
+
+  return {
+    ...first,
+    id: first.id,
+    channels_count: Math.max(a.channels_count ?? 0, b.channels_count ?? 0),
+    verified_admin_count: Math.max(
+      a.verified_admin_count ?? 0,
+      b.verified_admin_count ?? 0,
+    ),
+    admin_count: Math.max(a.admin_count ?? 0, b.admin_count ?? 0),
+    audience_status:
+      hasAudienceProfile(a.audience_status) || hasAudienceProfile(b.audience_status)
+        ? 'perfil'
+        : (first.audience_status ?? second.audience_status),
+    account_label: first.account_label || second.account_label,
+    admins:
+      (first.admins?.length ?? 0) >= (second.admins?.length ?? 0)
+        ? first.admins
+        : second.admins,
+    member_count: Math.max(mem(a), mem(b)) || undefined,
+    size: Math.max(a.size ?? 0, b.size ?? 0) || undefined,
+  }
+}
+
+function dedupeGroupsByPhysicalJid(groups: GroupRow[]): GroupRow[] {
+  const byJid = new Map<string, GroupRow>()
+  const noJid: GroupRow[] = []
+
+  for (const g of groups) {
+    const jid = String(g.jid ?? '').trim()
+    if (!jid) {
+      noJid.push(g)
+      continue
+    }
+    const prev = byJid.get(jid)
+    if (!prev) {
+      byJid.set(jid, g)
+    } else {
+      byJid.set(jid, mergeDuplicateGroupRows(prev, g))
+    }
+  }
+
+  const merged = [...byJid.values(), ...noJid]
+  merged.sort((a, b) =>
+    String(a.name ?? '').localeCompare(String(b.name ?? ''), 'pt-BR', {
+      sensitivity: 'base',
+    }),
+  )
+  return merged
 }
 
 function AdminRiskBanner({ groups }: { groups: GroupRow[] }) {
@@ -330,8 +392,8 @@ export default function Groups() {
       apiClient.get('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data : [])),
   })
 
-  // Flat groups list from /api/groups — backend may or may not return enriched fields
-  const { data: groups = [], isLoading: groupsLoading } = useQuery<GroupRow[]>({
+  // Flat groups list from /api/groups — backend returns 1 row per DB row (same JID pode repetir por canal)
+  const { data: groupsRaw = [], isLoading: groupsLoading } = useQuery<GroupRow[]>({
     queryKey: ['groups'],
     queryFn: () =>
       apiClient
@@ -341,6 +403,8 @@ export default function Groups() {
     refetchInterval: 30_000,
     staleTime: 20_000,
   })
+
+  const groups = useMemo(() => dedupeGroupsByPhysicalJid(groupsRaw), [groupsRaw])
 
   const qc = useQueryClient()
 
@@ -372,8 +436,8 @@ export default function Groups() {
     })
 
   const linkedJIDs = useMemo(
-    () => new Set(groups.map(g => String(g.jid ?? '').trim()).filter(Boolean)),
-    [groups],
+    () => new Set(groupsRaw.map(g => String(g.jid ?? '').trim()).filter(Boolean)),
+    [groupsRaw],
   )
 
   const importOneMut = useMutation({

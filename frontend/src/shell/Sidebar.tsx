@@ -79,7 +79,6 @@ export function Sidebar({ onClose }: SidebarProps) {
   })
 
   const appName = brand?.app_name || 'Snatcher'
-  const appLetter = appName[0]?.toUpperCase() ?? 'S'
 
   const displayName = user?.name ?? ''
   const displayEmail = user?.email ?? ''
@@ -94,16 +93,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     <div className="flex flex-col h-full">
       {/* Logo / Header */}
       <div className="flex items-center justify-between h-14 px-3 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          {/* Avatar com inicial do app */}
-          <div className="flex-shrink-0 w-8 h-8 rounded-md bg-accent flex items-center justify-center">
-            <span className="text-sm font-bold text-white leading-none">{appLetter}</span>
-          </div>
-          {/* Nome do app */}
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-fg leading-tight truncate">{appName}</p>
-            <p className="text-xs text-fg-3 leading-tight">{brand?.app_domain ?? 'workspace'}</p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-fg leading-tight truncate">{appName}</p>
+          <p className="text-xs text-fg-3 leading-tight">{brand?.app_domain ?? 'workspace'}</p>
         </div>
         <button
           type="button"
