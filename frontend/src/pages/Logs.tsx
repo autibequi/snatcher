@@ -1490,7 +1490,8 @@ function stableGroupId(attempts: LLMLogRow[]): string {
   return `grp-${attempts.map(a => a.id).sort((x, y) => x - y).join(':')}`
 }
 
-function buildLLMDisplayGroups(rows: LLMLogRow[], hideRetryChains: boolean): LLMDisplayGroup[] {
+/** Cadeias com retentativa → uma linha (primary); demais multi-grupos → uma linha por registro. */
+function buildLLMDisplayGroups(rows: LLMLogRow[]): LLMDisplayGroup[] {
   const clusters = clusterLLMLogs(rows)
   const result: LLMDisplayGroup[] = []
 
@@ -1504,7 +1505,7 @@ function buildLLMDisplayGroups(rows: LLMLogRow[], hideRetryChains: boolean): LLM
       continue
     }
 
-    if (hideRetryChains && hasRetry) {
+    if (hasRetry) {
       result.push({
         id: stableGroupId(cluster),
         attempts: cluster,
@@ -1529,7 +1530,6 @@ function buildLLMDisplayGroups(rows: LLMLogRow[], hideRetryChains: boolean): LLM
 
 function LLMLogs() {
   const [errorsOnly, setErrorsOnly] = React.useState(false)
-  const [hideRetries, setHideRetries] = React.useState(true)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   const { data: rows = [], isLoading, refetch } = useQuery<LLMLogRow[]>({
     queryKey: ['llm-logs', errorsOnly],
@@ -1540,16 +1540,13 @@ function LLMLogs() {
     refetchInterval: 30_000,
   })
 
-  const groups = React.useMemo(
-    () => buildLLMDisplayGroups(rows, hideRetries),
-    [rows, hideRetries],
-  )
+  const groups = React.useMemo(() => buildLLMDisplayGroups(rows), [rows])
 
   React.useEffect(() => {
     setExpandedId(null)
-  }, [hideRetries, errorsOnly])
+  }, [errorsOnly])
 
-  const colCount = 9
+  const colCount = 10
 
   return (
     <div className="bg-surface border border-border rounded-lg shadow-sm">
@@ -1559,10 +1556,6 @@ function LLMLogs() {
           <label className="flex items-center gap-2 text-xs text-fg-2 cursor-pointer select-none">
             <input type="checkbox" checked={errorsOnly} onChange={e => setErrorsOnly(e.target.checked)} className="accent-accent" />
             Apenas erros
-          </label>
-          <label className="flex items-center gap-2 text-xs text-fg-2 cursor-pointer select-none">
-            <input type="checkbox" checked={hideRetries} onChange={e => setHideRetries(e.target.checked)} className="accent-accent" />
-            Ocultar retentativas
           </label>
         </div>
         <button type="button" onClick={() => refetch()} className="text-xs text-accent hover:underline shrink-0">
@@ -1575,10 +1568,16 @@ function LLMLogs() {
         <p className="text-sm text-fg-3 p-6 text-center">Nenhum log de LLM.</p>
       ) : (
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-sm min-w-[920px]">
+          <table className="w-full text-sm min-w-[940px]">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Quando</th>
+                <th
+                  className="text-right px-2 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide w-10"
+                  title="Número de tentativas no mesmo fluxo (prompt/op)"
+                >
+                  #
+                </th>
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Operação</th>
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Modelo</th>
                 <th className="text-right px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide whitespace-nowrap">USD</th>
@@ -1597,10 +1596,10 @@ function LLMLogs() {
                 const recvPrev = llmSnippet(r.response)
                 const hasStoredPayload = r.prompt.trim().length > 0 || r.response.trim().length > 0
                 const attemptCount = g.attempts.length
-                const collapsedRetries = hideRetries && attemptCount > 1 && g.attempts.some(isLLMRetryFlavorRow)
+                const squashRetryOp = attemptCount > 1 && g.attempts.some(isLLMRetryFlavorRow)
                 const isTransient = r.operation?.includes('_retry_transient') || r.status === 'rate_limited'
                 const isRealError = r.error && !isTransient
-                const showOp = collapsedRetries ? llmBaseOperation(r.operation) : r.operation
+                const showOp = squashRetryOp ? llmBaseOperation(r.operation) : r.operation
 
                 return (
                   <React.Fragment key={g.id}>
@@ -1612,13 +1611,11 @@ function LLMLogs() {
                         <span className="text-fg-3 mr-0.5">{isExpanded ? '▼' : '▶'}</span>
                         {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
                       </td>
+                      <td className="px-2 py-2.5 text-[11px] text-fg-3 font-mono text-right tabular-nums w-10 align-top whitespace-nowrap">
+                        {attemptCount}
+                      </td>
                       <td className={`px-3 py-2.5 text-[11px] align-top leading-snug ${isTransient ? 'text-fg-3 italic' : 'text-fg'}`}>
                         <span className="line-clamp-2 break-all">{showOp}</span>
-                        {collapsedRetries && (
-                          <span className="mt-1 inline-flex items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-medium text-fg-2">
-                            {attemptCount} tentativas
-                          </span>
-                        )}
                       </td>
                       <td className="px-3 py-2.5 text-[11px] text-fg-2 font-mono align-top leading-snug">
                         <span className="line-clamp-3 break-all">{r.model || '—'}</span>
