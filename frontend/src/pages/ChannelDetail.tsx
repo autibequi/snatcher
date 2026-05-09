@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Badge, Button, Tabs, KpiCard, Skeleton, Switch, Tooltip as UITooltip } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { usePublicLinkBaseURL } from '../hooks/useBrand'
 import AudienceEditor from '../components/AudienceEditor'
 
 // ── Preview WA inline (bolha verde) ──────────────────────────────────────────
@@ -368,6 +369,7 @@ function slugify(s: string): string {
 
 function ChannelPublicLink({ channelId, channel }: { channelId: string; channel: { name?: string; slug?: string } }) {
   const qc = useQueryClient()
+  const baseURL = usePublicLinkBaseURL() // respeita app_domain configurado em Settings
   const initialSlug = channel.slug || slugify(channel.name || '')
   const [slug, setSlug] = React.useState(initialSlug)
   const [copied, setCopied] = React.useState(false)
@@ -376,7 +378,7 @@ function ChannelPublicLink({ channelId, channel }: { channelId: string; channel:
     setSlug(channel.slug || slugify(channel.name || ''))
   }, [channel.slug, channel.name])
 
-  const fullURL = `${window.location.origin}/canal/${slug}`
+  const fullURL = `${baseURL}/canal/${slug}`
 
   const saveMut = useMutation({
     mutationFn: () => apiClient.put(`/api/channels/${channelId}`, { ...channel, slug }),
@@ -406,7 +408,7 @@ function ChannelPublicLink({ channelId, channel }: { channelId: string; channel:
       <div>
         <label className="text-xs text-fg-2 block mb-1">Slug (parte da URL)</label>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-fg-3 font-mono">{window.location.host}/canal/</span>
+          <span className="text-sm text-fg-3 font-mono">{baseURL.replace(/^https?:\/\//, '')}/canal/</span>
           <input
             value={slug}
             onChange={e => setSlug(slugify(e.target.value))}
