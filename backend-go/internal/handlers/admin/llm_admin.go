@@ -243,6 +243,7 @@ func (h *LLMAdminHandler) Logs(w http.ResponseWriter, r *http.Request) {
 
 	type logRow struct {
 		ID         int64     `db:"id" json:"id"`
+		Provider   string    `db:"provider" json:"provider"`
 		Operation  string    `db:"operation" json:"operation"`
 		Model      string    `db:"model" json:"model"`
 		Status     string    `db:"status" json:"status"`
@@ -258,7 +259,7 @@ func (h *LLMAdminHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	}
 
-	q := `SELECT id, operation, model, status, tokens_in, tokens_out,
+	q := `SELECT id, COALESCE(provider, '') AS provider, operation, model, status, tokens_in, tokens_out,
 	             estimated_cost_usd, cache_hit, error, error_msg,
 	             latency_seconds, prompt, response, created_at
 	      FROM llm_metrics`

@@ -100,6 +100,18 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompatClient {
 	}
 }
 
+// providerTag classifica o backend OpenAI-compat para telemetria (logs admin).
+func (c *OpenAICompatClient) providerTag() string {
+	u := strings.ToLower(c.baseURL)
+	if strings.Contains(u, "openrouter.ai") {
+		return "openrouter"
+	}
+	if strings.Contains(u, "vllm") {
+		return "vllm"
+	}
+	return "ollama"
+}
+
 // isTransientError detecta falhas temporárias de modelos free (429, 504, content nulo, abort)
 // que valem retry imediato — diferente de erros permanentes (400, auth).
 func isTransientError(errStr string) bool {
@@ -176,6 +188,7 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 }
 
 func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts Options) (string, error) {
+	pv := c.providerTag()
 	start := time.Now()
 	model := opts.Model
 	if model == "" {
@@ -228,7 +241,7 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	b, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(b))
 	if err != nil {
-		recordMetric(opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, err.Error(), prompt, "")
+		recordMetric(pv, opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, err.Error(), prompt, "")
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -239,7 +252,7 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	resp, err := c.httpCli.Do(req)
 	if err != nil {
 		errMsg := fmt.Errorf("llm request: %w", err).Error()
-		recordMetric(opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, errMsg, prompt, "")
+		recordMetric(pv, opts.Operation, model, "error", 0, 0, 0, time.Since(start).Seconds(), true, errMsg, prompt, "")
 		return "", fmt.Errorf("llm request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -258,10 +271,10 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 			if retryAfter != "" {
 				shortMsg = "rate limited — retry em " + retryAfter + "s"
 			}
-			recordMetric(opts.Operation, model, "rate_limited", 0, 0, 0, latency, false, shortMsg, prompt, "")
+			recordMetric(pv, opts.Operation, model, "rate_limited", 0, 0, 0, latency, false, shortMsg, prompt, "")
 			return "", fmt.Errorf("%s", rawErrMsg)
 		}
-		recordMetric(opts.Operation, model, fmt.Sprintf("http_%d", resp.StatusCode), 0, 0, 0, latency, true, rawErrMsg, prompt, rawResponse)
+		recordMetric(pv, opts.Operation, model, fmt.Sprintf("http_%d", resp.StatusCode), 0, 0, 0, latency, true, rawErrMsg, prompt, rawResponse)
 		return "", fmt.Errorf("%s", rawErrMsg)
 	}
 
@@ -283,7 +296,7 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	}
 	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
 		errMsg := fmt.Sprintf("llm parse error: %s", rawResponse)
-		recordMetric(opts.Operation, model, "parse_error", 0, 0, 0, latency, true, errMsg, prompt, rawResponse)
+		recordMetric(pv, opts.Operation, model, "parse_error", 0, 0, 0, latency, true, errMsg, prompt, rawResponse)
 		return "", fmt.Errorf("%s", errMsg)
 	}
 
@@ -313,13 +326,13 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 		if reasoning != "" {
 			fullDebug = "REASONING:\n" + reasoning + "\n\n--- FULL RESPONSE ---\n" + rawResponse
 		}
-		recordMetric(opts.Operation, model, "empty_response", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, fullDebug)
+		recordMetric(pv, opts.Operation, model, "empty_response", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, fullDebug)
 		return "", fmt.Errorf("%s", errMsg)
 	}
 	if finishReason == "length" {
 		// resposta truncada por max_tokens — quase sempre vai falhar no parse
 		errMsg := "response truncated (finish_reason=length, completion_tokens=" + fmt.Sprintf("%d", result.Usage.CompletionTokens) + ") — aumente max_tokens"
-		recordMetric(opts.Operation, model, "truncated", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
+		recordMetric(pv, opts.Operation, model, "truncated", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
 		return content, fmt.Errorf("%s", errMsg)
 	}
 
@@ -330,7 +343,7 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	}
 	if useful == "" {
 		errMsg := "modelo retornou apenas <think> sem conteúdo útil — aumente max_tokens ou peça resposta direta"
-		recordMetric(opts.Operation, model, "no_output", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
+		recordMetric(pv, opts.Operation, model, "no_output", result.Usage.PromptTokens, result.Usage.CompletionTokens, 0, latency, true, errMsg, prompt, content)
 		return content, fmt.Errorf("%s", errMsg)
 	}
 
@@ -350,6 +363,6 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 		cost = EstimateCost(loggedModel, result.Usage.PromptTokens, result.Usage.CompletionTokens)
 	}
 
-	recordMetric(opts.Operation, loggedModel, status, result.Usage.PromptTokens, result.Usage.CompletionTokens, cost, latency, false, "", prompt, content)
+	recordMetric(pv, opts.Operation, loggedModel, status, result.Usage.PromptTokens, result.Usage.CompletionTokens, cost, latency, false, "", prompt, content)
 	return content, nil
 }

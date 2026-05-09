@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"net/http"
+	"strings"
+	"time"
 
 	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/store"
@@ -34,22 +37,38 @@ func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
 
 	// 1) Grupos modernos (tabela groups / RedesignGroup) — fonte primária
 	groups, _ := h.store.ListRedesignGroups(ch.ID, "", "active")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
+	defer cancel()
+
 	for _, g := range groups {
-		if g.InviteLink.Valid && g.InviteLink.String != "" {
-			name := g.Name
-			if name == "" {
-				name = "Grupo"
-			}
-			u := g.InviteLink.String
-			if g.Platform == "whatsapp" {
-				u = invitelinks.NormalizeWhatsAppInvite(u)
-			}
-			withInvite = append(withInvite, pickerEntry{
-				Name:      name,
-				InviteURL: u,
-				Provider:  g.Platform,
-			})
+		invite := ""
+		if g.InviteLink.Valid {
+			invite = strings.TrimSpace(g.InviteLink.String)
 		}
+		// Sem invite persistido: tenta buscar na Evolution na hora (persiste no banco para próximas visitas).
+		if invite == "" && g.Platform == "whatsapp" && g.Status == "active" &&
+			g.JID.Valid && strings.TrimSpace(g.JID.String) != "" && g.WAAccountID.Valid {
+			if link, err := h.store.FetchAndPersistWhatsAppInvite(ctx, g.ID); err == nil && link != "" {
+				invite = link
+			}
+		}
+		if invite == "" {
+			continue
+		}
+		name := g.Name
+		if name == "" {
+			name = "Grupo"
+		}
+		u := invite
+		if g.Platform == "whatsapp" {
+			u = invitelinks.NormalizeWhatsAppInvite(u)
+		}
+		withInvite = append(withInvite, pickerEntry{
+			Name:      name,
+			InviteURL: u,
+			Provider:  g.Platform,
+		})
 	}
 
 	// 2) Fallback legacy: channel_targets (compat com setups antigos)

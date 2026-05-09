@@ -38,11 +38,12 @@ func truncatePayload(s string) string {
 // RecordHandlerError loga falhas que acontecem no handler após o LLM ter respondido
 // (ex: parse JSON falhou no consumidor). Útil pra rastrear todas as falhas no log unificado.
 func RecordHandlerError(operation, model, errMsg, payload string) {
-	recordMetric(operation, model, "handler_parse_error", 0, 0, 0, 0, true, errMsg, "", payload)
+	recordMetric("", operation, model, "handler_parse_error", 0, 0, 0, 0, true, errMsg, "", payload)
 }
 
 // recordMetric insere um exec do LLM na tabela llm_metrics. No-op se DB não setado.
-func recordMetric(operation, model, status string, tokIn, tokOut int, costUSD float64, latencySeconds float64, isError bool, errMsg, prompt, response string) {
+// provider: "openrouter" | "vllm" | "ollama", ou vazio (ex.: erro de handler sem contexto de rede).
+func recordMetric(provider, operation, model, status string, tokIn, tokOut int, costUSD float64, latencySeconds float64, isError bool, errMsg, prompt, response string) {
 	db := getMetricsDB()
 	if db == nil {
 		return
@@ -59,8 +60,8 @@ func recordMetric(operation, model, status string, tokIn, tokOut int, costUSD fl
 	}
 	_, _ = db.ExecContext(context.Background(), `
 		INSERT INTO llm_metrics
-		  (operation, model, status, tokens_in, tokens_out, estimated_cost_usd, cache_hit, error, error_msg, latency_seconds, prompt, response, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10, $11, now())`,
-		operation, model, status, tokIn, tokOut, costUSD, isError, errMsgPtr, latencySeconds,
+		  (provider, operation, model, status, tokens_in, tokens_out, estimated_cost_usd, cache_hit, error, error_msg, latency_seconds, prompt, response, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11, $12, now())`,
+		provider, operation, model, status, tokIn, tokOut, costUSD, isError, errMsgPtr, latencySeconds,
 		truncatePayload(prompt), truncatePayload(response))
 }

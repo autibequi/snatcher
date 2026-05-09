@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -297,21 +298,31 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groups, err := h.fetchAllGroupsWithParticipantsCached(r.Context(), baseURL, apiKey, instance)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, "evolution: "+err.Error())
-		return
+	evo := newEvolutionClient(baseURL, apiKey, instance)
+	participantMaps, findErr := evo.findGroupParticipants(r.Context(), group.JID.String)
+	if findErr != nil || len(participantMaps) == 0 {
+		groups, ferr := h.fetchAllGroupsWithParticipantsCached(r.Context(), baseURL, apiKey, instance)
+		if ferr != nil {
+			if findErr != nil {
+				writeErr(w, http.StatusBadGateway, "evolution participantes: "+findErr.Error())
+				return
+			}
+			writeErr(w, http.StatusBadGateway, "evolution: "+ferr.Error())
+			return
+		}
+		gmeta := findGroupMetaByJID(groups, group.JID.String)
+		participantMaps = nil
+		if gmeta != nil {
+			participantMaps = evolutionParticipantMaps(gmeta)
+		}
 	}
-	gmeta := findGroupMetaByJID(groups, group.JID.String)
-	if gmeta == nil {
-		writeJSON(w, http.StatusOK, []Member{})
-		return
+	if participantMaps == nil {
+		participantMaps = []map[string]any{}
 	}
 
-	participants := evolutionParticipantMaps(gmeta)
-	members := make([]Member, 0, len(participants))
-	for _, pm := range participants {
-		jid, _ := pm["id"].(string)
+	members := make([]Member, 0, len(participantMaps))
+	for _, pm := range participantMaps {
+		jid := participantJID(pm)
 		if jid == "" {
 			continue
 		}
@@ -333,6 +344,10 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 			Engagement: memberRole(0),
 		})
 	}
+
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].JID < members[j].JID
+	})
 
 	writeJSON(w, http.StatusOK, members)
 }
@@ -734,8 +749,13 @@ func stripJIDSuffix(j string) string {
 }
 
 func evolutionParticipantMaps(gmeta map[string]any) []map[string]any {
-	raw, ok := gmeta["participants"].([]any)
-	if !ok || len(raw) == 0 {
+	var raw []any
+	if r, ok := gmeta["participants"].([]any); ok && len(r) > 0 {
+		raw = r
+	} else if r, ok := gmeta["Participants"].([]any); ok && len(r) > 0 {
+		raw = r
+	}
+	if len(raw) == 0 {
 		return nil
 	}
 	out := make([]map[string]any, 0, len(raw))
@@ -746,6 +766,18 @@ func evolutionParticipantMaps(gmeta map[string]any) []map[string]any {
 		}
 	}
 	return out
+}
+
+func participantJID(pm map[string]any) string {
+	for _, k := range []string{"id", "jid"} {
+		if s, ok := pm[k].(string); ok {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func jidDigits(jid string) string {

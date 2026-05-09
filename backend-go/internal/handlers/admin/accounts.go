@@ -753,6 +753,56 @@ func (e *evoClient) getGroups(ctx context.Context) ([]map[string]any, error) {
 	return groups, nil
 }
 
+// findGroupParticipants chama GET /group/participants/{instance}?groupJid=...
+// (Evolution v2); fetchAllGroups nem sempre inclui o array participants na resposta.
+func (e *evoClient) findGroupParticipants(ctx context.Context, groupJID string) ([]map[string]any, error) {
+	groupJID = strings.TrimSpace(groupJID)
+	if groupJID == "" {
+		return nil, fmt.Errorf("groupJid vazio")
+	}
+	base := strings.TrimRight(e.baseURL, "/")
+	u, err := url.Parse(base + "/group/participants/" + url.PathEscape(e.instance))
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("groupJid", groupJID)
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("apiKey", e.apiKey)
+	resp, err := (&http.Client{Timeout: 90 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("evolution participants %s: %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	var outer map[string]any
+	if err := json.Unmarshal(b, &outer); err != nil {
+		return nil, err
+	}
+	raw, ok := outer["participants"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, p := range raw {
+		pm, ok := p.(map[string]any)
+		if ok {
+			out = append(out, pm)
+		}
+	}
+	return out, nil
+}
+
 func (e *evoClient) getOwnNumber(ctx context.Context) string {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		e.baseURL+"/instance/fetchInstances?instanceName="+e.instance, nil)

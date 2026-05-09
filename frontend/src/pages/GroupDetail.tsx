@@ -78,6 +78,15 @@ function initials(name: string): string {
     .join('')
 }
 
+/** Backend pode enviar engajamento em PT (engajado/ativo/dormente) ou EN. */
+function normalizeEngagement(e?: string): 'engaged' | 'active' | 'dormant' {
+  if (!e) return 'dormant'
+  const x = e.toLowerCase()
+  if (x === 'engajado' || x === 'engaged') return 'engaged'
+  if (x === 'ativo' || x === 'active') return 'active'
+  return 'dormant'
+}
+
 function relativeTime(iso?: string): string {
   if (!iso) return '—'
   const diff = Date.now() - new Date(iso).getTime()
@@ -577,20 +586,30 @@ function MembersTable({
     if (filter === 'all') return members
     if (filter === 'admin') return members.filter(m => m.role === 'admin')
     if (filter === 'active')
-      return members.filter(m => m.engagement === 'active' || m.engagement === 'engaged')
-    if (filter === 'dormant') return members.filter(m => m.engagement === 'dormant')
+      return members.filter(m => {
+        const n = normalizeEngagement(m.engagement)
+        return n === 'engaged' || n === 'active'
+      })
+    if (filter === 'dormant')
+      return members.filter(m => normalizeEngagement(m.engagement) === 'dormant')
     return members
   }, [members, filter])
 
   const PAGE_SIZE = 50
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+
+  React.useEffect(() => {
+    if (page > totalPages) onPageChange(totalPages)
+  }, [page, totalPages, onPageChange])
+
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const countAll = members.length
-  const countActive = members.filter(
-    m => m.engagement === 'active' || m.engagement === 'engaged',
-  ).length
-  const countDormant = members.filter(m => m.engagement === 'dormant').length
+  const countActive = members.filter(m => {
+    const n = normalizeEngagement(m.engagement)
+    return n === 'engaged' || n === 'active'
+  }).length
+  const countDormant = members.filter(m => normalizeEngagement(m.engagement) === 'dormant').length
   const countAdmin = members.filter(m => m.role === 'admin').length
 
   const filterButtons: { id: MemberFilter; label: string; count: number }[] = [
@@ -623,7 +642,9 @@ function MembersTable({
             </button>
           ))}
         </div>
-        <span className="text-xs text-fg-3">Ordenar: cliques</span>
+        <span className="text-xs text-fg-3">
+          {members.length > 0 ? `${members.length} carregados · página ${page}/${totalPages}` : ''}
+        </span>
       </div>
 
       {/* Table */}
@@ -669,10 +690,10 @@ function MembersTable({
               const displayName = m.name ?? m.jid ?? m.id ?? '—'
               const label = typeof displayName === 'string' ? initials(String(displayName)) : '?'
               const color = avatarColor(String(displayName))
-              const engagement = m.engagement
+              const engagement = normalizeEngagement(m.engagement)
               return (
                 <tr
-                  key={m.id ?? m.jid ?? i}
+                  key={String(m.jid ?? m.id ?? i)}
                   className="border-b border-border last:border-0 hover:bg-surface-2"
                 >
                   <td className="px-4 py-2.5">
@@ -713,31 +734,34 @@ function MembersTable({
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
+      {/* Pagination — sempre mostra faixa; botões só se houver mais de uma página */}
+      {!isLoading && filtered.length > 0 && (
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border bg-surface-2">
           <span className="text-xs text-fg-3">
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de{' '}
-            {filtered.length}
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}{' '}
+            no filtro
+            {filter !== 'all' && countAll !== filtered.length ? ` (${countAll} no total)` : ''}
           </span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={page === 1}
-              onClick={() => onPageChange(page - 1)}
-              className="px-2.5 py-1 text-xs rounded-md bg-surface border border-border text-fg-2 hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ‹ Anterior
-            </button>
-            <button
-              type="button"
-              disabled={page === totalPages}
-              onClick={() => onPageChange(page + 1)}
-              className="px-2.5 py-1 text-xs rounded-md bg-surface border border-border text-fg-2 hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Próxima ›
-            </button>
-          </div>
+          {totalPages > 1 ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={page === 1}
+                onClick={() => onPageChange(page - 1)}
+                className="px-2.5 py-1 text-xs rounded-md bg-surface border border-border text-fg-2 hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ‹ Anterior
+              </button>
+              <button
+                type="button"
+                disabled={page === totalPages}
+                onClick={() => onPageChange(page + 1)}
+                className="px-2.5 py-1 text-xs rounded-md bg-surface border border-border text-fg-2 hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Próxima ›
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -753,6 +777,10 @@ export default function GroupDetail() {
   const [membersPage, setMembersPage] = React.useState(1)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [showConfigModal, setShowConfigModal] = React.useState(false)
+
+  React.useEffect(() => {
+    setMembersPage(1)
+  }, [id])
 
   const { data: group, isLoading } = useQuery<GroupDetail>({
     queryKey: ['groups', id],
@@ -819,8 +847,14 @@ export default function GroupDetail() {
   }
 
   const memberCount = group.member_count ?? members.length
-  const activeCount = group.active_members ?? members.filter(m => m.engagement === 'active' || m.engagement === 'engaged').length
-  const dormantCount = group.dormant_members ?? members.filter(m => m.engagement === 'dormant').length
+  const activeCount =
+    group.active_members ??
+    members.filter(m => {
+      const n = normalizeEngagement(m.engagement)
+      return n === 'engaged' || n === 'active'
+    }).length
+  const dormantCount =
+    group.dormant_members ?? members.filter(m => normalizeEngagement(m.engagement) === 'dormant').length
   const clicks30d = group.clicks_30d ?? 0
   const perMember = group.per_member_clicks != null
     ? group.per_member_clicks.toFixed(1)

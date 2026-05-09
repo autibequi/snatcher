@@ -1,8 +1,11 @@
 package public
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/store"
@@ -64,9 +67,24 @@ func (h *PublicLinksResolver) Resolve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Buscar invite_link do grupo
+	// Buscar invite_link do grupo (se vazio, tenta Evolution e persiste — mesmo fluxo da página /canal/)
 	group, err := h.store.GetRedesignGroup(targetGroupID)
-	if err != nil || !group.InviteLink.Valid || group.InviteLink.String == "" {
+	if err != nil {
+		http.Error(w, "Grupo nao encontrado", http.StatusNotFound)
+		return
+	}
+	invite := ""
+	if group.InviteLink.Valid {
+		invite = strings.TrimSpace(group.InviteLink.String)
+	}
+	if invite == "" && group.Platform == "whatsapp" && group.JID.Valid && strings.TrimSpace(group.JID.String) != "" && group.WAAccountID.Valid {
+		ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
+		if link, ferr := h.store.FetchAndPersistWhatsAppInvite(ctx, group.ID); ferr == nil && link != "" {
+			invite = link
+		}
+		cancel()
+	}
+	if invite == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusGone)
 		_, _ = w.Write([]byte("<html><body><h2>Canal temporariamente indisponivel, volte logo.</h2></body></html>"))
@@ -77,7 +95,7 @@ func (h *PublicLinksResolver) Resolve(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: erro de update não deve impedir o redirect.
 	_ = h.store.IncrementPublicLinkClicks(link.ID)
 
-	url := group.InviteLink.String
+	url := invite
 	if group.Platform == "whatsapp" {
 		url = invitelinks.NormalizeWhatsAppInvite(url)
 	}
