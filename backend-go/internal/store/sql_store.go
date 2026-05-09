@@ -83,8 +83,21 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			auto_match_max_per_run=:auto_match_max_per_run,
 			full_auto_mode=:full_auto_mode,
 			notify_approval_webhook=:notify_approval_webhook,
-			auto_match_only_curated=:auto_match_only_curated
+			auto_match_only_curated=:auto_match_only_curated,
+			interval_between_groups_sec=:interval_between_groups_sec,
+			interval_between_channels_sec=:interval_between_channels_sec,
+			daily_limit_per_account=:daily_limit_per_account,
+			rotate_accounts=:rotate_accounts
 		WHERE id = 1`, cfg)
+	return err
+}
+
+// ApplyGlobalDailyLimitToAccounts aplica o limite diário configurado em appconfig a todas as contas.
+func (s *SQLStore) ApplyGlobalDailyLimitToAccounts(limit int) error {
+	if _, err := s.db.Exec(`UPDATE waaccount SET daily_limit = $1`, limit); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE tgaccount SET daily_limit = $1`, limit)
 	return err
 }
 

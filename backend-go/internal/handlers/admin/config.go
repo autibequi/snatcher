@@ -46,6 +46,10 @@ func (h *ConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := h.store.ApplyGlobalDailyLimitToAccounts(cfg.DailyLimitPerAccount); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, cfg)
 }
 

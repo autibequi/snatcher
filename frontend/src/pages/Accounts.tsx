@@ -87,7 +87,9 @@ function AccountsAntiBanPanel() {
               type="number"
               min={0}
               value={(merged.interval_between_groups as number) ?? 5}
-              onChange={e => updateField('interval_between_groups', Number(e.target.value))}
+              onChange={e =>
+                updateField('interval_between_groups', Math.max(0, parseInt(e.target.value, 10) || 0))
+              }
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>
@@ -97,7 +99,9 @@ function AccountsAntiBanPanel() {
               type="number"
               min={0}
               value={(merged.interval_between_channels as number) ?? 30}
-              onChange={e => updateField('interval_between_channels', Number(e.target.value))}
+              onChange={e =>
+                updateField('interval_between_channels', Math.max(0, parseInt(e.target.value, 10) || 0))
+              }
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>
@@ -107,7 +111,9 @@ function AccountsAntiBanPanel() {
               type="number"
               min={0}
               value={(merged.daily_limit_per_account as number) ?? 200}
-              onChange={e => updateField('daily_limit_per_account', Number(e.target.value))}
+              onChange={e =>
+                updateField('daily_limit_per_account', Math.max(0, parseInt(e.target.value, 10) || 0))
+              }
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>

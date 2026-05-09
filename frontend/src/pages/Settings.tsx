@@ -710,7 +710,7 @@ function GeneralTab() {
           variant="primary"
           size="sm"
           loading={saveConfig.isPending}
-          onClick={() => saveConfig.mutate(localConfig)}
+          onClick={() => saveConfig.mutate({ ...config, ...localConfig })}
         >
           Salvar configurações
         </Button>

@@ -47,6 +47,8 @@ type Store interface {
 	// Config
 	GetConfig() (models.AppConfig, error)
 	UpdateConfig(cfg models.AppConfig) error
+	// ApplyGlobalDailyLimitToAccounts copia o teto diário global para todas as contas WA/TG (anti-ban).
+	ApplyGlobalDailyLimitToAccounts(limit int) error
 	// Atualiza só o marcador de ciclo do worker (migration 0123).
 	TouchAutoMatchWorkerRun(at time.Time) error
 	ListWAAccounts() ([]models.WAAccount, error)

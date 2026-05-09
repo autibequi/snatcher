@@ -139,6 +139,12 @@ type AppConfig struct {
 
 	// Opcional — quando definido, sobrescreve a temperatura indicada em cada prompt YAML (0–2).
 	LLMTemperature NullFloat64 `db:"llm_temperature" json:"llm_temperature,omitempty"`
+
+	// Anti-ban global — migration 0126 (ritmo entre grupos/canais, teto diário, rotação).
+	IntervalBetweenGroupsSec   int  `db:"interval_between_groups_sec" json:"interval_between_groups"`
+	IntervalBetweenChannelsSec int  `db:"interval_between_channels_sec" json:"interval_between_channels"`
+	DailyLimitPerAccount       int  `db:"daily_limit_per_account" json:"daily_limit_per_account"`
+	RotateAccounts             bool `db:"rotate_accounts" json:"rotate_accounts"`
 }
 
 type AutoMatchLog struct {
