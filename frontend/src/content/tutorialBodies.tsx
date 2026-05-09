@@ -24,6 +24,10 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="Antes de tudo">
         <Ul>
           <li>Este guia é o caminho mais curto até ter uma conta pronta a enviar e um canal configurado.</li>
+          <li>
+            Para compor com produtos reais, o <strong className="text-fg">Catálogo</strong> precisa ter ofertas — em geral vindas de{' '}
+            <strong className="text-fg">Crawlers</strong> ou importação; sem itens, use a busca só depois de haver dados.
+          </li>
           <li>Se algo falhar, o primeiro sítio a olhar é <strong className="text-fg">Logs</strong>; o manual completo está em <strong className="text-fg">Manual operacional</strong>.</li>
         </Ul>
       </Sec>
@@ -171,7 +175,8 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="Assistente IA">
         <Ul>
           <li>
-            <strong className="text-fg">Jonfrey</strong> orquestra fluxos assistidos por IA no workspace (quando ativos): curadoria, match e decisões com auditoria.
+            <strong className="text-fg">Jonfrey</strong> executa <strong className="text-fg">ações configuráveis</strong> por tipo (incluindo tarefas com LLM quando aplicável).
+            O que aparece na lista depende do backend do workspace — cada ação tem auditoria em <strong className="text-fg">Logs → Jonfrey</strong>.
           </li>
           <li>O modo full-auto depende das políticas globais em <strong className="text-fg">Automações</strong> — mantenha consistência entre as duas telas.</li>
         </Ul>
@@ -306,7 +311,16 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="Logs">
         <Ul>
           <li>Primeiro lugar para filas, disparos, erros de adapter e jobs.</li>
-          <li>Filtre por dispatch, canal ou estado para isolar incidentes.</li>
+          <li>
+            Na tab <strong className="text-fg">Disparos</strong>: filtros por <strong className="text-fg">estado</strong>, datas, conta WA; a coluna mostra canal/grupo em cada linha.
+            Abra uma linha para ver detalhe do disparo.
+          </li>
+          <li>
+            Há tabs separadas para <strong className="text-fg">Crawlers</strong>, <strong className="text-fg">Jonfrey</strong>, <strong className="text-fg">Matches</strong>, etc.
+          </li>
+          <li>
+            Atalhos <code className="text-xs bg-surface-2 px-1 rounded">/logs?dispatchId=…</code> (ex.: a partir de Automações ou após compor) abrem o detalhe desse disparo.
+          </li>
         </Ul>
       </Sec>
       <Sec title="Suporte">

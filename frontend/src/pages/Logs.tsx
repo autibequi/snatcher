@@ -784,6 +784,22 @@ export default function Logs() {
   const [items, setItems] = React.useState<Dispatch[]>([])
   const [selected, setSelected] = React.useState<Dispatch | null>(null)
 
+  /** Links tipo /logs?dispatchId=N (Composer, Automações, AutoMatch) abrem o painel deste disparo. */
+  const dispatchIdOpenRaw = params.get('dispatchId')
+  const dispatchIdOpen = dispatchIdOpenRaw ? Number.parseInt(dispatchIdOpenRaw, 10) : NaN
+  const { data: dispatchFromUrl } = useQuery({
+    queryKey: ['dispatch-open-from-url', dispatchIdOpen],
+    queryFn: () => apiClient.get(`/api/dispatches/${dispatchIdOpen}`).then(r => r.data as Dispatch),
+    enabled: Number.isFinite(dispatchIdOpen) && dispatchIdOpen > 0,
+    retry: false,
+  })
+  React.useEffect(() => {
+    if (!Number.isFinite(dispatchIdOpen) || dispatchIdOpen <= 0) return
+    if (!dispatchFromUrl?.id || dispatchFromUrl.id !== dispatchIdOpen) return
+    setSelected(dispatchFromUrl)
+    setLogTab('dispatches')
+  }, [dispatchIdOpen, dispatchFromUrl])
+
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts-filter'],
     queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),

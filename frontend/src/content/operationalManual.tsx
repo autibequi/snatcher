@@ -19,7 +19,8 @@ export function OperationalManualContent() {
         <ul className="list-disc pl-5 space-y-2">
           <li>
             Em <strong className="text-fg">Contas conectadas</strong>, adicione WhatsApp ou Telegram. Para WA, escaneie o QR
-            quando o sistema pedir; o status deve ir para <code className="text-xs bg-surface-2 px-1 rounded">connected</code>.
+            quando o sistema pedir; o estado “pronto” pode aparecer como <code className="text-xs bg-surface-2 px-1 rounded">connected</code> ou{' '}
+            <code className="text-xs bg-surface-2 px-1 rounded">WORKING</code> consoante o provedor — o importante é a sessão ativa para envio.
           </li>
           <li>
             Em <strong className="text-fg">Automações → Canais</strong>, configure cada canal (grupos de destino, limites e,
