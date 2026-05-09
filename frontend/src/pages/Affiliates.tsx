@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, KpiCard, Skeleton, Tabs, EmptyState } from '../components/ui'
+import { Badge, Button, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ---------------------------------------------------------------------------
@@ -33,17 +33,8 @@ interface ProgramStats {
   last_sync_at: string | null
 }
 
-const TABS = [
-  { id: 'programs',    label: 'Programas' },
-  { id: 'rules',       label: 'Regras de mapeamento' },
-  { id: 'postbacks',   label: 'Postbacks (S2S)' },
-  { id: 'attribution', label: 'Atribuição & auditoria' },
-] as const
-
-type TabId = typeof TABS[number]['id']
-
 // ---------------------------------------------------------------------------
-// AffiliateRow (aba Programas)
+// AffiliateRow
 // ---------------------------------------------------------------------------
 
 interface AffiliateRowProps {
@@ -208,7 +199,7 @@ function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Programas
+// Tabela de programas
 // ---------------------------------------------------------------------------
 
 interface TabProgramsProps {
@@ -270,51 +261,6 @@ function TabPrograms({ programs, statsMap, isLoading }: TabProgramsProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Regras de mapeamento
-// ---------------------------------------------------------------------------
-
-function TabRules() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Regras de mapeamento"
-        description="Configure regras para mapear domínios de origem a programas de afiliados automaticamente. Disponível em fase 2."
-      />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Tab: Postbacks (S2S)
-// ---------------------------------------------------------------------------
-
-function TabPostbacks() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Postbacks (S2S)"
-        description="Receba conversões em tempo real via Server-to-Server postback. Configure a URL de postback por programa. Disponível em fase 2."
-      />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Tab: Atribuição & auditoria
-// ---------------------------------------------------------------------------
-
-function TabAttribution() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Atribuição & auditoria"
-        description="Histórico de atribuições de cliques e conversões por usuário, programa e janela de cookie. Disponível em fase 2."
-      />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // KPI row helpers
 // ---------------------------------------------------------------------------
 
@@ -350,8 +296,6 @@ function fmtRevenue(n: number) {
 // ---------------------------------------------------------------------------
 
 export default function Affiliates() {
-  const [activeTab, setActiveTab] = React.useState<TabId>('programs')
-
   const { data: programs = [], isLoading: loadingPrograms } = useQuery<Program[]>({
     queryKey: ['affiliates'],
     queryFn: () =>
@@ -425,26 +369,12 @@ export default function Affiliates() {
         />
       </div>
 
-      {/* Tabs */}
-      <Tabs
-        tabs={TABS.map(t => ({ id: t.id, label: t.label }))}
-        active={activeTab}
-        onChange={id => setActiveTab(id as TabId)}
-        className="mb-4"
-      />
-
-      {/* Tab content */}
       <div className="bg-surface border border-border rounded-md">
-        {activeTab === 'programs' && (
-          <TabPrograms
-            programs={programs}
-            statsMap={statsMap}
-            isLoading={loadingPrograms}
-          />
-        )}
-        {activeTab === 'rules' && <TabRules />}
-        {activeTab === 'postbacks' && <TabPostbacks />}
-        {activeTab === 'attribution' && <TabAttribution />}
+        <TabPrograms
+          programs={programs}
+          statsMap={statsMap}
+          isLoading={loadingPrograms}
+        />
       </div>
     </div>
   )
