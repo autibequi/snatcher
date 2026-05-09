@@ -123,6 +123,8 @@ type AppConfig struct {
 	AutoMatchMaxPerRun int     `db:"auto_match_max_per_run" json:"auto_match_max_per_run"`
 	// migration 0120 — só considerar produtos curated/auto no worker de auto-match
 	AutoMatchOnlyCurated bool `db:"auto_match_only_curated" json:"auto_match_only_curated"`
+	// migration 0123 — última vez que RunAutoMatchWorker rodou (gocron 1 min)
+	AutoMatchLastWorkerRunAt NullTime `db:"auto_match_last_worker_run_at" json:"auto_match_last_worker_run_at,omitempty"`
 
 	// Automation mode — migration 0096
 	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`

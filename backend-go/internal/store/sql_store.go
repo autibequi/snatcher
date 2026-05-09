@@ -50,6 +50,11 @@ func (s *SQLStore) GetConfig() (models.AppConfig, error) {
 	return c, err
 }
 
+func (s *SQLStore) TouchAutoMatchWorkerRun(at time.Time) error {
+	_, err := s.db.Exec(`UPDATE appconfig SET auto_match_last_worker_run_at = $1 WHERE id = 1`, at)
+	return err
+}
+
 func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 	_, err := s.db.NamedExec(`
 		UPDATE appconfig SET

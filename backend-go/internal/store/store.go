@@ -47,6 +47,8 @@ type Store interface {
 	// Config
 	GetConfig() (models.AppConfig, error)
 	UpdateConfig(cfg models.AppConfig) error
+	// Atualiza só o marcador de ciclo do worker (migration 0123).
+	TouchAutoMatchWorkerRun(at time.Time) error
 	ListWAAccounts() ([]models.WAAccount, error)
 	GetWAAccount(id int64) (models.WAAccount, error)
 	CreateWAAccount(a models.WAAccount) (int64, error)
