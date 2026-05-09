@@ -454,7 +454,7 @@ interface ChannelSuggestion {
   target_profile: string
 }
 
-function SuggestChannelModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [intent, setIntent] = React.useState('')
   const [mode, setMode] = React.useState<'' | 'next' | 'expand'>('')
   const [suggestion, setSuggestion] = React.useState<ChannelSuggestion | null>(null)

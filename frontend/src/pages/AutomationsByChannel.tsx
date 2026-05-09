@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { TabChannels, Drawer, type ChannelRow } from './Automations'
+import { SuggestChannelModal } from './Channels'
 
 export default function AutomationsByChannel() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [drawerRow, setDrawerRow] = React.useState<ChannelRow | null>(null)
   const [showCreate, setShowCreate] = React.useState(false)
+  const [showSuggest, setShowSuggest] = React.useState(false)
   const [name, setName] = React.useState('')
 
   const createMut = useMutation({
@@ -34,19 +36,38 @@ export default function AutomationsByChannel() {
     <div className="flex flex-col h-full">
       <div className="px-6 py-3 border-b border-border flex items-center justify-between">
         <p className="text-sm text-fg-3">Configuração e monitor por canal</p>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="text-sm bg-accent text-white px-3 py-1.5 rounded-md hover:opacity-90"
-        >
-          + Novo canal
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSuggest(true)}
+            className="text-sm border border-border text-accent px-3 py-1.5 rounded-md hover:bg-accent/5"
+          >
+            ✨ Sugerir canal
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="text-sm bg-accent text-white px-3 py-1.5 rounded-md hover:opacity-90"
+          >
+            + Novo canal
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         <TabChannels onOpenDrawer={setDrawerRow} />
       </div>
       {drawerRow && (
         <Drawer row={drawerRow} onClose={() => setDrawerRow(null)} />
+      )}
+      {showSuggest && (
+        <SuggestChannelModal
+          onClose={() => setShowSuggest(false)}
+          onCreated={() => {
+            qc.invalidateQueries({ queryKey: ['automations'] })
+            qc.invalidateQueries({ queryKey: ['channels'] })
+            setShowSuggest(false)
+          }}
+        />
       )}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreate(false)}>
