@@ -1363,6 +1363,8 @@ function LLMCostSpendChart() {
 interface LLMLogRow {
   id: number
   operation: string
+  /** openrouter | vllm | ollama (vazio em registros antigos / handler) */
+  provider: string
   model: string
   status: string
   tokens_in: number
@@ -1384,6 +1386,7 @@ function normalizeLLMLogRows(raw: unknown): LLMLogRow[] {
     return {
       id: Number(row.id ?? 0),
       operation: String(row.operation ?? ''),
+      provider: row.provider != null ? String(row.provider) : '',
       model: String(row.model ?? ''),
       status: String(row.status ?? ''),
       tokens_in: Number(row.tokens_in ?? 0),
@@ -1546,7 +1549,7 @@ function LLMLogs() {
     setExpandedId(null)
   }, [errorsOnly])
 
-  const colCount = 10
+  const colCount = 11
 
   return (
     <div className="bg-surface border border-border rounded-lg shadow-sm">
@@ -1568,7 +1571,7 @@ function LLMLogs() {
         <p className="text-sm text-fg-3 p-6 text-center">Nenhum log de LLM.</p>
       ) : (
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-sm min-w-[940px]">
+          <table className="w-full text-sm min-w-[1020px]">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Quando</th>
@@ -1579,6 +1582,7 @@ function LLMLogs() {
                   #
                 </th>
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Operação</th>
+                <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide whitespace-nowrap">Provider</th>
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Modelo</th>
                 <th className="text-right px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide whitespace-nowrap">USD</th>
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">Enviado</th>
