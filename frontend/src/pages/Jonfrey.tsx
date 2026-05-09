@@ -38,6 +38,7 @@ export default function Jonfrey() {
         .then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
       qc.invalidateQueries({ queryKey: ['work-queue'] })
     },
   })
@@ -72,41 +73,71 @@ export default function Jonfrey() {
       <FullAutoStatusCard />
 
       {/* Painel de controle */}
-      <div className="bg-surface border border-border rounded-md p-4 space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-sm font-semibold text-fg">Auto-pilot</p>
-            <p className="text-xs text-fg-3">
-              Quando ligado, Jonfrey acorda a cada{' '}
-              <strong>{config?.interval_minutes ?? 60} min</strong>
-              {' '}e executa as ações habilitadas.
-              {config?.last_run_at && (
-                <span> Último ciclo: {relJonfreyTime(config.last_run_at)}.</span>
-              )}
+      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
+        {/* Barra superior: timer + último ciclo + executar — junto do toggle */}
+        <div className="relative border-b border-border bg-gradient-to-br from-accent/[0.07] via-surface to-surface px-4 py-4 sm:px-5 sm:py-5">
+          <div className="relative flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <p className="text-base font-semibold text-fg tracking-tight">Auto-pilot</p>
+                <p className="text-xs text-fg-3 leading-relaxed max-w-xl">
+                  Com o interruptor ligado, o Jonfrey corre em ciclo e dispara as automações que estão ativas na lista abaixo.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 sm:shrink-0 sm:pt-0.5">
+                <span className="text-xs text-fg-3 sm:hidden">Ativar</span>
+                <Switch
+                  checked={config?.enabled ?? false}
+                  onChange={v => updateConfigMut.mutate({ enabled: v })}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-stretch sm:items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs shadow-sm">
+                  <span className="text-fg-2 whitespace-nowrap">Intervalo</span>
+                  <input
+                    type="number"
+                    min={5}
+                    max={1440}
+                    value={config?.interval_minutes ?? 60}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      if (n >= 5) updateConfigMut.mutate({ interval_minutes: n })
+                    }}
+                    className="w-14 tabular-nums rounded-md border border-border bg-surface-2 px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+                  />
+                  <span className="text-fg-3">min</span>
+                </label>
+                {config?.last_run_at ? (
+                  <div className="inline-flex items-center gap-2 rounded-lg border border-border/90 bg-surface-2/90 px-3 py-2 text-xs shadow-sm">
+                    <span className="text-fg-3">Último ciclo</span>
+                    <span className="font-mono text-fg-2 tabular-nums">{relJonfreyTime(config.last_run_at)}</span>
+                  </div>
+                ) : (
+                  <span className="inline-flex items-center rounded-lg border border-dashed border-border/80 px-3 py-2 text-[11px] text-fg-3">
+                    Ainda sem histórico de ciclo
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                loading={runMut.isPending}
+                onClick={() => runMut.mutate(undefined)}
+                className="w-full shadow-md shadow-accent/15 sm:w-auto sm:min-w-[11rem]"
+              >
+                ▶ Executar agora
+              </Button>
+            </div>
+            <p className="text-[11px] text-fg-3 leading-snug">
+              <strong className="text-fg-2">Executar agora</strong> roda todas as ações habilitadas na hora, sem esperar o próximo intervalo.
             </p>
           </div>
-          <Switch
-            checked={config?.enabled ?? false}
-            onChange={v => updateConfigMut.mutate({ enabled: v })}
-          />
         </div>
 
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Intervalo (minutos)</label>
-          <input
-            type="number"
-            min={5}
-            max={1440}
-            value={config?.interval_minutes ?? 60}
-            onChange={e => {
-              const n = Number(e.target.value)
-              if (n >= 5) updateConfigMut.mutate({ interval_minutes: n })
-            }}
-            className="w-32 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          />
-        </div>
-
-        <div className="border-t border-border pt-3 space-y-4">
+        <div className="space-y-4 p-4 sm:p-5">
           {(() => {
             const renderRow = (a: AvailableAction) => {
               const enabled = config?.enabled_actions.includes(a.type) ?? false
@@ -180,20 +211,6 @@ export default function Jonfrey() {
               </>
             )
           })()}
-        </div>
-
-        <div className="border-t border-border pt-3 flex items-center justify-between gap-2 flex-wrap">
-          <p className="text-xs text-fg-3">
-            Executa todas as ações habilitadas agora, sem esperar o próximo ciclo.
-          </p>
-          <Button
-            variant="primary"
-            size="sm"
-            loading={runMut.isPending}
-            onClick={() => runMut.mutate(undefined)}
-          >
-            ▶ Executar agora
-          </Button>
         </div>
       </div>
     </div>
