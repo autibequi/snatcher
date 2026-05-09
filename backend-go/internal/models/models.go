@@ -627,7 +627,7 @@ type BroadcastMessage struct {
 type RedesignGroup struct {
 	ID            int64      `db:"id" json:"id"`
 	ShortID       string     `db:"short_id" json:"short_id"`
-	ChannelID     int64      `db:"channel_id" json:"channel_id"`
+	ChannelID     NullInt64  `db:"channel_id" json:"channel_id"`
 	WAAccountID   NullInt64  `db:"wa_account_id" json:"wa_account_id,omitempty"`
 	TGAccountID   NullInt64  `db:"tg_account_id" json:"tg_account_id,omitempty"`
 	Name          string     `db:"name" json:"name"`

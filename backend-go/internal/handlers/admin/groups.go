@@ -32,7 +32,7 @@ func NewGroupsHandler(st store.Store) *GroupsHandler {
 func (h *GroupsHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 
 type groupRequest struct {
-	ChannelID   int64   `json:"channel_id"   validate:"required"`
+	ChannelID   *int64  `json:"channel_id,omitempty"`
 	Name        string  `json:"name"         validate:"required"`
 	Platform    string  `json:"platform"     validate:"required,oneof=whatsapp telegram"`
 	WAAccountID *int64  `json:"wa_account_id"`
@@ -93,10 +93,22 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	adminCount, _ := h.store.CountGroupAdmins(g.ID)
 	enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount, VerifiedAdminCount: adminCount}
 
-	if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
-		enriched.ChannelName = ch.Name
-		if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
-			enriched.AudienceStatus = "perfil"
+	channelsCount := 0
+	if g.JID.Valid && strings.TrimSpace(g.JID.String) != "" {
+		channelsCount, _ = h.store.CountGroupsWithSameJID(g.Platform, strings.TrimSpace(g.JID.String))
+	} else if g.ChannelID.Valid {
+		channelsCount = 1
+	}
+	enriched.ChannelsCount = channelsCount
+
+	if g.ChannelID.Valid {
+		if ch, err := h.store.GetChannel(g.ChannelID.Int64); err == nil {
+			enriched.ChannelName = ch.Name
+			if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
+				enriched.AudienceStatus = "perfil"
+			} else {
+				enriched.AudienceStatus = "sem_perfil"
+			}
 		} else {
 			enriched.AudienceStatus = "sem_perfil"
 		}
@@ -157,8 +169,12 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if invite != "" && req.Platform == "whatsapp" {
 		invite = invitelinks.NormalizeWhatsAppInvite(invite)
 	}
+	var chID models.NullInt64
+	if req.ChannelID != nil && *req.ChannelID != 0 {
+		chID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.ChannelID, Valid: true}}
+	}
 	g := models.RedesignGroup{
-		ChannelID:  req.ChannelID,
+		ChannelID:  chID,
 		Name:       req.Name,
 		Platform:   req.Platform,
 		InviteLink: models.NullString{NullString: sql.NullString{String: invite, Valid: invite != ""}},
@@ -233,6 +249,23 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["tg_account_id"].(float64); ok {
 		existing.TGAccountID = models.NullInt64{NullInt64: sql.NullInt64{Int64: int64(v), Valid: true}}
+	}
+	if raw, ok := patch["channel_id"]; ok {
+		switch v := raw.(type) {
+		case nil:
+			existing.ChannelID = models.NullInt64{}
+		case float64:
+			n := int64(v)
+			if n > 0 {
+				if _, err := h.store.GetChannel(n); err != nil {
+					writeErr(w, http.StatusBadRequest, "canal invalido")
+					return
+				}
+				existing.ChannelID = models.NullInt64{NullInt64: sql.NullInt64{Int64: n, Valid: true}}
+			} else {
+				existing.ChannelID = models.NullInt64{}
+			}
+		}
 	}
 
 	if err := h.store.UpdateRedesignGroup(existing); err != nil {
@@ -571,8 +604,10 @@ func (h *GroupsHandler) SuggestAudience(w http.ResponseWriter, r *http.Request) 
 	}
 
 	channelName := ""
-	if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
-		channelName = ch.Name
+	if g.ChannelID.Valid {
+		if ch, err := h.store.GetChannel(g.ChannelID.Int64); err == nil {
+			channelName = ch.Name
+		}
 	}
 
 	prompt := fmt.Sprintf(`Você é especialista em audiências de grupos WhatsApp/Telegram de ofertas brasileiros.

@@ -171,6 +171,7 @@ type Store interface {
 	CreateRedesignGroup(g models.RedesignGroup) (int64, error)
 	UpdateRedesignGroup(g models.RedesignGroup) error
 	DeleteRedesignGroup(id int64) error
+	CountGroupsWithSameJID(platform, jid string) (int, error)
 	SetGroupArchived(id int64, archived bool, lastError *string) error
 	// FetchAndPersistWhatsAppInvite busca invite na Evolution e atualiza o grupo (página pública /canal).
 	FetchAndPersistWhatsAppInvite(ctx context.Context, groupID int64) (string, error)

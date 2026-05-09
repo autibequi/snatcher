@@ -1456,11 +1456,21 @@ func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
 	return id, err
 }
 
+func (s *SQLStore) CountGroupsWithSameJID(platform, jid string) (int, error) {
+	var n int
+	err := s.db.Get(&n, `
+		SELECT COUNT(*) FROM groups
+		WHERE platform = $1 AND jid = $2 AND COALESCE(archived, false) = false`,
+		platform, jid)
+	return n, err
+}
+
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	_, err := s.db.NamedExec(`
 		UPDATE groups SET name=:name, platform=:platform, jid=:jid,
 			invite_link=:invite_link, status=:status, member_count=:member_count,
 			overrides=:overrides, wa_account_id=:wa_account_id, tg_account_id=:tg_account_id,
+			channel_id=:channel_id,
 			archived=:archived, last_error=:last_error, last_error_at=:last_error_at
 		WHERE id=:id`, g)
 	return err
