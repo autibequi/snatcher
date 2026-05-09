@@ -6,6 +6,11 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
+import {
+  JonfreyActionCard,
+  primaryJonfreyOutcome,
+  type JonfreyAction,
+} from '../components/JonfreyActionCard'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,7 +44,7 @@ interface Dispatch {
 
 // ── Unified log row for "Tudo" tab ────────────────────────────────────────────
 
-type LogType = 'dispatch' | 'crawl' | 'scheduled'
+type LogType = 'dispatch' | 'crawl' | 'scheduled' | 'jonfrey'
 
 interface UnifiedRow {
   id: string
@@ -62,6 +67,9 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'
   done: 'success',
   running: 'warning',
   error: 'danger',
+  success: 'success',
+  pending: 'warning',
+  skipped: 'warning',
 }
 
 // Explicações dos status de disparo — usadas em tooltips
@@ -91,10 +99,16 @@ function TypeBadge({ type }: { type: LogType }) {
       </span>
     )
   }
-  // scheduled
+  if (type === 'scheduled') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+        <span aria-hidden>●</span> Agenda
+      </span>
+    )
+  }
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
-      <span aria-hidden>●</span> Agenda
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded-sm bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300">
+      <span aria-hidden>●</span> Jonfrey
     </span>
   )
 }
@@ -508,12 +522,26 @@ function ScheduledDispatches() {
 
 // ── ErrorsTab ─────────────────────────────────────────────────────────────────
 
-function ErrorsTab({ dispatches, crawlLogs }: { dispatches: Dispatch[]; crawlLogs: CrawlLogEntry[] }) {
+function ErrorsTab({
+  dispatches,
+  crawlLogs,
+  jonfreyActions,
+}: {
+  dispatches: Dispatch[]
+  crawlLogs: CrawlLogEntry[]
+  jonfreyActions: JonfreyAction[]
+}) {
   const failedDispatches = dispatches.filter(d => d.status === 'failed')
   const errorCrawls = crawlLogs.filter(l => l.status === 'error')
+  const failedJonfrey = jonfreyActions.filter(a => a.status === 'failed')
 
-  if (failedDispatches.length === 0 && errorCrawls.length === 0) {
-    return <EmptyState title="Nenhum erro" description="Nenhum disparo ou crawl com erro encontrado." />
+  if (failedDispatches.length === 0 && errorCrawls.length === 0 && failedJonfrey.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhum erro"
+        description="Nenhum disparo, crawl ou ação Jonfrey com falha encontrada."
+      />
+    )
   }
 
   return (
@@ -554,6 +582,34 @@ function ErrorsTab({ dispatches, crawlLogs }: { dispatches: Dispatch[]; crawlLog
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {failedJonfrey.length > 0 && (
+        <div className="bg-surface border border-border rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">
+              Jonfrey — falhas ({failedJonfrey.length})
+            </p>
+          </div>
+          <div className="divide-y divide-border">
+            {failedJonfrey.map(a => (
+              <div key={a.id} className="px-4 py-3 hover:bg-surface-2">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-xs font-mono text-fg">{a.action_type}</span>
+                  <Badge variant="danger" size="sm">failed</Badge>
+                  <span className="text-[10px] text-fg-3">{a.triggered_by}</span>
+                  <span className="text-[10px] text-fg-3 ml-auto">
+                    {new Date(a.created_at).toLocaleString('pt-BR')}
+                  </span>
+                </div>
+                {a.error_message?.trim() ? (
+                  <p className="text-xs text-danger font-mono break-words">{a.error_message}</p>
+                ) : (
+                  <p className="text-xs text-fg-3">Sem mensagem de erro detalhada.</p>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -693,7 +749,7 @@ function MatchLogs() {
 
 // ── Main Logs page ────────────────────────────────────────────────────────────
 
-type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'errors' | 'llm' | 'match_logs'
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'jonfrey' | 'errors' | 'llm' | 'match_logs'
 
 export default function Logs() {
   const navigate = useNavigate()
@@ -734,6 +790,12 @@ export default function Logs() {
   const { data: crawlLogs = [] } = useQuery<CrawlLogEntry[]>({
     queryKey: ['crawl-logs'],
     queryFn: () => apiClient.get('/api/crawl-logs?limit=100').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 15_000,
+  })
+
+  const { data: jonfreyActions = [], isLoading: jonfreyLoading } = useQuery<JonfreyAction[]>({
+    queryKey: ['jonfrey-actions'],
+    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => r.data ?? []).catch(() => []),
     refetchInterval: 15_000,
   })
 
@@ -780,14 +842,18 @@ export default function Logs() {
 
   // ── Badge counts ──────────────────────────────────────────────────────────
 
-  const errorCount = items.filter(d => d.status === 'failed').length + crawlLogs.filter(l => l.status === 'error').length
-  const allCount = items.length + crawlLogs.length + scheduledItems.length
+  const errorCount =
+    items.filter(d => d.status === 'failed').length +
+    crawlLogs.filter(l => l.status === 'error').length +
+    jonfreyActions.filter(a => a.status === 'failed').length
+  const allCount = items.length + crawlLogs.length + scheduledItems.length + jonfreyActions.length
 
   const TAB_DEFS: { id: LogTab; label: string; count?: number }[] = [
     { id: 'all', label: 'Tudo', count: allCount },
     { id: 'dispatches', label: 'Disparos', count: items.length },
     { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length },
     { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
+    { id: 'jonfrey', label: 'Jonfrey', count: jonfreyActions.length },
     { id: 'match_logs', label: 'Matches' },
     { id: 'llm', label: 'LLM' },
     { id: 'errors', label: 'Erros', count: errorCount },
@@ -817,8 +883,18 @@ export default function Logs() {
         date: l.started_at,
       })
     }
+    for (const j of jonfreyActions) {
+      const outcome = primaryJonfreyOutcome(j)
+      rows.push({
+        id: `jf-${j.id}`,
+        type: 'jonfrey',
+        label: `${j.action_type} — ${outcome.slice(0, 100)}${outcome.length > 100 ? '…' : ''}`,
+        status: j.status,
+        date: j.created_at,
+      })
+    }
     return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [items, crawlLogs])
+  }, [items, crawlLogs, jonfreyActions])
 
   // ── Export CSV ─────────────────────────────────────────────────────────────
 
@@ -847,7 +923,18 @@ export default function Logs() {
           status: d.status,
           date: d.scheduled_for ?? d.created_at,
         }))
-      : /* errors */ [
+      : logTab === 'jonfrey'
+        ? jonfreyActions.map<UnifiedRow>(j => {
+            const outcome = primaryJonfreyOutcome(j)
+            return {
+              id: `jf-${j.id}`,
+              type: 'jonfrey',
+              label: `${j.action_type} — ${outcome.slice(0, 80)}`,
+              status: j.status,
+              date: j.created_at,
+            }
+          })
+      : /* errors (+ fallback p/ abas sem CSV dedicado) */ [
           ...items.filter(d => d.status === 'failed').map<UnifiedRow>(d => ({
             id: String(d.short_id ?? d.id),
             type: 'dispatch' as LogType,
@@ -862,6 +949,16 @@ export default function Logs() {
             status: l.status,
             date: l.started_at,
           })),
+          ...jonfreyActions.filter(a => a.status === 'failed').map<UnifiedRow>(j => {
+            const outcome = primaryJonfreyOutcome(j)
+            return {
+              id: `jf-${j.id}`,
+              type: 'jonfrey' as LogType,
+              label: `${j.action_type} — ${outcome.slice(0, 80)}`,
+              status: j.status,
+              date: j.created_at,
+            }
+          }),
         ]
     exportCsv(rows, `logs-${logTab}-${new Date().toISOString().slice(0,10)}.csv`)
   }
@@ -911,7 +1008,34 @@ export default function Logs() {
       {logTab === 'scheduled' && <ScheduledDispatches />}
       {logTab === 'match_logs' && <MatchLogs />}
       {logTab === 'llm' && <LLMLogs />}
-      {logTab === 'errors' && <ErrorsTab dispatches={items} crawlLogs={crawlLogs} />}
+      {logTab === 'jonfrey' && (
+        <div className="space-y-3">
+          <p className="text-xs text-fg-3">
+            Auditoria do assistente Jonfrey (mesmos registros que em{' '}
+            <a href="/automations/jonfrey" className="text-accent hover:underline">
+              Automations → Jonfrey
+            </a>
+            ).
+          </p>
+          {jonfreyLoading ? (
+            <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+          ) : jonfreyActions.length === 0 ? (
+            <EmptyState
+              title="Nenhuma ação Jonfrey"
+              description="Execute o assistente em Automations → Jonfrey para ver o changelog aqui."
+            />
+          ) : (
+            <div className="space-y-2">
+              {jonfreyActions.map(a => (
+                <JonfreyActionCard key={a.id} action={a} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {logTab === 'errors' && (
+        <ErrorsTab dispatches={items} crawlLogs={crawlLogs} jonfreyActions={jonfreyActions} />
+      )}
 
       {/* "Tudo" tab — unified table */}
       {logTab === 'all' && (
