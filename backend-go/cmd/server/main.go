@@ -132,10 +132,12 @@ func main() {
 	// HTTP server
 	h := router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      h,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:    ":" + cfg.Port,
+		Handler: h,
+		// Alinhar com chimw.Timeout(5m): WriteTimeout menor cortava responses enquanto o handler
+		// ainda esperava OpenRouter (/api longos, compose, jonfrey).
+		ReadTimeout:  120 * time.Second,
+		WriteTimeout: 320 * time.Second, // um pouco acima do timeout Chi para flush da resposta
 		IdleTimeout:  120 * time.Second,
 	}
 

@@ -1,5 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from 'recharts'
 import { Tooltip } from '../components/ui'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
@@ -1078,6 +1079,142 @@ export default function Logs() {
 
 // ── LLM Logs ──────────────────────────────────────────────────────────────────
 
+interface LLMCostSeriesPoint {
+  bucket: string
+  cost_usd: number
+  requests: number
+}
+
+const LLM_COST_DAY_OPTIONS = [7, 14, 30] as const
+
+function LLMCostSpendChart() {
+  const [seriesDays, setSeriesDays] = React.useState<(typeof LLM_COST_DAY_OPTIONS)[number]>(14)
+  const { data: seriesRaw = [], isLoading } = useQuery({
+    queryKey: ['llm-cost-series', seriesDays],
+    queryFn: () =>
+      apiClient
+        .get<LLMCostSeriesPoint[]>(`/api/admin/llm/cost-series?days=${seriesDays}`)
+        .then(r => (Array.isArray(r.data) ? r.data : [])),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+
+  const chartData = React.useMemo(
+    () =>
+      seriesRaw.map(p => ({
+        label: p.bucket ? new Date(p.bucket).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : '',
+        cost: Number(p.cost_usd ?? 0),
+        requests: Number(p.requests ?? 0),
+        raw: p.bucket,
+      })),
+    [seriesRaw],
+  )
+
+  const totalCost = chartData.reduce((acc, row) => acc + row.cost, 0)
+
+  return (
+    <div className="px-4 py-4 border-b border-border bg-surface-2/40">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <p className="text-xs font-semibold text-fg uppercase tracking-wide">Gastos LLM (USD estimado)</p>
+          <p className="text-[11px] text-fg-3 mt-0.5">
+            Últimos {seriesDays} dias · agregado por dia (UTC) · total US$
+            {' '}
+            {totalCost.toFixed(4)}
+          </p>
+        </div>
+        <div className="flex rounded-md border border-border overflow-hidden shrink-0">
+          {LLM_COST_DAY_OPTIONS.map(d => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setSeriesDays(d)}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                seriesDays === d
+                  ? 'bg-accent text-[var(--fg-on-accent,#fff)]'
+                  : 'bg-surface text-fg-2 hover:bg-surface-2'
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-[140px] w-full rounded-md" />
+      ) : chartData.length === 0 ? (
+        <p className="text-xs text-fg-3 text-center py-8">Sem pontos para o período.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={140}>
+          <AreaChart data={chartData} margin={{ top: 6, right: 6, left: -8, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10, fill: 'var(--fg-3, #888)' }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={[0, 'auto']}
+              tick={{ fontSize: 10, fill: 'var(--fg-3, #888)' }}
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              tickFormatter={(v: number) =>
+                v >= 0.01 ? `$${v.toFixed(2)}` : v <= 0 ? '$0' : `$${v.toFixed(4)}`
+              }
+            />
+            <RechartsTooltip
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null
+                const row = payload[0]?.payload as { raw?: string; cost?: number; requests?: number } | undefined
+                if (!row) return null
+                const dateLabel =
+                  row.raw != null && row.raw !== ''
+                    ? new Date(row.raw).toLocaleString('pt-BR', {
+                        weekday: 'short',
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        timeZone: 'UTC',
+                      })
+                    : ''
+                const c = typeof row.cost === 'number' && Number.isFinite(row.cost) ? row.cost : 0
+                const req = typeof row.requests === 'number' && Number.isFinite(row.requests) ? row.requests : 0
+                return (
+                  <div
+                    className="rounded-md border px-2.5 py-2 text-xs shadow-lg"
+                    style={{
+                      background: 'var(--surface, #1a1a1a)',
+                      borderColor: 'var(--border, #333)',
+                    }}
+                  >
+                    {dateLabel && <p className="mb-1.5 font-medium text-fg">{dateLabel}</p>}
+                    <p className="text-fg">
+                      <span className="text-fg-3">Custo:</span>{' '}
+                      US$ {c.toFixed(6)}
+                    </p>
+                    <p className="mt-1 text-fg-3">{req} requisição{req !== 1 ? 'ões' : ''}</p>
+                  </div>
+                )
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="cost"
+              name="Custo (USD)"
+              stroke="#a855f7"
+              fill="rgba(168, 85, 247, 0.22)"
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  )
+}
+
 interface LLMLogRow {
   id: number
   operation: string
@@ -1271,6 +1408,7 @@ function LLMLogs() {
 
   return (
     <div className="bg-surface border border-border rounded-lg shadow-sm">
+      <LLMCostSpendChart />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 bg-surface-2 border-b border-border">
         <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2 text-xs text-fg-2 cursor-pointer select-none">

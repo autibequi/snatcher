@@ -274,6 +274,80 @@ func (h *LLMAdminHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// GET /api/admin/llm/cost-series?days=14
+// Agrega custo estimado (USD) e contagem por dia em UTC nos últimos N dias (bucket diário inclui hoje).
+func (h *LLMAdminHandler) CostSeries(w http.ResponseWriter, r *http.Request) {
+	days := 14
+	if v := r.URL.Query().Get("days"); v != "" {
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		if n > 0 {
+			days = n
+		}
+	}
+	if days < 1 {
+		days = 1
+	}
+	if days > 90 {
+		days = 90
+	}
+
+	nowUTC := time.Now().UTC()
+	endExclusive := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+	startInclusive := endExclusive.AddDate(0, 0, -days)
+
+	type aggRow struct {
+		Bucket   time.Time `db:"bucket"`
+		CostUsd  float64   `db:"cost_usd"`
+		Requests int64     `db:"requests"`
+	}
+
+	q := `
+		SELECT date_trunc('day', timezone('utc', created_at)) AS bucket,
+		       COALESCE(SUM(estimated_cost_usd), 0)::float8 AS cost_usd,
+		       COUNT(*)::bigint AS requests
+		FROM llm_metrics
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY 1
+		ORDER BY 1 ASC
+	`
+
+	var agg []aggRow
+	if err := h.db.SelectContext(r.Context(), &agg, q, startInclusive, endExclusive); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao consultar série de custo LLM: "+err.Error())
+		return
+	}
+
+	utcDayKey := func(t time.Time) string {
+		t = t.UTC()
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	}
+
+	byDay := make(map[string]aggRow, len(agg))
+	for _, row := range agg {
+		byDay[utcDayKey(row.Bucket)] = row
+	}
+
+	type seriesPoint struct {
+		Bucket   time.Time `json:"bucket"`
+		CostUSD  float64   `json:"cost_usd"`
+		Requests int64     `json:"requests"`
+	}
+	out := make([]seriesPoint, 0, days)
+	for d := startInclusive; d.Before(endExclusive); d = d.AddDate(0, 0, 1) {
+		k := utcDayKey(d)
+		row, ok := byDay[k]
+		b := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+		if ok {
+			out = append(out, seriesPoint{Bucket: b, CostUSD: row.CostUsd, Requests: row.Requests})
+		} else {
+			out = append(out, seriesPoint{Bucket: b, CostUSD: 0, Requests: 0})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
 // PATCH /api/admin/llm/budgets/:op
 //
 //	@Summary      Update LLM operation budget

@@ -47,7 +47,9 @@ func Build(
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.CleanPath)                              // normaliza // e remove trailing slash
 	r.Use(middleware.CORS)
-	r.Use(chimw.Timeout(30 * time.Second))              // global request timeout
+	// LLM (OpenRouter/Ollama) e jobs longos usam r.Context(); 30s gerava "context deadline exceeded"
+	// no POST /chat/completions. Handlers críticos ainda aplicam timeouts próprios mais curtos.
+	r.Use(chimw.Timeout(5 * time.Minute))
 	r.Use(middleware.BodyLimit(1 << 20))                // global 1 MB body limit
 	r.Use(middleware.MetricsMiddleware)
 
@@ -230,7 +232,7 @@ func Build(
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
 		r.Post("/api/catalog/{id}/suggest-tags", catalog.SuggestTags)
-		// Reprocess pode demorar minutos em catálogos grandes — sobrescreve timeout global de 30s
+		// Reprocess pode demorar minutos — timeout explícito maior que o global (5m).
 		r.With(chimw.Timeout(10 * time.Minute)).Post("/api/catalog/reprocess", catalog.Reprocess)
 		r.Delete("/api/catalog/{id}", catalog.Delete)
 		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
@@ -465,6 +467,7 @@ func Build(
 		// Admin: LLM observability
 		llmAdmin := adminhnd.NewLLMAdminHandler(db)
 		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
+		r.Get("/api/admin/llm/cost-series", llmAdmin.CostSeries)
 		r.Get("/api/admin/llm/logs", llmAdmin.Logs)
 		r.Get("/api/admin/llm/ollama/models", llmAdmin.OllamaModels)
 		r.Get("/api/admin/llm/vllm/models", llmAdmin.OllamaModels)
