@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -83,6 +84,87 @@ func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request
 	}
 	p.ID = id
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// Update aplica PATCH parcial em um programa (active, credentials, rules, postback, name).
+func (h *AffiliateProgramsHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.store.GetAffiliateProgram(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "programa nao encontrado")
+		return
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	if v, ok := raw["name"]; ok {
+		var name string
+		if err := json.Unmarshal(v, &name); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid name")
+			return
+		}
+		existing.Name = name
+	}
+	if v, ok := raw["active"]; ok {
+		var active bool
+		if err := json.Unmarshal(v, &active); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid active")
+			return
+		}
+		existing.Active = active
+	}
+	if v, ok := raw["rules"]; ok {
+		existing.Rules = append([]byte(nil), v...)
+	}
+	if v, ok := raw["postback"]; ok {
+		existing.Postback = append([]byte(nil), v...)
+	}
+	if v, ok := raw["credentials"]; ok {
+		b, err := normalizeAffiliateCredentialsJSON(v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid credentials")
+			return
+		}
+		existing.Credentials = b
+	}
+
+	if err := h.store.UpdateAffiliateProgram(existing); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao atualizar programa")
+		return
+	}
+	out, err := h.store.GetAffiliateProgram(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao recarregar programa")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func normalizeAffiliateCredentialsJSON(raw json.RawMessage) ([]byte, error) {
+	if len(raw) == 0 {
+		return []byte("{}"), nil
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		var verify json.RawMessage
+		if err := json.Unmarshal([]byte(asString), &verify); err != nil {
+			return nil, err
+		}
+		return []byte(asString), nil
+	}
+	var tmp any
+	if err := json.Unmarshal(raw, &tmp); err != nil {
+		return nil, err
+	}
+	return json.Marshal(tmp)
 }
 
 // Delete deleta um programa de afiliado.

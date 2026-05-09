@@ -425,6 +425,7 @@ func Build(
 		r.Post("/api/affiliates/programs", affPrograms.Create)
 		r.Get("/api/affiliates/programs/stats", affPrograms.Stats) // antes de /{id} — evita colisão
 		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
+		r.Patch("/api/affiliates/programs/{id}", affPrograms.Update)
 		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
 		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)
 		r.Get("/api/affiliates/coverage", affPrograms.CheckCoverage)

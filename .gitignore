@@ -26,3 +26,7 @@ backend-go/llm-eval
 # OS
 .DS_Store
 ReDesign/
+
+# bleh
+docs/
+audit-run/

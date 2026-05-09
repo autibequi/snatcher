@@ -1505,7 +1505,7 @@ func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgra
 func (s *SQLStore) GetAffiliateProgram(id int64) (models.AffiliateProgram, error) {
 	var p models.AffiliateProgram
 	return p, s.db.Get(&p,
-		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		`SELECT id, short_id, name, marketplace, active, credentials, rules, postback, created_at
 		 FROM affiliate_programs WHERE id = $1`, id)
 }
 
@@ -1529,9 +1529,12 @@ func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, err
 }
 
 func (s *SQLStore) UpdateAffiliateProgram(p models.AffiliateProgram) error {
+	if p.Credentials == nil {
+		p.Credentials = []byte("{}")
+	}
 	_, err := s.db.Exec(
-		`UPDATE affiliate_programs SET name=$1, active=$2, rules=$3, postback=$4 WHERE id=$5`,
-		p.Name, p.Active, p.Rules, p.Postback, p.ID)
+		`UPDATE affiliate_programs SET name=$1, active=$2, credentials=$3, rules=$4, postback=$5 WHERE id=$6`,
+		p.Name, p.Active, p.Credentials, p.Rules, p.Postback, p.ID)
 	return err
 }
 
