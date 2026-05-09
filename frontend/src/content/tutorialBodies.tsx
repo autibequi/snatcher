@@ -19,6 +19,51 @@ function Ul({ children }: { children: React.ReactNode }) {
 }
 
 export const tutorialBodyComponents: Record<string, React.FC> = {
+  quickstarter: () => (
+    <Shell>
+      <Sec title="Antes de tudo">
+        <Ul>
+          <li>Este guia é o caminho mais curto até ter uma conta pronta a enviar e um canal configurado.</li>
+          <li>Se algo falhar, o primeiro sítio a olhar é <strong className="text-fg">Logs</strong>; o manual completo está em <strong className="text-fg">Manual operacional</strong>.</li>
+        </Ul>
+      </Sec>
+      <Sec title="1 · Contas conectadas">
+        <Ul>
+          <li>
+            Em <strong className="text-fg">Contas conectadas</strong>, adicione WhatsApp ou Telegram e conclua o fluxo (ex.: QR no WhatsApp).
+          </li>
+          <li>Só avance quando o estado indicar sessão ativa — sem conta ligada não há grupos nem envio.</li>
+        </Ul>
+      </Sec>
+      <Sec title="2 · Canais e grupos">
+        <Ul>
+          <li>
+            Em <strong className="text-fg">Canais</strong> (Automações → Canais), crie ou escolha um canal e defina audiência/limites quando fizer sentido.
+          </li>
+          <li>
+            Em <strong className="text-fg">Grupos</strong>, importe grupos da conta e associe-os ao canal — sem destino não há disparo.
+          </li>
+        </Ul>
+      </Sec>
+      <Sec title="3 · Primeiro disparo">
+        <Ul>
+          <li>
+            Abra <strong className="text-fg">Compor disparo</strong>, escolha produto(s) no catálogo, canais/grupos e envie um teste ou agende.
+          </li>
+          <li>Se usar marketplace, confira <strong className="text-fg">Afiliados</strong> para o link curto comissionar certo.</li>
+        </Ul>
+      </Sec>
+      <Sec title="4 · Automações (opcional)">
+        <Ul>
+          <li>
+            Em <strong className="text-fg">Automações</strong> e <strong className="text-fg">Jonfrey</strong> ative fluxos quando já dominares o envio manual.
+          </li>
+          <li>Threshold, cooldown e aprovações aparecem nestas telas — comece conservador.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
   operacional: () => <OperationalManualContent />,
 
   dashboard: () => (

@@ -11,9 +11,16 @@ export interface ManualTutorialDef {
 
 /**
  * Lista única — índice em /manual e rotas /manual/:slug.
- * Ordem: visão geral → fluxo do menu lateral (+ Match).
+ * Ordem: quickstarter → manual operacional → fluxo do menu lateral (+ Match).
  */
 export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
+  {
+    slug: 'quickstarter',
+    title: 'Quickstarter',
+    description: 'Primeiros passos em poucos minutos: contas, canais e primeiro envio.',
+    icon: '🚀',
+    path: '/',
+  },
   {
     slug: 'operacional',
     title: OPERATIONAL_MANUAL_META.title,
