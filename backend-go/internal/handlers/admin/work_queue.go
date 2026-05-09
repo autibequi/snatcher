@@ -23,7 +23,7 @@ func NewWorkQueueHandler(st store.Store) *WorkQueueHandler {
 
 const (
 	jobStaleMaxAge = 21 * time.Minute // jobs em memória — ver jobs.ReconcileStaleRunning
-	// Jonfrey: usar jonfreyStaleRunningMin de jonfrey.go (pacote admin); deve ficar > jonfreyActionHardTimeout.
+	// Jonfrey: jonfreyStaleRunningMin em jonfrey.go — deve ficar bem acima do timeout por ação (~22m) e folga multi-réplica.
 )
 
 type unifiedRow struct {

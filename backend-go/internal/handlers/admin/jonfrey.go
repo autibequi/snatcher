@@ -28,16 +28,18 @@ type JonfreyHandler struct {
 	db       *sqlx.DB
 	llmFn    func() llm.Client
 	curation *CurationHandler // delega tarefas longas (inspect-all, etc)
-	execMu   sync.Mutex       // evita dois ciclos/manual em paralelo partilharem estado
+
+	// Ciclo agendado (scheduler): um batch por vez — evita dois RunCycle sobrepostos e LastRunAt incorreto.
+	schedCycleMu   sync.Mutex
+	schedCycleBusy bool
 }
 
 const (
 	jonfreyActionHardTimeout = 22 * time.Minute // teto por ação dentro de executeAction
 	jonfreyLLMOuterBudget    = 20 * time.Minute // ações que fazem muitas chamadas LLM em loop
-	// jonfreyStaleRunningMin (minutos) deve ser maior que o teto por ação (~22m): antes era 20m —
-	// GET /api/jonfrey/actions e /api/work-queue reconciliavam qualquer "running" antes do deadline da ação,
-	// gravando falha genérica enquanto executeAction ainda era legítimo.
-	jonfreyStaleRunningMin = 35
+	// jonfreyStaleRunningMin deve ser > jonfreyActionHardTimeout + folga (várias réplicas / pg lento).
+	// Antes em 35m ainda havia corrida com batch de 50m ou mutex global bloqueando ações "running" >35m.
+	jonfreyStaleRunningMin = 58
 )
 
 // jonfreyQueueJobKey associa executeAction ao job da fila universal (activity log).
@@ -433,15 +435,32 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 		return
 	}
 
-	// Marca ciclo como “consumido” já ao despachar — evita novo tick antes do interval_minutes.
-	cfg.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
-	if err := h.store.UpdateJonfreyConfig(cfg); err != nil {
-		slog.Warn("jonfrey RunCycle UpdateJonfreyConfig", "err", err)
+	h.schedCycleMu.Lock()
+	if h.schedCycleBusy {
+		h.schedCycleMu.Unlock()
+		slog.Debug("jonfrey RunCycle skipped: ciclo agendado já em execução")
+		return
 	}
+	h.schedCycleBusy = true
+	h.schedCycleMu.Unlock()
 
 	jm := jobs.Default()
 	job, jobCtx := jm.StartKind(context.Background(), "jonfrey", fmt.Sprintf("Jonfrey agendado ×%d", len(typesToRun)))
-	go h.runJonfreyBatch(jobCtx, job.ID, "scheduled", "", typesToRun)
+	go func() {
+		defer func() {
+			cfg2, err := h.store.GetJonfreyConfig()
+			if err == nil {
+				cfg2.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
+				if err := h.store.UpdateJonfreyConfig(cfg2); err != nil {
+					slog.Warn("jonfrey RunCycle post-batch UpdateJonfreyConfig", "err", err)
+				}
+			}
+			h.schedCycleMu.Lock()
+			h.schedCycleBusy = false
+			h.schedCycleMu.Unlock()
+		}()
+		h.runJonfreyBatch(jobCtx, job.ID, "scheduled", "", typesToRun)
+	}()
 }
 
 // RunAction POST /api/jonfrey/run
@@ -543,9 +562,6 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 
 // executeAction roda uma ação e grava no audit log. Retorna o ID da action criada.
 func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, triggeredBy, target string) int64 {
-	h.execMu.Lock()
-	defer h.execMu.Unlock()
-
 	action := models.JonfreyAction{
 		ActionType:  def.Type,
 		Status:      "running",

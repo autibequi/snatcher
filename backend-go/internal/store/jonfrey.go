@@ -139,7 +139,7 @@ func (s *SQLStore) JonfreyLastRunByActionType() (map[string]models.JonfreyLastRu
 // ReconcileStaleJonfreyActions marca running antigos como failed (crash / timeout / restart).
 func (s *SQLStore) ReconcileStaleJonfreyActions(staleMinutes int, message string) (int64, error) {
 	if staleMinutes <= 0 {
-		staleMinutes = 35
+		staleMinutes = 58
 	}
 	if message == "" {
 		message = "encerrado como falha: execução não finalizou a tempo ou o servidor reiniciou."
