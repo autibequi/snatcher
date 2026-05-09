@@ -140,9 +140,6 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		items = []previewItem{}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Score > items[j].Score })
-	if len(items) > 100 {
-		items = items[:100]
-	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":                     items,

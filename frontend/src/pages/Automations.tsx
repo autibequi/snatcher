@@ -120,7 +120,6 @@ function fmtEtaSeconds(secs: number | null): string {
   return r === 0 ? `${m} min` : `${m}min ${r}s`
 }
 
-const TIMELINE_PREVIEW_CAP = 12
 const TIMELINE_LOG_CAP = 25
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -335,12 +334,8 @@ export function TabOverview() {
   })
 
   const previewCandidates = React.useMemo(
-    () => (nextCyclePreview?.items ?? []).filter(i => !i.already_sent).slice(0, 40),
+    () => (nextCyclePreview?.items ?? []).filter((i) => !i.already_sent),
     [nextCyclePreview],
-  )
-  const previewForTimeline = React.useMemo(
-    () => previewCandidates.slice(0, TIMELINE_PREVIEW_CAP),
-    [previewCandidates],
   )
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
@@ -712,7 +707,8 @@ export function TabOverview() {
               </span>
             </span>
             <span className="text-[10px] text-fg-3">
-              Mostrando até {TIMELINE_PREVIEW_CAP} · até {maxPerRunEffective}/canal ·{' '}
+              {previewCandidates.length} candidato{previewCandidates.length === 1 ? '' : 's'} na prévia · até{' '}
+              {maxPerRunEffective}/canal no ciclo ·{' '}
               <a href="/automations/channels" className="text-accent hover:underline">
                 por canal
               </a>
@@ -720,18 +716,13 @@ export function TabOverview() {
           </div>
           {nextCyclePreview?.auto_match_master_enabled === false ? (
             <p className="px-4 py-6 text-sm text-center text-warning">Auto-match global desligado — ligue o Auto-pilot acima.</p>
-          ) : previewForTimeline.length === 0 ? (
+          ) : previewCandidates.length === 0 ? (
             <p className="px-4 py-6 text-sm text-fg-3 text-center">
               Nenhum produto elegível na prévia (canais off, cooldown, threshold ou sem oferta).
             </p>
           ) : (
             <div className="divide-y divide-border/80">
-              {previewCandidates.length > TIMELINE_PREVIEW_CAP && (
-                <p className="px-4 py-2 text-[11px] text-fg-3 bg-surface-2/40 border-b border-border/60">
-                  Lista reduzida: +{previewCandidates.length - TIMELINE_PREVIEW_CAP} candidatos a mais na prévia (ordenados por canal/score no servidor).
-                </p>
-              )}
-              {previewForTimeline.map(p => (
+              {previewCandidates.map((p) => (
                 <div key={`${p.channel_id}-${p.product_id}`} className="px-3 py-2 flex items-center gap-3">
                   <span
                     className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${
@@ -900,11 +891,31 @@ export function TabOverview() {
 // ── Aba Por Canal ────────────────────────────────────────────────────────────
 
 export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void }) {
+  const [etaTick, setEtaTick] = React.useState(0)
+  React.useEffect(() => {
+    const id = window.setInterval(() => setEtaTick((t) => t + 1), 10_000)
+    return () => window.clearInterval(id)
+  }, [])
+
   const { data: rows = [], isLoading } = useQuery<ChannelRow[]>({
     queryKey: ['automations'],
     queryFn: () => apiClient.get('/api/automations').then(r => r.data),
     staleTime: 30_000,
   })
+
+  const { data: amStatus } = useQuery<AutoMatchStatus>({
+    queryKey: ['auto-match'],
+    queryFn: () => apiClient.get('/api/auto-match').then(r => r.data),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: appCfg } = useQuery<{ full_auto_mode?: boolean }>({
+    queryKey: ['config'],
+    queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
+    staleTime: 60_000,
+  })
+  const fullAuto = !!appCfg?.full_auto_mode
 
   // Preview global (mesma fonte que /api/automations/:id/preview por canal): candidatos ao match, não dispatches
   const { data: globalPreview } = useQuery<{ items: GlobalPreviewItem[] }>({
@@ -921,6 +932,15 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
     }
     return s
   }, [globalPreview])
+
+  const globalNextEtaLabel = React.useMemo(() => {
+    void etaTick
+    const iv = amStatus?.interval_seconds ?? 60
+    const nextMs = computeNextAutoMatchTickMs(amStatus?.last_run_at ?? null, iv)
+    if (nextMs == null) return null as string | null
+    const secs = Math.max(0, Math.round((nextMs - Date.now()) / 1000))
+    return fmtEtaSeconds(secs)
+  }, [amStatus?.last_run_at, amStatus?.interval_seconds, etaTick])
 
   if (isLoading) {
     return (
@@ -953,7 +973,15 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                     content="Liga automação deste canal e o disparo automático por score (mesmo interruptor)."
                   />
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Eventos</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">
+                  <span className="inline-flex items-center gap-1">
+                    Eventos
+                    <TooltipIcon
+                      side="top"
+                      content="Alertas de produto (novo, queda de preço, menor preço). Independente do interruptor Auto-match à esquerda."
+                    />
+                  </span>
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Threshold</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Última run</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Runs 24h</th>
@@ -988,26 +1016,30 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                     <td className="px-4 py-3 text-sm text-fg-2">
                       {a?.enabled ? (
                         channelsWithQueue.has(row.channel_id) ? (
-                          <span className="text-xs text-success" title="Há pelo menos um produto elegível na prévia do próximo ciclo">
+                          <span
+                            className="text-xs text-success"
+                            title={
+                              fullAuto
+                                ? 'Prévia: há produto elegível para este canal no próximo ciclo de auto-match (não garante envio se Evolution/rate limit falharem).'
+                                : 'Prévia elegível. Com Full-auto desligado, o dispatch criado fica em pending_approval — aprove na aba Visão geral ou ligue Full-auto para ir direto à fila de envio.'
+                            }
+                          >
                             candidatos ✓
                           </span>
                         ) : (
                           <span className="inline-flex flex-col gap-0.5">
                             <span
                               className="inline-flex items-center gap-1 text-xs text-warning font-medium"
-                              title="Prévia sem elegíveis (cooldown ou abaixo do threshold). Não confundir com fila do worker nem com pendentes de aprovação."
+                              title="Prévia sem elegíveis para este canal (cooldown, threshold ou filtros). Não é o mesmo que fila do Evolution."
                             >
                               ⚠ sem candidatos
                             </span>
-                            {a?.updated_at && (
-                              <span className="text-[10px] text-fg-3">
-                                {(() => {
-                                  const interval = 60 // minutos — ciclo do scheduler
-                                  const last = new Date(a.updated_at).getTime()
-                                  const next = last + interval * 60_000
-                                  const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
-                                  return diff === 0 ? 'próx: agora' : `próx: ~${diff}min`
-                                })()}
+                            {globalNextEtaLabel != null && (
+                              <span
+                                className="text-[10px] text-fg-3"
+                                title="Baseado no último tick global do worker e em interval_seconds da API — não usa a coluna Última run desta linha."
+                              >
+                                próx. ciclo global: {globalNextEtaLabel}
                               </span>
                             )}
                           </span>
