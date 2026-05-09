@@ -751,10 +751,31 @@ function MatchLogs() {
 
 type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'jonfrey' | 'errors' | 'llm' | 'match_logs'
 
+const VALID_LOG_TABS = new Set<string>([
+  'all',
+  'dispatches',
+  'crawlers',
+  'scheduled',
+  'jonfrey',
+  'errors',
+  'llm',
+  'match_logs',
+])
+
+function initialLogTabFromURL(sp: URLSearchParams): LogTab {
+  const t = sp.get('tab')
+  if (t && VALID_LOG_TABS.has(t)) return t as LogTab
+  return 'dispatches'
+}
+
 export default function Logs() {
   const navigate = useNavigate()
-  const [logTab, setLogTab] = React.useState<LogTab>('dispatches')
   const [params] = useSearchParams()
+  const [logTab, setLogTab] = React.useState<LogTab>(() => initialLogTabFromURL(params))
+  React.useEffect(() => {
+    const raw = params.get('tab')
+    if (raw && VALID_LOG_TABS.has(raw)) setLogTab(raw as LogTab)
+  }, [params])
   const statusFilter = params.get('status') ?? ''
   const [status, setStatus] = React.useState(statusFilter)
   const [dateFrom, setDateFrom] = React.useState('')

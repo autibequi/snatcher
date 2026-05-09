@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 
@@ -55,6 +55,10 @@ function isJobRow(item: WorkQueueItem): item is WorkQueueJobRow {
   return item.kind === 'job'
 }
 
+function isQueueItemRunning(item: WorkQueueItem): boolean {
+  return item.status === 'running'
+}
+
 function fmtShort(s: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
@@ -84,6 +88,23 @@ export function WorkQueueBadge() {
   const items = data?.items ?? []
   const stats = data?.stats
 
+  /** Jobs + auditorias Jonfrey com status running — todos contam como “ativo” na barra. */
+  const activeRunningCount = useMemo(() => items.filter(isQueueItemRunning).length, [items])
+
+  /** Running primeiro (FIFO por queue_ts dentro do grupo), depois restantes. */
+  const sortedItems = useMemo(() => {
+    const copy = [...items]
+    copy.sort((a, b) => {
+      const ar = isQueueItemRunning(a) ? 0 : 1
+      const br = isQueueItemRunning(b) ? 0 : 1
+      if (ar !== br) return ar - br
+      const ta = new Date(a.queue_ts).getTime()
+      const tb = new Date(b.queue_ts).getTime()
+      return ta - tb
+    })
+    return copy
+  }, [items])
+
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
@@ -92,7 +113,7 @@ export function WorkQueueBadge() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const runningJobs = items.filter(isJobRow).filter(j => j.status === 'running')
+  const runningJobRows = items.filter(isJobRow).filter(j => j.status === 'running')
   const memoryJobs = items.filter(isJobRow)
 
   const cancelOne = (id: string) => {
@@ -127,18 +148,18 @@ export function WorkQueueBadge() {
         type="button"
         onClick={() => setOpen(o => !o)}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-          runningJobs.length > 0
+          activeRunningCount > 0
             ? 'bg-accent/10 text-accent hover:bg-accent/20'
             : 'bg-surface-2 text-fg-3 hover:text-fg'
         }`}
         title="Fila universal (FIFO): jobs + Jonfrey"
       >
-        {runningJobs.length > 0 && (
+        {activeRunningCount > 0 && (
           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
         )}
         ⏱{' '}
-        {runningJobs.length > 0
-          ? `${runningJobs.length} ativo(s)`
+        {activeRunningCount > 0
+          ? `${activeRunningCount} ativo(s)`
           : items.length > 0
             ? `${items.length} item(ns)`
             : 'fila'}
@@ -151,7 +172,7 @@ export function WorkQueueBadge() {
               <p className="text-[10px] text-fg-3 mt-0.5">FIFO · jobs em memória + auditoria Jonfrey</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              {runningJobs.length > 0 && (
+              {runningJobRows.length > 0 && (
                 <button type="button" onClick={cancelAll} className="text-xs text-danger hover:underline whitespace-nowrap">
                   cancelar jobs
                 </button>
@@ -170,7 +191,7 @@ export function WorkQueueBadge() {
             {items.length === 0 && (
               <p className="px-3 py-6 text-center text-sm text-fg-3">Nada na fila neste momento.</p>
             )}
-            {items.map((item, idx) => {
+            {sortedItems.map((item, idx) => {
               const key = isJobRow(item) ? `job:${item.id}` : `jf:${item.id}:${item.created_at}`
               if (isJobRow(item)) {
                 const j = item
