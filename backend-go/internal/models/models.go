@@ -110,6 +110,8 @@ type AppConfig struct {
 	LLMVLLMBaseURL   NullString `db:"llm_vllm_base_url" json:"llm_vllm_base_url,omitempty"`
 	LLMVLLMModel     NullString `db:"llm_vllm_model" json:"llm_vllm_model,omitempty"`
 	LLMVLLMApiKey    NullString `db:"llm_vllm_api_key" json:"llm_vllm_api_key,omitempty"`
+	// OpenRouter model fallbacks — URL openrouter apenas; segunda opção se o primário falhar.
+	LLMOpenRouterFallbackModel NullString `db:"llm_openrouter_fallback_model" json:"llm_openrouter_fallback_model,omitempty"`
 
 	// White-label
 	AppName   NullString `db:"app_name" json:"app_name,omitempty"`

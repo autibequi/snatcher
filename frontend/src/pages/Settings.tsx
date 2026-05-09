@@ -344,13 +344,23 @@ function LLMTab() {
             onChange={e => set('llm_api_key', e.target.value)}
           />
           <Input
-            label="Modelo padrão (opcional)"
-            placeholder="openai/gpt-4o-mini"
+            label="Modelo primário"
+            placeholder="openrouter/free"
             value={form.llm_model ?? get('llm_model')}
             onChange={e => set('llm_model', e.target.value)}
           />
+          <Input
+            label="Modelo de fallback (opcional)"
+            placeholder="ex.: deepseek/deepseek-chat — usado se o primário falhar (rate limit, indisponível, moderação)"
+            value={form.llm_openrouter_fallback_model ?? get('llm_openrouter_fallback_model')}
+            onChange={e => set('llm_openrouter_fallback_model', e.target.value)}
+          />
           <p className="text-xs text-fg-3">
-            Obtenha sua chave em <a href="https://openrouter.ai" target="_blank" rel="noopener" className="text-accent hover:underline">openrouter.ai</a>
+            OpenRouter tenta o fallback automaticamente via parâmetro{' '}
+            <code className="text-fg-2">models</code> (
+            <a href="https://openrouter.ai/docs/guides/routing/model-fallbacks" target="_blank" rel="noopener" className="text-accent hover:underline">model fallbacks</a>
+            ). Obtenha sua chave em{' '}
+            <a href="https://openrouter.ai" target="_blank" rel="noopener" className="text-accent hover:underline">openrouter.ai</a>.
           </p>
         </div>
       )}

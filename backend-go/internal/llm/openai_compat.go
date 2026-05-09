@@ -18,6 +18,15 @@ type OpenAICompatClient struct {
 	apiKey           string
 	httpCli          *http.Client
 	reasoningEnabled bool // default false: manda reasoning:{enabled:false} pra desligar chain-of-thought (deepseek-v4, gpt-5, r1)
+	// Fallback secundário só OpenRouter — envia lista models conforme doc (failover servidor).
+	openRouterFallback string
+}
+
+// WithOpenRouterFallback segundo modelo quando o primeiro retorna erro (rate limit, moderation, downtime).
+// https://openrouter.ai/docs/guides/routing/model-fallbacks
+func (c *OpenAICompatClient) WithOpenRouterFallback(modelID string) *OpenAICompatClient {
+	c.openRouterFallback = strings.TrimSpace(modelID)
+	return c
 }
 
 // WithReasoning ativa o reasoning explicitamente no provider (default off).
@@ -198,6 +207,12 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 		reqBody["response_format"] = map[string]string{"type": "json_object"}
 		// Ollama nativo aceita também o campo "format" — incluímos para compat
 		reqBody["format"] = "json"
+	}
+
+	fallback := strings.TrimSpace(c.openRouterFallback)
+	if strings.Contains(c.baseURL, "openrouter.ai") && fallback != "" && fallback != model {
+		// Lista em ordem de prioridade — OpenRouter tenta o próximo só se o anterior falhar.
+		reqBody["models"] = []string{model, fallback}
 	}
 	if opts.WebSearch && strings.Contains(c.baseURL, "openrouter.ai") {
 		// OpenRouter web plugin — habilita busca online no modelo (resultado vem citado no content)

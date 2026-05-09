@@ -66,6 +66,7 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			llm_ollama_base_url=:llm_ollama_base_url, llm_ollama_model=:llm_ollama_model,
 			llm_vllm_base_url=:llm_vllm_base_url, llm_vllm_model=:llm_vllm_model,
 			llm_vllm_api_key=:llm_vllm_api_key,
+			llm_openrouter_fallback_model=:llm_openrouter_fallback_model,
 			llm_reasoning_enabled=:llm_reasoning_enabled,
 			app_name=:app_name, app_domain=:app_domain,
 			auto_match_enabled=:auto_match_enabled,

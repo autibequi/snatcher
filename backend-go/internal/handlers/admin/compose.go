@@ -165,6 +165,9 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 	case "openrouter":
 		if apiKey == "" { return nil }
 		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningEnabled)
+		if fb := strings.TrimSpace(nullString(cfg.LLMOpenRouterFallbackModel)); fb != "" {
+			cli = cli.WithOpenRouterFallback(fb)
+		}
 		if model != "" {
 			return &modelOverrideClient{inner: cli, model: model}
 		}
