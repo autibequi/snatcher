@@ -95,7 +95,7 @@ func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
 
 	// Grupos do canal
 	var groupIDs []int64
-	if err := s.db.Select(&groupIDs, `SELECT id FROM redesign_groups WHERE channel_id = $1 AND status != 'deleted'`, channelID); err != nil || len(groupIDs) == 0 {
+	if err := s.db.Select(&groupIDs, `SELECT id FROM groups WHERE channel_id = $1 AND status <> 'deleted'`, channelID); err != nil || len(groupIDs) == 0 {
 		return stats, nil
 	}
 
@@ -160,7 +160,9 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	// cooldown stale (ex: dispatches abandonados), use Jonfrey → reset_stale_cooldown.
 	err := s.db.Select(&out, `
 		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
-		       l.score_breakdown, l.match_reasons, l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
+		       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
+		       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
+		       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
 		       COALESCE(p.canonical_name, '') as product_name,
 		       COALESCE(c.name, '') as channel_name,
 		       COALESCE(
@@ -2355,8 +2357,10 @@ func (s *SQLStore) MarkAutoMatchFalsePositive(logID int64, reason string) error 
 func (s *SQLStore) ListFalsePositiveLogs(sinceDays int) ([]models.AutoMatchLog, error) {
 	var out []models.AutoMatchLog
 	err := s.db.Select(&out, `
-		SELECT id, product_id, variant_id, audience_id, score, score_breakdown, match_reasons,
-		       false_positive, false_positive_reason, false_positive_marked_at, created_at
+		SELECT id, product_id, channel_id, dispatch_id, score, created_at,
+		       COALESCE(score_breakdown, '{}'::jsonb) AS score_breakdown,
+		       COALESCE(match_reasons, '{}'::text[]) AS match_reasons,
+		       false_positive, false_positive_reason, false_positive_marked_at
 		FROM auto_match_logs
 		WHERE false_positive = true AND false_positive_marked_at >= NOW() - INTERVAL '1 day' * $1
 		ORDER BY false_positive_marked_at DESC`, sinceDays)

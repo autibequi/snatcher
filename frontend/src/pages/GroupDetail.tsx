@@ -64,15 +64,20 @@ const AVATAR_COLORS = [
   'bg-teal-500',
 ]
 
-function avatarColor(seed: string): string {
+function avatarColor(seed?: string | null): string {
+  const s = seed ?? ''
   let n = 0
-  for (let i = 0; i < seed.length; i++) n = (n * 31 + seed.charCodeAt(i)) & 0xffffffff
+  for (let i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) & 0xffffffff
   return AVATAR_COLORS[Math.abs(n) % AVATAR_COLORS.length]
 }
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
+/** Nome ausente/vazio → '?' (backend pode omitir name em contas admin). */
+function initials(name?: string | null): string {
+  const raw = String(name ?? '').trim()
+  if (!raw) return '?'
+  const parts = raw.split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return parts
     .slice(0, 2)
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('')
