@@ -23,7 +23,7 @@ export function Modal({ open, onClose, title, children, footer, panelClassName =
       />
       {/* Panel */}
       <div
-        className={`relative bg-surface border border-border rounded-md shadow-xl w-full mx-4 max-h-[90vh] flex flex-col ${panelClassName}`}
+        className={`relative bg-surface border border-border rounded-md shadow-xl w-full mx-4 max-h-[90vh] min-h-0 flex flex-col ${panelClassName}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -39,7 +39,7 @@ export function Modal({ open, onClose, title, children, footer, panelClassName =
           </button>
         </div>
         {/* Body */}
-        <div className="overflow-y-auto px-4 py-4 flex-1">
+        <div className="overflow-y-auto px-4 py-4 flex-1 min-h-0">
           {children}
         </div>
         {/* Footer */}

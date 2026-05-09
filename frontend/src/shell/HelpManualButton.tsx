@@ -49,8 +49,8 @@ export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void })
           className="absolute bottom-full right-0 mb-2 z-[100] w-[min(100vw-2rem,18rem)] rounded-lg border border-border bg-surface shadow-modal p-3"
         >
           <p id="help-hint-title" className="text-xs text-fg leading-snug">
-            Este ícone é o <strong>ajuda</strong>: abre o <strong>manual operacional</strong> com o passo a passo para usar o
-            painel no dia a dia (contas, disparos, automações).
+            Este ícone é o <strong>ajuda</strong>: abre o <strong>manual operacional</strong> num painel por cima da página — você
+            continua no mesmo contexto (contas, disparos, automações).
           </p>
           <div className="flex justify-end gap-2 mt-3">
             <button
