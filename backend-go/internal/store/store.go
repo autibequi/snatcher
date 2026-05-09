@@ -183,6 +183,11 @@ type Store interface {
 	// FetchAndPersistWhatsAppInvite busca invite na Evolution e atualiza o grupo (página pública /canal).
 	FetchAndPersistWhatsAppInvite(ctx context.Context, groupID int64) (string, error)
 
+	// SoftWipeOperationalData arquiva grupos, desativa canais e produtos de catálogo (soft delete operacional).
+	SoftWipeOperationalData() error
+	// ReseedTaxonomySeedInserts reaplica os INSERTs de taxonomia da migração 0112 (ON CONFLICT DO NOTHING).
+	ReseedTaxonomySeedInserts() error
+
 	// GroupAdmins
 	ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error)
 	AddGroupAdmin(a models.GroupAdmin) (int64, error)

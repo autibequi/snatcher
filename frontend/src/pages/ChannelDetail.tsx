@@ -887,6 +887,8 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
                         Lista apenas grupos já cadastrados na página{' '}
                         <a href="/groups" className="text-accent hover:underline" onClick={e => e.stopPropagation()}>Grupos</a>.
                         Para incluir um grupo novo do WhatsApp, cadastre-o lá primeiro.
+                        {' '}
+                        Se o grupo já estiver ligado a outro canal, ao vincular aqui o sistema cria uma nova linha para este canal (mesmo grupo físico; pode haver mais de uma linha na página Grupos).
                       </p>
                     </div>
                     <button type="button" onClick={() => setShowAddGroup(false)} className="text-fg-3 hover:text-fg text-lg leading-none shrink-0">×</button>
@@ -976,7 +978,7 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
                               onClick={() => linkGroupMut.mutate(g)}
                               className="text-xs text-accent hover:underline disabled:opacity-50 shrink-0"
                             >
-                              {ch != null && ch !== Number(id) ? '+ Vincular cópia' : '+ Vincular'}
+                              + Vincular
                             </button>
                           </div>
                         )

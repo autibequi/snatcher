@@ -45,6 +45,23 @@ function isJonfreyActionOverdue(
 export default function Jonfrey() {
   const qc = useQueryClient()
 
+  const { data: wq } = useQuery({
+    queryKey: ['work-queue'],
+    queryFn: () => apiClient.get('/api/work-queue').then(r => r.data ?? { items: [] }),
+    refetchInterval: 2_500,
+  })
+
+  const jonfreyQueueBusy = React.useMemo(() => {
+    const items = (wq as { items?: unknown[] } | undefined)?.items ?? []
+    return items.some((raw: unknown) => {
+      const i = raw as { status?: string; kind?: string; job_kind?: string }
+      if (i.status !== 'running') return false
+      if (i.kind === 'jonfrey_audit') return true
+      if (i.kind === 'job' && String(i.job_kind ?? '').toLowerCase() === 'jonfrey') return true
+      return false
+    })
+  }, [wq])
+
   const { data: config } = useQuery<JonfreyConfig>({
     queryKey: ['jonfrey-config'],
     queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data),
@@ -69,6 +86,8 @@ export default function Jonfrey() {
     },
   })
 
+  const runLocked = runMut.isPending || jonfreyQueueBusy
+
   const updateConfigMut = useMutation({
     mutationFn: (patch: Partial<JonfreyConfig>) =>
       apiClient.put('/api/jonfrey/config', patch).then(r => r.data),
@@ -89,7 +108,7 @@ export default function Jonfrey() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Estado do Full-auto (sincronizado com /automations) */}
-      <FullAutoStatusCard />
+      <FullAutoStatusCard queueBusy={runLocked} />
 
       {/* Painel de controle */}
       <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
@@ -140,7 +159,8 @@ export default function Jonfrey() {
               <Button
                 variant="primary"
                 size="md"
-                loading={runMut.isPending}
+                loading={runLocked}
+                disabled={runLocked}
                 onClick={() => runMut.mutate(undefined)}
                 className="w-full shadow-md shadow-accent/15 sm:w-auto sm:min-w-[11rem]"
               >
@@ -200,10 +220,11 @@ export default function Jonfrey() {
                     <button
                       type="button"
                       onClick={() => runMut.mutate(a.type)}
-                      disabled={runMut.isPending}
-                      className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50"
+                      disabled={runLocked}
+                      title={runLocked ? 'Aguarde a fila Jonfrey terminar' : 'Rodar esta ação agora'}
+                      className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      ▶ Rodar
+                      {runLocked ? '…' : '▶ Rodar'}
                     </button>
                     <Switch
                       checked={enabled}
@@ -261,7 +282,7 @@ export default function Jonfrey() {
   )
 }
 
-function FullAutoStatusCard() {
+function FullAutoStatusCard({ queueBusy }: { queueBusy?: boolean }) {
   const qc = useQueryClient()
   const { data: appConfig } = useQuery<any>({
     queryKey: ['config'],
@@ -290,7 +311,8 @@ function FullAutoStatusCard() {
         </p>
       </div>
       <button type="button"
-        disabled={toggleMut.isPending}
+        disabled={toggleMut.isPending || queueBusy}
+        title={queueBusy ? 'Aguarde a fila Jonfrey terminar' : undefined}
         onClick={() => toggleMut.mutate(!fullAutoMode)}
         className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullAutoMode ? 'bg-success' : 'bg-border'} disabled:opacity-50`}>
         <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullAutoMode ? 'translate-x-5' : 'translate-x-0'}`} />

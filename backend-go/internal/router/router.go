@@ -484,6 +484,9 @@ func Build(
 		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
 		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
 		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
+
+		danger := adminhnd.NewDangerHandler(db, st)
+		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
 	})
 
 	return r

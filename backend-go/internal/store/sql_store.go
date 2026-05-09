@@ -1515,6 +1515,44 @@ func (s *SQLStore) FindConflictingRedesignGroup(candidate models.RedesignGroup, 
 	return &dup, nil
 }
 
+func (s *SQLStore) SoftWipeOperationalData() error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmts := []string{
+		`UPDATE groups SET archived = true WHERE COALESCE(archived, false) = false`,
+		`UPDATE channel SET active = false WHERE active = true`,
+		`UPDATE catalogproduct SET inactive = true WHERE COALESCE(inactive, false) = false`,
+		`UPDATE group_spies SET active = false, deleted_at = NOW() WHERE deleted_at IS NULL`,
+	}
+	for _, q := range stmts {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLStore) ReseedTaxonomySeedInserts() error {
+	stmts := splitTaxonomySeedStatements(taxonomySeedDataSQL)
+	if len(stmts) == 0 {
+		return fmt.Errorf("seed embutido vazio ou sem INSERT")
+	}
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, q := range stmts {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("stmt %d/%d: %w", i+1, len(stmts), err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	_, err := s.db.NamedExec(`
 		UPDATE groups SET name=:name, platform=:platform, jid=:jid,

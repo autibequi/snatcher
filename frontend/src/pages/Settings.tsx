@@ -11,6 +11,7 @@ const TABS = [
   { id: 'integrations', label: 'Integrações' },
   { id: 'llm', label: 'LLM / IA' },
   { id: 'branding', label: 'Domínio' },
+  { id: 'danger', label: 'Danger zone' },
 ]
 
 // ───────────────────────────────────────
@@ -799,6 +800,81 @@ function GeneralTab() {
 }
 
 // ───────────────────────────────────────
+// Danger zone — soft wipe operacional + seeds taxonomia
+// ───────────────────────────────────────
+
+function DangerZoneTab() {
+  const qc = useQueryClient()
+  const [phrase, setPhrase] = useState('')
+  const [reseedTaxonomy, setReseedTaxonomy] = useState(false)
+
+  const wipeMut = useMutation({
+    mutationFn: () =>
+      apiClient.post('/api/admin/danger/soft-wipe', {
+        confirm: phrase.trim(),
+        reseed_taxonomy: reseedTaxonomy,
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries()
+      setPhrase('')
+      alert('Soft wipe aplicado.' + (reseedTaxonomy ? ' Seeds de taxonomia reaplicados.' : ''))
+    },
+    onError: (err: unknown) =>
+      alert(String((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? (err as Error)?.message ?? 'Erro')),
+  })
+
+  return (
+    <div className="max-w-lg space-y-4">
+      <div className="border border-danger/40 rounded-lg p-4 bg-danger/5 space-y-2">
+        <p className="text-sm font-semibold text-danger">Zona perigosa</p>
+        <p className="text-xs text-fg-3 leading-relaxed">
+          <strong className="text-fg">Soft delete operacional:</strong> arquiva todos os grupos (campo archived), desativa todos os canais e marca todo o catálogo como inativo.
+          Espionagens de concorrentes são marcadas como removidas. Contas WhatsApp/Telegram, utilizadores e configurações <strong>não</strong> são apagados.
+        </p>
+        <p className="text-xs text-fg-3">
+          Opcional: reaplicar os <strong>INSERT</strong> de taxonomia da migração (categorias / padrões) com <code className="text-[10px] bg-surface-2 px-1 rounded">ON CONFLICT DO NOTHING</code> — útil depois de limpar dados.
+        </p>
+      </div>
+
+      <label className="block">
+        <span className="text-xs font-medium text-fg-2">Confirmação (digite exatamente)</span>
+        <Input
+          className="mt-1 font-mono text-sm"
+          placeholder="LIMPAR BASE"
+          value={phrase}
+          onChange={e => setPhrase(e.target.value)}
+          autoComplete="off"
+        />
+      </label>
+
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={reseedTaxonomy}
+          onChange={e => setReseedTaxonomy(e.target.checked)}
+          className="rounded border-border"
+        />
+        <span className="text-sm text-fg">Também reaplicar seeds de taxonomia</span>
+      </label>
+
+      <Button
+        variant="danger"
+        size="sm"
+        loading={wipeMut.isPending}
+        disabled={phrase.trim() !== 'LIMPAR BASE'}
+        onClick={() => {
+          if (!confirm('Tem a certeza? Esta operação é irreversível sem backup.')) return
+          wipeMut.mutate()
+        }}
+      >
+        Executar soft wipe
+      </Button>
+      <p className="text-[11px] text-fg-3">Apenas utilizadores com role <code className="bg-surface-2 px-1 rounded">admin</code>.</p>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────
 // Main Component
 // ───────────────────────────────────────
 
@@ -817,6 +893,7 @@ export default function Settings() {
           {tab === 'integrations' && <IntegrationsTab />}
           {tab === 'llm' && <LLMTab />}
           {tab === 'branding' && <BrandingTab />}
+          {tab === 'danger' && <DangerZoneTab />}
         </div>
       </div>
     </div>
