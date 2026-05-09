@@ -201,6 +201,56 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, g)
 }
 
+// parsePatchChannelID lê channel_id ou channelId no PATCH (JSON number, string ou null).
+func parsePatchChannelID(patch map[string]any) (setID int64, clear bool, found bool, err error) {
+	var raw any
+	if r, ok := patch["channel_id"]; ok {
+		raw = r
+		found = true
+	} else if r, ok := patch["channelId"]; ok {
+		raw = r
+		found = true
+	}
+	if !found {
+		return 0, false, false, nil
+	}
+	if raw == nil {
+		return 0, true, true, nil
+	}
+	switch v := raw.(type) {
+	case float64:
+		n := int64(v)
+		if n <= 0 {
+			return 0, true, true, nil
+		}
+		return n, false, true, nil
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" || s == "0" {
+			return 0, true, true, nil
+		}
+		n, e := strconv.ParseInt(s, 10, 64)
+		if e != nil {
+			return 0, false, true, e
+		}
+		if n <= 0 {
+			return 0, true, true, nil
+		}
+		return n, false, true, nil
+	case json.Number:
+		n, e := v.Int64()
+		if e != nil {
+			return 0, false, true, e
+		}
+		if n <= 0 {
+			return 0, true, true, nil
+		}
+		return n, false, true, nil
+	default:
+		return 0, false, true, fmt.Errorf("tipo channel_id invalido")
+	}
+}
+
 func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
@@ -251,21 +301,19 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["tg_account_id"].(float64); ok {
 		existing.TGAccountID = models.NullInt64{NullInt64: sql.NullInt64{Int64: int64(v), Valid: true}}
 	}
-	if raw, ok := patch["channel_id"]; ok {
-		switch v := raw.(type) {
-		case nil:
+	if setID, clear, found, perr := parsePatchChannelID(patch); found {
+		if perr != nil {
+			writeErr(w, http.StatusBadRequest, "channel_id invalido")
+			return
+		}
+		if clear {
 			existing.ChannelID = models.NullInt64{}
-		case float64:
-			n := int64(v)
-			if n > 0 {
-				if _, err := h.store.GetChannel(n); err != nil {
-					writeErr(w, http.StatusBadRequest, "canal invalido")
-					return
-				}
-				existing.ChannelID = models.NullInt64{NullInt64: sql.NullInt64{Int64: n, Valid: true}}
-			} else {
-				existing.ChannelID = models.NullInt64{}
+		} else {
+			if _, err := h.store.GetChannel(setID); err != nil {
+				writeErr(w, http.StatusBadRequest, "canal invalido")
+				return
 			}
+			existing.ChannelID = models.NullInt64{NullInt64: sql.NullInt64{Int64: setID, Valid: true}}
 		}
 	}
 

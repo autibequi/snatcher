@@ -496,8 +496,8 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
 
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', { channelId: id }],
-    queryFn: () => apiClient.get(`/api/groups?channelId=${id}`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
-    enabled: tab === 'groups' && !!id,
+    queryFn: () => apiClient.get(`/api/groups?channelId=${encodeURIComponent(String(id))}`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    enabled: (tab === 'groups' || showAddGroup) && !!id,
   })
 
   // Grupos já cadastrados na plataforma (página Grupos) — sem buscar WhatsApp/Evolution
@@ -534,18 +534,18 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
     },
     onSuccess: async (data: any) => {
       await qc.invalidateQueries({ queryKey: ['groups'] })
+      await qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
       setShowAddGroup(false)
       setSearch('')
-      if (!data?.id) return
-      const plat = data.platform === 'whatsapp' || data.platform === 'wa'
-      if (plat && data.jid) {
+      const gid = data?.id ?? data?.ID
+      const plat = data?.platform === 'whatsapp' || data?.platform === 'wa'
+      if (gid != null && plat && data?.jid) {
         try {
-          await apiClient.post(`/api/groups/${data.id}/fetch-invite`)
+          await apiClient.post(`/api/groups/${gid}/fetch-invite`)
         } catch {
           /* Evolution indisponível — link manual na lista */
         }
       }
-      await qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
     },
     onError: (err: any) => alert(err?.message ?? err?.response?.data?.error ?? 'Erro ao vincular grupo'),
   })
