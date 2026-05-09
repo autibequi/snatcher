@@ -15,59 +15,6 @@ import (
 // ou quando o programa encontrado não tem credenciais configuradas.
 var ErrNoAffiliate = errors.New("nenhum código de afiliado configurado para este marketplace")
 
-// CanonicalAffiliateMarketplace unifica rótulos do catálogo/crawler (ex.: amz, ml) com o marketplace
-// gravado nos programas na UI (ex.: amazon, mercadolivre).
-func CanonicalAffiliateMarketplace(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	switch s {
-	case "amz", "amazon", "amazon.com", "amazon.com.br":
-		return "amazon"
-	case "ml", "mercadolivre", "mercado_livre", "mercado livre":
-		return "mercadolivre"
-	case "magalu", "magazine_luiza", "magazineluiza":
-		return "magalu"
-	case "ali", "aliexpress":
-		return "aliexpress"
-	case "americanas", "americanas.com":
-		return "americanas"
-	case "casasbahia", "casas_bahia", "casas bahia":
-		return "casasbahia"
-	default:
-		return s
-	}
-}
-
-// InferMarketplaceFromProductURL deduz o marketplace interno a partir do host da URL do produto.
-// Usado quando catalogproduct.lowest_price_source vem vazio mas há lowest_price_url.
-func InferMarketplaceFromProductURL(productURL string) string {
-	u, err := url.Parse(productURL)
-	if err != nil || u.Hostname() == "" {
-		return ""
-	}
-	host := strings.ToLower(u.Hostname())
-	switch {
-	case strings.Contains(host, "amazon."):
-		return "amazon"
-	case strings.Contains(host, "mercadolivre") || strings.Contains(host, "mercadoliv") ||
-		strings.Contains(host, "mlcdn") || strings.Contains(host, "meli.com"):
-		return "mercadolivre"
-	case strings.Contains(host, "magazineluiza") || strings.Contains(host, "magalu"):
-		return "magalu"
-	case strings.Contains(host, "shopee."):
-		return "shopee"
-	case strings.Contains(host, "aliexpress"):
-		return "aliexpress"
-	case strings.Contains(host, "kabum"):
-		return "kabum"
-	case strings.Contains(host, "americanas"):
-		return "americanas"
-	case strings.Contains(host, "casasbahia") || strings.Contains(host, "casas-bahia"):
-		return "casasbahia"
-	default:
-		return ""
-	}
-}
-
 // HasAffiliate verifica se há programa ativo com credenciais para o marketplace.
 // Retorna true só quando o link seria efetivamente reescrito com tag/affiliate_id.
 func HasAffiliate(marketplace string, programs []models.AffiliateProgram) bool {
@@ -82,11 +29,11 @@ func HasAffiliate(marketplace string, programs []models.AffiliateProgram) bool {
 		var creds map[string]string
 		_ = json.Unmarshal(p.Credentials, &creds)
 		switch want {
-		case "amazon":
+		case MarketplaceAmazon:
 			if creds["tag"] != "" {
 				return true
 			}
-		case "mercadolivre":
+		case MarketplaceMercadoLivre:
 			if creds["affiliate_id"] != "" {
 				return true
 			}
@@ -140,7 +87,7 @@ func BuildLink(productURL, marketplace string, programs []models.AffiliateProgra
 	_ = json.Unmarshal(best.Credentials, &creds)
 
 	switch want {
-	case "amazon":
+	case MarketplaceAmazon:
 		tag := creds["tag"]
 		if tag == "" {
 			return productURL, best.Name, nil
@@ -154,7 +101,7 @@ func BuildLink(productURL, marketplace string, programs []models.AffiliateProgra
 		u.RawQuery = q.Encode()
 		return u.String(), best.Name, nil
 
-	case "mercadolivre":
+	case MarketplaceMercadoLivre:
 		affiliateID := creds["affiliate_id"]
 		if affiliateID == "" {
 			return productURL, best.Name, nil
@@ -196,9 +143,9 @@ func DestinationLooksAffiliateReady(destURL, marketplace string) bool {
 	}
 
 	switch want {
-	case "amazon":
+	case MarketplaceAmazon:
 		return u.Query().Get("tag") != ""
-	case "mercadolivre":
+	case MarketplaceMercadoLivre:
 		if strings.Contains(strings.ToLower(destURL), "click.mlcdn.com.br") {
 			return true
 		}

@@ -36,11 +36,15 @@ func toAffiliateProgramResp(p models.AffiliateProgram) affiliateProgramResp {
 	if len(creds) == 0 {
 		creds = []byte("{}")
 	}
+	mp := p.Marketplace
+	if c := affiliates.CanonicalAffiliateMarketplace(mp); c != "" {
+		mp = c
+	}
 	return affiliateProgramResp{
 		ID:          p.ID,
 		ShortID:     p.ShortID,
 		Name:        p.Name,
-		Marketplace: p.Marketplace,
+		Marketplace: mp,
 		Credentials: json.RawMessage(creds),
 		Active:      p.Active,
 		Rules:       rawOrEmpty(p.Rules),
@@ -80,6 +84,14 @@ func (h *AffiliateProgramsHandler) List(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
+// MarketplaceCatalog GET /api/affiliates/marketplace-catalog
+// Catálogo único (enum) para a UI — ids canônicos + labels + campo de credencial.
+func (h *AffiliateProgramsHandler) MarketplaceCatalog(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"marketplaces": affiliates.MarketplaceCatalog(),
+	})
+}
+
 // Get retorna um programa de afiliado por ID.
 func (h *AffiliateProgramsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
@@ -107,6 +119,11 @@ func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request
 		writeValidationErr(w, err)
 		return
 	}
+	canon := affiliates.CanonicalAffiliateMarketplace(req.Marketplace)
+	if !affiliates.ValidCanonicalMarketplace(canon) {
+		writeErr(w, http.StatusBadRequest, "marketplace invalido: use um id listado em GET /api/affiliates/marketplace-catalog")
+		return
+	}
 	active := true
 	if req.Active != nil {
 		active = *req.Active
@@ -122,7 +139,7 @@ func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request
 	}
 	p := models.AffiliateProgram{
 		Name:        req.Name,
-		Marketplace: req.Marketplace,
+		Marketplace: canon,
 		Active:      active,
 		Credentials: creds,
 		Rules:       []byte("{}"),
@@ -323,12 +340,17 @@ func (h *AffiliateProgramsHandler) BuildLink(w http.ResponseWriter, r *http.Requ
 		writeValidationErr(w, err)
 		return
 	}
-	programs, err := h.store.ListAffiliateProgramsByMarketplace(req.Marketplace)
+	canon := affiliates.CanonicalAffiliateMarketplace(req.Marketplace)
+	if canon == "" {
+		writeErr(w, http.StatusBadRequest, "marketplace desconhecido: use um id do catalogo GET /api/affiliates/marketplace-catalog")
+		return
+	}
+	programs, err := h.store.ListAffiliateProgramsByMarketplace(canon)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar programas")
 		return
 	}
-	link, programName, err := affiliates.BuildLink(req.ProductURL, req.Marketplace, programs)
+	link, programName, err := affiliates.BuildLink(req.ProductURL, canon, programs)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao construir link")
 		return
@@ -344,9 +366,11 @@ func (h *AffiliateProgramsHandler) CheckCoverage(w http.ResponseWriter, r *http.
 		writeErr(w, http.StatusBadRequest, "marketplace obrigatório")
 		return
 	}
+	canon := affiliates.CanonicalAffiliateMarketplace(marketplace)
 	programs, _ := h.store.ListAffiliatePrograms(nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"marketplace":   marketplace,
-		"has_affiliate": affiliates.HasAffiliate(marketplace, programs),
+		"canonical":     canon,
+		"has_affiliate": canon != "" && affiliates.HasAffiliate(canon, programs),
 	})
 }
