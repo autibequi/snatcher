@@ -73,7 +73,6 @@ function CreateAdModal({
     initial?.active_until ? initial.active_until.slice(0, 16) : '',
   )
   const [selectedChannels, setSelectedChannels] = React.useState<number[]>(initial?.channel_ids ?? [])
-  const [showPreview, setShowPreview] = React.useState(false)
 
   const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -118,14 +117,23 @@ function CreateAdModal({
   const toggleChannel = (id: number) =>
     setSelectedChannels(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
 
+  const previewBody =
+    text.replace(/\{link\}/g, targetURL ? `https://jon.promo/r/xxxxxx` : '{link}') || 'Texto do anúncio…'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-md w-full max-w-2xl shadow-xl flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+      <div
+        className="bg-surface border border-border rounded-md w-full max-w-5xl shadow-xl flex flex-col max-h-[90vh] min-h-0"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <h2 className="text-sm font-semibold text-fg">{initial ? 'Editar anúncio' : 'Novo anúncio pago'}</h2>
           <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg">×</button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+        <div className="flex flex-1 min-h-0 flex-col md:flex-row">
+          {/* Coluna scrollável: formulário */}
+          <div className="order-2 md:order-1 flex-1 min-w-0 min-h-0 overflow-y-auto p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-fg-2 block mb-1">Nome interno</label>
@@ -220,49 +228,45 @@ function CreateAdModal({
               </div>
             )}
           </div>
-        </div>
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border">
-          <button type="button" onClick={() => setShowPreview(v => !v)}
-            className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:text-fg">
-            {showPreview ? '← Editar' : '👁 Preview WA'}
-          </button>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button variant="primary" size="sm" loading={saveMut.isPending}
-              disabled={!name.trim() || !text.trim() || selectedChannels.length === 0}
-              onClick={() => saveMut.mutate()}>
-              {initial ? 'Salvar' : 'Criar anúncio'}
-            </Button>
           </div>
-        </div>
 
-        {/* Preview WhatsApp */}
-        {showPreview && (
-          <div className="px-4 pb-4 border-t border-border bg-surface-2">
-            <p className="text-xs text-fg-3 py-2 font-medium">Preview — como vai aparecer no WhatsApp:</p>
-            <div className="bg-[#0b141a] rounded-lg p-3 max-w-sm mx-auto">
-              <p className="text-[10px] text-[#8696a0] mb-1 ml-1">Anúncio · {name || 'sem nome'}</p>
-              <div className="bg-[#005c4b] rounded-lg overflow-hidden shadow">
-                {imageURL && (
-                  <img
-                    src={imageURL}
-                    alt=""
-                    onError={e => (e.currentTarget.style.display = 'none')}
-                    className="w-full max-h-48 object-cover"
-                  />
-                )}
-                <div className="p-3">
-                  <p className="text-sm text-white whitespace-pre-wrap break-words">
-                    {text.replace(/\{link\}/g, targetURL ? `https://jon.promo/r/xxxxxx` : '{link}') || 'Texto do anúncio…'}
-                  </p>
-                  <p className="text-[10px] text-green-300 mt-1 text-right opacity-60">
-                    {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ✓✓
-                  </p>
+          {/* Coluna lateral: preview sempre visível */}
+          <aside
+            className="order-1 md:order-2 w-full md:w-[min(100%,20rem)] flex-shrink-0 border-b md:border-b-0 md:border-l border-border bg-surface-2 p-4 flex flex-col min-h-0 md:max-h-[calc(90vh-7rem)]"
+          >
+            <p className="text-xs text-fg-3 font-medium mb-3 flex-shrink-0">Preview — WhatsApp</p>
+            <div className="flex-1 min-h-0 overflow-y-auto md:overflow-y-auto">
+              <div className="bg-[#0b141a] rounded-lg p-3">
+                <p className="text-[10px] text-[#8696a0] mb-1 ml-1">Anúncio · {name || 'sem nome'}</p>
+                <div className="bg-[#005c4b] rounded-lg overflow-hidden shadow">
+                  {imageURL && (
+                    <img
+                      src={imageURL}
+                      alt=""
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                      className="w-full max-h-48 object-cover"
+                    />
+                  )}
+                  <div className="p-3">
+                    <p className="text-sm text-white whitespace-pre-wrap break-words">{previewBody}</p>
+                    <p className="text-[10px] text-green-300 mt-1 text-right opacity-60">
+                      {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ✓✓
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          </aside>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border flex-shrink-0">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" size="sm" loading={saveMut.isPending}
+            disabled={!name.trim() || !text.trim() || selectedChannels.length === 0}
+            onClick={() => saveMut.mutate()}>
+            {initial ? 'Salvar' : 'Criar anúncio'}
+          </Button>
+        </div>
       </div>
     </div>
   )
