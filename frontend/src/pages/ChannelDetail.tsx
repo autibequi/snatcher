@@ -2,8 +2,9 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Badge, Button, Tabs, KpiCard, Skeleton, Switch, Tooltip as UITooltip } from '../components/ui'
+import { Badge, Button, Tabs, KpiCard, Skeleton, Switch, Tooltip as UITooltip, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { describeError } from '../lib/errors'
 import { usePublicLinkBaseURL } from '../hooks/useBrand'
 import AudienceEditor from '../components/AudienceEditor'
 
@@ -193,133 +194,6 @@ function ChannelHistory({ channelId }: { channelId: string }) {
   )
 }
 
-// ── Histórico: só já enviados ─────────────────────────────────────────────────
-function ChannelHistoryOnly({ channelId }: { channelId: string }) {
-  const [previewText, setPreviewText] = React.useState<string | null>(null)
-  const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['channels', channelId, 'history'],
-    queryFn: () => apiClient.get(`/api/channels/${channelId}/history`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
-    staleTime: 30_000,
-  })
-  const NOT_SENT = new Set(['pending', 'pending_approval', 'queued'])
-  const sent = entries.filter((e: any) => !NOT_SENT.has(e.status))
-  const statusVariant: Record<string, 'success'|'warning'|'danger'|'default'> = { delivered:'success',sending:'warning',failed:'danger',pending:'default' }
-  if (isLoading) return <Skeleton className="h-20 w-full" />
-  return (
-    <div>
-      {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
-      {sent.length === 0 ? (
-        <p className="text-sm text-fg-3 py-4">Nenhum disparo entregue ainda.</p>
-      ) : (
-        <div className="border border-border rounded-md overflow-hidden">
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-surface-2 border-b border-border sticky top-0">
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th>
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Grupo</th>
-                <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th>
-                <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th>
-              </tr></thead>
-              <tbody>
-                {sent.map((e: any, i: number) => {
-                  let msgText = ''
-                  try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
-                  return (
-                    <tr key={`${e.dispatch_id}-${i}`} className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer" onClick={() => setPreviewText(msgText)}>
-                      <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{msgText || `#${e.dispatch_id}`}</td>
-                      <td className="px-4 py-2.5 text-xs text-fg-2">{e.group_name || `#${e.group_id}`}</td>
-                      <td className="px-4 py-2.5"><Badge variant={statusVariant[e.status]??'default'} size="sm">{e.status}</Badge></td>
-                      <td className="px-4 py-2.5 text-xs text-fg-3 text-right">{new Date(e.created_at).toLocaleString('pt-BR')}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Fila: próximos disparos ───────────────────────────────────────────────────
-function ChannelQueue({ channelId }: { channelId: string }) {
-  const { data: preview } = useQuery<{ items: { product_id: number; product_name: string; score: number; price: number; already_sent: boolean }[] }>({
-    queryKey: ['automations', channelId, 'preview'],
-    queryFn: () => apiClient.get(`/api/automations/${channelId}/preview`).then(r => r.data).catch(() => ({ items: [] })),
-    staleTime: 30_000,
-    refetchInterval: 30_000,
-  })
-  const { data: entries = [] } = useQuery({
-    queryKey: ['channels', channelId, 'history'],
-    queryFn: () => apiClient.get(`/api/channels/${channelId}/history`).then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
-    staleTime: 30_000,
-  })
-  const NOT_SENT = new Set(['pending', 'pending_approval', 'queued'])
-  const toSend = entries.filter((e: any) => NOT_SENT.has(e.status))
-  const queueItems = (preview?.items ?? []).filter(i => !i.already_sent)
-  const statusVariant: Record<string, 'success'|'warning'|'danger'|'default'> = { pending:'default', pending_approval:'warning', queued:'default' }
-
-  return (
-    <div className="space-y-5">
-      {/* Próximos ciclo */}
-      <div className="border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-          <p className="text-sm font-medium text-fg">Próximos disparos · prévia do match</p>
-          <p className="text-xs text-fg-3">
-            Candidatos elegíveis para o próximo ciclo (prévia — não são dispatches criados).
-            {queueItems.length === 0 && ' Se vazio, pode ser cooldown ou score abaixo do threshold.'}
-          </p>
-        </div>
-        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum candidato elegível na prévia.</p> : (
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Produto</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Score</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Preço</th></tr></thead>
-            <tbody>
-              {queueItems.slice(0,10).map(item => (
-                <tr key={item.product_id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{item.product_name}</td>
-                  <td className="px-4 py-2.5 text-center"><span className={`text-xs font-semibold ${item.score>=70?'text-success':'text-warning'}`}>{item.score.toFixed(0)}</span></td>
-                  <td className="px-4 py-2.5 text-center text-xs text-fg-2">{item.price>0?`R$ ${item.price.toFixed(2)}`:'—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-      {/* A entregar */}
-      {toSend.length > 0 && (
-        <div className="border border-warning/40 rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-warning/30 bg-warning/5 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-fg">A entregar ({toSend.length})</p>
-              <p className="text-xs text-fg-3">Já foram matchados e criados — aguardando worker WA/TG enviar para o grupo</p>
-            </div>
-            <a href="/automations" className="text-xs text-accent hover:underline">Ver em Automações →</a>
-          </div>
-          <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-surface-2 border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Mensagem</th><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Status</th><th className="text-right px-4 py-2 text-xs text-fg-2 font-medium">Data</th></tr></thead>
-              <tbody>
-                {toSend.map((e: any, i: number) => {
-                  let msgText = ''
-                  try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
-                  return (
-                    <tr key={`${e.dispatch_id}-${i}`} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2.5 text-xs text-fg truncate max-w-xs">{msgText || `#${e.dispatch_id}`}</td>
-                      <td className="px-4 py-2.5"><Badge variant={statusVariant[e.status]??'default'} size="sm">{e.status}</Badge></td>
-                      <td className="px-4 py-2.5 text-xs text-fg-3 text-right">{new Date(e.created_at).toLocaleString('pt-BR')}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Componente: lista grupos WA de uma conta para seleção ─────────────────────
 function AccountGroupsPicker({
   account,
@@ -456,15 +330,45 @@ function DisparoChart({ metrics }: { metrics: any }) {
 
 const TABS = [
   { id: 'overview', label: 'Visão geral' },
-  { id: 'audience', label: 'Audiência' },
+  { id: 'audience', label: 'Audiência e filtros' },
   { id: 'automation', label: 'Automação' },
   { id: 'groups', label: 'Grupos' },
-  { id: 'history', label: 'Histórico' },
-  { id: 'queue', label: 'Fila' },
+  { id: 'monitor_am', label: 'Monitor match' },
+  { id: 'next_preview', label: 'Próximos produtos' },
+  { id: 'envios', label: 'Envios e fila' },
 ]
 
-export default function ChannelDetail() {
-  const { id } = useParams()
+const MATCH_TYPES = [
+  { value: 'all', label: 'Todos os produtos' },
+  { value: 'category', label: 'Categoria' },
+  { value: 'brand', label: 'Marca' },
+  { value: 'keyword', label: 'Palavra-chave' },
+]
+
+interface AutoMatchLog {
+  id: number
+  product_id: number
+  channel_id: number
+  dispatch_id: number
+  score: number
+  created_at: string
+  product_name?: string
+  channel_name?: string
+  group_names?: string
+}
+
+function fmtScore(s: number): string {
+  return s.toFixed(0)
+}
+
+export interface ChannelDetailInnerProps {
+  channelId: string
+  embedded?: boolean
+  onClose?: () => void
+}
+
+export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDetailInnerProps) {
+  const id = channelId
   const navigate = useNavigate()
   const [tab, setTab] = React.useState('overview')
   const publicLinkBase = usePublicLinkBaseURL()
@@ -531,7 +435,10 @@ export default function ChannelDetail() {
 
   const deleteMut = useMutation({
     mutationFn: () => apiClient.delete(`/api/channels/${id}`),
-    onSuccess: () => navigate('/channels'),
+    onSuccess: () => {
+      onClose?.()
+      navigate('/automations/channels')
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao excluir'),
   })
   const [showAddGroup, setShowAddGroup] = React.useState(false)
@@ -582,15 +489,61 @@ export default function ChannelDetail() {
   const { data: automationRow, refetch: refetchAutomation } = useQuery<any>({
     queryKey: ['automations', id],
     queryFn: () => apiClient.get(`/api/automations/${id}`).then(r => r.data?.automation ?? null).catch(() => null),
-    enabled: tab === 'automation' && !!id,
+    enabled:
+      !!id &&
+      (tab === 'automation' ||
+        tab === 'audience' ||
+        tab === 'monitor_am' ||
+        tab === 'next_preview'),
   })
+
+  const { data: automationDetail, isLoading: automationDetailLoading } = useQuery<{ automation: any; logs: AutoMatchLog[] }>({
+    queryKey: ['automations', id, 'detail'],
+    queryFn: () => apiClient.get(`/api/automations/${id}`).then(r => r.data),
+    enabled: tab === 'monitor_am' && !!id,
+    staleTime: 30_000,
+  })
+  const monitorLogs = automationDetail?.logs ?? []
+
+  const { data: channelPreview, isLoading: channelPreviewLoading } = useQuery<{
+    items: { product_id: number; product_name: string; score: number; price: number; already_sent: boolean }[]
+    threshold: number
+    max_per_run: number
+  }>({
+    queryKey: ['automations', id, 'preview'],
+    queryFn: () => apiClient.get(`/api/automations/${id}/preview`).then(r => r.data),
+    enabled: tab === 'next_preview' && !!id,
+    staleTime: 30_000,
+  })
+  const previewItems = channelPreview?.items ?? []
   const [autoForm, setAutoForm] = React.useState<any>({})
   React.useEffect(() => { if (automationRow) setAutoForm(automationRow) }, [automationRow])
   const saveAutoMut = useMutation({
     mutationFn: () => apiClient.put(`/api/automations/${id}`, autoForm).then(r => r.data),
-    onSuccess: () => refetchAutomation(),
+    onSuccess: () => {
+      refetchAutomation()
+      qc.invalidateQueries({ queryKey: ['automations', id, 'detail'] })
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
+
+  const adviseMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(`/api/automations/${id}/advise`)
+        .then(
+          r =>
+            r.data as {
+              summary?: string
+              suggestions?: { field: string; current: string; recommended: string; reason: string }[]
+            },
+        ),
+  })
+
+  const globalThreshold = 50
+  const globalMaxPerRun = 3
+  const needsMatchValue = (autoForm.match_type ?? 'all') !== 'all'
+  const dropPct = Math.round((autoForm.drop_threshold ?? 0.1) * 100)
 
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', { channelId: id }],
@@ -642,18 +595,41 @@ export default function ChannelDetail() {
   if (!channel) return <div className="p-6 text-fg-2">Canal não encontrado</div>
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex flex-col h-full min-h-0 ${embedded ? 'min-h-0' : ''}`}>
       {/* Header */}
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-3 mb-2">
-          <button onClick={() => navigate('/channels')} className="text-fg-3 hover:text-fg text-sm">← Canais</button>
-        </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-fg">{channel.name}</h1>
-            {channel.description && <p className="text-sm text-fg-2">{channel.description}</p>}
+      <div className={`border-b border-border shrink-0 ${embedded ? 'px-4 py-3' : 'p-6'}`}>
+        {!embedded && (
+          <div className="flex items-center gap-3 mb-2">
+            <button onClick={() => navigate('/automations/channels')} className="text-fg-3 hover:text-fg text-sm">
+              ← Canais
+            </button>
           </div>
-          <div className="flex items-center gap-2">
+        )}
+        <div className={`flex items-center justify-between gap-3 flex-wrap ${embedded ? '' : ''}`}>
+          {!embedded ? (
+            <div>
+              <h1 className="text-lg font-semibold text-fg">{channel.name}</h1>
+              {channel.description && <p className="text-sm text-fg-2">{channel.description}</p>}
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-fg">{channel.name}</h2>
+                <p className="text-xs text-fg-3 line-clamp-2 mt-0.5">{channel.description || 'Sem descrição'}</p>
+              </div>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-fg-3 hover:text-fg text-xl leading-none px-2 shrink-0 -mt-0.5"
+                  aria-label="Fechar"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2 shrink-0">
             <Badge variant={channel.active ? 'success' : 'default'}>{channel.active ? 'ativo' : 'inativo'}</Badge>
             <UITooltip content="Pedir conselho à IA com base nos últimos disparos deste canal — sugere ajustes de threshold, cooldown e horário" side="bottom">
               <Button variant="secondary" size="sm" loading={suggestLoading} onClick={runSuggest}>
@@ -669,7 +645,7 @@ export default function ChannelDetail() {
 
         {/* Painel de sugestões da IA */}
         {showSuggest && (
-          <div className="border-t border-border bg-surface-2 px-5 py-3">
+          <div className={`border-t border-border bg-surface-2 py-3 ${embedded ? 'px-4 mt-3' : 'px-5 mt-4'}`}>
             <div className="flex items-start justify-between gap-2">
               <p className="text-xs font-medium text-fg">✨ Sugestões de melhoria — IA</p>
               <button type="button" onClick={() => setShowSuggest(false)} className="text-fg-3 hover:text-fg text-xs">× Fechar</button>
@@ -701,10 +677,10 @@ export default function ChannelDetail() {
       </div>
 
       {/* Tabs */}
-      <Tabs tabs={TABS} active={tab} onChange={setTab} className="px-6" />
+      <Tabs tabs={TABS} active={tab} onChange={setTab} className={embedded ? 'px-2 overflow-x-auto shrink-0 border-b border-border' : 'px-6'} />
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className={embedded ? 'flex-1 overflow-y-auto min-h-0 p-4' : 'flex-1 overflow-y-auto p-6'}>
         {tab === 'overview' && (
           <div className="space-y-4">
             <div className="border border-border rounded-lg p-5 space-y-4 max-w-3xl">
@@ -841,7 +817,60 @@ export default function ChannelDetail() {
         )}
 
         {tab === 'audience' && (
-          <AudienceEditor channelId={id!} audience={audience} />
+          <div className="space-y-6">
+            <AudienceEditor channelId={id!} audience={audience} />
+            <div className="border border-border rounded-md p-4 space-y-3">
+              <p className="text-xs font-medium text-fg">Filtro estrito (descarta antes de pontuar)</p>
+              <p className="text-xs text-fg-3">
+                Produtos que não passam neste filtro nem entram na pontuação. Mesmos campos da automação — salve abaixo.
+              </p>
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
+                <select
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                  value={autoForm.match_type ?? 'all'}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, match_type: e.target.value }))}
+                >
+                  {MATCH_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              {needsMatchValue && (
+                <div>
+                  <label className="text-xs text-fg-2 block mb-1">
+                    Valor ({MATCH_TYPES.find(t => t.value === autoForm.match_type)?.label?.toLowerCase() ?? autoForm.match_type})
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: suplementos / growth / whey"
+                    value={autoForm.match_value ?? ''}
+                    onChange={e => setAutoForm((f: any) => ({ ...f, match_value: e.target.value || null }))}
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Preço máximo absoluto (R$, opcional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="ex: 199.90"
+                  value={autoForm.max_price ?? ''}
+                  onChange={e =>
+                    setAutoForm((f: any) => ({
+                      ...f,
+                      max_price: e.target.value === '' ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+              </div>
+              <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
+                Salvar filtros de automação
+              </Button>
+            </div>
+          </div>
         )}
 
         {tab === 'groups' && (
@@ -1017,57 +1046,221 @@ export default function ChannelDetail() {
           </div>
         )}
 
-{tab === 'automation' && (
+        {tab === 'automation' && (
           <div className="space-y-5">
+            <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+              <p className="text-xs text-fg-3">
+                Pedir conselho à IA com base nos últimos disparos + tendências.
+              </p>
+              <button
+                type="button"
+                disabled={adviseMut.isPending}
+                onClick={() => adviseMut.mutate()}
+                className="text-xs border border-border rounded px-2 py-1.5 text-accent hover:bg-accent/5 disabled:opacity-50 whitespace-nowrap"
+              >
+                {adviseMut.isPending ? '⏳ Analisando…' : '✨ Pedir conselho'}
+              </button>
+            </div>
+            {adviseMut.data && (
+              <div className="bg-accent/5 border border-accent/30 rounded-md p-3 space-y-2">
+                {adviseMut.data.summary && (
+                  <p className="text-sm font-medium text-fg">{adviseMut.data.summary}</p>
+                )}
+                {adviseMut.data.suggestions?.map((s, i) => (
+                  <div key={i} className="text-xs">
+                    <p className="text-fg-2">
+                      <span className="font-mono text-accent">{s.field}</span>{' '}
+                      <span className="text-fg-3">atual:</span> <span className="font-mono">{s.current}</span>
+                      {' → '}
+                      <span className="text-fg-3">sugerido:</span>{' '}
+                      <span className="font-mono text-success">{s.recommended}</span>
+                    </p>
+                    <p className="text-fg-3 mt-0.5">{s.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {adviseMut.isError && (
+              <p className="text-xs text-danger">Erro ao pedir conselho: {describeError(adviseMut.error)}</p>
+            )}
+
             <div className="border border-border rounded-md p-5 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>
-                  <p className="text-sm font-semibold text-fg">Canal ativo</p>
+                  <p className="text-sm font-medium text-fg">Canal ativo</p>
                   <p className="text-xs text-fg-3">Habilita toda automação deste canal</p>
                 </div>
                 <Switch checked={!!autoForm.enabled} onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v }))} />
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>
-                  <p className="text-sm font-semibold text-fg">Auto Match</p>
+                  <p className="text-sm font-medium text-fg">Auto Match</p>
                   <p className="text-xs text-fg-3">Dispara automaticamente produtos com score alto</p>
                 </div>
                 <Switch checked={!!autoForm.auto_match_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, auto_match_enabled: v }))} />
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>
-                  <p className="text-sm font-semibold text-fg">Eventos</p>
-                  <p className="text-xs text-fg-3">Notifica por eventos de preço (nova oferta, queda...)</p>
+                  <p className="text-sm font-medium text-fg">Eventos</p>
+                  <p className="text-xs text-fg-3">Pipeline de eventos de preço (dentro da janela configurada)</p>
                 </div>
                 <Switch checked={!!autoForm.events_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, events_enabled: v }))} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-fg-2 block mb-1">Threshold (0–100)</label>
-                  <input type="range" min={0} max={100}
-                    value={autoForm.threshold ?? 50}
-                    onChange={e => setAutoForm((f: any) => ({ ...f, threshold: Number(e.target.value) }))}
-                    className="w-full accent-accent" />
-                  <div className="flex justify-between text-xs text-fg-3 mt-0.5">
-                    <span>0</span><span className="font-semibold text-fg">{autoForm.threshold ?? 50}</span><span>100</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-fg-2 block mb-1">Cooldown (horas)</label>
-                  <input type="number" min={1} max={168}
-                    value={autoForm.cooldown_hours ?? 6}
-                    onChange={e => setAutoForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) || 6 }))}
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
-                </div>
-              </div>
+
               <div>
-                <label className="text-xs text-fg-2 block mb-1">Max disparos por ciclo</label>
-                <input type="number" min={1} max={50}
-                  value={autoForm.max_per_run ?? ''}
-                  placeholder="3 (default)"
-                  onChange={e => setAutoForm((f: any) => ({ ...f, max_per_run: e.target.value === '' ? null : Number(e.target.value) }))}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent" />
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                  Threshold de score (0–100)
+                  <TooltipIcon content="Score mínimo para disparar neste canal." />
+                  <span className="text-fg-3 ml-1">
+                    {autoForm.threshold == null ? `(default: ${globalThreshold})` : ''}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={autoForm.threshold ?? globalThreshold}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, threshold: Number(e.target.value) }))}
+                  className="w-full accent-accent"
+                />
+                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
+                  <span>0</span>
+                  <span className="font-semibold text-fg">{autoForm.threshold ?? globalThreshold}</span>
+                  <span>100</span>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-fg-3 hover:text-accent mt-1"
+                  onClick={() => setAutoForm((f: any) => ({ ...f, threshold: null }))}
+                >
+                  Usar default global ({globalThreshold})
+                </button>
               </div>
+
+              <div>
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                  Max disparos por ciclo
+                  <TooltipIcon content="Máximo de produtos por ciclo automático neste canal." />
+                  <span className="text-fg-3 ml-1">
+                    {autoForm.max_per_run == null ? `(default: ${globalMaxPerRun})` : ''}
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={autoForm.max_per_run ?? ''}
+                  placeholder={String(globalMaxPerRun)}
+                  onChange={e =>
+                    setAutoForm((f: any) => ({
+                      ...f,
+                      max_per_run: e.target.value === '' ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                  Cooldown entre disparos (horas)
+                  <TooltipIcon content="Evita reenviar o mesmo produto para este canal dentro do período." />
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={autoForm.cooldown_hours ?? 6}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) || 6 }))}
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Pausar até (opcional)</label>
+                <input
+                  type="datetime-local"
+                  value={autoForm.paused_until ? autoForm.paused_until.slice(0, 16) : ''}
+                  onChange={e =>
+                    setAutoForm((f: any) => ({
+                      ...f,
+                      paused_until: e.target.value ? new Date(e.target.value).toISOString() : null,
+                    }))
+                  }
+                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                />
+                {autoForm.paused_until && (
+                  <button
+                    type="button"
+                    className="text-xs text-fg-3 hover:text-accent mt-1"
+                    onClick={() => setAutoForm((f: any) => ({ ...f, paused_until: null }))}
+                  >
+                    Remover pausa
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="border border-border rounded-md p-5 space-y-4">
+              <p className="text-sm font-semibold text-fg">Notificações (eventos)</p>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!autoForm.notify_new}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_new: e.target.checked }))}
+                  className="accent-accent"
+                />
+                <div>
+                  <p className="text-sm text-fg">Produto novo encontrado</p>
+                  <p className="text-xs text-fg-3">Notifica quando um produto que atende ao filtro aparece no catálogo</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!autoForm.notify_drop}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_drop: e.target.checked }))}
+                  className="accent-accent"
+                />
+                <div>
+                  <p className="text-sm text-fg">Queda de preço</p>
+                  <p className="text-xs text-fg-3">Notifica quando o preço cair mais que o threshold abaixo</p>
+                </div>
+              </label>
+              <div>
+                <label className="text-xs text-fg-2 block mb-1">Threshold de queda (%) — atualmente {dropPct}%</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={50}
+                  value={dropPct}
+                  disabled={!autoForm.notify_drop}
+                  onChange={e =>
+                    setAutoForm((f: any) => ({ ...f, drop_threshold: Number(e.target.value) / 100 }))
+                  }
+                  className="w-full accent-accent disabled:opacity-40"
+                />
+                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
+                  <span>1%</span>
+                  <span className="font-semibold text-fg">{dropPct}%</span>
+                  <span>50%</span>
+                </div>
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!autoForm.notify_lowest}
+                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_lowest: e.target.checked }))}
+                  className="accent-accent"
+                />
+                <div>
+                  <p className="text-sm text-fg">Menor preço histórico</p>
+                  <p className="text-xs text-fg-3">Notifica quando atingir o menor preço registrado</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2">
               <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
                 Salvar automação
               </Button>
@@ -1075,15 +1268,158 @@ export default function ChannelDetail() {
           </div>
         )}
 
-        {tab === 'history' && (
-          <ChannelHistoryOnly channelId={id!} />
+        {tab === 'monitor_am' && (
+          <div>
+            <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">Últimos 20 disparos automáticos (auto-match)</p>
+            {automationDetailLoading ? (
+              <div className="space-y-2">{[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+            ) : monitorLogs.length === 0 ? (
+              <p className="text-sm text-fg-3 py-6 text-center">Nenhum disparo automático registrado para este canal.</p>
+            ) : (
+              <div className="border border-border rounded-md overflow-hidden overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="bg-surface-2 border-b border-border">
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Grupos</th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
+                        <span className="flex items-center gap-1">
+                          Score <TooltipIcon content="Afinidade produto-canal (0–100)." side="bottom" />
+                        </span>
+                      </th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Hora</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monitorLogs.map(log => (
+                      <tr key={log.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                        <td className="px-3 py-2">
+                          <p className="text-xs text-fg truncate max-w-[160px]">{log.product_name || `#${log.product_id}`}</p>
+                        </td>
+                        <td className="px-3 py-2 max-w-[200px]">
+                          {log.group_names ? (
+                            <div className="flex flex-wrap gap-1">
+                              {log.group_names.split(', ').map(g => (
+                                <span
+                                  key={g}
+                                  className="text-[10px] bg-surface-2 border border-border rounded px-1.5 py-0.5 text-fg-2 truncate max-w-[96px]"
+                                  title={g}
+                                >
+                                  {g}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-fg-3">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`text-xs font-semibold ${log.score >= 70 ? 'text-success' : log.score >= 50 ? 'text-warning' : 'text-fg-2'}`}
+                          >
+                            {fmtScore(log.score)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="text-xs text-fg-3">
+                            {new Date(log.created_at).toLocaleString('pt-BR')}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <a href={`/dispatches/${log.dispatch_id}`} className="text-xs text-accent hover:underline">
+                            ver →
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
-        {tab === 'queue' && (
-          <ChannelQueue channelId={id!} />
+        {tab === 'next_preview' && (
+          <div>
+            <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">
+              Candidatos ao próximo ciclo (prévia)
+              {channelPreview && (
+                <span className="ml-1 normal-case font-normal text-fg-3">
+                  (score ≥ {channelPreview.threshold} · max {channelPreview.max_per_run}/ciclo)
+                </span>
+              )}
+            </p>
+            {channelPreviewLoading ? (
+              <div className="space-y-2">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+            ) : previewItems.length === 0 ? (
+              <div className="rounded-lg border border-warning/50 bg-warning/10 p-4 flex items-start gap-3">
+                <span className="text-warning text-base mt-0.5">⚠</span>
+                <div>
+                  <p className="text-sm font-medium text-fg">Nenhum candidato elegível na prévia</p>
+                  <p className="text-xs text-fg-3 mt-1">
+                    Nenhum produto atende ao threshold e filtros deste canal nos dados analisados.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-border rounded-md overflow-hidden overflow-x-auto">
+                <table className="w-full text-sm min-w-[480px]">
+                  <thead>
+                    <tr className="bg-surface-2 border-b border-border">
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
+                        <span className="flex items-center gap-1">
+                          Score <TooltipIcon content="Afinidade produto-canal (0–100)." side="bottom" />
+                        </span>
+                      </th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Preço</th>
+                      <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Prévia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewItems.map(item => (
+                      <tr key={item.product_id} className="border-b border-border last:border-0 hover:bg-surface-2">
+                        <td className="px-3 py-2">
+                          <p className="text-xs text-fg truncate max-w-[160px]">{item.product_name}</p>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`text-xs font-semibold ${item.score >= 70 ? 'text-success' : item.score >= 50 ? 'text-warning' : 'text-fg-2'}`}
+                          >
+                            {fmtScore(item.score)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="text-xs text-fg-3">
+                            {item.price > 0 ? `R$ ${item.price.toFixed(2)}` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {item.already_sent ? (
+                            <span className="text-xs text-fg-3 italic">cooldown</span>
+                          ) : (
+                            <span className="text-xs text-success font-medium">elegível</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
+
+        {tab === 'envios' && <ChannelHistory channelId={id!} />}
 
       </div>
     </div>
   )
+}
+
+export default function ChannelDetail() {
+  const { id } = useParams<{ id: string }>()
+  if (!id) return <div className="p-6 text-fg-2">Canal não encontrado</div>
+  return <ChannelDetailInner channelId={id} />
 }

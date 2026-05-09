@@ -469,39 +469,6 @@ export default function Pending() {
         )}
       </div>
 
-      {/* Full-auto — só liberação automática de approval; visível sempre como estado */}
-      <div
-        className={`flex items-start gap-3 border rounded-md p-3 ${
-          fullAutoMode ? 'border-success/40 bg-success/5' : 'border-warning/40 bg-warning/5'
-        }`}
-      >
-        <span className="text-base leading-none mt-0.5">{fullAutoMode ? '✅' : '⚠️'}</span>
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold ${fullAutoMode ? 'text-success' : 'text-fg'}`}>
-            {fullAutoMode ? 'Full-auto ativo — dispatches seguem direto para entrega' : 'Full-auto desligado — dispatches novos podem exigir aprovação'}
-          </p>
-          <p className="text-xs text-fg-3 mt-0.5">
-            {fullAutoMode
-              ? 'Novos disparos não ficam em pending_approval.'
-              : 'Revise a tabela abaixo ou ligue o toggle para liberar automaticamente.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={toggleFullAuto.isPending}
-          onClick={() => toggleFullAuto.mutate(!fullAutoMode)}
-          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${
-            fullAutoMode ? 'bg-success' : 'bg-border'
-          } disabled:opacity-50`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-              fullAutoMode ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
-
       {/* Aprovação manual — só quando full-auto está desligado */}
       {!fullAutoMode && (
         <>

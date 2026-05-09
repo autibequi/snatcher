@@ -1,10 +1,8 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
-import { describeError } from '../lib/errors'
-import { KpiCard, Skeleton, Tabs, Switch, Badge, TooltipIcon } from '../components/ui'
-import AudienceEditor from '../components/AudienceEditor'
+import { KpiCard, Skeleton, Switch, Badge, TooltipIcon } from '../components/ui'
+import { ChannelDetailInner } from './ChannelDetail'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -47,20 +45,6 @@ interface AutoMatchLog {
   group_names?: string // CSV dos grupos que receberam
 }
 
-interface ChannelPreviewItem {
-  product_id: number
-  product_name: string
-  score: number
-  price: number
-  already_sent: boolean
-}
-
-interface ChannelPreview {
-  items: ChannelPreviewItem[]
-  threshold: number
-  max_per_run: number
-}
-
 interface GlobalPreviewItem {
   product_id: number
   channel_id: number
@@ -80,13 +64,6 @@ interface AutoMatchStatus {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const MATCH_TYPES = [
-  { value: 'all',      label: 'Todos os produtos' },
-  { value: 'category', label: 'Categoria' },
-  { value: 'brand',    label: 'Marca' },
-  { value: 'keyword',  label: 'Palavra-chave' },
-]
 
 function fmtDate(s: string): string {
   return new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -159,15 +136,7 @@ function defaultAutomation(channelId: number): ChannelAutomation {
   }
 }
 
-// ── Drawer ───────────────────────────────────────────────────────────────────
-
-const DRAWER_TABS = [
-  { id: 'config',  label: 'Configuração' },
-  { id: 'filters', label: 'Pontuação' },
-  { id: 'notif',   label: 'Notificações' },
-  { id: 'monitor', label: 'Monitor' },
-  { id: 'next',    label: 'Próximos Produtos' },
-]
+// ── Drawer — mesma UI da página /channels/:id (tabs unificados) ───────────────
 
 interface DrawerProps {
   row: ChannelRow
@@ -175,528 +144,11 @@ interface DrawerProps {
 }
 
 export function Drawer({ row, onClose }: DrawerProps) {
-  const qc = useQueryClient()
-  const [drawerTab, setDrawerTab] = React.useState('config')
-
-  // Estado do formulário — inicializa a partir da automação existente ou defaults
-  const initial = row.automation ?? defaultAutomation(row.channel_id)
-  const [form, setForm] = React.useState<ChannelAutomation>({ ...initial })
-
-  // Sincronizar se row.automation mudar (ex: após save)
-  React.useEffect(() => {
-    const src = row.automation ?? defaultAutomation(row.channel_id)
-    setForm({ ...src })
-  }, [row.automation, row.channel_id])
-
-  // Dados de audiência (carregados ao abrir aba Filtros)
-  const { data: audience } = useQuery({
-    queryKey: ['channels', String(row.channel_id), 'audience'],
-    queryFn: () => apiClient.get(`/api/channels/${row.channel_id}/audience`).then(r => r.data).catch(() => ({})),
-    enabled: drawerTab === 'filters',
-    staleTime: 30_000,
-  })
-
-  // Logs do monitor (GET /api/automations/{channelId})
-  const { data: detail, isLoading: detailLoading } = useQuery<{ automation: ChannelAutomation; logs: AutoMatchLog[] }>({
-    queryKey: ['automations', row.channel_id, 'detail'],
-    queryFn: () => apiClient.get(`/api/automations/${row.channel_id}`).then(r => r.data),
-    enabled: drawerTab === 'monitor',
-    staleTime: 30_000,
-  })
-  const monitorLogs = detail?.logs ?? []
-
-  // Preview de próximos produtos para este canal
-  const { data: channelPreview, isLoading: previewLoading } = useQuery<ChannelPreview>({
-    queryKey: ['automations', row.channel_id, 'preview'],
-    queryFn: () => apiClient.get(`/api/automations/${row.channel_id}/preview`).then(r => r.data),
-    enabled: drawerTab === 'next',
-    staleTime: 30_000,
-  })
-  const previewItems = channelPreview?.items ?? []
-
-  // Mutacao de save
-  const adviseMut = useMutation({
-    mutationFn: () =>
-      apiClient
-        .post(`/api/automations/${row.channel_id}/advise`)
-        .then(r => r.data as { summary?: string; suggestions?: { field: string; current: string; recommended: string; reason: string }[] }),
-  })
-
-  const saveMut = useMutation({
-    mutationFn: () => apiClient.put(`/api/automations/${row.channel_id}`, form).then(r => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['automations'] })
-      qc.invalidateQueries({ queryKey: ['automations', row.channel_id, 'detail'] })
-    },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
-  })
-
-  const set = <K extends keyof ChannelAutomation>(key: K, val: ChannelAutomation[K]) =>
-    setForm(f => ({ ...f, [key]: val }))
-
-  const globalThreshold = 50 // default global quando null
-  const globalMaxPerRun = 3
-
-  const needsMatchValue = form.match_type !== 'all'
-  const dropPct = Math.round((form.drop_threshold ?? 0.1) * 100)
-
   return (
     <>
-      {/* Overlay */}
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-
-      {/* Painel lateral */}
-      <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-surface border-l border-border z-50 flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-semibold text-fg">{row.channel_name}</h2>
-            <p className="text-xs text-fg-3 mt-0.5">Configuracao de automacao</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-fg-3 hover:text-fg text-xl leading-none px-2"
-            aria-label="Fechar"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Sub-tabs */}
-        <Tabs tabs={DRAWER_TABS} active={drawerTab} onChange={setDrawerTab} className="px-5 shrink-0" />
-
-        {/* Conteudo */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-
-          {/* ── Configuracao ── */}
-          {drawerTab === 'config' && (
-            <div className="space-y-4">
-              {/* Advisor LLM */}
-              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
-                <div className="flex-1">
-                  <p className="text-xs text-fg-3">
-                    Pedir conselho à IA com base nos últimos 50 disparos + tendências online.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={adviseMut.isPending}
-                  onClick={() => adviseMut.mutate()}
-                  className="text-xs border border-border rounded px-2 py-1.5 text-accent hover:bg-accent/5 disabled:opacity-50 whitespace-nowrap"
-                >
-                  {adviseMut.isPending ? '⏳ Analisando…' : '✨ Pedir conselho'}
-                </button>
-              </div>
-              {adviseMut.data && (
-                <div className="bg-accent/5 border border-accent/30 rounded-md p-3 space-y-2">
-                  {adviseMut.data.summary && (
-                    <p className="text-sm font-medium text-fg">{adviseMut.data.summary}</p>
-                  )}
-                  {adviseMut.data.suggestions?.map((s, i) => (
-                    <div key={i} className="text-xs">
-                      <p className="text-fg-2">
-                        <span className="font-mono text-accent">{s.field}</span>{' '}
-                        <span className="text-fg-3">atual:</span> <span className="font-mono">{s.current}</span>
-                        {' → '}
-                        <span className="text-fg-3">sugerido:</span> <span className="font-mono text-success">{s.recommended}</span>
-                      </p>
-                      <p className="text-fg-3 mt-0.5">{s.reason}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {adviseMut.isError && (
-                <p className="text-xs text-danger">
-                  Erro ao pedir conselho: {describeError(adviseMut.error)}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Canal ativo</p>
-                  <p className="text-xs text-fg-3">Habilita toda automacao deste canal</p>
-                </div>
-                <Switch checked={form.enabled} onChange={v => set('enabled', v)} />
-              </div>
-
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Auto Match</p>
-                  <p className="text-xs text-fg-3">Dispara automaticamente produtos com score alto</p>
-                </div>
-                <Switch checked={form.auto_match_enabled} onChange={v => set('auto_match_enabled', v)} />
-              </div>
-
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Eventos</p>
-                  <p className="text-xs text-fg-3">Notifica por eventos de preco (nova oferta, queda...)</p>
-                </div>
-                <Switch checked={form.events_enabled} onChange={v => set('events_enabled', v)} />
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Threshold de score (0–100)
-                  <TooltipIcon content="Score mínimo que um produto precisa ter para ser disparado neste canal. O score vai de 0 a 100 e reflete o quão bem o produto combina com a audiência do canal (categorias, marcas, faixa de preço, desconto). Score 50 = padrão conservador; 30 = mais volume; 70 = mais qualidade." />
-                  <span className="text-fg-3 ml-1">
-                    {form.threshold == null ? `(default: ${globalThreshold})` : ''}
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={form.threshold ?? globalThreshold}
-                  onChange={e => set('threshold', Number(e.target.value))}
-                  className="w-full accent-accent"
-                />
-                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
-                  <span>0</span>
-                  <span className="font-semibold text-fg">{form.threshold ?? globalThreshold}</span>
-                  <span>100</span>
-                </div>
-                <button
-                  type="button"
-                  className="text-xs text-fg-3 hover:text-accent mt-1"
-                  onClick={() => set('threshold', null)}
-                >
-                  Usar default global ({globalThreshold})
-                </button>
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Max disparos por ciclo
-                  <TooltipIcon content="Quantos produtos distintos podem ser disparados em um único ciclo automático. Evita spam: mesmo com 100 produtos elegíveis, só esse número será enviado por vez. Próximos ciclos pegarão os seguintes." />
-                  <span className="text-fg-3 ml-1">
-                    {form.max_per_run == null ? `(default: ${globalMaxPerRun})` : ''}
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={form.max_per_run ?? ''}
-                  placeholder={String(globalMaxPerRun)}
-                  onChange={e => set('max_per_run', e.target.value === '' ? null : Number(e.target.value))}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Cooldown entre disparos (horas)
-                  <TooltipIcon content="Após disparar um produto para este canal, o mesmo produto não será disparado novamente por este número de horas. Evita repetição e fadiga da audiência." />
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={168}
-                  value={form.cooldown_hours}
-                  onChange={e => set('cooldown_hours', Number(e.target.value) || 6)}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Pausar ate (opcional)</label>
-                <input
-                  type="datetime-local"
-                  value={form.paused_until ? form.paused_until.slice(0, 16) : ''}
-                  onChange={e => set('paused_until', e.target.value ? new Date(e.target.value).toISOString() : null)}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-                {form.paused_until && (
-                  <button
-                    type="button"
-                    className="text-xs text-fg-3 hover:text-accent mt-1"
-                    onClick={() => set('paused_until', null)}
-                  >
-                    Remover pausa
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Pontuação ── */}
-          {drawerTab === 'filters' && (
-            <div className="space-y-5">
-              <AudienceEditor channelId={String(row.channel_id)} audience={audience} />
-
-              <div className="border-t border-border pt-4">
-                <p className="text-xs font-medium text-fg mb-1">Filtro estrito (descarta antes de pontuar)</p>
-                <p className="text-xs text-fg-3 mb-3">
-                  Produtos que não passam neste filtro nem entram na pontuação.
-                </p>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
-                    <select
-                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                      value={form.match_type}
-                      onChange={e => set('match_type', e.target.value)}
-                    >
-                      {MATCH_TYPES.map(t => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {needsMatchValue && (
-                    <div>
-                      <label className="text-xs text-fg-2 block mb-1">
-                        Valor ({MATCH_TYPES.find(t => t.value === form.match_type)?.label.toLowerCase() ?? form.match_type})
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: suplementos / growth / whey"
-                        value={form.match_value ?? ''}
-                        onChange={e => set('match_value', e.target.value || null)}
-                        className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-xs text-fg-2 block mb-1">Preço máximo absoluto (R$, opcional)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="ex: 199.90"
-                      value={form.max_price ?? ''}
-                      onChange={e => set('max_price', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Notificacoes ── */}
-          {drawerTab === 'notif' && (
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.notify_new}
-                  onChange={e => set('notify_new', e.target.checked)}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Produto novo encontrado</p>
-                  <p className="text-xs text-fg-3">Notifica quando um produto que atende ao filtro aparece no catalogo</p>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.notify_drop}
-                  onChange={e => set('notify_drop', e.target.checked)}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Queda de preco</p>
-                  <p className="text-xs text-fg-3">Notifica quando o preco cair mais que o threshold abaixo</p>
-                </div>
-              </label>
-
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">
-                  Threshold de queda (%) — atualmente {dropPct}%
-                </label>
-                <input
-                  type="range"
-                  min={1}
-                  max={50}
-                  value={dropPct}
-                  disabled={!form.notify_drop}
-                  onChange={e => set('drop_threshold', Number(e.target.value) / 100)}
-                  className="w-full accent-accent disabled:opacity-40"
-                />
-                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
-                  <span>1%</span>
-                  <span className="font-semibold text-fg">{dropPct}%</span>
-                  <span>50%</span>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.notify_lowest}
-                  onChange={e => set('notify_lowest', e.target.checked)}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Menor preco historico</p>
-                  <p className="text-xs text-fg-3">Notifica quando atingir o menor preco registrado para o produto</p>
-                </div>
-              </label>
-            </div>
-          )}
-
-          {/* ── Proximos Produtos ── */}
-          {drawerTab === 'next' && (
-            <div>
-              <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">
-                Candidatos ao próximo ciclo (prévia)
-                {channelPreview && (
-                  <span className="ml-1 normal-case font-normal text-fg-3">
-                    (score ≥ {channelPreview.threshold} · max {channelPreview.max_per_run}/ciclo)
-                  </span>
-                )}
-              </p>
-              {previewLoading ? (
-                <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
-              ) : previewItems.length === 0 ? (
-                <div className="rounded-lg border border-warning/50 bg-warning/10 p-4 flex items-start gap-3">
-                  <span className="text-warning text-base mt-0.5">⚠</span>
-                  <div>
-                    <p className="text-sm font-medium text-fg">Nenhum candidato elegível na prévia</p>
-                    <p className="text-xs text-fg-3 mt-1">
-                      Nenhum produto do catálogo atende ao threshold e filtros deste canal nos dados analisados.
-                      Isso não é a fila de dispatches — só indica o que o próximo auto-match poderia escolher.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="border border-border rounded-md overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-surface-2 border-b border-border">
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
-                          <span className="flex items-center gap-1">Score <TooltipIcon content="Afinidade produto-canal (0–100). Combina match de categorias (+30), marcas (+20), desconto (+20), faixa de preço (+15) e histórico (+15). Produto só é disparado se score ≥ threshold configurado." side="bottom" /></span>
-                        </th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Preco</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Prévia</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewItems.map(item => (
-                        <tr key={item.product_id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                          <td className="px-3 py-2">
-                            <p className="text-xs text-fg truncate max-w-[160px]">{item.product_name}</p>
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`text-xs font-semibold ${item.score >= 70 ? 'text-success' : item.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>
-                              {fmtScore(item.score)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className="text-xs text-fg-3">
-                              {item.price > 0 ? `R$ ${item.price.toFixed(2)}` : '—'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {item.already_sent ? (
-                              <span className="text-xs text-fg-3 italic">cooldown</span>
-                            ) : (
-                              <span className="text-xs text-success font-medium">elegível</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Monitor ── */}
-          {drawerTab === 'monitor' && (
-            <div>
-              <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">Ultimos 20 disparos deste canal</p>
-              {detailLoading ? (
-                <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
-              ) : monitorLogs.length === 0 ? (
-                <p className="text-sm text-fg-3 py-6 text-center">Nenhum disparo automatico registrado para este canal.</p>
-              ) : (
-                <div className="border border-border rounded-md overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-surface-2 border-b border-border">
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Produto</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Grupos</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">
-                          <span className="flex items-center gap-1">Score <TooltipIcon content="Afinidade produto-canal (0–100). Combina match de categorias (+30), marcas (+20), desconto (+20), faixa de preço (+15) e histórico (+15). Produto só é disparado se score ≥ threshold configurado." side="bottom" /></span>
-                        </th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Hora</th>
-                        <th className="px-3 py-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monitorLogs.map(log => (
-                        <tr key={log.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                          <td className="px-3 py-2">
-                            <p className="text-xs text-fg truncate max-w-[160px]">{log.product_name || `#${log.product_id}`}</p>
-                          </td>
-                          <td className="px-3 py-2 max-w-[200px]">
-                            {log.group_names ? (
-                              <div className="flex flex-wrap gap-1">
-                                {log.group_names.split(', ').map(g => (
-                                  <span key={g} className="text-[10px] bg-surface-2 border border-border rounded px-1.5 py-0.5 text-fg-2 truncate max-w-[96px]" title={g}>
-                                    {g}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-fg-3">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`text-xs font-semibold ${log.score >= 70 ? 'text-success' : log.score >= 50 ? 'text-warning' : 'text-fg-2'}`}>
-                              {fmtScore(log.score)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className="text-xs text-fg-3">{fmtDate(log.created_at)}</span>
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <a
-                              href={`/dispatches/${log.dispatch_id}`}
-                              className="text-xs text-accent hover:underline"
-                            >
-                              ver &rarr;
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer — salvar (exceto monitor e next) */}
-        {drawerTab !== 'monitor' && drawerTab !== 'next' && (
-          <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-sm text-fg-2 hover:text-fg px-3 py-1.5"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              disabled={saveMut.isPending}
-              onClick={() => saveMut.mutate()}
-              className="text-sm bg-accent text-white rounded-md px-4 py-1.5 hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saveMut.isPending ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        )}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden />
+      <div className="fixed inset-y-0 right-0 w-full max-w-[56rem] bg-surface border-l border-border z-50 flex flex-col shadow-xl min-h-0">
+        <ChannelDetailInner channelId={String(row.channel_id)} embedded onClose={onClose} />
       </div>
     </>
   )
@@ -1047,7 +499,6 @@ export function TabOverview() {
 // ── Aba Por Canal ────────────────────────────────────────────────────────────
 
 export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) => void }) {
-  const navigate = useNavigate()
   const { data: rows = [], isLoading } = useQuery<ChannelRow[]>({
     queryKey: ['automations'],
     queryFn: () => apiClient.get('/api/automations').then(r => r.data),
@@ -1108,7 +559,7 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
               <tr
                 key={row.channel_id}
                 className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                onClick={() => navigate(`/channels/${row.channel_id}`)}
+                onClick={() => onOpenDrawer(row)}
               >
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <button
@@ -1165,7 +616,7 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                   <button
                     type="button"
-                    onClick={() => navigate(`/channels/${row.channel_id}`)}
+                    onClick={() => onOpenDrawer(row)}
                     className="text-xs text-accent hover:underline"
                   >
                     Configurar &rarr;
