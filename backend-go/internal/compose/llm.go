@@ -83,7 +83,9 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 	defer cancel()
 
 	maxTokens := p.MaxTokens
-	if maxTokens == 0 { maxTokens = 512 } // garante mínimo para não truncar JSON
+	if maxTokens == 0 {
+		maxTokens = 896 // copy WhatsApp multilinha + *negrito* — evita truncar
+	}
 	opts := llm.Options{
 		Operation:   "compose",
 		MaxTokens:   maxTokens,
@@ -121,18 +123,47 @@ func buildDirectPrompt(p ProductInput, _ string) string {
 
 	priceInfo := ""
 	if p.Price > 0 {
-		priceInfo = fmt.Sprintf(" por R$%.2f", p.Price)
+		priceInfo = fmt.Sprintf(" · preço atual R$ %.2f", p.Price)
 	}
 	brand := ""
 	if p.Brand != "" {
 		brand = " (" + p.Brand + ")"
 	}
 
-	return fmt.Sprintf(`Crie uma mensagem de propaganda para grupo de WhatsApp.
-Produto: %s%s%s
+	dealLines := ""
+	if p.PriceOrig > 0 && p.Price > 0 && p.PriceOrig > p.Price {
+		dealLines += fmt.Sprintf("\nPreço de referência (para mostrar economia): de R$ %.2f para R$ %.2f.", p.PriceOrig, p.Price)
+	} else if p.PriceOrig > 0 {
+		dealLines += fmt.Sprintf("\nPreço de catálogo / referência citado: R$ %.2f.", p.PriceOrig)
+	}
+	if p.Drop > 0 {
+		dealLines += fmt.Sprintf("\nDesconto aproximado: %.0f%%.", p.Drop)
+	}
+
+	return fmt.Sprintf(`Crie um ANÚNCIO para colar em GRUPO DE WHATSAPP (Brasil), formato mensagem instantânea.
+
+Produto: %s%s%s%s
 Tom: %s
-Responda APENAS com o texto da mensagem pronto para envio. Sem JSON, sem aspas, sem comentários.
-Máximo 200 caracteres. Emojis são bem-vindos.`, p.Title, brand, priceInfo, tone)
+
+FORMATAÇÃO WHATSAPP (obrigatório):
+- Use VÁRIAS LINHAS CURTAS (Enter entre blocos): gancho com emoji → nome do produto → BLOCO DE PREÇO destacado → 1–2 benefícios → CTA curto (ex.: "Corre!", "Link no grupo", "Só hoje").
+- Negrito no WhatsApp = *asteriscos*: exemplo *R$ 89,90* ou *Ecotools*.
+- Preço antigo / De-Por: use tachado ~R$ X~ na linha do "de" e o preço atual em *negrito* na linha seguinte (se os dados permitirem economia).
+- Evite parecer spam: sem CAPS LOCK inteiro, sem 10 emojis seguidos.
+- NÃO envolva a mensagem em aspas. Sem JSON. Sem explicações antes ou depois.
+
+Comprimento: até ~420 caracteres (incluindo quebras de linha).
+
+%s`, p.Title, brand, priceInfo, dealLines, tone, strings.TrimSpace(buildDealReminder(p)))
+}
+
+// buildDealReminder reforça uso de preço tachado + negrito quando há dados de economia.
+func buildDealReminder(p ProductInput) string {
+	if p.PriceOrig <= 0 || p.Price <= 0 || p.PriceOrig <= p.Price {
+		return ""
+	}
+	save := p.PriceOrig - p.Price
+	return fmt.Sprintf("Dica: mencione economia real (~R$ %.2f a menos que R$ %.2f).", save, p.PriceOrig)
 }
 
 // injectToneInstruction adiciona instrução de tom ao final do prompt.
