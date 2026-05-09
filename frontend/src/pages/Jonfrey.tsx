@@ -51,6 +51,7 @@ export default function Jonfrey() {
     refetchInterval: 2_500,
   })
 
+  /** Qualquer job Jonfrey (incl. ciclo completo) — só bloqueia o botão «Executar agora». */
   const jonfreyQueueBusy = React.useMemo(() => {
     const items = (wq as { items?: unknown[] } | undefined)?.items ?? []
     return items.some((raw: unknown) => {
@@ -61,6 +62,21 @@ export default function Jonfrey() {
       return false
     })
   }, [wq])
+
+  /** Ações com auditoria Jonfrey em `running` — só essas linhas ficam com ▶ bloqueado. */
+  const runningActionTypes = React.useMemo(() => {
+    const types = new Set<string>()
+    const items = (wq as { items?: unknown[] } | undefined)?.items ?? []
+    for (const raw of items) {
+      const i = raw as { status?: string; kind?: string; action_type?: string }
+      if (i.status !== 'running' || i.kind !== 'jonfrey_audit') continue
+      if (typeof i.action_type === 'string' && i.action_type.length > 0) types.add(i.action_type)
+    }
+    return types
+  }, [wq])
+
+  /** Evita double-click sem depender de mutation.variables (full vs linha). */
+  const [pendingRun, setPendingRun] = React.useState<'full' | string | null>(null)
 
   const { data: config } = useQuery<JonfreyConfig>({
     queryKey: ['jonfrey-config'],
@@ -78,6 +94,12 @@ export default function Jonfrey() {
       apiClient
         .post('/api/jonfrey/run', actionType ? { action_type: actionType } : {})
         .then(r => r.data),
+    onMutate: (actionType?: string) => {
+      setPendingRun(actionType != null && actionType !== '' ? actionType : 'full')
+    },
+    onSettled: () => {
+      setPendingRun(null)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
       qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
@@ -86,7 +108,7 @@ export default function Jonfrey() {
     },
   })
 
-  const runLocked = runMut.isPending || jonfreyQueueBusy
+  const mainRunLocked = jonfreyQueueBusy || pendingRun === 'full'
 
   const updateConfigMut = useMutation({
     mutationFn: (patch: Partial<JonfreyConfig>) =>
@@ -159,8 +181,8 @@ export default function Jonfrey() {
               <Button
                 variant="primary"
                 size="md"
-                loading={runLocked}
-                disabled={runLocked}
+                loading={mainRunLocked}
+                disabled={mainRunLocked}
                 onClick={() => runMut.mutate(undefined)}
                 className="w-full shadow-md shadow-accent/15 sm:w-auto sm:min-w-[11rem]"
               >
@@ -176,6 +198,7 @@ export default function Jonfrey() {
         <div className="space-y-4 p-4 sm:p-5">
           {(() => {
             const renderRow = (a: AvailableAction) => {
+              const rowPlayLocked = runningActionTypes.has(a.type) || pendingRun === a.type
               const enabled = config?.enabled_actions.includes(a.type) ?? false
               const intervalMin = config?.interval_minutes ?? 60
               const pilotOn = config?.enabled ?? false
@@ -220,11 +243,17 @@ export default function Jonfrey() {
                     <button
                       type="button"
                       onClick={() => runMut.mutate(a.type)}
-                      disabled={runLocked}
-                      title={runLocked ? 'Aguarde a fila Jonfrey terminar' : 'Rodar esta ação agora'}
+                      disabled={rowPlayLocked}
+                      title={
+                        runningActionTypes.has(a.type)
+                          ? 'Esta ação está em execução'
+                          : pendingRun === a.type
+                            ? 'A iniciar…'
+                            : 'Rodar esta ação agora'
+                      }
                       className="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {runLocked ? '…' : '▶ Rodar'}
+                      {rowPlayLocked ? '…' : '▶ Rodar'}
                     </button>
                     <Switch
                       checked={enabled}
