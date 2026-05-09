@@ -62,23 +62,50 @@ func (s *SQLStore) ListJonfreyActions(limit int, actionType string) ([]models.Jo
 	return out, err
 }
 
-// ListJonfreyActionsForWorkQueue retorna ações para timeline da fila: running + recentes (FIFO por created_at).
+// ListJonfreyActionsForWorkQueue retorna ações para timeline da fila: todas em running + terminal recente.
+// Importante: não usar um único ORDER BY created_at ASC + LIMIT — com muitas linhas antigas no período de 72h,
+// as ações running mais recentes ficavam fora da janela e sumiam da barra ⏱.
 func (s *SQLStore) ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAction, error) {
-	if limit <= 0 || limit > 300 {
-		limit = 120
+	if limit <= 0 || limit > 500 {
+		limit = 200
 	}
-	q := `
+	const sel = `
 		SELECT id, action_type, target, status, reasoning,
 		       before_snapshot, after_snapshot, error_message,
 		       triggered_by, created_at, finished_at
-		FROM jonfrey_actions
+		FROM jonfrey_actions`
+	var running []models.JonfreyAction
+	if err := s.db.Select(&running, sel+`
 		WHERE status = 'running'
-		   OR (finished_at IS NOT NULL AND finished_at > now() - interval '72 hours')
-		ORDER BY created_at ASC
-		LIMIT $1`
-	var out []models.JonfreyAction
-	err := s.db.Select(&out, q, limit)
-	return out, err
+		ORDER BY created_at ASC`); err != nil {
+		return nil, err
+	}
+	var recent []models.JonfreyAction
+	if err := s.db.Select(&recent, sel+`
+		WHERE status <> 'running'
+		  AND finished_at IS NOT NULL
+		  AND finished_at > now() - interval '72 hours'
+		ORDER BY finished_at DESC
+		LIMIT $1`, limit); err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]struct{}, len(running)+len(recent))
+	out := make([]models.JonfreyAction, 0, len(running)+len(recent))
+	for _, a := range running {
+		if _, ok := seen[a.ID]; ok {
+			continue
+		}
+		seen[a.ID] = struct{}{}
+		out = append(out, a)
+	}
+	for _, a := range recent {
+		if _, ok := seen[a.ID]; ok {
+			continue
+		}
+		seen[a.ID] = struct{}{}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 // ReconcileStaleJonfreyActions marca running antigos como failed (crash / timeout / restart).
