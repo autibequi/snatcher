@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -68,9 +69,51 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 			slog.Warn("dispatch worker: rate limit por grupo, target adiado", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID], "limit", maxPerGroupPerHour)
 			continue // deixa pending — próximo ciclo tenta de novo
 		}
-		processTarget(ctx, st, t, cfg, waAccounts)
-		deliveredByGroup[t.GroupID]++
+		if processTarget(ctx, st, t, cfg, waAccounts) {
+			deliveredByGroup[t.GroupID]++
+		}
 	}
+}
+
+// evolutionSendBodyError detecta erro em JSON mesmo com HTTP 2xx (Evolution às vezes não usa 4xx).
+func evolutionSendBodyError(body []byte) string {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return ""
+	}
+	if v, ok := m["error"]; ok {
+		switch e := v.(type) {
+		case string:
+			if strings.TrimSpace(e) != "" {
+				return e
+			}
+		case bool:
+			if e {
+				return "error: true"
+			}
+		case float64:
+			if e != 0 {
+				return fmt.Sprintf("error code %v", e)
+			}
+		}
+	}
+	if st, ok := m["status"].(float64); ok && st >= 400 {
+		if msg, ok := m["message"].(string); ok && msg != "" {
+			return msg
+		}
+		return fmt.Sprintf("status JSON %v", st)
+	}
+	if msg, ok := m["message"].(string); ok && msg != "" {
+		// Algumas versões retornam falha só em message
+		if strings.Contains(strings.ToLower(msg), "instance") && strings.Contains(strings.ToLower(msg), "closed") {
+			return msg
+		}
+	}
+	return ""
 }
 
 // resolveEvolutionCredentials escolhe URL/apiKey/instance por target.
@@ -148,13 +191,14 @@ func mergeEvolutionFromConfig(cfg models.AppConfig, acc *models.WAAccount) (base
 	return baseURL, apiKey, instance
 }
 
-func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount) {
+// processTarget envia um target; retorna true só se marcou delivered (para rate limit por grupo).
+func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount) bool {
 	dispatch, err := st.GetDispatch(t.DispatchID)
 	if err != nil {
 		slog.Error("dispatch worker: dispatch não encontrado", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "dispatch não encontrado")
 		checkAllFinished(st, t.DispatchID)
-		return
+		return false
 	}
 
 	group, err := st.GetRedesignGroup(t.GroupID)
@@ -162,13 +206,13 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		slog.Error("dispatch worker: grupo não encontrado", "target_id", t.ID, "group_id", t.GroupID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo não encontrado")
 		checkAllFinished(st, t.DispatchID)
-		return
+		return false
 	}
 	if !group.JID.Valid || group.JID.String == "" {
 		slog.Error("dispatch worker: grupo sem JID (WhatsApp)", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo sem JID configurado")
 		checkAllFinished(st, t.DispatchID)
-		return
+		return false
 	}
 
 	baseURL, apiKey, instance, accountID, credErr := resolveEvolutionCredentials(st, cfg, waAccounts, t, group)
@@ -176,7 +220,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		slog.Error("dispatch worker: credenciais Evolution", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID, "err", credErr)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", credErr.Error())
 		checkAllFinished(st, t.DispatchID)
-		return
+		return false
 	}
 
 	_ = st.UpdateDispatchTargetStatus(t.ID, "sending", "")
@@ -187,7 +231,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 			slog.Error("dispatch worker: throttle conta WA", "account", accountID, "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 			_ = st.UpdateDispatchTargetStatus(t.ID, "failed", fmt.Sprintf("throttle: %v", err))
 			checkAllFinished(st, t.DispatchID)
-			return
+			return false
 		}
 	}
 
@@ -199,7 +243,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		slog.Error("dispatch worker: payload message JSON inválido", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "message JSON inválido")
 		checkAllFinished(st, t.DispatchID)
-		return
+		return false
 	}
 	text := msg.Text
 
@@ -224,11 +268,13 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if errMsg != "" {
 		slog.Error("dispatch worker: envio Evolution falhou", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_jid", jid, "has_media", msg.MediaURL != "", "err", errMsg)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", errMsg)
-	} else {
-		slog.Info("dispatch worker: sent", "target_id", t.ID, "group", jid)
-		_ = st.UpdateDispatchTargetStatus(t.ID, "delivered", "")
+		checkAllFinished(st, t.DispatchID)
+		return false
 	}
+	slog.Info("dispatch worker: sent", "target_id", t.ID, "group", jid)
+	_ = st.UpdateDispatchTargetStatus(t.ID, "delivered", "")
 	checkAllFinished(st, t.DispatchID)
+	return true
 }
 
 func sendEvolutionMedia(ctx context.Context, baseURL, apiKey, instance, jid, mediaURL, caption string) string {
@@ -251,9 +297,13 @@ func sendEvolutionMedia(ctx context.Context, baseURL, apiKey, instance, jid, med
 		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if resp.StatusCode >= 400 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		slog.Warn("dispatch worker: sendMedia HTTP erro, fallback texto", "status", resp.StatusCode, "jid", jid, "body", string(snippet))
+		slog.Warn("dispatch worker: sendMedia HTTP erro, fallback texto", "status", resp.StatusCode, "jid", jid, "body", string(bodyBytes))
+		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
+	}
+	if errTxt := evolutionSendBodyError(bodyBytes); errTxt != "" {
+		slog.Warn("dispatch worker: sendMedia corpo JSON indica erro, fallback texto", "jid", jid, "evolution_err", errTxt, "body_snip", truncateLog(string(bodyBytes), 280))
 		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	return ""
@@ -276,12 +326,22 @@ func sendEvolutionMessage(ctx context.Context, baseURL, apiKey, instance, jid, t
 		return fmt.Sprintf("sendText network: %v", err)
 	}
 	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 
 	if resp.StatusCode >= 400 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Sprintf("evolution sendText status %d body=%s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+		return fmt.Sprintf("evolution sendText status %d body=%s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	}
+	if errTxt := evolutionSendBodyError(bodyBytes); errTxt != "" {
+		return fmt.Sprintf("evolution sendText corpo: %s (snip=%s)", errTxt, truncateLog(string(bodyBytes), 200))
 	}
 	return ""
+}
+
+func truncateLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
 }
 
 func checkAllFinished(st store.Store, dispatchID int64) {
