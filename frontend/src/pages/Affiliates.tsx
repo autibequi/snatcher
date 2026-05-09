@@ -4,19 +4,17 @@ import { Badge, Button, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — catálogo de marketplaces vem só do backend (enum único).
 // ---------------------------------------------------------------------------
 
-const MARKETPLACES = [
-  { id: 'amazon',       label: 'Amazon Associates',   field: 'tag',          placeholder: 'snatcher-20',     hint: 'Amazon Associates tracking tag' },
-  { id: 'mercadolivre', label: 'Mercado Livre',        field: 'affiliate_id', placeholder: '1234567',          hint: 'ID do afiliado ML' },
-  { id: 'magalu',       label: 'Magalu Parceiro',      field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID do parceiro Magalu' },
-  { id: 'shopee',       label: 'Shopee Afiliados',     field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Shopee' },
-  { id: 'aliexpress',   label: 'AliExpress',           field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado AliExpress' },
-  { id: 'kabum',        label: 'Kabum',                field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Kabum' },
-  { id: 'americanas',   label: 'Americanas',           field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Americanas' },
-  { id: 'casasbahia',   label: 'Casas Bahia',          field: 'affiliate_id', placeholder: 'SEU_ID',           hint: 'ID de afiliado Casas Bahia' },
-] as const
+interface MarketplaceRow {
+  id: string
+  label: string
+  credential_field: string
+  placeholder: string
+  hint: string
+  test_product_url: string
+}
 
 interface Program {
   id?: number
@@ -38,26 +36,27 @@ interface ProgramStats {
 // ---------------------------------------------------------------------------
 
 interface AffiliateRowProps {
-  mkt: typeof MARKETPLACES[number]
+  mkt: MarketplaceRow
   program?: Program
   stats?: ProgramStats
 }
 
 function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
   const qc = useQueryClient()
-  const [value, setValue] = React.useState(program?.credentials?.[mkt.field] ?? '')
+  const credKey = mkt.credential_field
+  const [value, setValue] = React.useState(program?.credentials?.[credKey] ?? '')
   const [active, setActive] = React.useState(program?.active ?? false)
   const [testResult, setTestResult] = React.useState<string | null>(null)
   const [testing, setTesting] = React.useState(false)
 
   React.useEffect(() => {
-    setValue(program?.credentials?.[mkt.field] ?? '')
+    setValue(program?.credentials?.[credKey] ?? '')
     setActive(program?.active ?? false)
-  }, [program])
+  }, [program, credKey])
 
   const saveMut = useMutation({
     mutationFn: () => {
-      const creds = { [mkt.field]: value }
+      const creds = { [credKey]: value }
       if (program?.id) {
         return apiClient.patch(`/api/affiliates/programs/${program.id}`, {
           active,
@@ -85,10 +84,11 @@ function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
     setTestResult(null)
     try {
       const res = await apiClient.post('/api/affiliates/build-link', {
-        product_url: 'https://www.amazon.com.br/dp/B08N5WRWNW',
+        product_url: mkt.test_product_url || 'https://www.amazon.com.br/dp/B08N5WRWNW',
         marketplace: mkt.id,
       })
-      setTestResult(`Link gerado: ${(res.data.url as string)?.slice(0, 60)}...`)
+      const u = (res.data as { url?: string })?.url ?? ''
+      setTestResult(u ? `Link gerado: ${u.slice(0, 72)}…` : 'Sem URL na resposta')
     } catch {
       setTestResult('Falhou - verifique o ID/tag e tente novamente')
     } finally {
@@ -97,7 +97,7 @@ function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
   }
 
   const isDirty =
-    value !== (program?.credentials?.[mkt.field] ?? '') ||
+    value !== (program?.credentials?.[credKey] ?? '') ||
     active !== (program?.active ?? false)
 
   const fmtRevenue = (n: number) =>
@@ -203,12 +203,13 @@ function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
 // ---------------------------------------------------------------------------
 
 interface ProgramsTableProps {
+  catalog: MarketplaceRow[]
   programs: Program[]
   statsMap: Record<number, ProgramStats>
   isLoading: boolean
 }
 
-function ProgramsTable({ programs, statsMap, isLoading }: ProgramsTableProps) {
+function ProgramsTable({ catalog, programs, statsMap, isLoading }: ProgramsTableProps) {
   const byMarketplace = React.useMemo(() => {
     const map: Record<string, Program> = {}
     for (const p of programs) map[p.marketplace] = p
@@ -222,10 +223,21 @@ function ProgramsTable({ programs, statsMap, isLoading }: ProgramsTableProps) {
   }
 
   if (isLoading) {
+    const n = catalog.length > 0 ? catalog.length : 8
     return (
       <div className="space-y-3 p-4">
-        {MARKETPLACES.map(m => <Skeleton key={m.id} className="h-14 w-full" />)}
+        {Array.from({ length: n }).map((_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
       </div>
+    )
+  }
+
+  if (catalog.length === 0) {
+    return (
+      <p className="p-4 text-sm text-fg-3">
+        Catálogo de marketplaces indisponível (GET /api/affiliates/marketplace-catalog).
+      </p>
     )
   }
 
@@ -246,7 +258,7 @@ function ProgramsTable({ programs, statsMap, isLoading }: ProgramsTableProps) {
           </tr>
         </thead>
         <tbody>
-          {MARKETPLACES.map(mkt => (
+          {catalog.map(mkt => (
             <AffiliateRow
               key={mkt.id}
               mkt={mkt}
@@ -296,6 +308,19 @@ function fmtRevenue(n: number) {
 // ---------------------------------------------------------------------------
 
 export default function Affiliates() {
+  const { data: marketplaceCatalog = [], isLoading: loadingCatalog } = useQuery<MarketplaceRow[]>({
+    queryKey: ['affiliates-marketplace-catalog'],
+    queryFn: () =>
+      apiClient
+        .get('/api/affiliates/marketplace-catalog')
+        .then(r => {
+          const raw = r.data as { marketplaces?: MarketplaceRow[] }
+          return Array.isArray(raw?.marketplaces) ? raw.marketplaces : []
+        })
+        .catch(() => []),
+    staleTime: Infinity,
+  })
+
   const { data: programs = [], isLoading: loadingPrograms } = useQuery<Program[]>({
     queryKey: ['affiliates'],
     queryFn: () =>
@@ -364,9 +389,10 @@ export default function Affiliates() {
 
       <div className="bg-surface border border-border rounded-md">
         <ProgramsTable
+          catalog={marketplaceCatalog}
           programs={programs}
           statsMap={statsMap}
-          isLoading={loadingPrograms}
+          isLoading={loadingPrograms || loadingCatalog}
         />
       </div>
     </div>

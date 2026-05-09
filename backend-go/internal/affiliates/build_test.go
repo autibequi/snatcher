@@ -14,6 +14,7 @@ func TestCanonicalAffiliateMarketplace(t *testing.T) {
 		{"ml", "mercadolivre"},
 		{"mercadolivre", "mercadolivre"},
 		{"shopee", "shopee"},
+		{"lixo-desconhecido", ""},
 	}
 	for _, tt := range tests {
 		if got := CanonicalAffiliateMarketplace(tt.in); got != tt.want {
@@ -44,9 +45,9 @@ func TestHasAffiliate_amzMatchesAmazonProgram(t *testing.T) {
 
 func TestInferMarketplaceFromProductURL(t *testing.T) {
 	tests := []struct{ url, want string }{
-		{"https://www.amazon.com.br/dp/B00TEST", "amazon"},
-		{"https://lista.mercadolivre.com.br/x", "mercadolivre"},
-		{"https://click.mlcdn.com.br/LP/PT/X/123/PNhttps%3A%2F%2Fprod", "mercadolivre"},
+		{"https://www.amazon.com.br/dp/B00TEST", MarketplaceAmazon},
+		{"https://lista.mercadolivre.com.br/x", MarketplaceMercadoLivre},
+		{"https://click.mlcdn.com.br/LP/PT/X/123/PNhttps%3A%2F%2Fprod", MarketplaceMercadoLivre},
 		{"", ""},
 	}
 	for _, tt := range tests {

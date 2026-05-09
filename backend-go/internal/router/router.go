@@ -423,6 +423,7 @@ func Build(
 		// ReDesign: Affiliate Programs
 		r.Get("/api/affiliates/programs", affPrograms.List)
 		r.Post("/api/affiliates/programs", affPrograms.Create)
+		r.Get("/api/affiliates/marketplace-catalog", affPrograms.MarketplaceCatalog)
 		r.Get("/api/affiliates/programs/stats", affPrograms.Stats) // antes de /{id} — evita colisão
 		r.Get("/api/affiliates/programs/{id}", affPrograms.Get)
 		r.Patch("/api/affiliates/programs/{id}", affPrograms.Update)
