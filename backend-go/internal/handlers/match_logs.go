@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
+
 	"snatcher/backendv2/internal/store"
 )
 
@@ -13,6 +15,72 @@ type MatchLogHandler struct {
 
 func NewMatchLog(st store.Store) *MatchLogHandler {
 	return &MatchLogHandler{store: st}
+}
+
+// matchLogJSON é o payload da lista — inclui score_breakdown como objeto (o modelo usa JSONB raw).
+type matchLogJSON struct {
+	ID                    int64              `json:"id"`
+	ProductID             int64              `json:"product_id"`
+	ChannelID             int64              `json:"channel_id"`
+	DispatchID            int64              `json:"dispatch_id"`
+	Score                 float64            `json:"score"`
+	CreatedAt             time.Time          `json:"created_at"`
+	ProductName           string             `json:"product_name,omitempty"`
+	ChannelName           string             `json:"channel_name,omitempty"`
+	GroupNames            string             `json:"group_names,omitempty"`
+	ScoreBreakdown        map[string]float64 `json:"score_breakdown,omitempty"`
+	MatchReasons          []string           `json:"match_reasons,omitempty"`
+	FalsePositive         *bool              `json:"false_positive,omitempty"`
+	FalsePositiveReason   string             `json:"false_positive_reason,omitempty"`
+	FalsePositiveMarkedAt *time.Time         `json:"false_positive_marked_at,omitempty"`
+}
+
+// List GET /api/match-logs?limit=50 — logs do auto-match (tabela auto_match_logs).
+func (h *MatchLogHandler) List(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if ls := r.URL.Query().Get("limit"); ls != "" {
+		if n, err := strconv.Atoi(ls); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+
+	logs, err := h.store.ListAutoMatchLogs(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]matchLogJSON, 0, len(logs))
+	for _, l := range logs {
+		row := matchLogJSON{
+			ID:                  l.ID,
+			ProductID:           l.ProductID,
+			ChannelID:           l.ChannelID,
+			DispatchID:          l.DispatchID,
+			Score:               l.Score,
+			CreatedAt:           l.CreatedAt,
+			ProductName:         l.ProductName,
+			ChannelName:         l.ChannelName,
+			GroupNames:          l.GroupNames,
+			MatchReasons:        []string(l.MatchReasons),
+			FalsePositive:       l.FalsePositive,
+			FalsePositiveReason: l.FalsePositiveReason,
+		}
+		if l.FalsePositiveMarkedAt.Valid {
+			t := l.FalsePositiveMarkedAt.Time
+			row.FalsePositiveMarkedAt = &t
+		}
+		if len(l.ScoreBreakdown) > 0 {
+			var m map[string]float64
+			if json.Unmarshal(l.ScoreBreakdown, &m) == nil && len(m) > 0 {
+				row.ScoreBreakdown = m
+			}
+		}
+		out = append(out, row)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // ListProductTaxonomies GET /api/match-logs/products/:product_id/taxonomies

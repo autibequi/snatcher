@@ -160,6 +160,7 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	// cooldown stale (ex: dispatches abandonados), use Jonfrey → reset_stale_cooldown.
 	err := s.db.Select(&out, `
 		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+		       l.score_breakdown, l.match_reasons, l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
 		       COALESCE(p.canonical_name, '') as product_name,
 		       COALESCE(c.name, '') as channel_name,
 		       COALESCE(

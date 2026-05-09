@@ -145,6 +145,53 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// dispatchListJSON expõe `message` como objeto — o modelo usa []byte e o json padrão
+// serializaria em base64, quebrando o front (`d.message?.text`).
+type dispatchListJSON struct {
+	ID            int64          `json:"id"`
+	ShortID       string         `json:"short_id"`
+	ProductID     *int64         `json:"product_id,omitempty"`
+	ComposedBy    string         `json:"composed_by"`
+	Message       map[string]any `json:"message"`
+	AffiliateLink string         `json:"affiliate_link"`
+	ScheduledFor  *time.Time     `json:"scheduled_for,omitempty"`
+	CreatedBy     *int64         `json:"created_by,omitempty"`
+	Status        string         `json:"status"`
+	CreatedAt     time.Time      `json:"created_at"`
+}
+
+func dispatchToListItem(d models.Dispatch) dispatchListJSON {
+	var msg map[string]any
+	if len(d.Message) > 0 {
+		_ = json.Unmarshal(d.Message, &msg)
+	}
+	if msg == nil {
+		msg = map[string]any{}
+	}
+	out := dispatchListJSON{
+		ID:            d.ID,
+		ShortID:       d.ShortID,
+		ComposedBy:    d.ComposedBy,
+		Message:       msg,
+		AffiliateLink: d.AffiliateLink,
+		Status:        d.Status,
+		CreatedAt:     d.CreatedAt,
+	}
+	if d.ProductID.Valid {
+		v := d.ProductID.Int64
+		out.ProductID = &v
+	}
+	if d.ScheduledFor.Valid {
+		t := d.ScheduledFor.Time
+		out.ScheduledFor = &t
+	}
+	if d.CreatedBy.Valid {
+		v := d.CreatedBy.Int64
+		out.CreatedBy = &v
+	}
+	return out
+}
+
 // List handles GET /api/dispatches.
 func (h *DispatchHandler) List(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
@@ -158,7 +205,11 @@ func (h *DispatchHandler) List(w http.ResponseWriter, r *http.Request) {
 	if dispatches == nil {
 		dispatches = []models.Dispatch{}
 	}
-	writeJSON(w, http.StatusOK, dispatches)
+	out := make([]dispatchListJSON, 0, len(dispatches))
+	for _, d := range dispatches {
+		out = append(out, dispatchToListItem(d))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Get handles GET /api/dispatches/:id.

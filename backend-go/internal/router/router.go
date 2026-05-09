@@ -381,6 +381,7 @@ func Build(
 		r.Get("/api/taxonomy/patterns/max-updated-at", taxonomyPatterns.MaxPatternUpdatedAt)
 
 		// PR-1: Match Logs and Product Taxonomy (triage-refactor)
+		r.Get("/api/match-logs", matchLogs.List)
 		r.Get("/api/match-logs/products/{product_id}/taxonomies", matchLogs.ListProductTaxonomies)
 		r.Post("/api/match-logs/products/{product_id}/taxonomies", matchLogs.UpsertProductTaxonomy)
 		r.Get("/api/match-logs/false-positives", matchLogs.ListFalsePositiveLogs)
