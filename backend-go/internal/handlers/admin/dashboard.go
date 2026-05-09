@@ -559,31 +559,32 @@ func (h *DashboardHandler) Recommendation(w http.ResponseWriter, r *http.Request
 	// Snapshot do estado operacional atual
 	snapshot := h.collectOperationalSnapshot(r.Context())
 
-	prompt := fmt.Sprintf(`Você é um operador sênior de um sistema de promoções automáticas (catálogo + canais WA/TG + crawlers).
-Analise o estado atual abaixo e sugira UMA ação prioritária a ser tomada AGORA.
+	prompt := fmt.Sprintf(`Operador sênior: promoções automáticas (catálogo, WA/TG, crawlers auto-match).
 
-ESTADO ATUAL:
+Use APENAS os dados locais abaixo. Não especule sobre tendências de mercado externas.
+
+ESTADO (Snatcher):
 %s
 
-Responda EXCLUSIVAMENTE em JSON com este formato:
+Escolha UMA prioridade óbvia (gargalo, risco ou quick win).
+
+JSON estrito:
 {
-  "headline": "frase curta e direta (máx 80 chars) — o que fazer agora",
-  "reason": "por quê (1-2 frases)",
-  "actions": ["passo 1", "passo 2", "passo 3"]
-}
+  "headline": "≤80 chars — próximo passo concreto",
+  "reason": "1–2 frases só com base nos números acima",
+  "actions": ["passo breve 1","passo 2","passo 3"]
+}`, snapshot)
 
-Use a busca online se útil pra contextualizar tendências de e-commerce/promoções no Brasil.`, snapshot)
-
-	// Timeout 45s (Cloudflare corta em ~100s).
+	// Sem WebSearch — snapshot já traz métricas; plugin web infla tokens/latência.
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   500,
-		Temperature: 0.4,
+		MaxTokens:   380,
+		Temperature: 0.25,
 		Operation:   "dashboard_recommendation",
 		JSONMode:    true,
-		WebSearch:   true,
+		WebSearch:   false,
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "LLM: "+err.Error())
@@ -629,6 +630,23 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	_ = h.db.GetContext(ctx, &inboxCount, `SELECT COUNT(*) FROM catalogproduct WHERE curation_status IN ('pending','incomplete')`)
 	lines = append(lines, fmt.Sprintf("- inbox de curadoria: %d itens pendentes/incompletos", inboxCount))
 
+	// Produtos sem categoria primária (match/catalogo ruim até corrigir)
+	var noPrimaryTax int
+	_ = h.db.GetContext(ctx, &noPrimaryTax, `
+		SELECT COUNT(*) FROM catalogproduct cp
+		WHERE NOT EXISTS (
+		  SELECT 1 FROM catalogproduct_taxonomy cpt
+		  WHERE cpt.product_id = cp.id AND cpt.role = 'primary_category'
+		)`)
+	if noPrimaryTax > 0 {
+		lines = append(lines, fmt.Sprintf("- produtos sem categoria primária (taxonomia): %d", noPrimaryTax))
+	}
+
+	// Taxonomia pendente de revisão
+	var taxPending int
+	_ = h.db.GetContext(ctx, &taxPending, `SELECT COUNT(*) FROM taxonomy WHERE status = 'pending'`)
+	lines = append(lines, fmt.Sprintf("- entradas de taxonomia pendentes: %d", taxPending))
+
 	// Disparos últimas 24h
 	var dispatches24h int
 	_ = h.db.GetContext(ctx, &dispatches24h, `SELECT COUNT(*) FROM dispatches WHERE created_at > now() - interval '24 hours'`)
@@ -640,13 +658,44 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	_ = h.db.GetContext(ctx, &dispatchesPendingApproval, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
 	lines = append(lines, fmt.Sprintf("- disparos em fila (a enviar): %d", dispatchesQueued))
 	if dispatchesPendingApproval > 0 {
-		lines = append(lines, fmt.Sprintf("- disparos aguardando aprovação manual: %d (full_auto_mode desligado)", dispatchesPendingApproval))
+		lines = append(lines, fmt.Sprintf("- disparos aguardando aprovação manual: %d", dispatchesPendingApproval))
+	}
+
+	var fullAuto bool
+	_ = h.db.GetContext(ctx, &fullAuto, `SELECT full_auto_mode FROM appconfig WHERE id = 1`)
+	lines = append(lines, fmt.Sprintf("- full_auto_mode (auto-libera pending_approval): %t", fullAuto))
+
+	// Agendados no futuro
+	var dispatchesScheduled int
+	_ = h.db.GetContext(ctx, &dispatchesScheduled, `
+		SELECT COUNT(*) FROM dispatches WHERE status = 'scheduled' AND scheduled_for > now()`)
+	lines = append(lines, fmt.Sprintf("- disparos agendados (futuro): %d", dispatchesScheduled))
+
+	// Targets presos em pending (>1h pode indicar congestão WA/TG)
+	var targetsStale int
+	_ = h.db.GetContext(ctx, &targetsStale, `
+		SELECT COUNT(*) FROM dispatch_targets
+		WHERE status = 'pending' AND created_at < now() - interval '1 hour'`)
+	if targetsStale > 0 {
+		lines = append(lines, fmt.Sprintf("- targets em pending há >1h (possível fila congestionada): %d", targetsStale))
 	}
 
 	// Crawlers ativos — tabela: searchterm (sem underscore)
 	var crawlersActive int
 	_ = h.db.GetContext(ctx, &crawlersActive, `SELECT COUNT(*) FROM searchterm WHERE active = true`)
 	lines = append(lines, fmt.Sprintf("- crawlers ativos: %d", crawlersActive))
+
+	// Logs de auto-match (volume ≈ uso do matcher)
+	var autoMatchLogs7d int
+	_ = h.db.GetContext(ctx, &autoMatchLogs7d, `SELECT COUNT(*) FROM auto_match_logs WHERE created_at > now() - interval '7 days'`)
+	lines = append(lines, fmt.Sprintf("- auto_match_logs últimos 7d: %d", autoMatchLogs7d))
+
+	var fpMatch30d int64
+	_ = h.db.GetContext(ctx, &fpMatch30d, `
+		SELECT COUNT(*) FROM auto_match_logs WHERE false_positive = true AND created_at > now() - interval '30 days'`)
+	if fpMatch30d > 0 {
+		lines = append(lines, fmt.Sprintf("- falsos positivos de match (30d): %d", fpMatch30d))
+	}
 
 	// Produtos auditados
 	var inspected, uninspected int
@@ -658,6 +707,25 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	var channelsActive int
 	_ = h.db.GetContext(ctx, &channelsActive, `SELECT COUNT(*) FROM channel WHERE active = true`)
 	lines = append(lines, fmt.Sprintf("- canais ativos: %d", channelsActive))
+
+	var llmErr24h int
+	_ = h.db.GetContext(ctx, &llmErr24h, `SELECT COUNT(*) FROM llm_metrics WHERE error = true AND created_at > now() - interval '24 hours'`)
+	if llmErr24h > 0 {
+		lines = append(lines, fmt.Sprintf("- erros LLM (24h, telemetria): %d", llmErr24h))
+	}
+
+	// Última ação Jonfrey (contexto pra “operar piloto automático”)
+	type jfLast struct {
+		ActionType string    `db:"action_type"`
+		Status     string    `db:"status"`
+		CreatedAt  time.Time `db:"created_at"`
+	}
+	var jf jfLast
+	if err := h.db.GetContext(ctx, &jf, `
+		SELECT action_type, status, created_at FROM jonfrey_actions ORDER BY id DESC LIMIT 1`); err == nil && jf.ActionType != "" {
+		lines = append(lines, fmt.Sprintf("- último Jonfrey: %s (%s) em %s",
+			jf.ActionType, jf.Status, jf.CreatedAt.Format(time.RFC3339)))
+	}
 
 	return strings.Join(lines, "\n")
 }

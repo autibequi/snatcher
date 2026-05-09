@@ -264,25 +264,31 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 			JOIN dispatches d ON d.id = dt.dispatch_id
 			WHERE d.channel_id = $1 AND dt.status = 'failed'
 			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
+		var clicksOnDelivered int
+		_ = h.db.GetContext(ctx, &clicksOnDelivered, `
+			SELECT COALESCE(SUM(dt.click_count), 0) FROM dispatch_targets dt
+			JOIN dispatches d ON d.id = dt.dispatch_id
+			WHERE d.channel_id = $1 AND dt.status = 'delivered'
+			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
+		ctr := 0.0
+		if deliveryCount > 0 {
+			ctr = float64(clicksOnDelivered) / float64(deliveryCount)
+		}
 
-		prompt := fmt.Sprintf(`Você é um operador sênior otimizando automação de canal de afiliados.
+		prompt := fmt.Sprintf(`Otimize threshold de automação (só estes dados locais).
 
 Canal: %s
-Threshold atual: %.0f (score min para disparar)
-Score médio dos últimos %d logs: %.1f
-Disparos entregues últimos 14d: %d
-Disparos falhados últimos 14d: %d
-Cooldown atual: %dh
+Threshold atual: %.0f (score mín. p/ disparar)
+Score médio (últimos %d logs auto-match): %.1f
+Targets entregues 14d / falhos 14d: %d / %d
+CTR aprox.: %.3f (cliques em targets delivered / número de targets delivered)
+Cooldown: %dh
 
-Decida se threshold deve mudar e em quanto. Se canal está performando bem (delivery alto, score médio próximo do threshold), mantém. Se score médio muito acima do threshold, abaixa pra disparar mais; se muito abaixo, sobe pra ser mais seletivo.
+Regra: alta taxa falha ou CTR baixíssimo pode pedir threshold mais alto (mais seletivo). Score médio estável bem acima do threshold pode baixar levemente (mais disparos).
 
-Responda EXCLUSIVAMENTE em JSON:
-{
-  "new_threshold": 55,
-  "change": true,
-  "reason": "explicação breve em 1 frase"
-}`,
-			ch.Name, threshold, len(logs), avg, deliveryCount, failedCount, a.CooldownHours)
+JSON apenas:
+{"new_threshold":55,"change":false,"reason":"uma frase"}`,
+			ch.Name, threshold, len(logs), avg, deliveryCount, failedCount, ctr, a.CooldownHours)
 
 		ctxC, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := cli.Complete(ctxC, prompt, llm.Options{
@@ -515,10 +521,22 @@ func actionAutoCurate(ctx context.Context, h *JonfreyHandler) (map[string]any, m
 		if p.Brand.Valid {
 			brand = p.Brand.String
 		}
-		prompt := fmt.Sprintf(`Classifique este produto. Responda JSON com confidence 0..1.
-Título: "%s"
-Marca atual: "%s"
-{"category":"slug","brand":"Nome","tags":["..."],"confidence":0.0}`, p.CanonicalName, brand)
+		mkt := ""
+		if p.LowestPriceSource.Valid {
+			mkt = strings.TrimSpace(p.LowestPriceSource.String)
+		}
+		tags := strings.Join(p.GetTags(), ",")
+		if len(tags) > 180 {
+			tags = tags[:180] + "…"
+		}
+		priceStr := ""
+		if p.LowestPrice.Valid {
+			priceStr = fmt.Sprintf("%.2f", p.LowestPrice.Float64)
+		}
+		prompt := fmt.Sprintf(`Classifique para curadoria. Só dados abaixo. JSON estrito confidence 0..1.
+titulo:%q marca:%q marketplace:%q preco_low:%s tags_csv:%s
+{"category":"slug","brand":"Nome","tags":[""],"confidence":0.0}`,
+			p.CanonicalName, brand, mkt, priceStr, tags)
 		ctxC, cancel := context.WithTimeout(ctx, 25*time.Second)
 		resp, err := cli.Complete(ctxC, prompt, llm.Options{
 			MaxTokens: 200, Temperature: 0.1, Operation: "jonfrey_autocurate", JSONMode: true,
@@ -842,15 +860,18 @@ func actionMaintainTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]
 	type strRow struct{ Val string `db:"val"` }
 	var brandRows, tagRows []strRow
 
+	// Marcas/tags mais frequentes no catálogo (menos tokens que DISTINCT aleatório, melhor pra dedupe).
 	_ = h.db.SelectContext(ctx, &brandRows, `
-		SELECT DISTINCT brand AS val FROM catalogproduct
+		SELECT brand AS val FROM catalogproduct
 		WHERE brand IS NOT NULL AND brand != '' AND inactive = false
-		ORDER BY val LIMIT 150`)
+		GROUP BY brand ORDER BY COUNT(*) DESC LIMIT 70`)
 
 	_ = h.db.SelectContext(ctx, &tagRows, `
-		SELECT DISTINCT jsonb_array_elements_text(tags) AS val FROM catalogproduct
-		WHERE tags IS NOT NULL AND tags != '[]'::jsonb AND inactive = false
-		ORDER BY val LIMIT 150`)
+		SELECT t AS val FROM (
+			SELECT jsonb_array_elements_text(tags) AS t FROM catalogproduct
+			WHERE tags IS NOT NULL AND tags != '[]'::jsonb AND inactive = false
+		) sub
+		GROUP BY t ORDER BY COUNT(*) DESC LIMIT 70`)
 
 	brands := make([]string, 0, len(brandRows))
 	for _, r := range brandRows { brands = append(brands, r.Val) }
@@ -870,56 +891,57 @@ func actionMaintainTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]
 	compactPending := make([]compactEntry, 0, len(pending))
 	for _, t := range pending {
 		compactPending = append(compactPending, compactEntry{
-			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+			ID:       t.ID,
+			Type:     t.Type,
+			Name:     t.Name,
+			Keywords: capJonfreyKeywords([]string(t.Keywords), 8, 56),
 		})
 	}
 	compactApproved := make([]compactEntry, 0, len(approved))
 	for _, t := range approved {
 		compactApproved = append(compactApproved, compactEntry{
-			ID: t.ID, Type: t.Type, Name: t.Name, Keywords: []string(t.Keywords),
+			ID:       t.ID,
+			Type:     t.Type,
+			Name:     t.Name,
+			Keywords: capJonfreyKeywords([]string(t.Keywords), 8, 56),
 		})
 	}
+	if len(compactPending) > 36 {
+		compactPending = compactPending[:36]
+	}
+	if len(compactApproved) > 32 {
+		compactApproved = compactApproved[:32]
+	}
 
-	// Prompt unificado para consolidação de marcas/categorias + revisão de taxonomia
-	prompt := fmt.Sprintf(`Você é curador de taxonomia e deduplicador de um sistema de promoções brasileiro (e-commerce, WA/TG).
+	brandsJSON, _ := json.Marshal(brands)
+	tagsJSON, _ := json.Marshal(tags)
+	apprJSON, _ := json.Marshal(compactApproved)
+	pendJSON, _ := json.Marshal(compactPending)
 
-PARTE 1 — CATÁLOGO ATUAL:
-MARCAS (%d): %v
-CATEGORIAS (%d): %v
+	// Prompt compacto — mesmo schema de saída; entrada via JSON diminui verbosidade de %v Go.
+	prompt := fmt.Sprintf(`Curador taxonomia + dedupe (somente dados JSON abaixo, promoções BR).
 
-PARTE 2 — TAXONOMIA:
-APROVADAS ATUAIS (%d entradas): %v
-PENDENTES (%d entradas): %v
+TOP Marcas freq n=%d: %s
+TOP Tags freq n=%d: %s
+Aprovadas (amostra n=%d): %s
+Pendentes (n=%d): %s
 
-INSTRUÇÕES:
-1. Para MARCAS e CATEGORIAS do catálogo: identifique duplicatas/variantes (nomes muito próximos, abreviações). Retorne "brand_groups" e "tag_groups" com canônicos e aliases.
-2. Para cada ENTRADA PENDENTE: decida se "approve", "reject", "merge_into" uma aprovada (com merge_id), ou "approve_with_keywords" (com extra_keywords).
+1) brand_groups / tag_groups: canonical + aliases, só onde ≥2 duplicados/near-dup úteis.
+2) taxonomy_decisions: cada pendente com action approve | reject | merge_into (merge_id) | approve_with_keywords (extra_keywords).
 
-Responda SOMENTE JSON:
-{
-  "brand_groups": [
-    {"canonical": "nome", "aliases": ["var1", "var2"]}
-  ],
-  "tag_groups": [
-    {"canonical": "nome", "aliases": ["var1", "var2"]}
-  ],
-  "taxonomy_decisions": [
-    {"id": 123, "action": "approve"},
-    {"id": 124, "action": "reject"},
-    {"id": 125, "action": "merge_into", "merge_id": 45},
-    {"id": 126, "action": "approve_with_keywords", "extra_keywords": ["key1"]}
-  ]
-}
-
-Regras: grupos de duplicatas com ≥2 membros. Seja agressivo com marcas reais e categorias úteis na taxonomia.`,
-		len(brands), brands, len(tags), tags,
-		len(compactApproved), compactApproved,
-		len(compactPending), compactPending,
-	)
+JSON apenas:
+{"brand_groups":[{"canonical":"","aliases":["",""]}],"tag_groups":[{"canonical":"","aliases":["",""]}],"taxonomy_decisions":[{"id":1,"action":"approve"}]}
+`,
+		len(brands), brandsJSON, len(tags), tagsJSON,
+		len(compactApproved), apprJSON,
+		len(compactPending), pendJSON)
 
 	ctxC, cancel := context.WithTimeout(ctx, 60*time.Second)
 	resp, err := cli.Complete(ctxC, prompt, llm.Options{
-		MaxTokens: 2000, Temperature: 0.1, Operation: "jonfrey_maintain_taxonomy", JSONMode: true,
+		MaxTokens:   1700,
+		Temperature: 0.1,
+		Operation:   "jonfrey_maintain_taxonomy",
+		JSONMode:    true,
 	})
 	cancel()
 	if err != nil {
@@ -1223,6 +1245,17 @@ func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (m
 			continue
 		}
 
+		channelsWithClicks = append(channelsWithClicks, channelClickData{
+			ChannelID:   ch.ID,
+			ChannelName: ch.Name,
+			ClickCount:  totalClicks,
+		})
+
+		// Top-N cliques por produto — evita prompt enorme e N+1 quando há muitos SKUs
+		if len(clicks) > 28 {
+			clicks = clicks[:28]
+		}
+
 		// Buscar detalhes dos produtos clicados
 		var productDetails []struct {
 			ProductID  int64
@@ -1240,7 +1273,10 @@ func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (m
 				if p.Brand.Valid {
 					brand = p.Brand.String
 				}
-				catStr := p.Tags // tags estão em JSON string
+				tags := strings.Join(p.GetTags(), ",")
+				if len(tags) > 160 {
+					tags = tags[:160] + "…"
+				}
 				productDetails = append(productDetails, struct {
 					ProductID  int64
 					ClickCount int64
@@ -1250,7 +1286,7 @@ func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (m
 					ProductID:  c.ProductID,
 					ClickCount: c.ClickCount,
 					Brand:      brand,
-					Categories: catStr,
+					Categories: tags,
 				})
 			}
 		}
@@ -1278,38 +1314,25 @@ func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (m
 
 		currentAudienceJSON, _ := json.Marshal(ch.Audience)
 
-		prompt := fmt.Sprintf(`Você é analista de audiência de canal de vendas.
+		prompt := fmt.Sprintf(`Ajuste audiência de canal (somente dados JSON abaixo).
 
-CANAL: %s
-CLIQUES ÚLTIMOS 7 DIAS: %d
+canal:%s cliques_7d:%d
 
-AUDIÊNCIA ATUAL:
-%s
+audiencia_atual:%s
 
-PRODUTOS MAIS CLICADOS (últimos 7 dias):
-%s
+top_produtos_cliques:%s
 
-Analise os cliques: quais categorias e marcas são populares? A audiência atual reflete bem o comportamento de cliques?
+Proponha só movimentos óbvios entre categorias/marcas. confidence≥0.85 aplica automático; senão arrays vazios e confidence baixa.
 
-Responda EXCLUSIVAMENTE em JSON com sugestões de ajuste:
-{
-  "categories_to_add": [],
-  "categories_to_remove": [],
-  "brands_to_add": [],
-  "brands_to_remove": [],
-  "confidence": 0.85,
-  "reasoning": "explicação breve"
-}
-
-Regras:
-- confidence >= 0.85 = mudança será aplicada automaticamente
-- Seja específico: retorne categorias/marcas reais
-- Se a audiência atual está boa, deixe os arrays vazios e confidence baixa`,
+JSON:{"categories_to_add":[],"categories_to_remove":[],"brands_to_add":[],"brands_to_remove":[],"confidence":0.0,"reasoning":"curta"}`,
 			ch.Name, totalClicks, string(currentAudienceJSON), string(prodsJSON))
 
 		ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
 		resp, err := cli.Complete(ctxC, prompt, llm.Options{
-			MaxTokens: 500, Temperature: 0.2, Operation: "jonfrey_optimize_audience", JSONMode: true,
+			MaxTokens:   420,
+			Temperature: 0.2,
+			Operation:   "jonfrey_optimize_audience",
+			JSONMode:    true,
 		})
 		cancel()
 		if err != nil {
@@ -1534,20 +1557,20 @@ func actionEnrichTaxonomyFromUnmatched(ctx context.Context, h *JonfreyHandler) (
 		}
 
 		titleList := strings.Join(batch, "\n• ")
-		prompt := fmt.Sprintf(`Você é especialista em e-commerce. Aqui estão produtos sem categoria. Agrupe em categorias coerentes.
+		prompt := fmt.Sprintf(`Produtos sem categoria primária. Agrupe títulos semelhantes em categorias úteis.
 
 TÍTULOS:
 • %s
 
-Retorne APENAS JSON válido:
-{"groups":[{"category_name":"Nome da Categoria","parent_slug":"categoria-pai","confidence":0.9,"sample_patterns":[{"kind":"word_boundary","value":"exemplo"}]}]}`, titleList)
+JSON apenas:
+{"groups":[{"category_name":"","parent_slug":"","confidence":0.0,"sample_patterns":[{"kind":"word_boundary","value":""}]}]}`, titleList)
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:  500,
-			Temperature: 0.3,
-			Operation:  "jonfrey_enrich_taxonomy",
-			JSONMode:   true,
+			MaxTokens:   450,
+			Temperature: 0.25,
+			Operation:   "jonfrey_enrich_taxonomy",
+			JSONMode:    true,
 		})
 		cancel()
 
@@ -1686,7 +1709,7 @@ func actionPruneFalsePositives(ctx context.Context, h *JonfreyHandler) (map[stri
 			WHERE cpt.taxonomy_id = $1
 			  AND aml.false_positive = true
 			  AND aml.created_at > now() - interval '30 days'
-			LIMIT 50
+			LIMIT 28
 		`, tt.TaxonomyID)
 		if err != nil || len(titles) == 0 {
 			continue
@@ -1708,19 +1731,21 @@ func actionPruneFalsePositives(ctx context.Context, h *JonfreyHandler) (map[stri
 			titleList += t.Title
 		}
 
-		prompt := fmt.Sprintf(`Taxonomy "%s" foi marcada como false positive nesses produtos:
+		prompt := fmt.Sprintf(`Taxonomia "%s" com falsos positivos (títulos reais):
 
 %s
 
-Sugira regex patterns de EXCLUSÃO que descartariam esses produtos. Retorne JSON:
-{"exclude_patterns":[{"pattern":"\\\\bregex\\\\b","reasoning":"por que descartar"}]}`, taxName, titleList)
+Exclude regex Postgres-safe (preferir \\m palavra \\M ou \\b curtos). Um pattern por tema.
+
+JSON:
+{"exclude_patterns":[{"pattern":"","reasoning":""}]}`, taxName, titleList)
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:  400,
-			Temperature: 0.2,
-			Operation:  "jonfrey_prune_fp",
-			JSONMode:   true,
+			MaxTokens:   320,
+			Temperature: 0.15,
+			Operation:   "jonfrey_prune_fp",
+			JSONMode:    true,
 		})
 		cancel()
 
@@ -1847,19 +1872,19 @@ func actionRefineSubcategories(ctx context.Context, h *JonfreyHandler) (map[stri
 			titleList += t.Title
 		}
 
-		prompt := fmt.Sprintf(`Categoria "%s" tem %d produtos sem subcategoria. Agrupe esses 50 exemplos em 3-7 subcategorias coerentes:
+		prompt := fmt.Sprintf(`Raiz "%s": %d produtos sem subcategoria. Agrupe só estes exemplos em 3-7 subcategorias úteis.
 
 %s
 
-Retorne JSON:
-{"subcategories":[{"name":"Nome","slug":"slug","confidence":0.9,"patterns":[{"kind":"word_boundary","value":"palavra"}]}]}`, rc.Name, countNoSubcat, titleList)
+JSON:
+{"subcategories":[{"name":"","slug":"","confidence":0.0,"patterns":[{"kind":"word_boundary","value":""}]}]}`, rc.Name, countNoSubcat, titleList)
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:  600,
-			Temperature: 0.3,
-			Operation:  "jonfrey_refine_subcats",
-			JSONMode:   true,
+			MaxTokens:   520,
+			Temperature: 0.25,
+			Operation:   "jonfrey_refine_subcats",
+			JSONMode:    true,
 		})
 		cancel()
 
@@ -1918,5 +1943,25 @@ Retorne JSON:
 		candidateCount, subCatsCreated, patternsCreated)
 
 	return beforeMap, afterMap, reasoning, nil
+}
+
+// capJonfreyKeywords trunca lista de keywords p/ prompts (economia de tokens).
+func capJonfreyKeywords(src []string, maxN, maxRuneLen int) []string {
+	out := make([]string, 0, maxN)
+	for _, s := range src {
+		if len(out) >= maxN {
+			break
+		}
+		t := strings.TrimSpace(s)
+		if t == "" {
+			continue
+		}
+		runes := []rune(t)
+		if maxRuneLen > 0 && len(runes) > maxRuneLen {
+			t = string(runes[:maxRuneLen]) + "…"
+		}
+		out = append(out, t)
+	}
+	return out
 }
 

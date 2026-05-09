@@ -38,16 +38,15 @@ Responda JSON: {"is_offer":bool,"title":"...","marketplace":"...","price_current
 
 	clusterLabel := mustParse("cluster_label", "v1", `---
 model: anthropic/claude-3.5-sonnet
-max_tokens: 150
-temperature: 0.5
+max_tokens: 120
+temperature: 0.35
 ---
-Crie nome e descrição para cluster de canais de promoção.
+Nome breve para cluster de canais de promoção (somente dados abaixo).
 
-Top categorias: {{.TopCategories}}
-Top marcas: {{.TopBrands}}
-CTR: {{.CTR}}% | CVR: {{.CVR}}% | Ticket médio: R$ {{printf "%.0f" .AvgTicket}}
+Cats: {{.TopCategories}} | Marcas: {{.TopBrands}}
+CTR {{printf "%.2f" .CTR}}%% | CVR {{printf "%.2f" .CVR}}%% | Ticket R$ {{printf "%.0f" .AvgTicket}}
 
-Responda JSON: {"label":"2-4 palavras","description":"1 frase"}`)
+JSON: {"label":"2-4 palavras","description":"uma frase"}`)
 
 	return []*Prompt{compose, parseOffer, clusterLabel}
 }
