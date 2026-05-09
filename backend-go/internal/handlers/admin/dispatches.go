@@ -47,20 +47,61 @@ type createDispatchReq struct {
 	ScheduledFor  *string             `json:"scheduled_for"`
 }
 
+// pickProductURLForAffiliate escolhe uma URL para montar o link de afiliado.
+// Ordem: lowest_price_url do produto → URL de variantes (prioriza host reconhecido) → campos do payload do composer (media_url, etc.).
+func (h *DispatchHandler) pickProductURLForAffiliate(prod models.CatalogProduct, productID int64, msg map[string]any) (urlStr, srcHint string) {
+	if prod.LowestPriceURL.Valid {
+		urlStr = strings.TrimSpace(prod.LowestPriceURL.String)
+		if urlStr != "" {
+			if prod.LowestPriceSource.Valid {
+				srcHint = strings.TrimSpace(prod.LowestPriceSource.String)
+			}
+			return urlStr, srcHint
+		}
+	}
+	variants, err := h.store.ListVariantsByProduct(productID)
+	if err == nil {
+		for _, v := range variants {
+			u := strings.TrimSpace(v.URL)
+			if u == "" {
+				continue
+			}
+			if affiliates.InferMarketplaceFromProductURL(u) != "" {
+				return u, strings.TrimSpace(v.Source)
+			}
+		}
+		for _, v := range variants {
+			if u := strings.TrimSpace(v.URL); u != "" {
+				return u, strings.TrimSpace(v.Source)
+			}
+		}
+	}
+	if msg != nil {
+		for _, key := range []string{"product_url", "link", "affiliate_url", "media_url"} {
+			raw, ok := msg[key].(string)
+			if !ok {
+				continue
+			}
+			u := strings.TrimSpace(raw)
+			if u != "" && (strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")) {
+				return u, ""
+			}
+		}
+	}
+	return "", ""
+}
+
 // resolveAffiliateDispatchLink monta o link final (/v/...) a partir do catálogo quando o cliente não enviou affiliate_link.
-func (h *DispatchHandler) resolveAffiliateDispatchLink(productID int64) (string, error) {
+func (h *DispatchHandler) resolveAffiliateDispatchLink(productID int64, msg map[string]any) (string, error) {
 	prod, err := h.store.GetCatalogProduct(productID)
 	if err != nil {
 		return "", err
 	}
-	urlStr := strings.TrimSpace(prod.LowestPriceURL.String)
-	if !prod.LowestPriceURL.Valid || urlStr == "" {
-		return "", fmt.Errorf("produto sem lowest_price_url")
+	urlStr, srcHint := h.pickProductURLForAffiliate(prod, productID, msg)
+	if urlStr == "" {
+		return "", fmt.Errorf("produto sem URL utilizável (catálogo sem lowest_price_url/variantes e mensagem sem link)")
 	}
-	src := ""
-	if prod.LowestPriceSource.Valid {
-		src = strings.TrimSpace(prod.LowestPriceSource.String)
-	}
+	src := srcHint
 	if src == "" {
 		src = affiliates.InferMarketplaceFromProductURL(urlStr)
 	}
@@ -73,6 +114,9 @@ func (h *DispatchHandler) resolveAffiliateDispatchLink(productID int64) (string,
 	}
 	built, _, _ := affiliates.BuildLink(urlStr, src, progs)
 	canonical := affiliates.CanonicalAffiliateMarketplace(src)
+	if canonical == "" {
+		canonical = affiliates.CanonicalAffiliateMarketplace(affiliates.InferMarketplaceFromProductURL(urlStr))
+	}
 	shortID, err := h.store.GetOrCreateShortLink(built, canonical)
 	if err != nil {
 		return built, nil
@@ -99,7 +143,7 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Envio real: precisa de link gravado no dispatch. Se o front não mandou, resolve pelo produto (mesma lógica da página Afiliados).
 	if !isDraft {
 		if affiliateLink == "" && req.ProductID != nil {
-			resolved, err := h.resolveAffiliateDispatchLink(*req.ProductID)
+			resolved, err := h.resolveAffiliateDispatchLink(*req.ProductID, req.Message)
 			if err == nil && resolved != "" {
 				affiliateLink = resolved
 			}
