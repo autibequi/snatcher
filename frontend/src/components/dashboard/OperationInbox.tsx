@@ -19,6 +19,7 @@ const categoryIcon: Record<string, string> = {
   crawler_fail: '🕷️',
   curation_pending: '📦',
   group_fail: '⚠️',
+  jonfrey_fail: '🤖',
 }
 
 function getIcon(category: string): string {

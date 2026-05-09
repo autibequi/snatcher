@@ -351,6 +351,41 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Categoria: jonfrey_fail — última execução terminou em falha para uma automação que está ligada na lista (só se auto-pilot Jonfrey ativo).
+	jfCfg, jfErr := h.store.GetJonfreyConfig()
+	if jfErr == nil && h.db != nil && jfCfg.Enabled && len(jfCfg.EnabledActions) > 0 {
+		lastBy, _ := h.store.JonfreyLastRunByActionType()
+		for _, actionType := range jfCfg.EnabledActions {
+			if actionType == "" {
+				continue
+			}
+			sum, ok := lastBy[actionType]
+			if !ok || sum.Status != "failed" {
+				continue
+			}
+			var errMsg string
+			_ = h.db.GetContext(r.Context(), &errMsg, `
+				SELECT COALESCE(error_message, '') FROM jonfrey_actions
+				WHERE action_type = $1 AND status = 'failed' AND finished_at IS NOT NULL
+				ORDER BY finished_at DESC LIMIT 1`, actionType)
+			sub := strings.TrimSpace(errMsg)
+			if sub == "" {
+				sub = "Última execução falhou — ver detalhes em Jonfrey"
+			}
+			if len(sub) > 220 {
+				sub = sub[:217] + "…"
+			}
+			alerts = append(alerts, Alert{
+				ID:       fmt.Sprintf("jonfrey_fail-%s", actionType),
+				Severity: "critico",
+				Category: "jonfrey_fail",
+				Title:    fmt.Sprintf("Jonfrey: %s falhou", titleJonfreyAction(actionType)),
+				Subtitle: sub,
+				CTA:      CTA{Label: "Abrir Jonfrey", Href: "/automations/jonfrey"},
+			})
+		}
+	}
+
 	if alerts == nil {
 		alerts = []Alert{}
 	}
@@ -728,6 +763,22 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// titleJonfreyAction formata um action_type (snake_case) para título legível no inbox.
+func titleJonfreyAction(at string) string {
+	if at == "" {
+		return at
+	}
+	parts := strings.Split(strings.ReplaceAll(at, "_", " "), " ")
+	for i, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		low := strings.ToLower(p)
+		parts[i] = strings.ToUpper(low[:1]) + low[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 // extractJSON tenta extrair o JSON de uma resposta do LLM (remove possível ```json envelope).
