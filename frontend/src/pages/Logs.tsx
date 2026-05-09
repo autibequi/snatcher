@@ -1090,9 +1090,43 @@ interface LLMLogRow {
   error: boolean
   error_msg?: string
   latency_seconds?: number
-  prompt?: string
-  response?: string
+  prompt: string
+  response: string
   created_at: string
+}
+
+function normalizeLLMLogRows(raw: unknown): LLMLogRow[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((row: Record<string, unknown>) => {
+    const cost = Number(row.cost_usd ?? row.estimated_cost_usd ?? 0)
+    return {
+      id: Number(row.id ?? 0),
+      operation: String(row.operation ?? ''),
+      model: String(row.model ?? ''),
+      status: String(row.status ?? ''),
+      tokens_in: Number(row.tokens_in ?? 0),
+      tokens_out: Number(row.tokens_out ?? 0),
+      cost_usd: Number.isFinite(cost) ? cost : 0,
+      cache_hit: Boolean(row.cache_hit),
+      error: Boolean(row.error),
+      error_msg: row.error_msg != null ? String(row.error_msg) : undefined,
+      latency_seconds:
+        row.latency_seconds != null && row.latency_seconds !== ''
+          ? Number(row.latency_seconds)
+          : undefined,
+      prompt: row.prompt != null ? String(row.prompt) : '',
+      response: row.response != null ? String(row.response) : '',
+      created_at: String(row.created_at ?? ''),
+    }
+  })
+}
+
+/** Pré-visualização na tabela; não esconder só porque veio string vazia do backend. */
+function llmSnippet(s: string, maxLen = 120): string {
+  const t = s.trim()
+  if (!t) return '—'
+  if (t.length <= maxLen) return t
+  return `${t.slice(0, maxLen)}…`
 }
 
 function LLMLogs() {
@@ -1100,10 +1134,14 @@ function LLMLogs() {
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
   const { data: rows = [], isLoading, refetch } = useQuery<LLMLogRow[]>({
     queryKey: ['llm-logs', errorsOnly],
-    queryFn: () => apiClient.get(`/api/admin/llm/logs?limit=200${errorsOnly ? '&errors_only=true' : ''}`)
-      .then(r => Array.isArray(r.data) ? r.data : []),
+    queryFn: () =>
+      apiClient
+        .get(`/api/admin/llm/logs?limit=200${errorsOnly ? '&errors_only=true' : ''}`)
+        .then(r => normalizeLLMLogRows(r.data)),
     refetchInterval: 30_000,
   })
+
+  const colCount = 9
 
   return (
     <div className="bg-surface border border-border rounded-md overflow-hidden">
@@ -1119,95 +1157,125 @@ function LLMLogs() {
       ) : rows.length === 0 ? (
         <p className="text-sm text-fg-3 p-6 text-center">Nenhum log de LLM.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-surface-2">
-              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Quando</th>
-              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Op</th>
-              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Modelo</th>
-              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Tokens</th>
-              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Custo</th>
-              <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase">Latência</th>
-              <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => {
-              const isExpanded = expandedId === r.id
-              const hasPayload = !!(r.prompt || r.response)
-              // Transient = retry automático que não é falha real: não mostrar em vermelho
-              const isTransient = r.operation?.includes('_retry_transient') || r.status === 'rate_limited'
-              const isRealError = r.error && !isTransient
-              return (
-                <React.Fragment key={r.id}>
-                  <tr
-                    className={`border-b border-border last:border-0 ${isRealError ? 'bg-danger/5' : isTransient ? 'opacity-60' : ''} ${hasPayload ? 'cursor-pointer hover:bg-surface-2' : ''}`}
-                    onClick={() => hasPayload && setExpandedId(isExpanded ? null : r.id)}
-                  >
-                    <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap">
-                      {hasPayload && <span className="text-fg-3 mr-1">{isExpanded ? '▼' : '▶'}</span>}
-                      {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
-                    </td>
-                    <td className={`px-3 py-2 text-xs ${isTransient ? 'text-fg-3 italic' : 'text-fg'}`}>{r.operation}</td>
-                    <td className="px-3 py-2 text-xs text-fg-2 font-mono truncate max-w-xs">{r.model}</td>
-                    <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">{r.tokens_in}→{r.tokens_out}</td>
-                    <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">${r.cost_usd.toFixed(4)}</td>
-                    <td className="px-3 py-2 text-xs text-fg-3 font-mono text-right">
-                      {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      {isTransient ? (
-                        <span className="text-xs px-1.5 py-0.5 bg-warning/10 text-warning rounded">{r.status || 'retry'}</span>
-                      ) : r.error ? (
-                        <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
-                      ) : r.cache_hit ? (
-                        <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
-                      ) : (
-                        <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">{r.status || 'ok'}</span>
-                      )}
-                    </td>
-                  </tr>
-                  {/* Mostrar error_msg apenas pra erros reais (não transient/rate-limit) */}
-                  {isRealError && r.error_msg && (
-                    <tr className="bg-danger/5 border-b border-border last:border-0">
-                      <td colSpan={7} className="px-4 py-2 text-xs font-mono text-danger break-all">
-                        {r.error_msg}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[880px]">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Quando</th>
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Op</th>
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Modelo</th>
+                <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase whitespace-nowrap">Custo (USD)</th>
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase min-w-[14rem]">Enviado</th>
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase min-w-[14rem]">Recebido</th>
+                <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase whitespace-nowrap">Tokens</th>
+                <th className="text-right px-3 py-2 text-xs text-fg-2 font-medium uppercase whitespace-nowrap">Latência</th>
+                <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const isExpanded = expandedId === r.id
+                const sentPrev = llmSnippet(r.prompt)
+                const recvPrev = llmSnippet(r.response)
+                const hasStoredPayload = r.prompt.trim().length > 0 || r.response.trim().length > 0
+                // Transient = retry automático que não é falha real: não mostrar em vermelho
+                const isTransient = r.operation?.includes('_retry_transient') || r.status === 'rate_limited'
+                const isRealError = r.error && !isTransient
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr
+                      className={`border-b border-border last:border-0 ${isRealError ? 'bg-danger/5' : isTransient ? 'opacity-60' : ''} cursor-pointer hover:bg-surface-2`}
+                      onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                    >
+                      <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap align-top">
+                        <span className="text-fg-3 mr-1">{isExpanded ? '▼' : '▶'}</span>
+                        {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
+                      </td>
+                      <td className={`px-3 py-2 text-xs align-top ${isTransient ? 'text-fg-3 italic' : 'text-fg'}`}>{r.operation}</td>
+                      <td className="px-3 py-2 text-xs text-fg-2 font-mono align-top max-w-[10rem]">
+                        <span className="line-clamp-3 break-all">{r.model || '—'}</span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right align-top whitespace-nowrap">
+                        ${r.cost_usd.toFixed(4)}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-fg-2 align-top">
+                        <p className="line-clamp-3 whitespace-pre-wrap break-words" title={r.prompt.trim() || undefined}>
+                          {sentPrev}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2 text-xs align-top">
+                        <p
+                          className={`line-clamp-3 whitespace-pre-wrap break-words ${isRealError ? 'text-danger' : 'text-fg-2'}`}
+                          title={r.response.trim() || undefined}
+                        >
+                          {recvPrev}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right align-top whitespace-nowrap">
+                        {r.tokens_in}→{r.tokens_out}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-fg-3 font-mono text-right align-top whitespace-nowrap">
+                        {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {isTransient ? (
+                          <span className="text-xs px-1.5 py-0.5 bg-warning/10 text-warning rounded">{r.status || 'retry'}</span>
+                        ) : r.error ? (
+                          <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
+                        ) : r.cache_hit ? (
+                          <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">{r.status || 'ok'}</span>
+                        )}
                       </td>
                     </tr>
-                  )}
-                  {/* Transient: mensagem curta e muted */}
-                  {isTransient && r.error_msg && (
-                    <tr className="border-b border-border last:border-0 opacity-50">
-                      <td colSpan={7} className="px-4 py-1 text-[10px] font-mono text-fg-3 truncate">
-                        {r.error_msg}
-                      </td>
-                    </tr>
-                  )}
-                  {isExpanded && hasPayload && (
-                    <tr className="border-b border-border last:border-0 bg-surface-2">
-                      <td colSpan={7} className="px-4 py-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Prompt enviado</p>
-                            <pre className="text-xs font-mono text-fg-2 bg-surface border border-border rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words">
-                              {r.prompt || '(vazio)'}
-                            </pre>
+                    {/* Mostrar error_msg apenas pra erros reais (não transient/rate-limit) */}
+                    {isRealError && r.error_msg && (
+                      <tr className="bg-danger/5 border-b border-border last:border-0">
+                        <td colSpan={colCount} className="px-4 py-2 text-xs font-mono text-danger break-all">
+                          {r.error_msg}
+                        </td>
+                      </tr>
+                    )}
+                    {/* Transient: mensagem curta e muted */}
+                    {isTransient && r.error_msg && (
+                      <tr className="border-b border-border last:border-0 opacity-50">
+                        <td colSpan={colCount} className="px-4 py-1 text-[10px] font-mono text-fg-3 truncate">
+                          {r.error_msg}
+                        </td>
+                      </tr>
+                    )}
+                    {isExpanded && (
+                      <tr className="border-b border-border last:border-0 bg-surface-2">
+                        <td colSpan={colCount} className="px-4 py-3">
+                          {!hasStoredPayload && (
+                            <p className="text-xs text-fg-3 mb-3">
+                              Nenhum texto de prompt/resposta foi gravado neste registro (campo vazio no servidor ou entrada antiga).
+                            </p>
+                          )}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Mensagem enviada</p>
+                              <pre className="text-xs font-mono text-fg-2 bg-surface border border-border rounded p-2 max-h-72 overflow-auto whitespace-pre-wrap break-words">
+                                {r.prompt.trim() ? r.prompt : '(vazio)'}
+                              </pre>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Mensagem recebida</p>
+                              <pre className={`text-xs font-mono bg-surface border border-border rounded p-2 max-h-72 overflow-auto whitespace-pre-wrap break-words ${r.error ? 'text-danger' : 'text-fg-2'}`}>
+                                {r.response.trim() ? r.response : '(vazio)'}
+                              </pre>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">Resposta recebida</p>
-                            <pre className={`text-xs font-mono bg-surface border border-border rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words ${r.error ? 'text-danger' : 'text-fg-2'}`}>
-                              {r.response || '(vazio)'}
-                            </pre>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              )
-            })}
-          </tbody>
-        </table>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
