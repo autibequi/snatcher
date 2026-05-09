@@ -194,68 +194,17 @@ function ChannelHistory({ channelId }: { channelId: string }) {
   )
 }
 
-// ── Componente: lista grupos WA de uma conta para seleção ─────────────────────
-function AccountGroupsPicker({
-  account,
-  search,
-  alreadyAdded,
-  onAdd,
-  loading,
-}: {
-  account: { id: number; name: string }
-  search: string
-  alreadyAdded: string[]
-  onAdd: (g: { id: string; name: string }) => void
-  loading: boolean
-}) {
-  const { data: waGroups = [], isLoading } = useQuery({
-    queryKey: ['wa-groups', account.id],
-    queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/groups`).then(r => Array.isArray(r.data) ? r.data : []),
-    staleTime: 30_000,
-  })
-
-  const filtered = search
-    ? waGroups.filter((g: any) => g.name?.toLowerCase().includes(search.toLowerCase()))
-    : waGroups
-
-  return (
-    <div>
-      <div className="px-5 py-2 bg-surface-2 border-b border-border">
-        <p className="text-xs font-medium text-fg-2">{account.name}</p>
-      </div>
-      {isLoading ? (
-        <div className="px-5 py-3 text-xs text-fg-3">Carregando grupos...</div>
-      ) : filtered.length === 0 ? (
-        <div className="px-5 py-3 text-xs text-fg-3">
-          {waGroups.length === 0 ? 'Sem grupos (aguarde sync)' : 'Nenhum grupo encontrado'}
-        </div>
-      ) : (
-        filtered.map((g: any) => {
-          const added = alreadyAdded.includes(g.id)
-          return (
-            <div key={g.id} className="flex items-center justify-between px-5 py-2.5 border-b border-border last:border-0 hover:bg-surface-2">
-              <div>
-                <p className="text-sm text-fg">{g.name || '(sem nome)'}</p>
-                {g.size > 0 && <p className="text-xs text-fg-3">{g.size.toLocaleString('pt-BR')} membros</p>}
-              </div>
-              {added ? (
-                <Badge variant="success" size="sm">já adicionado</Badge>
-              ) : (
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => onAdd(g)}
-                  className="text-xs text-accent hover:underline disabled:opacity-50"
-                >
-                  + Adicionar
-                </button>
-              )}
-            </div>
-          )
-        })
-      )}
-    </div>
-  )
+/** Normaliza channel_id da API (pode vir null, número ou objeto estilo NullInt64). */
+function groupRowChannelId(row: any): number | null {
+  const v = row?.channel_id
+  if (v == null || v === '') return null
+  if (typeof v === 'object' && v !== null && 'Int64' in v) {
+    const n = (v as { Int64?: number; Valid?: boolean }).Int64
+    if ((v as { Valid?: boolean }).Valid === false) return null
+    return typeof n === 'number' && n > 0 ? n : null
+  }
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 function slugify(s: string): string {
@@ -551,39 +500,54 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
     enabled: tab === 'groups' && !!id,
   })
 
-  // Buscar contas WA e seus grupos reais (para o modal de adicionar)
-  const { data: waAccounts = [] } = useQuery({
-    queryKey: ['accounts', 'wa'],
-    queryFn: () => apiClient.get('/api/accounts/wa').then(r => Array.isArray(r.data) ? r.data : []),
-    enabled: showAddGroup,
+  // Grupos já cadastrados na plataforma (página Grupos) — sem buscar WhatsApp/Evolution
+  const { data: registryGroups = [], isLoading: registryLoading } = useQuery({
+    queryKey: ['groups', 'registry', 'all'],
+    queryFn: () => apiClient.get('/api/groups').then(r => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+    enabled: showAddGroup && !!id,
+    staleTime: 15_000,
   })
 
-  // Para cada conta conectada, buscar grupos WA reais
-  const connectedAccounts = waAccounts.filter((a: any) => a.active)
-
-  const addGroupMut = useMutation({
-    mutationFn: (g: { name: string; jid: string; accountId: number }) =>
-      apiClient.post('/api/groups', {
-        channel_id: Number(id),
-        name: g.name,
-        platform: 'whatsapp',
-        jid: g.jid,
-        wa_account_id: g.accountId,
-        status: 'active',
-      }).then(r => r.data),
+  const linkGroupMut = useMutation({
+    mutationFn: async (row: any) => {
+      const chId = Number(id)
+      const currentCh = groupRowChannelId(row)
+      if (currentCh != null && currentCh === chId) {
+        throw new Error('Este grupo já está vinculado a este canal')
+      }
+      if (currentCh == null) {
+        return apiClient.patch(`/api/groups/${row.id}`, { channel_id: chId }).then(r => r.data)
+      }
+      const plat = row.platform === 'telegram' || row.platform === 'tg' ? 'telegram' : 'whatsapp'
+      const body: Record<string, unknown> = {
+        channel_id: chId,
+        name: row.name,
+        platform: plat,
+        status: row.status || 'active',
+      }
+      if (row.jid) body.jid = row.jid
+      if (row.wa_account_id != null && row.wa_account_id !== '')
+        body.wa_account_id = Number(row.wa_account_id)
+      if (row.tg_account_id != null && row.tg_account_id !== '')
+        body.tg_account_id = Number(row.tg_account_id)
+      return apiClient.post('/api/groups', body).then(r => r.data)
+    },
     onSuccess: async (data: any) => {
-      qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
+      await qc.invalidateQueries({ queryKey: ['groups'] })
       setShowAddGroup(false)
       setSearch('')
-      if (!data?.id || data.platform !== 'whatsapp' || !data.jid) return
-      try {
-        await apiClient.post(`/api/groups/${data.id}/fetch-invite`)
-        qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
-      } catch {
-        /* Evolution indisponível ou sem permissão — usar 🔄 WA ou colar link */
+      if (!data?.id) return
+      const plat = data.platform === 'whatsapp' || data.platform === 'wa'
+      if (plat && data.jid) {
+        try {
+          await apiClient.post(`/api/groups/${data.id}/fetch-invite`)
+        } catch {
+          /* Evolution indisponível — link manual na lista */
+        }
       }
+      await qc.invalidateQueries({ queryKey: ['groups', { channelId: id }] })
     },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao adicionar grupo'),
+    onError: (err: any) => alert(err?.message ?? err?.response?.data?.error ?? 'Erro ao vincular grupo'),
   })
 
   const removeGroupMut = useMutation({
@@ -888,8 +852,15 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setShowAddGroup(false); setSearch('') }}>
                 <div className="bg-surface border border-border rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col shadow-modal" onClick={e => e.stopPropagation()}>
                   <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-                    <h3 className="font-medium text-fg">Selecionar grupo WhatsApp</h3>
-                    <button type="button" onClick={() => setShowAddGroup(false)} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+                    <div>
+                      <h3 className="font-medium text-fg">Vincular grupo ao canal</h3>
+                      <p className="text-[11px] text-fg-3 mt-1 leading-snug">
+                        Lista apenas grupos já cadastrados na página{' '}
+                        <a href="/groups" className="text-accent hover:underline" onClick={e => e.stopPropagation()}>Grupos</a>.
+                        Para incluir um grupo novo do WhatsApp, cadastre-o lá primeiro.
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setShowAddGroup(false)} className="text-fg-3 hover:text-fg text-lg leading-none shrink-0">×</button>
                   </div>
 
                   {/* Busca */}
@@ -903,25 +874,76 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
                     />
                   </div>
 
-                  {/* Lista de grupos por conta */}
                   <div className="flex-1 overflow-y-auto">
-                    {connectedAccounts.length === 0 ? (
-                      <div className="p-6 text-sm text-fg-3 text-center">
-                        Nenhuma conta WhatsApp conectada.<br/>
-                        Conecte uma conta em <a href="/accounts" className="text-accent hover:underline">Contas conectadas</a>.
-                      </div>
-                    ) : (
-                      connectedAccounts.map((account: any) => (
-                        <AccountGroupsPicker
-                          key={account.id}
-                          account={account}
-                          search={search}
-                          alreadyAdded={groups.map((g: any) => g.jid).filter(Boolean)}
-                          onAdd={(g) => addGroupMut.mutate({ name: g.name, jid: g.id, accountId: account.id })}
-                          loading={addGroupMut.isPending}
-                        />
-                      ))
-                    )}
+                    {registryLoading ? (
+                      <div className="px-5 py-6 text-xs text-fg-3 text-center">Carregando grupos cadastrados...</div>
+                    ) : (() => {
+                      const linkedIds = new Set(groups.map((g: any) => Number(g.id)))
+                      const available = registryGroups.filter((g: any) => !linkedIds.has(Number(g.id)))
+                      const q = search.trim().toLowerCase()
+                      const filtered = q
+                        ? available.filter((g: any) => {
+                            const name = String(g.name ?? '').toLowerCase()
+                            const ch = String(g.channel_name ?? '').toLowerCase()
+                            const jid = String(g.jid ?? '').toLowerCase()
+                            return name.includes(q) || ch.includes(q) || jid.includes(q)
+                          })
+                        : available
+                      if (registryGroups.length === 0) {
+                        return (
+                          <div className="p-6 text-sm text-fg-3 text-center space-y-2">
+                            <p>Nenhum grupo cadastrado na plataforma ainda.</p>
+                            <p>
+                              <a href="/groups" className="text-accent hover:underline">Abrir página Grupos</a>
+                              {' '}para adicionar grupos do WhatsApp ou Telegram.
+                            </p>
+                          </div>
+                        )
+                      }
+                      if (available.length === 0) {
+                        return (
+                          <div className="px-5 py-6 text-sm text-fg-3 text-center">
+                            Todos os grupos cadastrados já estão vinculados a este canal.
+                          </div>
+                        )
+                      }
+                      if (filtered.length === 0) {
+                        return <div className="px-5 py-6 text-xs text-fg-3 text-center">Nenhum grupo encontrado para esta busca.</div>
+                      }
+                      return filtered.map((g: any) => {
+                        const ch = groupRowChannelId(g)
+                        const plat = g.platform === 'telegram' || g.platform === 'tg' ? 'Telegram' : 'WhatsApp'
+                        return (
+                          <div
+                            key={g.id}
+                            className="flex items-center justify-between px-5 py-2.5 border-b border-border last:border-0 hover:bg-surface-2 gap-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-fg truncate">{g.name || '(sem nome)'}</p>
+                              <p className="text-[10px] text-fg-3 mt-0.5">
+                                {plat}
+                                {g.channel_name ? (
+                                  <> · canal: <span className="text-fg-2">{g.channel_name}</span></>
+                                ) : ch == null ? (
+                                  <> · <span className="text-warning">sem canal</span></>
+                                ) : null}
+                                {(g.member_count ?? g.size) > 0 && (
+                                  <> · {(g.member_count ?? g.size).toLocaleString('pt-BR')} membros</>
+                                )}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={linkGroupMut.isPending}
+                              onClick={() => linkGroupMut.mutate(g)}
+                              className="text-xs text-accent hover:underline disabled:opacity-50 shrink-0"
+                            >
+                              {ch != null && ch !== Number(id) ? '+ Vincular cópia' : '+ Vincular'}
+                            </button>
+                          </div>
+                        )
+                      })
+                    })()}
                   </div>
                 </div>
               </div>
