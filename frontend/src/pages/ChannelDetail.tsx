@@ -384,100 +384,12 @@ function AccountGroupsPicker({
   )
 }
 
-// ── Aba: Link público ─────────────────────────────────────────────────────────
-
 function slugify(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-function ChannelPublicLink({ channelId, channel }: { channelId: string; channel: { name?: string; slug?: string } }) {
-  const qc = useQueryClient()
-  const baseURL = usePublicLinkBaseURL() // respeita app_domain configurado em Settings
-  const initialSlug = channel.slug || slugify(channel.name || '')
-  const [slug, setSlug] = React.useState(initialSlug)
-  const [copied, setCopied] = React.useState(false)
-
-  React.useEffect(() => {
-    setSlug(channel.slug || slugify(channel.name || ''))
-  }, [channel.slug, channel.name])
-
-  const fullURL = `${baseURL}/canal/${slug}`
-
-  const saveMut = useMutation({
-    mutationFn: () => apiClient.put(`/api/channels/${channelId}`, { ...channel, slug }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['channels', channelId] })
-      qc.invalidateQueries({ queryKey: ['channels'] })
-    },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar slug'),
-  })
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(fullURL).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
-  const slugChanged = slug !== (channel.slug || slugify(channel.name || ''))
-
-  return (
-    <div className="max-w-2xl space-y-4">
-      <p className="text-sm text-fg-2">
-        Link público compartilhável. Aponta para uma página que oferece os grupos disponíveis (WhatsApp/Telegram) para o usuário escolher.
-        Quando um grupo enche, basta atualizar o link de convite na aba <strong>Grupos</strong>.
-      </p>
-
-      <div>
-        <label className="text-xs text-fg-2 block mb-1">Slug (parte da URL)</label>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-fg-3 font-mono">{baseURL.replace(/^https?:\/\//, '')}/canal/</span>
-          <input
-            value={slug}
-            onChange={e => setSlug(slugify(e.target.value))}
-            placeholder={slugify(channel.name || 'meu-canal')}
-            className="flex-1 text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono"
-          />
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!slug || !slugChanged || saveMut.isPending}
-            onClick={() => saveMut.mutate()}
-            loading={saveMut.isPending}
-          >
-            Salvar
-          </Button>
-        </div>
-        <p className="text-xs text-fg-3 mt-1">
-          Por default, gerado do nome do canal. Pode ser editado para algo mais curto.
-        </p>
-      </div>
-
-      <div className="border border-border rounded-md p-4 bg-surface-2">
-        <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-2">Link completo</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 text-sm font-mono text-accent bg-surface border border-border rounded px-2 py-1.5 truncate">
-            {fullURL}
-          </code>
-          <Button variant="secondary" size="sm" onClick={handleCopy}>
-            {copied ? '✓ Copiado' : 'Copiar'}
-          </Button>
-          <a href={fullURL} target="_blank" rel="noopener" className="text-sm text-accent hover:underline px-2">
-            abrir →
-          </a>
-        </div>
-      </div>
-
-      <div className="text-xs text-fg-3 border-t border-border pt-3">
-        Ao acessar, o usuário vê uma página com os grupos ativos do canal e escolhe um para entrar.
-        Configure os grupos e seus invite links na aba <strong>Grupos</strong>.
-      </div>
-    </div>
-  )
 }
 
 // ── Bar chart 7 dias ──────────────────────────────────────────────────────────
@@ -549,15 +461,20 @@ const TABS = [
   { id: 'groups', label: 'Grupos' },
   { id: 'history', label: 'Histórico' },
   { id: 'queue', label: 'Fila' },
-  { id: 'publiclink', label: 'Link público' },
 ]
 
 export default function ChannelDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [tab, setTab] = React.useState('overview')
-  const [showEdit, setShowEdit] = React.useState(false)
-  const [editForm, setEditForm] = React.useState({ name: '', description: '', active: true })
+  const publicLinkBase = usePublicLinkBaseURL()
+  const [channelDraft, setChannelDraft] = React.useState({
+    name: '',
+    description: '',
+    active: true,
+    slug: '',
+  })
+  const [publicLinkCopied, setPublicLinkCopied] = React.useState(false)
 
   const { data: channel, isLoading } = useQuery({
     queryKey: ['channels', id],
@@ -579,19 +496,36 @@ export default function ChannelDetail() {
 
   const qc = useQueryClient()
 
-  // Pré-popular form de edição quando canal carrega
   React.useEffect(() => {
-    if (channel) setEditForm({ name: channel.name ?? '', description: channel.description ?? '', active: channel.active ?? true })
+    if (!channel) return
+    setChannelDraft({
+      name: channel.name ?? '',
+      description: channel.description ?? '',
+      active: channel.active ?? true,
+      slug: channel.slug || slugify(channel.name || ''),
+    })
   }, [channel])
 
+  const channelDraftDirty = !!channel && (
+    channelDraft.name.trim() !== (channel.name ?? '').trim() ||
+    (channelDraft.description ?? '').trim() !== (channel.description ?? '').trim() ||
+    channelDraft.active !== !!channel.active ||
+    channelDraft.slug !== (channel.slug || slugify(channel.name ?? ''))
+  )
+
   const updateMut = useMutation({
-    mutationFn: () => apiClient.put(`/api/channels/${id}`, {
-      ...channel,
-      name: editForm.name,
-      description: editForm.description,
-      active: editForm.active,
-    }).then(r => r.data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['channels', id] }); qc.invalidateQueries({ queryKey: ['channels'] }); setShowEdit(false) },
+    mutationFn: () =>
+      apiClient.put(`/api/channels/${id}`, {
+        ...channel,
+        name: channelDraft.name.trim(),
+        description: channelDraft.description.trim(),
+        active: channelDraft.active,
+        slug: channelDraft.slug.trim() || slugify(channelDraft.name.trim()),
+      }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', id] })
+      qc.invalidateQueries({ queryKey: ['channels'] })
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
@@ -726,7 +660,6 @@ export default function ChannelDetail() {
                 ✨ Sugerir
               </Button>
             </UITooltip>
-            <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>Editar</Button>
             <Button variant="danger" size="sm" loading={deleteMut.isPending}
               onClick={() => { if (confirm(`Excluir canal "${channel.name}"? Esta ação é irreversível.`)) deleteMut.mutate() }}>
               Excluir
@@ -767,35 +700,6 @@ export default function ChannelDetail() {
         )}
       </div>
 
-      {/* Modal de edição */}
-      {showEdit && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowEdit(false)}>
-          <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-fg mb-4">Editar canal</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Nome *</label>
-                <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                  value={editForm.name} onChange={e => setEditForm(f => ({...f, name: e.target.value}))} />
-              </div>
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Descrição</label>
-                <textarea rows={3} className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
-                  value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({...f, active: e.target.checked}))} className="accent-accent" />
-                <span className="text-sm text-fg">Canal ativo</span>
-              </label>
-            </div>
-            <div className="flex gap-2 justify-end mt-4">
-              <Button variant="secondary" size="sm" onClick={() => setShowEdit(false)}>Cancelar</Button>
-              <Button variant="primary" size="sm" loading={updateMut.isPending} disabled={!editForm.name.trim()} onClick={() => updateMut.mutate()}>Salvar</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Tabs */}
       <Tabs tabs={TABS} active={tab} onChange={setTab} className="px-6" />
 
@@ -803,6 +707,109 @@ export default function ChannelDetail() {
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'overview' && (
           <div className="space-y-4">
+            <div className="border border-border rounded-lg p-5 space-y-4 max-w-3xl">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-fg">Dados do canal</p>
+                  <p className="text-xs text-fg-3 mt-0.5">
+                    Nome, descrição, status e URL pública — salve uma vez. Quando um grupo enche, atualize o convite na aba{' '}
+                    <strong>Grupos</strong>.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={updateMut.isPending}
+                  disabled={!channelDraft.name.trim() || !channelDraftDirty}
+                  onClick={() => updateMut.mutate()}
+                >
+                  Salvar alterações
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-fg-2 block mb-1">Nome *</label>
+                  <input
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    value={channelDraft.name}
+                    onChange={e => setChannelDraft(d => ({ ...d, name: e.target.value }))}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-fg-2 block mb-1">Descrição</label>
+                  <textarea
+                    rows={3}
+                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
+                    value={channelDraft.description}
+                    onChange={e => setChannelDraft(d => ({ ...d, description: e.target.value }))}
+                  />
+                </div>
+                <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-md border border-border/80 px-3 py-2.5 bg-surface-2/50">
+                  <div>
+                    <p className="text-sm font-medium text-fg">Canal ativo</p>
+                    <p className="text-[10px] text-fg-3">Desliga automações e envios deste canal</p>
+                  </div>
+                  <Switch
+                    checked={channelDraft.active}
+                    onChange={v => setChannelDraft(d => ({ ...d, active: v }))}
+                  />
+                </div>
+              </div>
+              <div className="border-t border-border pt-4 space-y-3">
+                <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Link público</p>
+                <div>
+                  <label className="text-xs text-fg-2 block mb-1">Slug (parte da URL)</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-fg-3 font-mono shrink-0">
+                      {publicLinkBase.replace(/^https?:\/\//, '')}/canal/
+                    </span>
+                    <input
+                      value={channelDraft.slug}
+                      onChange={e => setChannelDraft(d => ({ ...d, slug: slugify(e.target.value) }))}
+                      placeholder={slugify(channelDraft.name || 'meu-canal')}
+                      className="flex-1 min-w-[8rem] text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent font-mono"
+                    />
+                  </div>
+                  <p className="text-xs text-fg-3 mt-1">
+                    Por padrão vem do nome; pode encurtar para um URL mais limpo (salva junto com os dados acima).
+                  </p>
+                </div>
+                <div className="border border-border rounded-md p-3 bg-surface-2">
+                  <p className="text-[10px] text-fg-2 font-medium uppercase tracking-wide mb-2">Preview</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="flex-1 min-w-0 text-xs font-mono text-accent bg-surface border border-border rounded px-2 py-1.5 truncate">
+                      {`${publicLinkBase}/canal/${channelDraft.slug || slugify(channelDraft.name || 'canal')}`}
+                    </code>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const u = `${publicLinkBase}/canal/${channelDraft.slug || slugify(channelDraft.name || 'canal')}`
+                        void navigator.clipboard.writeText(u).then(() => {
+                          setPublicLinkCopied(true)
+                          setTimeout(() => setPublicLinkCopied(false), 2000)
+                        })
+                      }}
+                    >
+                      {publicLinkCopied ? '✓ Copiado' : 'Copiar'}
+                    </Button>
+                    <a
+                      href={`${publicLinkBase}/canal/${channelDraft.slug || slugify(channelDraft.name || 'canal')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-accent hover:underline whitespace-nowrap"
+                    >
+                      abrir →
+                    </a>
+                  </div>
+                </div>
+                <p className="text-xs text-fg-3">
+                  Quem abre vê os grupos ativos e escolhe um para entrar. Links de convite por grupo continuam na aba Grupos.
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 label="Disparos 7D"
@@ -1076,9 +1083,6 @@ export default function ChannelDetail() {
           <ChannelQueue channelId={id!} />
         )}
 
-        {tab === 'publiclink' && (
-          <ChannelPublicLink channelId={id!} channel={channel} />
-        )}
       </div>
     </div>
   )

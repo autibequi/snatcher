@@ -371,23 +371,25 @@ func (h *JonfreyHandler) ListActions(w http.ResponseWriter, r *http.Request) {
 
 // ListAvailable GET /api/jonfrey/available
 func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
-	lastBy, _ := h.store.JonfreyLastFinishedAtByActionType()
+	lastBy, _ := h.store.JonfreyLastRunByActionType()
 	if lastBy == nil {
-		lastBy = map[string]time.Time{}
+		lastBy = map[string]models.JonfreyLastRunSummary{}
 	}
 	type item struct {
-		Type        string     `json:"type"`
-		Category    string     `json:"category"`
-		Description string     `json:"description"`
-		UsesLLM     bool       `json:"uses_llm"`
-		LastRunAt   *time.Time `json:"last_run_at,omitempty"`
+		Type            string     `json:"type"`
+		Category        string     `json:"category"`
+		Description     string     `json:"description"`
+		UsesLLM         bool       `json:"uses_llm"`
+		LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+		LastRunStatus   string     `json:"last_run_status,omitempty"`
 	}
 	out := []item{}
 	for _, a := range actionRegistry {
 		it := item{Type: a.Type, Category: a.Category, Description: a.Description, UsesLLM: a.UsesLLM}
-		if t, ok := lastBy[a.Type]; ok {
-			tCopy := t
+		if info, ok := lastBy[a.Type]; ok {
+			tCopy := info.FinishedAt
 			it.LastRunAt = &tCopy
+			it.LastRunStatus = info.Status
 		}
 		out = append(out, it)
 	}

@@ -283,8 +283,8 @@ type Store interface {
 	DeleteTerminalJonfreyActions() (int64, error)
 	GetJonfreyConfig() (models.JonfreyConfig, error)
 	UpdateJonfreyConfig(c models.JonfreyConfig) error
-	// JonfreyLastFinishedAtByActionType agrega MAX(finished_at) por action_type (execuções concluídas).
-	JonfreyLastFinishedAtByActionType() (map[string]time.Time, error)
+	// JonfreyLastRunByActionType última linha terminada por action_type (finished_at + status).
+	JonfreyLastRunByActionType() (map[string]models.JonfreyLastRunSummary, error)
 
 	// Ads — disparos recorrentes customizados
 	ListAds(activeOnly bool) ([]models.Ad, error)

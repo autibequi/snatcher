@@ -854,6 +854,12 @@ func (a JonfreyAction) MarshalJSON() ([]byte, error) {
 	}{alias: alias(a), Before: before, After: after})
 }
 
+// JonfreyLastRunSummary é a última execução concluída por action_type (para UI /available).
+type JonfreyLastRunSummary struct {
+	FinishedAt time.Time `json:"finished_at"`
+	Status     string    `json:"status"` // success | failed | skipped
+}
+
 // JonfreyConfig é a configuração singleton do assistente.
 type JonfreyConfig struct {
 	ID              int            `db:"id" json:"id"`

@@ -18,6 +18,15 @@ interface AvailableAction {
   category: string
   /** ISO — última conclusão desta ação (auditoria Jonfrey) */
   last_run_at?: string | null
+  /** success | failed | skipped — resultado dessa última execução */
+  last_run_status?: string | null
+}
+
+function lastRunRelClass(status: string | null | undefined): string {
+  if (status === 'success') return 'text-success font-medium'
+  if (status === 'failed') return 'text-danger font-medium'
+  if (status === 'skipped') return 'text-warning font-medium'
+  return 'text-fg-3'
 }
 
 /** Ação ligada + auto-pilot ligado, e sem run recente dentro do intervalo → destaque (atraso). */
@@ -164,17 +173,35 @@ export default function Jonfrey() {
               const intervalMin = config?.interval_minutes ?? 60
               const pilotOn = config?.enabled ?? false
               const overdue = isJonfreyActionOverdue(enabled, pilotOn, a.last_run_at, intervalMin)
+              const outcomeHint =
+                a.last_run_status === 'success'
+                  ? 'Sucesso'
+                  : a.last_run_status === 'failed'
+                    ? 'Falha'
+                    : a.last_run_status === 'skipped'
+                      ? 'Ignorada'
+                      : a.last_run_status ?? ''
               return (
                 <div key={a.type} className="flex items-center justify-between gap-3 py-1.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-mono text-fg">{a.type}</p>
                     <p className="text-xs text-fg-3">{a.description}</p>
-                    <p
-                      className={`text-[10px] mt-0.5 tabular-nums ${overdue ? 'text-danger font-medium' : 'text-fg-3'}`}
-                      title={a.last_run_at ? fmtJonfreyDate(a.last_run_at) : undefined}
-                    >
+                    <p className="text-[10px] mt-0.5 tabular-nums text-fg-3">
                       Última exec.:{' '}
-                      {a.last_run_at ? relJonfreyTime(a.last_run_at) : '—'}
+                      {a.last_run_at ? (
+                        <span
+                          className={lastRunRelClass(a.last_run_status)}
+                          title={
+                            `${fmtJonfreyDate(a.last_run_at)}${outcomeHint ? ` · ${outcomeHint}` : ''}${
+                              overdue ? ' · Acima do intervalo do auto-pilot' : ''
+                            }`
+                          }
+                        >
+                          {relJonfreyTime(a.last_run_at)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </p>
                     {a.uses_llm && (
                       <span className="text-[10px] text-warning font-medium flex items-center gap-1">

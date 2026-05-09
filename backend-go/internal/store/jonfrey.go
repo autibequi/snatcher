@@ -110,24 +110,28 @@ func (s *SQLStore) ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAc
 	return out, nil
 }
 
-// JonfreyLastFinishedAtByActionType retorna a última conclusão (finished_at) por tipo de ação.
-func (s *SQLStore) JonfreyLastFinishedAtByActionType() (map[string]time.Time, error) {
+// JonfreyLastRunByActionType retorna a última linha concluída por tipo (maior finished_at) com status.
+func (s *SQLStore) JonfreyLastRunByActionType() (map[string]models.JonfreyLastRunSummary, error) {
 	type row struct {
 		ActionType string    `db:"action_type"`
-		Ts         time.Time `db:"ts"`
+		FinishedAt time.Time `db:"finished_at"`
+		Status     string    `db:"status"`
 	}
 	var rows []row
 	err := s.db.Select(&rows, `
-		SELECT action_type, MAX(finished_at) AS ts
+		SELECT DISTINCT ON (action_type)
+			action_type,
+			finished_at,
+			status
 		FROM jonfrey_actions
 		WHERE finished_at IS NOT NULL
-		GROUP BY action_type`)
+		ORDER BY action_type, finished_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]time.Time, len(rows))
+	out := make(map[string]models.JonfreyLastRunSummary, len(rows))
 	for _, r := range rows {
-		out[r.ActionType] = r.Ts
+		out[r.ActionType] = models.JonfreyLastRunSummary{FinishedAt: r.FinishedAt, Status: r.Status}
 	}
 	return out, nil
 }
