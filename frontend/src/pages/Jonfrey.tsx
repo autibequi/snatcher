@@ -2,11 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Switch, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
-import {
-  JonfreyActionCard,
-  relJonfreyTime,
-  type JonfreyAction,
-} from '../components/JonfreyActionCard'
+import { relJonfreyTime } from '../components/JonfreyActionCard'
 
 interface JonfreyConfig {
   enabled: boolean
@@ -24,12 +20,6 @@ interface AvailableAction {
 
 export default function Jonfrey() {
   const qc = useQueryClient()
-
-  const { data: actions = [], isLoading } = useQuery<JonfreyAction[]>({
-    queryKey: ['jonfrey-actions'],
-    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => r.data ?? []).catch(() => []),
-    refetchInterval: 10_000,
-  })
 
   const { data: config } = useQuery<JonfreyConfig>({
     queryKey: ['jonfrey-config'],
@@ -72,8 +62,9 @@ export default function Jonfrey() {
       <div>
         <p className="text-sm text-fg-3">
           Jonfrey é um assistente de IA que orquestra automaticamente as outras automações —
-          configura crawlers, audita pendências, ajusta thresholds e mantém um changelog de auditoria
-          para você entender o que ele fez e por quê.
+          configura crawlers, audita pendências e ajusta thresholds. O histórico de execuções fica em{' '}
+          <a href="/logs?tab=jonfrey" className="text-accent hover:underline">Logs → aba Jonfrey</a>
+          {' '}(e na fila ⏱ na barra superior).
         </p>
       </div>
 
@@ -204,34 +195,6 @@ export default function Jonfrey() {
             ▶ Executar agora
           </Button>
         </div>
-      </div>
-
-      {/* Changelog */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-fg">Changelog de auditoria</p>
-          <button
-            type="button"
-            onClick={() => qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })}
-            className="text-xs text-fg-3 hover:text-fg"
-          >
-            ↻ Atualizar
-          </button>
-        </div>
-        {isLoading ? (
-          <p className="text-xs text-fg-3">Carregando…</p>
-        ) : actions.length === 0 ? (
-          <div className="bg-surface border border-border rounded-md p-6 text-center">
-            <p className="text-sm text-fg-2">Nenhuma ação registrada ainda.</p>
-            <p className="text-xs text-fg-3 mt-1">
-              Use "Executar agora" ou ligue o auto-pilot para o Jonfrey começar a agir.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {actions.map(a => <JonfreyActionCard key={a.id} action={a} />)}
-          </div>
-        )}
       </div>
     </div>
   )
