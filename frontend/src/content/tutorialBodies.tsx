@@ -224,7 +224,9 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
             <strong className="text-fg">Jonfrey</strong> executa <strong className="text-fg">ações configuráveis</strong> por tipo (incluindo tarefas com LLM quando aplicável).
             O que aparece na lista depende do backend do workspace — cada ação tem auditoria em <strong className="text-fg">Logs → Jonfrey</strong>.
           </li>
-          <li>O modo full-auto depende das políticas globais em <strong className="text-fg">Automações</strong> — mantenha consistência entre as duas telas.</li>
+          <li>
+            Full-auto, filtro só curated/auto e webhooks de aprovação são configurados nesta página (Jonfrey) — não há duplicata em Configurações.
+          </li>
         </Ul>
       </Sec>
       <Sec title="Transparência">

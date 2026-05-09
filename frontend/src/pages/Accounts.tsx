@@ -36,6 +36,113 @@ interface StatusData {
   status: string
 }
 
+/** Limites globais de envio (mesmos campos que appconfig / Settings antes da mudança). */
+interface AccountsAntiBanConfig {
+  interval_between_groups?: number
+  interval_between_channels?: number
+  daily_limit_per_account?: number
+  rotate_accounts?: boolean
+  [key: string]: unknown
+}
+
+function AccountsAntiBanPanel() {
+  const qc = useQueryClient()
+  const [localConfig, setLocalConfig] = useState<Partial<AccountsAntiBanConfig>>({})
+
+  const { data: config, isLoading } = useQuery<AccountsAntiBanConfig>({
+    queryKey: ['config'],
+    queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      apiClient.put('/api/config', { ...config, ...localConfig }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] })
+      setLocalConfig({})
+    },
+  })
+
+  const merged: AccountsAntiBanConfig = { ...config, ...localConfig }
+  const updateField = (key: keyof AccountsAntiBanConfig, value: unknown) => {
+    setLocalConfig(prev => ({ ...prev, [key]: value }))
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-5 space-y-4 mb-6 max-w-4xl">
+      <div>
+        <p className="text-sm font-semibold text-fg">Anti-ban</p>
+        <p className="text-xs text-fg-3 mt-0.5">
+          Limites globais para WhatsApp/Telegram — ritmo entre grupos/canais, teto diário por conta e rotação.
+        </p>
+      </div>
+
+      {isLoading && !config ? (
+        <Skeleton variant="card" className="h-24" />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Intervalo entre grupos (s)</label>
+            <input
+              type="number"
+              min={0}
+              value={(merged.interval_between_groups as number) ?? 5}
+              onChange={e => updateField('interval_between_groups', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Intervalo entre canais (s)</label>
+            <input
+              type="number"
+              min={0}
+              value={(merged.interval_between_channels as number) ?? 30}
+              onChange={e => updateField('interval_between_channels', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Limite diário por conta</label>
+            <input
+              type="number"
+              min={0}
+              value={(merged.daily_limit_per_account as number) ?? 200}
+              onChange={e => updateField('daily_limit_per_account', Number(e.target.value))}
+              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+          <div className="flex flex-col justify-end">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(merged.rotate_accounts as boolean) ?? false}
+                onChange={e => updateField('rotate_accounts', e.target.checked)}
+                className="accent-accent"
+              />
+              <span className="text-sm text-fg">Rotacionar contas</span>
+            </label>
+            <p className="text-xs text-fg-3 mt-1">Alterna entre contas disponíveis em cada disparo.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 pt-1">
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={saveMut.isPending}
+          disabled={isLoading && !config}
+          onClick={() => saveMut.mutate()}
+        >
+          Salvar anti-ban
+        </Button>
+        {saveMut.isSuccess && <span className="text-xs text-green-400">Salvo.</span>}
+        {saveMut.isError && <span className="text-xs text-red-400">Erro ao salvar.</span>}
+      </div>
+    </div>
+  )
+}
+
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
   connected: 'success',
   qr_pending: 'warning',
@@ -574,6 +681,8 @@ export default function Accounts() {
 
   return (
     <div className="p-6">
+      <AccountsAntiBanPanel />
+
       <div className="flex items-center justify-end mb-4">
         <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
           + Adicionar conta

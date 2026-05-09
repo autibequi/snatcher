@@ -551,84 +551,6 @@ function BrandingTab() {
 }
 
 // ───────────────────────────────────────
-// Anti-ban Section
-// ───────────────────────────────────────
-
-interface AntiBanConfig {
-  interval_between_groups?: number
-  interval_between_channels?: number
-  daily_limit_per_account?: number
-  rotate_accounts?: boolean
-  [key: string]: unknown
-}
-
-function AntiBanSection({
-  config,
-  localConfig,
-  onChange,
-}: {
-  config: AntiBanConfig | undefined
-  localConfig: Partial<AntiBanConfig>
-  onChange: (key: keyof AntiBanConfig, value: unknown) => void
-}) {
-  const merged: AntiBanConfig = { ...config, ...localConfig }
-
-  return (
-    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
-      <div>
-        <p className="text-sm font-semibold text-fg">Anti-ban</p>
-        <p className="text-xs text-fg-3 mt-0.5">Limites para evitar banimento nas plataformas de mensagens.</p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Intervalo entre grupos (s)</label>
-          <input
-            type="number"
-            min={0}
-            value={(merged.interval_between_groups as number) ?? 5}
-            onChange={e => onChange('interval_between_groups', Number(e.target.value))}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Intervalo entre canais (s)</label>
-          <input
-            type="number"
-            min={0}
-            value={(merged.interval_between_channels as number) ?? 30}
-            onChange={e => onChange('interval_between_channels', Number(e.target.value))}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Limite diário por conta</label>
-          <input
-            type="number"
-            min={0}
-            value={(merged.daily_limit_per_account as number) ?? 200}
-            onChange={e => onChange('daily_limit_per_account', Number(e.target.value))}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
-        </div>
-        <div className="flex flex-col justify-end">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={(merged.rotate_accounts as boolean) ?? false}
-              onChange={e => onChange('rotate_accounts', e.target.checked)}
-              className="accent-accent"
-            />
-            <span className="text-sm text-fg">Rotacionar contas</span>
-          </label>
-          <p className="text-xs text-fg-3 mt-1">Alterna entre contas disponíveis em cada disparo.</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ───────────────────────────────────────
 // Encurtador Section
 // ───────────────────────────────────────
 
@@ -757,8 +679,6 @@ interface AppConfig {
   notify_on_error?: boolean
   notify_on_new_product?: boolean
   alert_webhook_url?: string
-  full_auto_mode?: boolean
-  auto_match_only_curated?: boolean
   [key: string]: unknown
 }
 
@@ -832,63 +752,23 @@ function GeneralTab() {
         </div>
       </div>
 
-      {/* Modo de automação */}
-      <div className="border border-border rounded-md p-4 space-y-3">
-        <p className="text-sm font-medium text-fg">Modo de Automação</p>
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <div>
-            <p className="text-sm text-fg">Full-auto</p>
-            <p className="text-xs text-fg-3">Envia sem aprovação humana. Desligado = man-in-the-middle (aprovação antes de cada envio).</p>
-          </div>
-          <input
-            type="checkbox"
-            className="accent-accent w-4 h-4"
-            checked={merged.full_auto_mode === true}
-            onChange={e => updateField('full_auto_mode', e.target.checked)}
-          />
-        </label>
-        <label className="flex items-center justify-between gap-3 cursor-pointer border-t border-border pt-3 mt-1">
-          <div>
-            <p className="text-sm text-fg">Auto-match só curated / auto</p>
-            <p className="text-xs text-fg-3">
-              Quando ligado, o worker e a prévia ignoram produtos que não estão com curação <code className="text-[10px]">curated</code> ou{' '}
-              <code className="text-[10px]">auto</code>.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            className="accent-accent w-4 h-4"
-            checked={merged.auto_match_only_curated === true}
-            onChange={e => updateField('auto_match_only_curated', e.target.checked)}
-          />
-        </label>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Webhook de notificação de aprovações pendentes (opcional)</label>
-          <input
-            type="url"
-            placeholder="https://hooks.slack.com/..."
-            value={(merged.notify_approval_webhook as string) ?? ''}
-            onChange={e => updateField('notify_approval_webhook', e.target.value)}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          />
-        </div>
+      {/* Piloto / full-auto / curated / webhook de aprovação — única fonte: Jonfrey */}
+      <div className="border border-border rounded-md p-4 bg-surface-2/40 space-y-2">
+        <p className="text-sm font-medium text-fg">Automação (full-auto, match curated, webhooks de aprovação)</p>
+        <p className="text-xs text-fg-3 leading-relaxed">
+          Essas opções foram consolidadas no{' '}
+          <a href="/automations/jonfrey" className="text-accent hover:underline font-medium">
+            Jonfrey
+          </a>{' '}
+          para não duplicar com Configurações. Lá você liga o piloto, full-auto, filtro só curated/auto e notificações de fila.
+        </p>
       </div>
 
-      {/* 2-col grid: linha 1 — Anti-ban + Encurtador; linha 2 — Equipe + Notificações */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Linha 1, col 1: Anti-ban */}
-        <AntiBanSection
-          config={config}
-          localConfig={localConfig}
-          onChange={updateField}
-        />
-        {/* Linha 1, col 2: Encurtador */}
-        <ShortenerSection
-          config={config}
-          localConfig={localConfig}
-          onChange={updateField}
-        />
-      </div>
+      <ShortenerSection
+        config={config}
+        localConfig={localConfig}
+        onChange={updateField}
+      />
 
       {/* Linha 2: Notificações (full width — pode ser expandido) */}
       <NotificationsSection
