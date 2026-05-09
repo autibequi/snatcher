@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
@@ -19,12 +19,6 @@ interface TGAccount {
   bot_username?: string
   active: boolean
   role: string
-}
-
-interface Channel {
-  id: number
-  name: string
-  active: boolean
 }
 
 interface WAGroupOption {
@@ -49,6 +43,9 @@ interface GroupRow {
   admins?: Array<{ initials: string; color?: string }>
   status?: string
   audience_status?: 'profile' | 'no_profile' | string
+  /** Mesmo JID em N linhas = grupo físico em N canais (backend). */
+  channels_count?: number
+  jid?: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -177,6 +174,11 @@ function effectiveAdminRiskCount(g: GroupRow): number {
   return g.admin_count ?? g.admins?.length ?? 0
 }
 
+function formatCanaisLabel(count?: number): string {
+  if (count == null || count === 0) return '—'
+  return count === 1 ? '1 canal' : `${count} canais`
+}
+
 function AdminRiskBanner({ groups }: { groups: GroupRow[] }) {
   const risky = groups.filter(g => effectiveAdminRiskCount(g) < 2)
   if (risky.length === 0) return null
@@ -219,7 +221,7 @@ function GroupsTable({
     return (
       <p className="text-sm text-fg-3 py-4 text-center">
         {groups.length === 0
-          ? 'Nenhum grupo cadastrado. Use "+ Adicionar grupo" para importar grupos da conta WA.'
+          ? 'Nenhum grupo cadastrado. Use "Importar grupo" para buscar grupos na conta WhatsApp.'
           : 'Nenhum grupo encontrado com esse filtro.'}
       </p>
     )
@@ -238,7 +240,7 @@ function GroupsTable({
               Plataforma
             </th>
             <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-              Canal
+              Canais
             </th>
             <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
               Conta
@@ -273,8 +275,8 @@ function GroupsTable({
                 <td className="px-4 py-2.5">
                   <PlatformBadge platform={g.platform} />
                 </td>
-                <td className="px-4 py-2.5 text-fg-2">
-                  {g.channel_name ?? '—'}
+                <td className="px-4 py-2.5 text-fg-2 whitespace-nowrap">
+                  {formatCanaisLabel(g.channels_count)}
                 </td>
                 <td className="px-4 py-2.5 text-fg-2">
                   {g.account_label ?? '—'}
@@ -304,186 +306,6 @@ function GroupsTable({
       </table>
       </div>
     </div>
-  )
-}
-
-// ── Available WA groups (Evolution) — não vinculados a canal ─────────────────
-
-function AvailableWAGroupsSection({
-  account,
-  channels,
-  linkedJIDs,
-  onLinked,
-}: {
-  account: WAAccount
-  channels: Channel[]
-  linkedJIDs: Set<string>
-  onLinked: () => void
-}) {
-  const { data: waGroups = [], isLoading, isFetching, refetch } = useQuery<WAGroupOption[]>({
-    queryKey: ['available-wa-groups', account.id],
-    queryFn: () =>
-      apiClient
-        .get(`/api/accounts/wa/${account.id}/groups`)
-        .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(() => []),
-    enabled: account.status === 'connected',
-    // Long-polling adaptativo: enquanto vazio (Evolution ainda respondendo), 15s; com dados, 60s.
-    refetchInterval: (q) => {
-      const data = q.state.data as WAGroupOption[] | undefined
-      return data && data.length > 0 ? 60_000 : 15_000
-    },
-  })
-
-  const linkMut = useMutation({
-    mutationFn: ({ jid, name, size, channelId }: { jid: string; name: string; size: number; channelId: number }) =>
-      apiClient.post('/api/groups', {
-        channel_id: channelId,
-        name,
-        platform: 'whatsapp',
-        wa_account_id: account.id,
-        jid,
-        member_count: size,
-      }),
-    onSuccess: onLinked,
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao vincular'),
-  })
-
-  const [search, setSearch] = useState('')
-
-  const unlinkedAll = waGroups.filter(g => !linkedJIDs.has(g.id))
-  const q = search.trim().toLowerCase()
-  const unlinked = q
-    ? unlinkedAll.filter(g => g.name.toLowerCase().includes(q))
-    : unlinkedAll
-
-  if (account.status !== 'connected') return null
-
-  // Mantém visível o estado "esperando Evolution" — antes desaparecia, dando impressão
-  // de tela quebrada. Agora mostra placeholder com refresh manual.
-  const empty = !isLoading && waGroups.length === 0
-
-  return (
-    <div className="mt-6">
-      <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
-        <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-          Grupos no WhatsApp · {account.name}
-          {isFetching && (
-            <span className="text-[10px] text-fg-3 font-normal flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-accent rounded-full animate-pulse" />
-              atualizando…
-            </span>
-          )}
-        </h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-fg-3">
-            {unlinkedAll.length} disponíveis · {waGroups.length - unlinkedAll.length} vinculados
-          </span>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="text-xs text-fg-3 hover:text-fg disabled:opacity-50"
-            title="Forçar refresh da Evolution"
-          >
-            ↻
-          </button>
-        </div>
-      </div>
-
-      {empty ? (
-        <div className="border border-border rounded-md p-4 text-center bg-surface-2">
-          <p className="text-xs text-fg-3">Evolution ainda não retornou os grupos desta conta.</p>
-          <p className="text-[10px] text-fg-3 mt-1">Auto-refresh a cada 15s. Pode levar até 1 min se a instância acabou de conectar.</p>
-        </div>
-      ) : isLoading ? (
-        <p className="text-xs text-fg-3 py-2">Carregando…</p>
-      ) : unlinkedAll.length === 0 ? (
-        <p className="text-xs text-fg-3 py-2">Todos os grupos já foram vinculados.</p>
-      ) : (
-        <>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={`Filtrar entre ${unlinkedAll.length} grupos pelo nome…`}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent mb-2"
-          />
-          {unlinked.length === 0 ? (
-            <p className="text-xs text-fg-3 py-2">Nenhum grupo bate com "{search}".</p>
-          ) : (
-            <div className="border border-border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface-2 border-b border-border">
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
-                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Membros</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase w-72">Vincular a canal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unlinked.map(g => (
-                    <UnlinkedRow
-                      key={g.id}
-                      group={g}
-                      channels={channels}
-                      onLink={(channelId) => linkMut.mutate({ jid: g.id, name: g.name, size: g.size, channelId })}
-                      pending={linkMut.isPending}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-function UnlinkedRow({
-  group,
-  channels,
-  onLink,
-  pending,
-}: {
-  group: WAGroupOption
-  channels: Channel[]
-  onLink: (channelId: number) => void
-  pending: boolean
-}) {
-  const [channelId, setChannelId] = useState<string>(channels[0] ? String(channels[0].id) : '')
-  return (
-    <tr className="border-b border-border last:border-0 hover:bg-surface-2/50">
-      <td className="px-4 py-2 text-fg">{group.name}</td>
-      <td className="px-4 py-2 text-right text-fg-2">{group.size}</td>
-      <td className="px-4 py-2">
-        <div className="flex gap-1">
-          {channels.length === 0 ? (
-            <span className="text-xs text-warning">Crie um canal primeiro</span>
-          ) : (
-            <>
-              <select
-                value={channelId}
-                onChange={e => setChannelId(e.target.value)}
-                className="text-xs border border-border rounded px-2 py-1 bg-surface text-fg flex-1"
-              >
-                {channels.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => channelId && onLink(Number(channelId))}
-                disabled={pending || !channelId}
-                className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
-              >
-                Vincular
-              </button>
-            </>
-          )}
-        </div>
-      </td>
-    </tr>
   )
 }
 
@@ -527,80 +349,58 @@ export default function Groups() {
   const activeTG = tgAccounts.filter(a => a.active)
   const isLoading = waLoading || tgLoading || groupsLoading
 
-  // Channels — necessários para vincular um grupo ao importar
-  const { data: channels = [] } = useQuery<Channel[]>({
-    queryKey: ['channels'],
-    queryFn: () => apiClient.get('/api/channels').then(r => (Array.isArray(r.data) ? r.data : [])),
-  })
-  const activeChannels = channels.filter(c => c.active)
-
-  // ── Modal de importação de grupos WA ──────────────────────────────────────
+  // ── Modal: importar grupos da Evolution (sem vincular canal aqui) ───────────
   const [showImport, setShowImport] = useState(false)
   const [importAccountId, setImportAccountId] = useState('')
-  const [importChannelId, setImportChannelId] = useState('')
-  const [selectedJID, setSelectedJID] = useState('')
-  const [importInviteLink, setImportInviteLink] = useState('')
-  const [groupSearch, setGroupSearch] = useState('')
+  const [modalSearch, setModalSearch] = useState('')
 
-  // Busca grupos da Evolution API ao trocar de conta
-  const { data: waGroupOptions = [], isFetching: waGroupsFetching, refetch: refetchWAGroups } =
+  const importAccount = activeWA.find(a => String(a.id) === importAccountId)
+
+  const { data: waGroupOptions = [], isLoading: waGroupsLoading, isFetching: waGroupsFetching, refetch: refetchWaModal } =
     useQuery<WAGroupOption[]>({
-      queryKey: ['wa-groups-evo', importAccountId],
+      queryKey: ['wa-groups-import-modal', importAccountId],
       queryFn: () =>
         apiClient
-          .get(`/api/accounts/wa/${importAccountId}/groups?fresh=true`)
-          .then(r => (Array.isArray(r.data) ? r.data : [])),
-      enabled: false, // dispara manualmente via refetch
+          .get(`/api/accounts/wa/${importAccountId}/groups`)
+          .then(r => (Array.isArray(r.data) ? r.data : []))
+          .catch(() => []),
+      enabled: showImport && !!importAccountId && importAccount?.status === 'connected',
+      refetchInterval: (q) => {
+        const data = q.state.data as WAGroupOption[] | undefined
+        return data && data.length > 0 ? 60_000 : 15_000
+      },
     })
 
-  useEffect(() => {
-    setSelectedJID('')
-    setGroupSearch('')
-    if (importAccountId) refetchWAGroups()
-  }, [importAccountId, refetchWAGroups])
+  const linkedJIDs = useMemo(
+    () => new Set(groups.map(g => String(g.jid ?? '').trim()).filter(Boolean)),
+    [groups],
+  )
+
+  const importOneMut = useMutation({
+    mutationFn: (opt: WAGroupOption) =>
+      apiClient.post('/api/groups', {
+        name: opt.name,
+        platform: 'whatsapp',
+        wa_account_id: Number(importAccountId),
+        jid: opt.id,
+        member_count: opt.size,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? err?.message ?? 'Erro ao importar'),
+  })
 
   const openImport = () => {
-    const first = activeWA[0]
-    const firstCh = activeChannels[0]
+    const first =
+      activeWA.find(a => a.status === 'connected') ?? activeWA[0]
     setImportAccountId(first ? String(first.id) : '')
-    setImportChannelId(firstCh ? String(firstCh.id) : '')
-    setSelectedJID('')
-    setGroupSearch('')
+    setModalSearch('')
     setShowImport(true)
   }
 
-  const selectedGroup = waGroupOptions.find(g => g.id === selectedJID)
-
-  const importMut = useMutation({
-    mutationFn: () => {
-      if (!selectedGroup) throw new Error('Selecione um grupo')
-      if (!importChannelId) throw new Error('Selecione um canal')
-      return apiClient
-        .post('/api/groups', {
-          channel_id: Number(importChannelId),
-          name: selectedGroup.name,
-          platform: 'whatsapp',
-          wa_account_id: Number(importAccountId),
-          jid: selectedGroup.id,
-          member_count: selectedGroup.size,
-          invite_link: importInviteLink.trim() || undefined,
-        })
-        .then(r => r.data)
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['groups'] })
-      setShowImport(false)
-      setImportInviteLink('')
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao importar grupo'
-      alert(msg)
-    },
-  })
-
-  const filteredWAOptions = waGroupOptions.filter(g =>
-    !groupSearch || g.name.toLowerCase().includes(groupSearch.toLowerCase())
+  const modalFiltered = waGroupOptions.filter(g =>
+    !modalSearch.trim() || g.name.toLowerCase().includes(modalSearch.trim().toLowerCase()),
   )
+  const modalUnlinked = modalFiltered.filter(g => !linkedJIDs.has(g.id))
 
   return (
     <div className="p-6">
@@ -608,7 +408,7 @@ export default function Groups() {
       <div className="flex items-start justify-between mb-4">
         <div>
           <p className="text-sm text-fg-3">
-            Destinos físicos (WhatsApp/Telegram) vinculados a canais
+            Grupos importados das contas — vincule a canais no detalhe de cada canal ou do grupo
           </p>
           {!isLoading && (
             <p className="text-xs text-fg-3 mt-0.5">
@@ -619,7 +419,7 @@ export default function Groups() {
           )}
         </div>
         <Button variant="primary" size="sm" disabled={activeWA.length === 0} onClick={openImport}>
-          + Adicionar grupo
+          Importar grupo
         </Button>
       </div>
 
@@ -673,133 +473,126 @@ export default function Groups() {
             accountFilter={accountFilter}
             onRowClick={id => navigate(`/groups/${id}`)}
           />
-
-          {/* Grupos disponíveis no WhatsApp (não vinculados a canal) */}
-          {activeWA.map(acc => (
-            <AvailableWAGroupsSection
-              key={acc.id}
-              account={acc}
-              channels={activeChannels}
-              linkedJIDs={new Set(groups.map(g => String((g as any).jid ?? '')))}
-              onLinked={() => qc.invalidateQueries({ queryKey: ['groups'] })}
-            />
-          ))}
         </>
       )}
 
-      {/* Modal de importação de grupos WA */}
       {showImport && activeWA.length > 0 && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
           onClick={() => setShowImport(false)}
         >
           <div
-            className="bg-surface border border-border rounded-lg p-5 w-full max-w-md shadow-modal"
+            className="bg-surface border border-border rounded-lg p-5 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-modal"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="font-medium text-fg mb-4">Importar grupo WhatsApp</h3>
-            <div className="space-y-3">
-              {/* Conta WA */}
-              {activeWA.length > 1 && (
-                <div>
-                  <label className="text-xs text-fg-2 mb-1 block">Conta</label>
-                  <select
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                    value={importAccountId}
-                    onChange={e => setImportAccountId(e.target.value)}
-                  >
-                    {activeWA.map(a => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Canal destino */}
+            <div className="flex items-start justify-between gap-4 mb-4">
               <div>
-                <label className="text-xs text-fg-2 mb-1 block">Canal</label>
-                {activeChannels.length === 0 ? (
-                  <p className="text-xs text-warning">
-                    Nenhum canal ativo. Crie um canal antes de importar grupos.
-                  </p>
-                ) : (
-                  <select
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                    value={importChannelId}
-                    onChange={e => setImportChannelId(e.target.value)}
-                  >
-                    {activeChannels.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+                <h3 className="font-semibold text-fg text-base">Importar grupos</h3>
+                <p className="text-xs text-fg-3 mt-1">
+                  Escolha a conta WhatsApp e importe cada grupo. A vinculação a canais é feita depois.
+                </p>
               </div>
-
-              {/* Lista de grupos da Evolution */}
-              <div>
-                <label className="text-xs text-fg-2 mb-1 block">Grupo</label>
-                {waGroupsFetching ? (
-                  <p className="text-xs text-fg-3 py-2">Buscando grupos da conta...</p>
-                ) : waGroupOptions.length === 0 ? (
-                  <p className="text-xs text-fg-3 py-2">
-                    Nenhum grupo encontrado na conta. A conta precisa estar conectada.
-                  </p>
-                ) : (
-                  <>
-                    <input
-                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent mb-2"
-                      placeholder="Filtrar grupos..."
-                      value={groupSearch}
-                      onChange={e => setGroupSearch(e.target.value)}
-                    />
-                    <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
-                      {filteredWAOptions.map(g => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-surface-2 transition-colors ${
-                            selectedJID === g.id ? 'bg-accent/10 text-accent' : 'text-fg'
-                          }`}
-                          onClick={() => setSelectedJID(selectedJID === g.id ? '' : g.id)}
-                        >
-                          <span className="truncate">{g.name}</span>
-                          <span className="text-xs text-fg-3 ml-2 shrink-0">{g.size} membros</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              <button type="button" className="text-fg-3 hover:text-fg text-xl leading-none" onClick={() => setShowImport(false)} aria-label="Fechar">
+                ×
+              </button>
             </div>
 
-            {/* Invite link — obrigatório para o link público funcionar */}
-            {selectedJID && (
-              <div className="mt-3">
-                <label className="text-xs text-fg-2 block mb-1">
-                  Link de convite <span className="text-fg-3">(cole aqui para o Link Público funcionar)</span>
-                </label>
-                <input
-                  type="url"
-                  value={importInviteLink}
-                  onChange={e => setImportInviteLink(e.target.value)}
-                  placeholder="https://chat.whatsapp.com/..."
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
+            <div className="mb-4">
+              <label className="text-xs text-fg-2 mb-1 block">Conta WhatsApp</label>
+              <select
+                className="w-full max-w-md text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                value={importAccountId}
+                onChange={e => setImportAccountId(e.target.value)}
+              >
+                {activeWA.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                    {a.status !== 'connected' ? ' (desconectada)' : ''}
+                  </option>
+                ))}
+              </select>
+              {importAccount && importAccount.status !== 'connected' && (
+                <p className="text-xs text-warning mt-2">Conecte esta conta em Contas para listar grupos da Evolution.</p>
+              )}
+            </div>
+
+            {importAccount?.status === 'connected' && (
+              <>
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <input
+                    type="text"
+                    className="flex-1 min-w-[200px] text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    placeholder="Filtrar pelo nome…"
+                    value={modalSearch}
+                    onChange={e => setModalSearch(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => refetchWaModal()}
+                    disabled={waGroupsFetching}
+                    className="text-xs text-fg-3 hover:text-fg border border-border rounded-md px-2 py-1.5 disabled:opacity-50"
+                  >
+                    ↻ Atualizar
+                  </button>
+                  {waGroupsFetching && (
+                    <span className="text-[10px] text-fg-3">atualizando…</span>
+                  )}
+                </div>
+
+                {waGroupsLoading && waGroupOptions.length === 0 ? (
+                  <p className="text-xs text-fg-3 py-6 text-center">Carregando grupos…</p>
+                ) : waGroupOptions.length === 0 ? (
+                  <div className="border border-border rounded-md p-4 bg-surface-2 text-center">
+                    <p className="text-xs text-fg-3">Evolution ainda não retornou grupos desta conta.</p>
+                    <p className="text-[10px] text-fg-3 mt-1">Tente atualizar ou aguarde alguns segundos após conectar.</p>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-surface-2 border-b border-border">
+                          <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
+                          <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Membros</th>
+                          <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase w-36"> </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalUnlinked.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-4 py-6 text-center text-xs text-fg-3">
+                              {modalFiltered.length === 0
+                                ? `Nenhum resultado para "${modalSearch.trim()}".`
+                                : 'Todos os grupos desta lista já foram importados.'}
+                            </td>
+                          </tr>
+                        ) : (
+                          modalUnlinked.map(g => (
+                            <tr key={g.id} className="border-b border-border last:border-0 hover:bg-surface-2/60">
+                              <td className="px-4 py-2.5 text-fg">{g.name}</td>
+                              <td className="px-4 py-2.5 text-right text-fg-2 tabular-nums">{g.size}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <button
+                                  type="button"
+                                  disabled={importOneMut.isPending}
+                                  onClick={() => importOneMut.mutate(g)}
+                                  className="text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                  Importar
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
 
-            <div className="flex gap-2 justify-end mt-4">
+            <div className="flex justify-end mt-4">
               <Button variant="secondary" size="sm" onClick={() => setShowImport(false)}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                loading={importMut.isPending}
-                disabled={!selectedJID || !importChannelId || activeChannels.length === 0}
-                onClick={() => importMut.mutate()}
-              >
-                Importar
+                Fechar
               </Button>
             </div>
           </div>

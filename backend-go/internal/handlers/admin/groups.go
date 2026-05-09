@@ -52,6 +52,7 @@ type groupEnriched struct {
 	AdminCount           int    `json:"admin_count"`
 	VerifiedAdminCount   int    `json:"verified_admin_count"` // admins cadastrados que a Evolution reporta como admin no grupo
 	AudienceStatus       string `json:"audience_status"`      // "perfil" | "sem_perfil"
+	ChannelsCount        int    `json:"channels_count"`       // linhas com o mesmo JID (grupo físico em N canais)
 }
 
 // Cache curto por instância WA — fetchAllGroups com participantes é pesado.

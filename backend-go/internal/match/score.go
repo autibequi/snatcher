@@ -659,7 +659,10 @@ func RankGroups(product ProductInput, groups []models.RedesignGroup, channelByID
 		if g.Status != "active" {
 			continue
 		}
-		ch, ok := channelByID[g.ChannelID]
+		if !g.ChannelID.Valid {
+			continue
+		}
+		ch, ok := channelByID[g.ChannelID.Int64]
 		if !ok {
 			continue
 		}
