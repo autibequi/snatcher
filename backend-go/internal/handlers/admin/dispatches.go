@@ -47,6 +47,44 @@ type createDispatchReq struct {
 	ScheduledFor  *string             `json:"scheduled_for"`
 }
 
+// resolveAffiliateDispatchLink monta o link final (/v/...) a partir do catálogo quando o cliente não enviou affiliate_link.
+func (h *DispatchHandler) resolveAffiliateDispatchLink(productID int64) (string, error) {
+	prod, err := h.store.GetCatalogProduct(productID)
+	if err != nil {
+		return "", err
+	}
+	urlStr := strings.TrimSpace(prod.LowestPriceURL.String)
+	if !prod.LowestPriceURL.Valid || urlStr == "" {
+		return "", fmt.Errorf("produto sem lowest_price_url")
+	}
+	src := ""
+	if prod.LowestPriceSource.Valid {
+		src = strings.TrimSpace(prod.LowestPriceSource.String)
+	}
+	if src == "" {
+		src = affiliates.InferMarketplaceFromProductURL(urlStr)
+	}
+	progs, err := h.store.ListAffiliatePrograms(nil)
+	if err != nil {
+		return "", err
+	}
+	if !affiliates.HasAffiliate(src, progs) {
+		return "", affiliates.ErrNoAffiliate
+	}
+	built, _, _ := affiliates.BuildLink(urlStr, src, progs)
+	canonical := affiliates.CanonicalAffiliateMarketplace(src)
+	shortID, err := h.store.GetOrCreateShortLink(built, canonical)
+	if err != nil {
+		return built, nil
+	}
+	cfg, _ := h.store.GetConfig()
+	domain := "beta.autibequi.com"
+	if cfg.AppDomain.Valid && strings.TrimSpace(cfg.AppDomain.String) != "" {
+		domain = strings.TrimSpace(cfg.AppDomain.String)
+	}
+	return "https://" + domain + "/v/" + shortID, nil
+}
+
 // Create handles POST /api/dispatches.
 func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createDispatchReq
@@ -56,28 +94,17 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	isDraft := len(req.Targets) == 0
 
-	// Validação P7: envio (não-rascunho) exige link com código de afiliado.
-	// Se o link já vem pronto (req.AffiliateLink), aceitamos. Senão, exige produto + programa configurado.
+	affiliateLink := strings.TrimSpace(req.AffiliateLink)
+
+	// Envio real: precisa de link gravado no dispatch. Se o front não mandou, resolve pelo produto (mesma lógica da página Afiliados).
 	if !isDraft {
-		hasLink := req.AffiliateLink != ""
-		if !hasLink && req.ProductID != nil {
-			prod, err := h.store.GetCatalogProduct(*req.ProductID)
-			if err == nil && prod.LowestPriceURL.Valid && prod.LowestPriceURL.String != "" {
-				src := ""
-				if prod.LowestPriceSource.Valid {
-					src = prod.LowestPriceSource.String
-				}
-				src = strings.TrimSpace(src)
-				if src == "" {
-					src = affiliates.InferMarketplaceFromProductURL(prod.LowestPriceURL.String)
-				}
-				progs, _ := h.store.ListAffiliatePrograms(nil)
-				if affiliates.HasAffiliate(src, progs) {
-					hasLink = true
-				}
+		if affiliateLink == "" && req.ProductID != nil {
+			resolved, err := h.resolveAffiliateDispatchLink(*req.ProductID)
+			if err == nil && resolved != "" {
+				affiliateLink = resolved
 			}
 		}
-		if !hasLink {
+		if affiliateLink == "" {
 			writeErr(w, http.StatusUnprocessableEntity,
 				"código de afiliado obrigatório — configure um programa para o marketplace deste produto antes de disparar")
 			return
@@ -92,7 +119,7 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	d := models.Dispatch{
 		ComposedBy:    "manual",
 		Message:       msgBytes,
-		AffiliateLink: req.AffiliateLink,
+		AffiliateLink: affiliateLink,
 	}
 	if req.ProductID != nil {
 		d.ProductID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.ProductID, Valid: true}}
