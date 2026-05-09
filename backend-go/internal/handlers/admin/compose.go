@@ -141,6 +141,17 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 			return &modelOverrideClient{inner: cli, model: model}
 		}
 		return cli
+	case "vllm":
+		if baseURL == "" { return nil }
+		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
+			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
+		}
+		// API key opcional (Coolify/proxy às vezes exige Bearer; vLLM costuma ignorar)
+		cli := llm.NewOpenAICompat(baseURL, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
+		if model != "" {
+			return &modelOverrideClient{inner: cli, model: model}
+		}
+		return cli
 	case "openrouter":
 		if apiKey == "" { return nil }
 		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningEnabled)

@@ -11,6 +11,23 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// openAIModelsListingURL devolve a URL GET compatível com OpenAI (/v1/models).
+// Aceita base já terminada em /v1 (Snatcher normaliza assim para provider "ollama").
+func openAIModelsListingURL(baseURL string) string {
+	b := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(b, "/v1") {
+		return b + "/models"
+	}
+	return b + "/v1/models"
+}
+
+// ollamaNativeTagsURL é o endpoint nativo Ollama /api/tags (remove sufixo /v1 se existir).
+func ollamaNativeTagsURL(baseURL string) string {
+	b := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	b = strings.TrimSuffix(b, "/v1")
+	return b + "/api/tags"
+}
+
 type LLMAdminHandler struct {
 	db *sqlx.DB
 }
@@ -109,32 +126,81 @@ func (h *LLMAdminHandler) Usage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/admin/llm/ollama/models?base_url=http://localhost:11434
-// Faz fetch dos modelos disponíveis no servidor Ollama via /api/tags.
+// GET /api/admin/llm/ollama/models e …/vllm/models (mesmo handler)
+// Lista modelos: primeiro OpenAI-compatível GET …/v1/models (vLLM, Ollama com /v1, LM Studio),
+// senão fallback para API nativa Ollama GET …/api/tags.
 func (h *LLMAdminHandler) OllamaModels(w http.ResponseWriter, r *http.Request) {
 	baseURL := strings.TrimSpace(r.URL.Query().Get("base_url"))
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
-	baseURL = strings.TrimRight(baseURL, "/")
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	upAuth := strings.TrimSpace(r.Header.Get("X-Snatcher-Upstream-Authorization"))
+
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/tags", nil)
+	type modelOut struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+
+	openAIURL := openAIModelsListingURL(baseURL)
+	reqOA, err := http.NewRequestWithContext(ctx, http.MethodGet, openAIURL, nil)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "URL inválida: "+err.Error())
 		return
 	}
+	if upAuth != "" {
+		reqOA.Header.Set("Authorization", upAuth)
+	}
+	respOA, err := http.DefaultClient.Do(reqOA)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "falha ao conectar ("+baseURL+"): "+err.Error())
+		return
+	}
+	defer respOA.Body.Close()
+
+	openAIOK := false
+	if respOA.StatusCode == http.StatusOK {
+		var raw struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(respOA.Body).Decode(&raw); err == nil {
+			out := make([]modelOut, 0, len(raw.Data))
+			for _, m := range raw.Data {
+				if m.ID != "" {
+					out = append(out, modelOut{Name: m.ID, Size: 0})
+				}
+			}
+			writeJSON(w, http.StatusOK, out)
+			openAIOK = true
+		}
+	}
+	if openAIOK {
+		return
+	}
+
+	tagsURL := ollamaNativeTagsURL(baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tagsURL, nil)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "URL inválida (fallback): "+err.Error())
+		return
+	}
+	if upAuth != "" {
+		req.Header.Set("Authorization", upAuth)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "falha ao conectar no Ollama ("+baseURL+"): "+err.Error())
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("compat OpenAI (%s) não OK e falha no Ollama nativo (%s): %v", openAIURL, tagsURL, err))
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		writeErr(w, http.StatusBadGateway, fmt.Sprintf("Ollama retornou %d", resp.StatusCode))
+	if resp.StatusCode != http.StatusOK {
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("OpenAI-compat (%s) e Ollama nativo (%s) retornaram erro (último status HTTP %d)", openAIURL, tagsURL, resp.StatusCode))
 		return
 	}
 
@@ -146,14 +212,10 @@ func (h *LLMAdminHandler) OllamaModels(w http.ResponseWriter, r *http.Request) {
 		} `json:"models"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		writeErr(w, http.StatusBadGateway, "resposta inválida do Ollama: "+err.Error())
+		writeErr(w, http.StatusBadGateway, "resposta inválida do Ollama /api/tags: "+err.Error())
 		return
 	}
 
-	type modelOut struct {
-		Name string `json:"name"`
-		Size int64  `json:"size"`
-	}
 	out := make([]modelOut, 0, len(raw.Models))
 	for _, m := range raw.Models {
 		out = append(out, modelOut{Name: m.Name, Size: m.Size})

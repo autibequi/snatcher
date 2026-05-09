@@ -315,16 +315,17 @@ function LLMTab() {
       <div>
         <p className="text-sm font-semibold text-fg mb-1">Provider de IA</p>
         <p className="text-xs text-fg-3 mb-3">Usado para gerar copy de disparos, categorizar produtos e labels de clusters.</p>
-        <div className="flex gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { id: 'openrouter', label: 'OpenRouter', desc: 'API cloud — vários modelos (GPT-4o-mini, Claude, etc.)' },
-            { id: 'ollama', label: 'Ollama', desc: 'Self-hosted — roda localmente no seu servidor' },
+            { id: 'ollama', label: 'Ollama', desc: 'Self-hosted — API compatível no servidor local' },
+            { id: 'vllm', label: 'vLLM', desc: 'Servidor OpenAI-compat (vLLM, LM Studio, texto)' },
           ].map(p => (
             <button
               key={p.id}
               type="button"
               onClick={() => set('llm_provider', p.id)}
-              className={`flex-1 p-3 rounded-md border text-left transition-colors ${provider === p.id ? 'border-accent bg-accent/5' : 'border-border bg-surface hover:border-border-strong'}`}
+              className={`p-3 rounded-md border text-left transition-colors ${provider === p.id ? 'border-accent bg-accent/5' : 'border-border bg-surface hover:border-border-strong'}`}
             >
               <p className="text-sm font-medium text-fg">{p.label}</p>
               <p className="text-xs text-fg-3 mt-0.5">{p.desc}</p>
@@ -355,11 +356,24 @@ function LLMTab() {
       )}
 
       {provider === 'ollama' && (
-        <OllamaConfig
+        <SelfHostedModelsConfig
+          variant="ollama"
           baseURL={form.llm_base_url ?? get('llm_base_url')}
           model={form.llm_model ?? get('llm_model')}
           onBaseURLChange={v => set('llm_base_url', v)}
           onModelChange={v => set('llm_model', v)}
+        />
+      )}
+
+      {provider === 'vllm' && (
+        <SelfHostedModelsConfig
+          variant="vllm"
+          baseURL={form.llm_base_url ?? get('llm_base_url')}
+          model={form.llm_model ?? get('llm_model')}
+          apiKey={form.llm_api_key ?? get('llm_api_key')}
+          onBaseURLChange={v => set('llm_base_url', v)}
+          onModelChange={v => set('llm_model', v)}
+          onApiKeyChange={v => set('llm_api_key', v)}
         />
       )}
 
@@ -852,37 +866,71 @@ export default function Settings() {
   )
 }
 
-// ── Ollama Config (com fetch de modelos) ──────────────────────────────────────
+// ── Ollama / vLLM (lista via GET …/v1/models ou fallback Ollama) ─────────────
 
-interface OllamaModel {
+interface ListedModel {
   name: string
   size: number
 }
 
-function OllamaConfig({
+function SelfHostedModelsConfig({
+  variant,
   baseURL,
   model,
+  apiKey,
   onBaseURLChange,
   onModelChange,
+  onApiKeyChange,
 }: {
+  variant: 'ollama' | 'vllm'
   baseURL: string
   model: string
+  apiKey?: string
   onBaseURLChange: (v: string) => void
   onModelChange: (v: string) => void
+  onApiKeyChange?: (v: string) => void
 }) {
-  const url = baseURL || 'http://localhost:11434'
-  const { data: models = [], isLoading, isError, error, refetch } = useQuery<OllamaModel[]>({
-    queryKey: ['ollama-models', url],
-    queryFn: () => apiClient.get(`/api/admin/llm/ollama/models?base_url=${encodeURIComponent(url)}`).then(r => r.data ?? []),
+  const defaultURL = variant === 'ollama' ? 'http://localhost:11434' : 'http://localhost:8000'
+  const url = baseURL || defaultURL
+  const modelsPath =
+    variant === 'ollama' ? '/api/admin/llm/ollama/models' : '/api/admin/llm/vllm/models'
+
+  const upstreamAuth =
+    apiKey && apiKey.trim() !== ''
+      ? apiKey.trim().toLowerCase().startsWith('bearer ')
+        ? apiKey.trim()
+        : `Bearer ${apiKey.trim()}`
+      : undefined
+
+  const { data: models = [], isLoading, isError, error, refetch } = useQuery<ListedModel[]>({
+    queryKey: ['self-hosted-llm-models', variant, url, apiKey ?? ''],
+    queryFn: () =>
+      apiClient
+        .get(`${modelsPath}?base_url=${encodeURIComponent(url)}`, {
+          headers: upstreamAuth ? { 'X-Snatcher-Upstream-Authorization': upstreamAuth } : {},
+        })
+        .then(r => r.data ?? []),
     retry: false,
     staleTime: 60_000,
   })
 
+  const fmtSize = (bytes: number) =>
+    bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : ''
+
   return (
     <div className="space-y-3">
+      {variant === 'vllm' && onApiKeyChange && (
+        <Input
+          label="API key (opcional)"
+          placeholder="Deixe vazio se o servidor não exige Bearer"
+          type="password"
+          value={apiKey ?? ''}
+          onChange={e => onApiKeyChange(e.target.value)}
+        />
+      )}
       <Input
-        label="URL base do Ollama"
-        placeholder="http://localhost:11434"
+        label={variant === 'ollama' ? 'URL base do Ollama' : 'URL base do servidor (OpenAI-compat)'}
+        placeholder={variant === 'ollama' ? 'http://localhost:11434' : 'http://host:8000 ou …/v1'}
         value={baseURL}
         onChange={e => onBaseURLChange(e.target.value)}
       />
@@ -902,7 +950,7 @@ function OllamaConfig({
         ) : isError ? (
           <div className="space-y-2">
             <Input
-              placeholder="llama3:8b"
+              placeholder={variant === 'ollama' ? 'llama3:8b' : 'nome-do-modelo'}
               value={model}
               onChange={e => onModelChange(e.target.value)}
             />
@@ -913,12 +961,22 @@ function OllamaConfig({
         ) : models.length === 0 ? (
           <div className="space-y-2">
             <Input
-              placeholder="llama3:8b"
+              placeholder={variant === 'ollama' ? 'llama3:8b' : 'nome-do-modelo'}
               value={model}
               onChange={e => onModelChange(e.target.value)}
             />
             <p className="text-xs text-fg-3">
-              Servidor Ollama vazio. Baixe um modelo: <code className="bg-surface-2 px-1 rounded">ollama pull llama3</code>
+              {variant === 'ollama' ? (
+                <>
+                  Servidor Ollama vazio. Baixe um modelo:{' '}
+                  <code className="bg-surface-2 px-1 rounded">ollama pull llama3</code>
+                </>
+              ) : (
+                <>
+                  Lista vazia ou servidor ainda carregando o modelo —{' '}
+                  <code className="bg-surface-2 px-1 rounded">GET /v1/models</code> pode demorar até o engine ficar pronto.
+                </>
+              )}
             </p>
           </div>
         ) : (
@@ -928,18 +986,23 @@ function OllamaConfig({
             className="w-full text-sm border border-border rounded-md px-2.5 py-2 bg-surface text-fg outline-none focus:border-accent"
           >
             <option value="">Selecione um modelo...</option>
-            {models.map(m => (
-              <option key={m.name} value={m.name}>
-                {m.name} ({(m.size / 1024 / 1024 / 1024).toFixed(1)}GB)
-              </option>
-            ))}
+            {models.map(m => {
+              const sz = fmtSize(m.size)
+              return (
+                <option key={m.name} value={m.name}>
+                  {m.name}{sz ? ` (${sz})` : ''}
+                </option>
+              )
+            })}
           </select>
         )}
       </div>
       <p className="text-xs text-fg-3">
         {models.length > 0
           ? `${models.length} modelo${models.length !== 1 ? 's' : ''} disponíve${models.length !== 1 ? 'is' : 'l'} no servidor.`
-          : 'Certifique-se que o Ollama está rodando.'}
+          : variant === 'ollama'
+            ? 'Certifique-se que o Ollama está rodando.'
+            : 'Confira URL, firewall e se o processo vLLM está ouvindo na porta correta.'}
       </p>
     </div>
   )
