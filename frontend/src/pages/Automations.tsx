@@ -124,7 +124,9 @@ function MasterToggle({ row }: { row: ChannelRow }) {
   const mut = useMutation({
     mutationFn: (enabled: boolean) => {
       const current = row.automation ?? defaultAutomation(row.channel_id)
-      return apiClient.put(`/api/automations/${row.channel_id}`, { ...current, enabled }).then(r => r.data)
+      return apiClient
+        .put(`/api/automations/${row.channel_id}`, { ...current, enabled, auto_match_enabled: enabled })
+        .then(r => r.data)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
@@ -894,79 +896,90 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-surface-2 border-b border-border">
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Canal</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Ativo</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Auto Match</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Eventos</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Threshold</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Ultima run</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Runs 24h</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => {
-            const a = row.automation
-            return (
-              <tr
-                key={row.channel_id}
-                className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                onClick={() => onOpenDrawer(row)}
-              >
-                <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-fg">{row.channel_name}</span>
-                </td>
-                <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                  <MasterToggle row={row} />
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={a?.auto_match_enabled ? 'success' : 'default'} size="sm">
-                    {a?.auto_match_enabled ? 'on' : 'off'}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={a?.events_enabled ? 'success' : 'default'} size="sm">
-                    {a?.events_enabled ? 'on' : 'off'}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-sm text-fg-2">
-                  {a?.threshold != null ? a.threshold : <span className="text-fg-3 italic">default</span>}
-                </td>
-                <td className="px-4 py-3 text-xs text-fg-3">
-                  {a?.updated_at ? fmtDate(a.updated_at) : '—'}
-                </td>
-                <td className="px-4 py-3 text-sm text-fg-2">
-                  {a?.enabled && a?.auto_match_enabled ? (
-                    channelsWithQueue.has(row.channel_id) ? (
-                      <span className="text-xs text-success" title="Há pelo menos um produto elegível na prévia do próximo ciclo">candidatos ✓</span>
-                    ) : (
-                      <span className="inline-flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1 text-xs text-warning font-medium" title="Prévia sem elegíveis (cooldown ou abaixo do threshold). Não confundir com fila do worker nem com pendentes de aprovação.">
-                          ⚠ sem candidatos
-                        </span>
-                        {a?.updated_at && (
-                          <span className="text-[10px] text-fg-3">
-                            {(() => {
-                              const interval = 60 // minutos — ciclo do scheduler
-                              const last = new Date(a.updated_at).getTime()
-                              const next = last + interval * 60_000
-                              const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
-                              return diff === 0 ? 'próx: agora' : `próx: ~${diff}min`
-                            })()}
-                          </span>
-                        )}
-                      </span>
-                    )
-                  ) : '—'}
-                </td>
+    <div className="px-6 pb-6">
+      <div className="bg-surface border border-border rounded-md overflow-hidden shadow-card">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-2/40 border-b border-border">
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Canal</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">
+                  Auto-match
+                  <TooltipIcon
+                    side="top"
+                    content="Liga automação deste canal e o disparo automático por score (mesmo interruptor)."
+                  />
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Eventos</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Threshold</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Última run</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-fg-2 uppercase tracking-wide">Runs 24h</th>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const a = row.automation
+                return (
+                  <tr
+                    key={row.channel_id}
+                    className="border-b border-border last:border-0 hover:bg-surface-2/50 cursor-pointer"
+                    onClick={() => onOpenDrawer(row)}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-medium text-fg">{row.channel_name}</span>
+                    </td>
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <MasterToggle row={row} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={a?.events_enabled ? 'success' : 'default'} size="sm">
+                        {a?.events_enabled ? 'on' : 'off'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-fg-2">
+                      {a?.threshold != null ? a.threshold : <span className="text-fg-3 italic">default</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-fg-3">
+                      {a?.updated_at ? fmtDate(a.updated_at) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-fg-2">
+                      {a?.enabled ? (
+                        channelsWithQueue.has(row.channel_id) ? (
+                          <span className="text-xs text-success" title="Há pelo menos um produto elegível na prévia do próximo ciclo">
+                            candidatos ✓
+                          </span>
+                        ) : (
+                          <span className="inline-flex flex-col gap-0.5">
+                            <span
+                              className="inline-flex items-center gap-1 text-xs text-warning font-medium"
+                              title="Prévia sem elegíveis (cooldown ou abaixo do threshold). Não confundir com fila do worker nem com pendentes de aprovação."
+                            >
+                              ⚠ sem candidatos
+                            </span>
+                            {a?.updated_at && (
+                              <span className="text-[10px] text-fg-3">
+                                {(() => {
+                                  const interval = 60 // minutos — ciclo do scheduler
+                                  const last = new Date(a.updated_at).getTime()
+                                  const next = last + interval * 60_000
+                                  const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
+                                  return diff === 0 ? 'próx: agora' : `próx: ~${diff}min`
+                                })()}
+                              </span>
+                            )}
+                          </span>
+                        )
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

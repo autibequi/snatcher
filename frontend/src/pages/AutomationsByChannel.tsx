@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { TabChannels, Drawer, type ChannelRow } from './Automations'
 import { SuggestChannelModal } from './Channels'
+import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 
 export default function AutomationsByChannel() {
   const navigate = useNavigate()
@@ -34,6 +35,9 @@ export default function AutomationsByChannel() {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="px-6 pt-6 pb-2 shrink-0">
+        <FullAutoStatusBanner placement="automations" />
+      </div>
       <div className="px-6 py-3 border-b border-border flex items-center justify-end flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <button

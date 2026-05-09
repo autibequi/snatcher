@@ -487,7 +487,14 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
   })
   const previewItems = channelPreview?.items ?? []
   const [autoForm, setAutoForm] = React.useState<any>({})
-  React.useEffect(() => { if (automationRow) setAutoForm(automationRow) }, [automationRow])
+  React.useEffect(() => {
+    if (!automationRow) return
+    // “Ativo” e auto-match são o mesmo interruptor na UI — alinhar enabled ↔ auto_match_enabled
+    setAutoForm({
+      ...automationRow,
+      auto_match_enabled: automationRow.enabled,
+    })
+  }, [automationRow])
   const saveAutoMut = useMutation({
     mutationFn: () => apiClient.put(`/api/automations/${id}`, autoForm).then(r => r.data),
     onSuccess: () => {
@@ -1149,17 +1156,15 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
             <div className="border border-border rounded-md p-5 space-y-4">
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>
-                  <p className="text-sm font-medium text-fg">Canal ativo</p>
-                  <p className="text-xs text-fg-3">Habilita toda automação deste canal</p>
+                  <p className="text-sm font-medium text-fg">Auto-match</p>
+                  <p className="text-xs text-fg-3">
+                    Liga a automação deste canal e o disparo automático de produtos com score alto.
+                  </p>
                 </div>
-                <Switch checked={!!autoForm.enabled} onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v }))} />
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Auto Match</p>
-                  <p className="text-xs text-fg-3">Dispara automaticamente produtos com score alto</p>
-                </div>
-                <Switch checked={!!autoForm.auto_match_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, auto_match_enabled: v }))} />
+                <Switch
+                  checked={!!autoForm.enabled}
+                  onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v, auto_match_enabled: v }))}
+                />
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <div>

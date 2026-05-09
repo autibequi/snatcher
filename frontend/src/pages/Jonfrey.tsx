@@ -1,7 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Switch, TooltipIcon } from '../components/ui'
-import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 import { apiClient } from '../lib/apiClient'
 import { fmtJonfreyDate, relJonfreyTime } from '../components/JonfreyActionCard'
 
@@ -279,8 +278,6 @@ export default function Jonfrey() {
           })()}
         </div>
       </div>
-
-      <FullAutoStatusBanner placement="jonfrey" queueBusy={runLocked} />
     </div>
   )
 }
