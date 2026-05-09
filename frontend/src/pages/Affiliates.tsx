@@ -202,13 +202,13 @@ function AffiliateRow({ mkt, program, stats }: AffiliateRowProps) {
 // Tabela de programas
 // ---------------------------------------------------------------------------
 
-interface TabProgramsProps {
+interface ProgramsTableProps {
   programs: Program[]
   statsMap: Record<number, ProgramStats>
   isLoading: boolean
 }
 
-function TabPrograms({ programs, statsMap, isLoading }: TabProgramsProps) {
+function ProgramsTable({ programs, statsMap, isLoading }: ProgramsTableProps) {
   const byMarketplace = React.useMemo(() => {
     const map: Record<string, Program> = {}
     for (const p of programs) map[p.marketplace] = p
@@ -370,7 +370,7 @@ export default function Affiliates() {
       </div>
 
       <div className="bg-surface border border-border rounded-md">
-        <TabPrograms
+        <ProgramsTable
           programs={programs}
           statsMap={statsMap}
           isLoading={loadingPrograms}
