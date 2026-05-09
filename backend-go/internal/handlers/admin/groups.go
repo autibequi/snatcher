@@ -84,13 +84,16 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]groupEnriched, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, h.enrichRedesignGroup(r.Context(), g))
+		// Listagem vem só do Postgres — não consultar Evolution aqui (fetchAllGroups é pesado e
+		// bloqueava a tab Grupos do canal). Verificação WA vs admins cadastrados fica em GET /:id.
+		out = append(out, h.enrichRedesignGroup(r.Context(), g, false))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 // enrichRedesignGroup agrega channel_name, account_label, admin_count, verified_admin_count, audience_status.
-func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.RedesignGroup) groupEnriched {
+// evolutionVerify: quando true (detalhe do grupo), cruza admins com participantes da Evolution; na listagem use false.
+func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.RedesignGroup, evolutionVerify bool) groupEnriched {
 	adminCount, _ := h.store.CountGroupAdmins(g.ID)
 	enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount, VerifiedAdminCount: adminCount}
 
@@ -134,7 +137,7 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 		}
 	}
 
-	if g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
+	if evolutionVerify && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
 		if v, err := h.countVerifiedWAAdmins(ctx, g); err == nil {
 			enriched.VerifiedAdminCount = v
 		}
@@ -154,7 +157,7 @@ func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.enrichRedesignGroup(r.Context(), g))
+	writeJSON(w, http.StatusOK, h.enrichRedesignGroup(r.Context(), g, true))
 }
 
 func duplicateGroupMessage(candidate models.RedesignGroup) string {

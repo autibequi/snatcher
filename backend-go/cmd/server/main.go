@@ -30,6 +30,7 @@ import (
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/router"
 	"snatcher/backendv2/internal/scheduler"
+	"snatcher/backendv2/internal/scraperbridge"
 	"snatcher/backendv2/internal/scrapers"
 	"snatcher/backendv2/internal/store"
 )
@@ -92,10 +93,8 @@ func main() {
 	)
 	amzScraper := scrapers.NewAmazonScraper()
 
-	scraperMap := map[string]pipeline.Scraper{
-		"ml":  mlScraper,
-		"amz": amzScraper,
-	}
+	// ML/AMZ mantêm credenciais da AppConfig; demais fontes vêm do registry (scrapers/*.go).
+	scraperMap := scraperbridge.BuildPipelineScraperMap(mlScraper, amzScraper)
 
 	// Adapters de mensagem
 	adapterMap := pipeline.AdapterRegistry{}

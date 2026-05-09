@@ -8,6 +8,8 @@ import (
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/router"
 	"snatcher/backendv2/internal/scheduler"
+	"snatcher/backendv2/internal/scraperbridge"
+	"snatcher/backendv2/internal/scrapers"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/jmoiron/sqlx"
@@ -36,10 +38,13 @@ func NewTestServer(t *testing.T, db *sqlx.DB) *TestServer {
 
 	rd := redirect.New(db, st)
 
-	scrapers := map[string]pipeline.Scraper{}
+	scrapersMap := scraperbridge.BuildPipelineScraperMap(
+		scrapers.NewMLScraper("", ""),
+		scrapers.NewAmazonScraper(),
+	)
 	adapters := pipeline.AdapterRegistry{}
 
-	runner := pipeline.NewRunner(st, scrapers, adapters)
+	runner := pipeline.NewRunner(st, scrapersMap, adapters)
 	sched, err := scheduler.New(60, runner, nil, st, nil)
 	if err != nil {
 		t.Fatalf("scheduler.New: %v", err)
@@ -67,7 +72,7 @@ func NewTestServer(t *testing.T, db *sqlx.DB) *TestServer {
 		t.Fatalf("seed admin user: %v", err)
 	}
 
-	h := router.Build(db, st, rd, runner, sched, scrapers, adapters, jwtSecret)
+	h := router.Build(db, st, rd, runner, sched, scrapersMap, adapters, jwtSecret)
 	srv := httptest.NewServer(h)
 
 	t.Cleanup(srv.Close)

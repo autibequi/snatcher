@@ -4,6 +4,10 @@ import { Button, Input, Tabs, Skeleton, EmptyState, SegmentedControl } from '../
 import { apiClient } from '../lib/apiClient'
 import { useTheme } from '../lib/theme'
 
+/** Igual a softWipeConfirmPhrase no backend (danger.go); só o servidor valida. */
+const SOFT_WIPE_CONFIRM_PHRASE =
+  'EU CONFIRMO APAGAR TODOS OS DADOS OPERACIONAIS'
+
 const TABS = [
   { id: 'general', label: 'Geral' },
   { id: 'appearance', label: 'Aparência' },
@@ -552,62 +556,6 @@ function BrandingTab() {
 }
 
 // ───────────────────────────────────────
-// Encurtador Section
-// ───────────────────────────────────────
-
-function ShortenerSection({
-  config,
-  localConfig,
-  onChange,
-}: {
-  config: Record<string, unknown> | undefined
-  localConfig: Record<string, unknown>
-  onChange: (key: string, value: unknown) => void
-}) {
-  const merged = { ...config, ...localConfig }
-
-  return (
-    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
-      <div>
-        <p className="text-sm font-semibold text-fg">Encurtador de links</p>
-        <p className="text-xs text-fg-3 mt-0.5">Configurações de geração de links curtos para os disparos.</p>
-      </div>
-
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={(merged.use_short_links as boolean) ?? true}
-          onChange={e => onChange('use_short_links', e.target.checked)}
-          className="accent-accent"
-        />
-        <span className="text-sm text-fg">Usar links encurtados nos disparos</span>
-      </label>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Prefixo grupo WhatsApp</label>
-          <input
-            value={(merged.wa_group_prefix as string) ?? ''}
-            onChange={e => onChange('wa_group_prefix', e.target.value)}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            placeholder="wa/"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Prefixo grupo Telegram</label>
-          <input
-            value={(merged.tg_group_prefix as string) ?? ''}
-            onChange={e => onChange('tg_group_prefix', e.target.value)}
-            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            placeholder="tg/"
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ───────────────────────────────────────
 // Notificações Section
 // ───────────────────────────────────────
 
@@ -670,9 +618,6 @@ interface AppConfig {
   global_interval?: number
   send_start_hour?: number
   send_end_hour?: number
-  wa_group_prefix?: string
-  tg_group_prefix?: string
-  use_short_links?: boolean
   interval_between_groups?: number
   interval_between_channels?: number
   daily_limit_per_account?: number
@@ -753,24 +698,6 @@ function GeneralTab() {
         </div>
       </div>
 
-      {/* Piloto / full-auto / curated / webhook de aprovação — única fonte: Jonfrey */}
-      <div className="border border-border rounded-md p-4 bg-surface-2/40 space-y-2">
-        <p className="text-sm font-medium text-fg">Automação (full-auto, match curated, webhooks de aprovação)</p>
-        <p className="text-xs text-fg-3 leading-relaxed">
-          Essas opções foram consolidadas no{' '}
-          <a href="/automations/jonfrey" className="text-accent hover:underline font-medium">
-            Jonfrey
-          </a>{' '}
-          para não duplicar com Configurações. Lá você liga o piloto, full-auto, filtro só curated/auto e notificações de fila.
-        </p>
-      </div>
-
-      <ShortenerSection
-        config={config}
-        localConfig={localConfig}
-        onChange={updateField}
-      />
-
       {/* Linha 2: Notificações (full width — pode ser expandido) */}
       <NotificationsSection
         config={config}
@@ -807,17 +734,22 @@ function DangerZoneTab() {
   const qc = useQueryClient()
   const [phrase, setPhrase] = useState('')
   const [reseedTaxonomy, setReseedTaxonomy] = useState(false)
+  const [reseedCrawlersChannels, setReseedCrawlersChannels] = useState(false)
 
   const wipeMut = useMutation({
     mutationFn: () =>
       apiClient.post('/api/admin/danger/soft-wipe', {
         confirm: phrase.trim(),
         reseed_taxonomy: reseedTaxonomy,
+        reseed_crawlers_channels: reseedCrawlersChannels,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries()
       setPhrase('')
-      alert('Soft wipe aplicado.' + (reseedTaxonomy ? ' Seeds de taxonomia reaplicados.' : ''))
+      let msg = 'Soft wipe aplicado.'
+      if (reseedTaxonomy) msg += ' Seeds de taxonomia reaplicados.'
+      if (reseedCrawlersChannels) msg += ' Seeds de crawlers e canais reaplicados.'
+      alert(msg)
     },
     onError: (err: unknown) =>
       alert(String((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? (err as Error)?.message ?? 'Erro')),
@@ -840,7 +772,7 @@ function DangerZoneTab() {
         <span className="text-xs font-medium text-fg-2">Confirmação (digite exatamente)</span>
         <Input
           className="mt-1 font-mono text-sm"
-          placeholder="LIMPAR BASE"
+          placeholder={SOFT_WIPE_CONFIRM_PHRASE}
           value={phrase}
           onChange={e => setPhrase(e.target.value)}
           autoComplete="off"
@@ -857,11 +789,21 @@ function DangerZoneTab() {
         <span className="text-sm text-fg">Também reaplicar seeds de taxonomia</span>
       </label>
 
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={reseedCrawlersChannels}
+          onChange={e => setReseedCrawlersChannels(e.target.checked)}
+          className="rounded border-border"
+        />
+        <span className="text-sm text-fg">Também reaplicar seeds de crawlers e canais (tópicos)</span>
+      </label>
+
       <Button
         variant="danger"
         size="sm"
         loading={wipeMut.isPending}
-        disabled={phrase.trim() !== 'LIMPAR BASE'}
+        disabled={phrase.trim() !== SOFT_WIPE_CONFIRM_PHRASE}
         onClick={() => {
           if (!confirm('Tem a certeza? Esta operação é irreversível sem backup.')) return
           wipeMut.mutate()

@@ -23,12 +23,16 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="Antes de tudo">
         <Ul>
-          <li>Este guia é o caminho mais curto até ter uma conta pronta a enviar e um canal configurado.</li>
+          <li>
+            Este guia assume que já abriste o painel no navegador (URL que te deram) e fizeste <strong className="text-fg">login</strong>. Se ainda não tens utilizador,
+            pede a um <strong className="text-fg">admin</strong> para te criar na área de equipa.
+          </li>
+          <li>Este guia é o caminho mais curto até ter uma conta de envio ligada e um canal com destinos.</li>
           <li>
             Para compor com produtos reais, o <strong className="text-fg">Catálogo</strong> precisa ter ofertas — em geral vindas de{' '}
-            <strong className="text-fg">Crawlers</strong> ou importação; sem itens, use a busca só depois de haver dados.
+            <strong className="text-fg">Crawlers</strong> ou importação; sem itens, a busca global não mostra nada útil.
           </li>
-          <li>Se algo falhar, o primeiro sítio a olhar é <strong className="text-fg">Logs</strong>; o manual completo está em <strong className="text-fg">Manual operacional</strong>.</li>
+          <li>Se algo falhar, o primeiro sítio a olhar é <strong className="text-fg">Logs</strong>; o manual completo está em <strong className="text-fg">Manual operacional</strong> no menu.</li>
         </Ul>
       </Sec>
       <Sec title="1 · Contas conectadas">
@@ -156,7 +160,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
         <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mt-5 mb-1.5">Auto-match</p>
         <p className="text-fg-2">
           A cada ~<strong className="text-fg">1 min</strong>, lê produtos recentes do catálogo, pontua contra a audiência dos canais e cria dispatches{' '}
-          <code className="text-xs bg-surface-2 px-1 rounded">composed_by=auto-match</code>. Com <strong className="text-fg">full-auto</strong> desligado em Configurações,
+          <code className="text-xs bg-surface-2 px-1 rounded">composed_by=auto-match</code>. Com <strong className="text-fg">full-auto</strong> desligado no Jonfrey,
           o status fica <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code> até você aprovar; só{' '}
           <code className="text-xs bg-surface-2 px-1 rounded">queued</code> entra no worker Evolution (WhatsApp).{' '}
           <strong className="text-fg">Rate limit:</strong> 3 mensagens/hora/grupo.
@@ -223,9 +227,6 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li>
             <strong className="text-fg">Jonfrey</strong> executa <strong className="text-fg">ações configuráveis</strong> por tipo (incluindo tarefas com LLM quando aplicável).
             O que aparece na lista depende do backend do workspace — cada ação tem auditoria em <strong className="text-fg">Logs → Jonfrey</strong>.
-          </li>
-          <li>
-            Full-auto, filtro só curated/auto e webhooks de aprovação são configurados nesta página (Jonfrey) — não há duplicata em Configurações.
           </li>
         </Ul>
       </Sec>

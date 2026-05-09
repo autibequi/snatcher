@@ -2,7 +2,6 @@ package admin
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -20,8 +19,11 @@ func NewDangerHandler(db *sqlx.DB, st store.Store) *DangerHandler {
 	return &DangerHandler{db: db, store: st}
 }
 
+// Frase obrigatória (validação apenas no servidor; o cliente só espelha o texto).
+const softWipeConfirmPhrase = "EU CONFIRMO APAGAR TODOS OS DADOS OPERACIONAIS"
+
 // SoftWipe POST /api/admin/danger/soft-wipe
-// Body: { "confirm": "LIMPAR BASE", "reseed_taxonomy": bool }
+// Body: { "confirm": "<frase exata>", "reseed_taxonomy": bool, "reseed_crawlers_channels": bool }
 // Apenas role admin.
 func (h *DangerHandler) SoftWipe(w http.ResponseWriter, r *http.Request) {
 	uid := UserIDFromCtx(r.Context())
@@ -36,17 +38,18 @@ func (h *DangerHandler) SoftWipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Confirm        string `json:"confirm"`
-		ReseedTaxonomy bool   `json:"reseed_taxonomy"`
+		Confirm                 string `json:"confirm"`
+		ReseedTaxonomy          bool   `json:"reseed_taxonomy"`
+		ReseedCrawlersChannels  bool   `json:"reseed_crawlers_channels"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 
-	const phrase = "LIMPAR BASE"
-	if strings.TrimSpace(req.Confirm) != phrase {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("digite exatamente: %s", phrase))
+	got := strings.TrimSpace(req.Confirm)
+	if got != softWipeConfirmPhrase {
+		writeErr(w, http.StatusBadRequest, "confirmação incorreta: digite a frase exata mostrada na zona de administração")
 		return
 	}
 
@@ -62,6 +65,13 @@ func (h *DangerHandler) SoftWipe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out["reseed_taxonomy"] = true
+	}
+	if req.ReseedCrawlersChannels {
+		if err := h.store.ReseedCrawlerChannelSeedInserts(); err != nil {
+			writeErr(w, http.StatusInternalServerError, "soft wipe aplicado mas falhou ao reaplicar seeds de crawlers/canais: "+err.Error())
+			return
+		}
+		out["reseed_crawlers_channels"] = true
 	}
 	writeJSON(w, http.StatusOK, out)
 }

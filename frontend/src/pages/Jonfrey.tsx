@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Switch, TooltipIcon } from '../components/ui'
+import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 import { apiClient } from '../lib/apiClient'
 import { fmtJonfreyDate, relJonfreyTime } from '../components/JonfreyActionCard'
 
@@ -107,17 +108,17 @@ export default function Jonfrey() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Estado do Full-auto (sincronizado com /automations) */}
-      <FullAutoStatusCard queueBusy={runLocked} />
-
-      {/* Painel de controle */}
+      {/* Piloto = toggle principal; Full-auto = libertação de dispatches sem aprovação */}
       <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
         {/* Barra superior: timer + último ciclo + executar — junto do toggle */}
         <div className="relative border-b border-border bg-gradient-to-br from-accent/[0.07] via-surface to-surface px-4 py-4 sm:px-5 sm:py-5">
           <div className="relative flex flex-col gap-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-1">
-                <p className="text-base font-semibold text-fg tracking-tight">Auto-pilot</p>
+                <p className="text-lg font-semibold text-fg tracking-tight">Auto-pilot</p>
+                <p className="text-xs text-fg-3 leading-snug max-w-xl">
+                  Liga o ciclo agendado do assistente e as ações marcadas na lista abaixo. Sem isto, o Jonfrey não corre em cadência.
+                </p>
               </div>
               <div className="flex items-center gap-3 sm:shrink-0 sm:pt-0.5">
                 <span className="text-xs text-fg-3 sm:hidden">Ativar</span>
@@ -278,45 +279,8 @@ export default function Jonfrey() {
           })()}
         </div>
       </div>
-    </div>
-  )
-}
 
-function FullAutoStatusCard({ queueBusy }: { queueBusy?: boolean }) {
-  const qc = useQueryClient()
-  const { data: appConfig } = useQuery<any>({
-    queryKey: ['config'],
-    queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
-    refetchInterval: 30_000,
-  })
-  const fullAutoMode = !!appConfig?.full_auto_mode
-  const toggleMut = useMutation({
-    mutationFn: async (v: boolean) => {
-      try { await apiClient.put('/api/config', { ...appConfig, full_auto_mode: v }) } catch {}
-      if (v) { try { await apiClient.post('/api/jonfrey/run', { action_type: 'enable_full_auto' }) } catch {} }
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
-  })
-
-  return (
-    <div className={`flex items-start gap-3 border rounded-md p-4 ${fullAutoMode ? 'border-success/40 bg-success/5' : 'border-warning/40 bg-warning/5'}`}>
-      <span className="text-base leading-none mt-0.5">{fullAutoMode ? '✅' : '⚠️'}</span>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold ${fullAutoMode ? 'text-success' : 'text-fg'}`}>
-          Full-auto: {fullAutoMode ? 'ATIVO' : 'desligado (modo manual)'}
-        </p>
-        <p className="text-xs text-fg-3 mt-0.5">
-          Quando ligado, dispatches criados pelo auto-match são liberados automaticamente pela action <strong>auto_release_pending</strong> sem precisar de aprovação humana.
-          Sincronizado com o Auto-pilot em <a href="/automations" className="text-accent hover:underline">Automações</a>.
-        </p>
-      </div>
-      <button type="button"
-        disabled={toggleMut.isPending || queueBusy}
-        title={queueBusy ? 'Aguarde a fila Jonfrey terminar' : undefined}
-        onClick={() => toggleMut.mutate(!fullAutoMode)}
-        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullAutoMode ? 'bg-success' : 'bg-border'} disabled:opacity-50`}>
-        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullAutoMode ? 'translate-x-5' : 'translate-x-0'}`} />
-      </button>
+      <FullAutoStatusBanner placement="jonfrey" queueBusy={runLocked} />
     </div>
   )
 }

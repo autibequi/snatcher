@@ -2,6 +2,12 @@
 
 Varredor automático de preços (Mercado Livre + Amazon) com pipeline inteligente e envio para WhatsApp + Telegram.
 
+## Manual para quem nunca usou o sistema
+
+Se vais **só operar o painel** (sem instalar servidor), começa pelo **[docs/MANUAL.md](docs/MANUAL.md)** — explica conceitos (crawler, catálogo, canal, grupo), o caminho sugerido até ao primeiro envio e onde está cada coisa no menu. O mesmo manual operacional existe dentro da app em **Sistema → Manual** e no ícone **❓** na barra.
+
+---
+
 ## Início rápido
 
 ```bash

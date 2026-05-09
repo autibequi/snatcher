@@ -2,6 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { KpiCard, Skeleton, Switch, Badge, TooltipIcon, Button } from '../components/ui'
+import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 import { ChannelDetailInner } from './ChannelDetail'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -515,6 +516,8 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
+      <FullAutoStatusBanner placement="automations" />
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <a href="#timeline" className="text-accent hover:underline text-sm">
           Ir para linha do tempo

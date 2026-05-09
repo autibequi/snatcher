@@ -10,7 +10,10 @@ export default function Manual() {
           <h1 className="text-xl font-semibold text-fg">Manual</h1>
           <TutorialHelpButton />
         </div>
-        <p className="text-sm text-fg-3 mt-1">Tutoriais e guias disponíveis.</p>
+        <p className="text-sm text-fg-3 mt-1">
+          Se é a primeira vez, abre <strong className="text-fg-2">Quickstarter</strong> e depois{' '}
+          <strong className="text-fg-2">Manual operacional</strong> — cobrem do login ao primeiro envio.
+        </p>
       </header>
       <ul className="grid gap-3 sm:grid-cols-2">
         {MANUAL_TUTORIALS.map(t => (

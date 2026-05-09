@@ -11,6 +11,7 @@ import {
   primaryJonfreyOutcome,
   type JonfreyAction,
 } from '../components/JonfreyActionCard'
+import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1004,6 +1005,8 @@ export default function Logs() {
 
   return (
     <div className={`p-6 mx-auto w-full ${logTab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'}`}>
+      <FullAutoStatusBanner placement="default" className="mb-4" />
+
       <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
           <Button
             variant="secondary"

@@ -187,6 +187,8 @@ type Store interface {
 	SoftWipeOperationalData() error
 	// ReseedTaxonomySeedInserts reaplica os INSERTs de taxonomia da migração 0112 (ON CONFLICT DO NOTHING).
 	ReseedTaxonomySeedInserts() error
+	// ReseedCrawlerChannelSeedInserts reaplica INSERTs idempotentes de searchterm + channel (crawler_channel_seed.sql).
+	ReseedCrawlerChannelSeedInserts() error
 
 	// GroupAdmins
 	ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error)

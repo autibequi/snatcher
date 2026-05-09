@@ -17,7 +17,8 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
   {
     slug: 'quickstarter',
     title: 'Quickstarter',
-    description: 'Primeiros passos em poucos minutos: contas, canais e primeiro envio.',
+    description:
+      'Começa aqui se nunca abriste o painel: login, contas, crawlers, canal, primeiro disparo.',
     icon: '🚀',
     path: '/',
   },

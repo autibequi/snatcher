@@ -1553,6 +1553,24 @@ func (s *SQLStore) ReseedTaxonomySeedInserts() error {
 	return tx.Commit()
 }
 
+func (s *SQLStore) ReseedCrawlerChannelSeedInserts() error {
+	stmts := splitTaxonomySeedStatements(crawlerChannelSeedSQL)
+	if len(stmts) == 0 {
+		return fmt.Errorf("crawler/channel seed embutido vazio ou sem INSERT")
+	}
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, q := range stmts {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("crawler/channel stmt %d/%d: %w", i+1, len(stmts), err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	_, err := s.db.NamedExec(`
 		UPDATE groups SET name=:name, platform=:platform, jid=:jid,
