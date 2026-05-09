@@ -20,6 +20,19 @@ interface PendingDispatch {
   created_at: string
 }
 
+interface SendQueueRow extends PendingDispatch {
+  pending_targets?: number
+}
+
+interface PreviewItem {
+  product_id: number
+  channel_id: number
+  product_name: string
+  channel_name: string
+  score: number
+  already_sent: boolean
+}
+
 function relTime(s: string): string {
   const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000)
   if (m < 1) return 'agora'
@@ -38,6 +51,22 @@ export default function Pending() {
     queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     refetchInterval: 15_000,
   })
+
+  const { data: sendQueue = [], isLoading: loadQueue } = useQuery<SendQueueRow[]>({
+    queryKey: ['dispatches', 'send-queue'],
+    queryFn: () => apiClient.get('/api/dispatches/send-queue').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 10_000,
+  })
+
+  const { data: nextCyclePreview } = useQuery<{ items: PreviewItem[] }>({
+    queryKey: ['auto-match', 'preview'],
+    queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data).catch(() => ({ items: [] })),
+    refetchInterval: 60_000,
+  })
+  const previewCandidates = React.useMemo(
+    () => (nextCyclePreview?.items ?? []).filter(i => !i.already_sent).slice(0, 30),
+    [nextCyclePreview],
+  )
 
   const { data: appConfig } = useQuery<any>({
     queryKey: ['config'],
@@ -79,6 +108,7 @@ export default function Pending() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      qc.invalidateQueries({ queryKey: ['dispatches', 'send-queue'] })
       setSelected(new Set())
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao aprovar'),
@@ -88,6 +118,7 @@ export default function Pending() {
     mutationFn: () => apiClient.post('/api/dispatches/approve-all'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      qc.invalidateQueries({ queryKey: ['dispatches', 'send-queue'] })
       setSelected(new Set())
     },
   })
@@ -159,9 +190,9 @@ export default function Pending() {
         <div>
           <h1 className="text-xl font-semibold text-fg">Pendentes de envio</h1>
           <p className="text-sm text-fg-3">
-            Apenas dispatches em <strong className="text-fg-2">pending_approval</strong> (precisam de clique em aprovar).
-            Não lista candidatos do catálogo — estes aparecem na <strong className="text-fg-2">prévia do match</strong> em cada canal / Automations.
-            Depois de aprovados, entram na fila do worker WA/TG.
+            <strong className="text-fg-2">Fila WA</strong> = já liberados e aguardando o worker Evolution (mesmo com full-auto).
+            <strong className="text-fg-2"> Aprovação manual</strong> = <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code>.
+            <strong className="text-fg-2"> Próximo ciclo</strong> = prévia do auto-match (o Jonfrey orquestra; envio físico é o worker WA).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
@@ -196,6 +227,74 @@ export default function Pending() {
         </div>
       </div>
 
+      {/* Fila do WhatsApp — queued/sending */}
+      <div className="border border-border rounded-md overflow-hidden bg-surface">
+        <div className="px-4 py-3 border-b border-border bg-surface-2/50">
+          <p className="text-sm font-medium text-fg">Na fila do WhatsApp (próximo envio)</p>
+          <p className="text-xs text-fg-3 mt-0.5">
+            Status <code className="text-[10px]">queued</code>/<code className="text-[10px]">sending</code> com targets pendentes — ordem FIFO.
+            Se ficar parado: conferir Evolution (URL/chave/instância), JID dos grupos e rate limit (3 msg/grupo/h).
+          </p>
+        </div>
+        {loadQueue ? (
+          <p className="px-4 py-8 text-sm text-fg-3 text-center">Carregando fila…</p>
+        ) : sendQueue.length === 0 ? (
+          <p className="px-4 py-8 text-sm text-fg-3 text-center">Nenhum dispatch na fila do worker.</p>
+        ) : (
+          <div className="max-h-[360px] overflow-y-auto divide-y divide-border">
+            {sendQueue.map(row => (
+              <div key={row.id} className="px-4 py-2.5 flex items-start gap-3 hover:bg-surface-2/30">
+                <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0 ${row.status === 'sending' ? 'bg-accent/15 text-accent' : 'bg-warning/10 text-warning'}`}>
+                  {row.status}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-fg truncate">{row.product_name || row.message_text?.slice(0, 80) || `Dispatch #${row.id}`}</p>
+                  <p className="text-[10px] text-fg-3">
+                    {row.channel_name ? `${row.channel_name} · ` : ''}
+                    {row.pending_targets != null ? `${row.pending_targets} grupos pendentes` : '—'}
+                    {' · '}
+                    <a href={`/logs?dispatchId=${row.id}`} className="text-accent hover:underline">logs</a>
+                  </p>
+                </div>
+                <span className="text-[10px] text-fg-3 shrink-0">{relTime(row.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Próximo ciclo auto-match (prévia) */}
+      <div className="border border-border rounded-md overflow-hidden bg-surface">
+        <div className="px-4 py-3 border-b border-border bg-surface-2/50 flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-medium text-fg">Próximos candidatos (prévia do próximo ciclo)</p>
+            <p className="text-xs text-fg-3 mt-0.5">
+              Produtos que o auto-match consideraria agora (por canal). Não é compromisso de envio — depende do ciclo, cooldown e limites.
+            </p>
+          </div>
+          <a href="/automations" className="text-xs text-accent hover:underline whitespace-nowrap">Automations →</a>
+        </div>
+        {previewCandidates.length === 0 ? (
+          <p className="px-4 py-8 text-sm text-fg-3 text-center">
+            Nenhum candidato elegível na prévia (canais pausados, filtros ou já enviados).
+          </p>
+        ) : (
+          <div className="max-h-[280px] overflow-y-auto divide-y divide-border">
+            {previewCandidates.map(p => (
+              <div key={`${p.channel_id}-${p.product_id}`} className="px-4 py-2 flex items-center gap-3">
+                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${p.score >= 70 ? 'bg-success/10 text-success' : 'bg-surface-2 text-fg-3'}`}>
+                  {p.score.toFixed(0)}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-fg truncate">{p.product_name}</p>
+                  <p className="text-[10px] text-fg-3 truncate">{p.channel_name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Painel de modo: toggle Full-auto sincronizado */}
       <div className={`flex items-start gap-3 border rounded-md p-3 ${fullAutoMode ? 'border-success/40 bg-success/5' : 'border-warning/40 bg-warning/5'}`}>
         <span className="text-base leading-none mt-0.5">{fullAutoMode ? '✅' : '⚠️'}</span>
@@ -218,17 +317,21 @@ export default function Pending() {
       </div>
 
 
-      {/* Tabela */}
+      {/* Tabela — aprovação manual */}
+      <div className="border-b border-border pb-2">
+        <p className="text-sm font-medium text-fg">Aguardando aprovação manual</p>
+        <p className="text-xs text-fg-3">Só quando full-auto está desligado — caso contrário esta lista tende a ficar vazia.</p>
+      </div>
       {isLoading ? (
         <p className="text-sm text-fg-3">Carregando…</p>
       ) : items.length === 0 ? (
         <div className="border border-border rounded-md p-12 text-center bg-surface space-y-2">
           <p className="text-3xl mb-2">✨</p>
-          <p className="text-sm text-fg">Sem dispatches aguardando aprovação</p>
+          <p className="text-sm text-fg">Sem dispatches em pending_approval</p>
           <p className="text-xs text-fg-3 mt-1 max-w-md mx-auto">
             {fullAutoMode
-              ? 'Com full-auto, novos dispatches não ficam aqui — são liberados para o worker automaticamente. Para ver o que o próximo ciclo pode escolher, abra o canal em Automations ou a página do canal (bloco «prévia do match»).'
-              : 'Todos os disparos neste estado já foram aprovados, rejeitados ou enviados.'}
+              ? 'Com full-auto, novos disparos vão direto para a fila do WhatsApp (bloco acima). Use a prévia para ver candidatos do próximo ciclo.'
+              : 'Ative aprovações pendentes aqui ou ligue full-auto para liberar automaticamente.'}
           </p>
         </div>
       ) : (

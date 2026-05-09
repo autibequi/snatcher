@@ -309,6 +309,62 @@ func (h *DispatchHandler) ListPendingApproval(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// ListSendQueue GET /api/dispatches/send-queue
+// Fila do worker WA/Evolution: dispatches queued/sending com pelo menos um target pending.
+// Ordem FIFO (id ascendente). Enriquecimento igual a pending-approval quando há auto_match_log.
+func (h *DispatchHandler) ListSendQueue(w http.ResponseWriter, r *http.Request) {
+	var rows []struct {
+		ID            int64    `db:"id" json:"id"`
+		Status        string   `db:"status" json:"status"`
+		ComposedBy    string   `db:"composed_by" json:"composed_by"`
+		AffiliateLink string   `db:"affiliate_link" json:"affiliate_link"`
+		ChannelID     *int64   `db:"channel_id" json:"channel_id,omitempty"`
+		ChannelName   *string  `db:"channel_name" json:"channel_name,omitempty"`
+		ProductName   *string  `db:"product_name" json:"product_name,omitempty"`
+		ProductImage  *string  `db:"product_image" json:"product_image,omitempty"`
+		Price         *float64 `db:"price" json:"price,omitempty"`
+		Source        *string  `db:"source" json:"source,omitempty"`
+		Brand         *string  `db:"brand" json:"brand,omitempty"`
+		Score         *float64 `db:"score" json:"score,omitempty"`
+		MessageText   string   `db:"message_text" json:"message_text"`
+		CreatedAt     string   `db:"created_at" json:"created_at"`
+		PendingTargets int     `db:"pending_targets" json:"pending_targets"`
+	}
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT DISTINCT ON (d.id)
+		       d.id, d.status, d.composed_by,
+		       COALESCE(d.affiliate_link, '') AS affiliate_link,
+		       aml.channel_id,
+		       ch.name AS channel_name,
+		       cp.canonical_name AS product_name,
+		       cp.image_url AS product_image,
+		       cp.lowest_price AS price,
+		       cp.lowest_price_source AS source,
+		       cp.brand AS brand,
+		       aml.score,
+		       COALESCE((d.message->>'text')::text, '') AS message_text,
+		       to_char(d.created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS created_at,
+		       (SELECT COUNT(*) FROM dispatch_targets dt2
+		        WHERE dt2.dispatch_id = d.id AND dt2.status = 'pending') AS pending_targets
+		FROM dispatches d
+		INNER JOIN dispatch_targets dt ON dt.dispatch_id = d.id AND dt.status = 'pending'
+		LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
+		LEFT JOIN channel ch ON ch.id = aml.channel_id
+		LEFT JOIN catalogproduct cp ON cp.id = aml.product_id
+		WHERE d.status IN ('queued', 'sending')
+		  AND (d.scheduled_for IS NULL OR d.scheduled_for <= now())
+		ORDER BY d.id ASC, aml.id DESC NULLS LAST
+		LIMIT 100`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = rows[:0]
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
 // ApproveDispatch POST /api/dispatches/{id}/approve
 // Muda status de pending_approval → queued para envio imediato.
 func (h *DispatchHandler) ApproveDispatch(w http.ResponseWriter, r *http.Request) {

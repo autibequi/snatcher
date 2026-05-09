@@ -893,7 +893,7 @@ export function TabOverview() {
         <div className="bg-surface border border-border rounded-md p-4 shadow-card flex flex-col gap-1">
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Próx. ciclo</p>
           <p className="text-lg font-bold text-fg leading-none">{countdownLabel}</p>
-          <p className="text-[10px] text-fg-3">{data?.interval_seconds ? `a cada ${data.interval_seconds / 60 | 0}min` : '—'}</p>
+          <p className="text-[10px] text-fg-3">{data?.interval_seconds != null ? `a cada ${Math.max(1, Math.floor(data.interval_seconds / 60))} min` : '—'}</p>
         </div>
 
         {/* Auto-pilot — toggle único que controla auto-match + full_auto_mode */}
@@ -951,7 +951,25 @@ export function TabOverview() {
         </div>
       </div>
 
-      {/* Disparos: A enviar (recentes) */}
+      {/* Últimos 30 min — antes sumiam da UI porque só renderizávamos o bloco &gt;30min */}
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-fg">Disparos recentes (últimos 30 min)</p>
+            <p className="text-[10px] text-fg-3 mt-0.5">Registros recentes do auto-match (a visão geral antiga só listava entradas com mais de 30 min).</p>
+          </div>
+          <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
+        </div>
+        {logsRecent.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo automático nesta janela.</p>
+        ) : (
+          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
+            {logsRecent.map(renderLogRow)}
+          </div>
+        )}
+      </div>
+
+      {/* Dispatches aguardando aprovação manual (pending_approval) */}
       <div className="bg-surface border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
