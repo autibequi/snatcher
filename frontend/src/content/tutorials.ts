@@ -165,3 +165,48 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
 export function manualTutorialTitle(slug: string): string | undefined {
   return MANUAL_TUTORIALS.find(t => t.slug === slug)?.title
 }
+
+/**
+ * Tutorial mais específico para a rota atual — usado pelo ❓ na top bar e pelo ManualModal.
+ * Prefixos mais longos primeiro (ex.: /automations/channels antes de /automations).
+ */
+export function resolveTutorialSlugFromPath(pathname: string): string {
+  const p = pathname.replace(/\/+$/, '') || '/'
+
+  if (p === '/manual') return 'quickstarter'
+
+  const manualMatch = /^\/manual\/([^/]+)/.exec(p)
+  if (manualMatch?.[1] && MANUAL_TUTORIALS.some(t => t.slug === manualMatch[1])) {
+    return manualMatch[1]
+  }
+
+  const prefixes: [string, string][] = [
+    ['/automations/channels', 'canais'],
+    ['/automations/jonfrey', 'jonfrey'],
+    ['/automations', 'automations'],
+    ['/settings', 'settings'],
+    ['/crawlers', 'crawlers'],
+    ['/curation', 'curation'],
+    ['/catalog', 'catalog'],
+    ['/channels', 'canais'],
+    ['/groups', 'groups'],
+    ['/accounts', 'accounts'],
+    ['/analytics', 'analytics'],
+    ['/links', 'links'],
+    ['/clusters', 'clusters'],
+    ['/logs', 'logs'],
+    ['/affiliates', 'affiliates'],
+    ['/taxonomy', 'taxonomy'],
+    ['/compose', 'compose'],
+    ['/ads', 'ads'],
+    ['/match', 'match'],
+  ]
+
+  for (const [prefix, slug] of prefixes) {
+    if (p === prefix || p.startsWith(`${prefix}/`)) return slug
+  }
+
+  if (p === '/') return 'dashboard'
+
+  return 'operacional'
+}

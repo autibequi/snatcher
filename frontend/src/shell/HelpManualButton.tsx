@@ -1,9 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
+import { MANUAL_TUTORIALS, resolveTutorialSlugFromPath } from '../content/tutorials'
 
 /** Persistido após "Entendi", abrir manual ou clicar no botão de ajuda. */
 export const MANUAL_HELP_HINT_STORAGE_KEY = 'snatcher.manual.helpHintDismissed'
 
 export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void }) {
+  const { pathname } = useLocation()
+  const helpSlug = resolveTutorialSlugFromPath(pathname)
+  const helpTopic = MANUAL_TUTORIALS.find(t => t.slug === helpSlug)?.title ?? 'Ajuda'
   const [showHint, setShowHint] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -49,8 +54,8 @@ export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void })
           className="absolute bottom-full right-0 mb-2 z-[100] w-[min(100vw-2rem,18rem)] rounded-lg border border-border bg-surface shadow-modal p-3"
         >
           <p id="help-hint-title" className="text-xs text-fg leading-snug">
-            Este ícone é o <strong>ajuda</strong>: abre o <strong>manual operacional</strong> num painel por cima da página — você
-            continua no mesmo contexto (contas, disparos, automações).
+            Este ícone abre o <strong>tutorial desta página</strong> (<strong>{helpTopic}</strong>) num painel — o texto muda
+            conforme o separador onde você está.
           </p>
           <div className="flex justify-end gap-2 mt-3">
             <button
@@ -74,8 +79,8 @@ export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void })
         type="button"
         onClick={openManual}
         className="w-8 h-8 rounded-full border border-border bg-surface-2 text-fg-2 hover:text-accent hover:border-accent/50 flex items-center justify-center transition-colors flex-shrink-0"
-        aria-label="Abrir manual operacional"
-        title="Manual operacional"
+        aria-label={`Ajuda: ${helpTopic}`}
+        title={`Ajuda — ${helpTopic}`}
       >
         <span className="text-base leading-none" aria-hidden>
           ❓

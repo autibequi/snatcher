@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Button, KpiCard, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
-import { AutomationDiagnosticsCard } from '../components/dashboard/AutomationDiagnosticsCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
 import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
@@ -157,7 +156,6 @@ export default function Dashboard() {
                 qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
                 qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
                 qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
-                qc.invalidateQueries({ queryKey: ['dashboard', 'automation-diagnostics'] })
                 qc.invalidateQueries({ queryKey: ['catalog'] })
               }}
             >
@@ -170,13 +168,11 @@ export default function Dashboard() {
         }
       />
 
-      {/* ── 2. Recomendação operacional (cache 1h) ──────────────────────────── */}
-      <RecommendationCard />
-
-      {/* ── 3. OperationInbox ───────────────────────────────────────────────── */}
-      <OperationInbox />
-
-      <AutomationDiagnosticsCard />
+      {/* ── 2. Inbox | dica LLM (2 colunas) ─────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <OperationInbox />
+        <RecommendationCard />
+      </div>
 
       {/* ── 3. KPIs — 4 cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
