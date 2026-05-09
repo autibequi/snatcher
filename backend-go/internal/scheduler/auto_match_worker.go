@@ -278,6 +278,10 @@ func sortProductsByBestAutoMatchScore(cfg models.AppConfig, products []models.Ca
 	}
 	outRank := make([]ranked, 0, len(products))
 	for _, p := range products {
+		if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
+			outRank = append(outRank, ranked{p: p, best: -1})
+			continue
+		}
 		input := match.ProductInput{
 			Name:     p.CanonicalName,
 			Category: firstTag(p),

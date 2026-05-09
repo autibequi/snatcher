@@ -58,7 +58,10 @@ export default function Pending() {
     refetchInterval: 10_000,
   })
 
-  const { data: nextCyclePreview } = useQuery<{ items: PreviewItem[] }>({
+  const { data: nextCyclePreview } = useQuery<{
+    items: PreviewItem[]
+    auto_match_master_enabled?: boolean
+  }>({
     queryKey: ['auto-match', 'preview'],
     queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data).catch(() => ({ items: [] })),
     refetchInterval: 60_000,
@@ -243,8 +246,9 @@ export default function Pending() {
             <p>Nenhum dispatch na fila do worker.</p>
             <p className="text-xs max-w-md mx-auto">
               Se a prévia mostra candidatos mas aqui continua vazio: cooldown por canal, <code className="text-[10px]">max_per_run</code> no último ciclo,
-              produto sem URL/preço válidos para afiliado, ou <strong className="text-fg-2">auto-match desligado</strong> na config global.
-              O worker percorre só os 100 produtos ativos mais recentes no catálogo e agora prioriza por score (como a prévia).
+              fila dos grupos cheia (backpressure), ou produto <strong className="text-fg-2">sem URL de oferta</strong> (<code className="text-[10px]">lowest_price_url</code>) — o worker não cria dispatch sem link.
+              Confira também se o <strong className="text-fg-2">auto-match global</strong> está ligado em Automations.
+              O ciclo percorre só os 100 produtos ativos mais recentes e prioriza por score (como a prévia).
             </p>
           </div>
         ) : (
@@ -281,9 +285,17 @@ export default function Pending() {
           </div>
           <a href="/automations" className="text-xs text-accent hover:underline whitespace-nowrap">Automations →</a>
         </div>
-        {previewCandidates.length === 0 ? (
+        {nextCyclePreview?.auto_match_master_enabled === false ? (
+          <div className="px-4 py-8 text-sm text-center space-y-2">
+            <p className="text-warning font-medium">Auto-match global desligado</p>
+            <p className="text-xs text-fg-3 max-w-md mx-auto">
+              O toggle «Auto-pilot» / auto-match em Config está off — o worker não roda e a prévia fica vazia.
+              Ative em <a href="/automations" className="text-accent hover:underline">Automations</a> para voltar a gerar dispatches.
+            </p>
+          </div>
+        ) : previewCandidates.length === 0 ? (
           <p className="px-4 py-8 text-sm text-fg-3 text-center">
-            Nenhum candidato elegível na prévia (canais pausados, filtros ou já enviados).
+            Nenhum candidato elegível na prévia (canais pausados, filtros, já enviados, ou produto sem URL de oferta para afiliado).
           </p>
         ) : (
           <div className="max-h-[280px] overflow-y-auto divide-y divide-border">
@@ -311,7 +323,7 @@ export default function Pending() {
           </p>
           <p className="text-xs text-fg-3 mt-0.5">
             {fullAutoMode
-              ? 'Todo dispatch novo é aprovado e enviado automaticamente. Esta lista deve esvaziar sozinha conforme o Jonfrey roda auto_release_pending.'
+              ? 'Todo dispatch novo nasce já liberado e vai para a fila do WhatsApp (bloco acima); o Evolution envia em seguida. O Jonfrey não «esvazia» esta fila — só jobs de manutenção (ex.: auto_release_pending).'
               : 'Disparos novos vão se acumular aqui. Aprove manualmente ou ative o Full-auto para auto-aprovação contínua.'}
           </p>
         </div>

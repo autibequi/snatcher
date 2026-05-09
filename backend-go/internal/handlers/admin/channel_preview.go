@@ -68,6 +68,11 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 		return nil, 0, 0, "", err
 	}
 
+	// Mesmo kill-switch que RunAutoMatchWorker — senão a prévia engana.
+	if !cfg.AutoMatchEnabled {
+		return []ChannelAutomationPreviewRow{}, threshold, maxPerRun, channel.Name, nil
+	}
+
 	// inactive=false — alinhado ao worker de auto-match
 	products, err := st.ListCatalogProducts(channelPreviewCatalogLimit, 0, false)
 	if err != nil {
@@ -108,6 +113,11 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 
 		scores := match.RankChannels(inp, channels)
 		if len(scores) == 0 || scores[0].Value < threshold {
+			continue
+		}
+
+		// Alinhado ao worker: sem URL de oferta o dispatch não é criado.
+		if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
 			continue
 		}
 

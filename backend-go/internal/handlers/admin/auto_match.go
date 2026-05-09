@@ -68,6 +68,16 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !cfg.AutoMatchEnabled {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items":                     []any{},
+			"threshold":                 cfg.AutoMatchThreshold,
+			"max_per_run":               cfg.AutoMatchMaxPerRun,
+			"auto_match_master_enabled": false,
+		})
+		return
+	}
+
 	automations, _ := h.store.ListChannelAutomations(true) // enabled=true
 	now := time.Now()
 
@@ -84,9 +94,10 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	if len(autoByChannelID) == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"items":       []any{},
-			"threshold":   cfg.AutoMatchThreshold,
-			"max_per_run": cfg.AutoMatchMaxPerRun,
+			"items":                     []any{},
+			"threshold":                 cfg.AutoMatchThreshold,
+			"max_per_run":               cfg.AutoMatchMaxPerRun,
+			"auto_match_master_enabled": true,
 		})
 		return
 	}
@@ -127,9 +138,10 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"threshold":   cfg.AutoMatchThreshold,
-		"max_per_run": cfg.AutoMatchMaxPerRun,
+		"items":                     items,
+		"threshold":                 cfg.AutoMatchThreshold,
+		"max_per_run":               cfg.AutoMatchMaxPerRun,
+		"auto_match_master_enabled": true,
 	})
 }
 
