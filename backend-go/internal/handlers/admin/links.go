@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -28,17 +29,22 @@ func (h *LinksHandler) Shorten(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "url required")
 		return
 	}
-	source := strings.ToLower(req.Source)
+	source := strings.ToLower(strings.TrimSpace(req.Source))
 
-	// Normalizar source para interno (amazon → amz, mercadolivre → ml)
+	// Normalizar rótulo gravado em short_links.source (analytics)
 	switch source {
-	case "amazon":
+	case "amazon", "amz":
 		source = "amazon"
 	case "mercadolivre", "ml":
 		source = "mercadolivre"
 	}
 
-	shortID, err := h.store.GetOrCreateShortLink(req.URL, source)
+	dest := strings.TrimSpace(req.URL)
+	programs, _ := h.store.ListAffiliatePrograms(nil)
+	built, _, _ := affiliates.BuildLink(dest, req.Source, programs)
+	dest = built
+
+	shortID, err := h.store.GetOrCreateShortLink(dest, source)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar short link")
 		return

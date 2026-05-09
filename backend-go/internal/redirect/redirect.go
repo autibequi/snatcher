@@ -122,14 +122,13 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 
 	amzTag, mlToolID := rd.getConfig()
 
-	// Novo sistema: tabela short_links
-	if destURL, source, ok := rd.store.GetShortLinkByID(shortID); ok {
-		dest := affiliateURL(destURL, source, amzTag, mlToolID)
+	// Novo sistema: tabela short_links — dest_url já inclui afiliado (BuildLink antes do insert).
+	if destURL, _, ok := rd.store.GetShortLinkByID(shortID); ok {
 		rd.cache.Store(shortID, productEntry{
-			redirectURL: dest,
+			redirectURL: destURL,
 			expiresAt:   time.Now().Add(productTTL),
 		})
-		return dest, true
+		return destURL, true
 	}
 
 	// Legado: tabela product
