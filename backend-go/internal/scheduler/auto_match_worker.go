@@ -28,6 +28,8 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
+	now := time.Now()
+
 	products, err := st.ListCatalogProducts(100, 0, false) // false = só ativos (inactive=false)
 	if err != nil {
 		slog.Error("auto match: list products", "err", err)
