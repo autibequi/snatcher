@@ -299,7 +299,7 @@ function FullAutoStatusCard() {
         </p>
         <p className="text-xs text-fg-3 mt-0.5">
           Quando ligado, dispatches criados pelo auto-match são liberados automaticamente pela action <strong>auto_release_pending</strong> sem precisar de aprovação humana.
-          Sincronizado com o toggle em <a href="/automations/pending" className="text-accent hover:underline">/automations/pending</a>.
+          Sincronizado com o toggle em <a href="/automations/pending" className="text-accent hover:underline">Fila de envio</a>.
         </p>
       </div>
       <button type="button"
