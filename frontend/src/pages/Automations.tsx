@@ -532,12 +532,8 @@ export function TabOverview() {
         title="Automações"
         subtitle={
           <>
-            Um só lugar para <strong className="text-fg-2">piloto</strong>, <strong className="text-fg-2">próximos envios</strong>,{' '}
-            <strong className="text-fg-2">aprovação manual</strong> e <strong className="text-fg-2">histórico</strong>. A linha do tempo está{' '}
-            <a href="#timeline" className="text-accent hover:underline">
-              abaixo
-            </a>
-            .
+            Piloto, aprovação e histórico.{' '}
+            <a href="#timeline" className="text-accent hover:underline">Linha do tempo</a> abaixo.
           </>
         }
         actions={
@@ -590,20 +586,26 @@ export function TabOverview() {
         }
       />
 
-      <div className="rounded-lg border border-border bg-surface-2/30 px-4 py-3 text-xs text-fg-2 leading-relaxed space-y-2">
-        <p className="font-semibold text-fg text-sm">Dois caminhos de automação</p>
-        <p>
-          <strong className="text-fg">Pipeline agendado</strong> (scan → process → evaluate): dentro da janela de envio e com{' '}
-          <code className="text-[10px] bg-surface px-1 rounded">events_enabled</code>, detecta novidades/quedas/mínimos e dispara por adapters — é o caminho de{' '}
-          <em>eventos</em>, não é a fila contínua do auto-match.
-        </p>
-        <p>
-          <strong className="text-fg">Auto-match</strong> (a cada ~1 min): lê os últimos produtos do catálogo, pontua contra audiência dos canais e cria dispatches{' '}
-          <code className="text-[10px] bg-surface px-1 rounded">composed_by=auto-match</code>. Se <strong>full-auto</strong> estiver desligado em Config, o status fica{' '}
-          <code className="text-[10px] bg-surface px-1 rounded">pending_approval</code> até aprovação; só <code className="text-[10px] bg-surface px-1 rounded">queued</code>{' '}
-          entra no worker Evolution (WhatsApp). Rate limit: 3 mensagens/hora/grupo.
-        </p>
-      </div>
+      <details className="group rounded-lg border border-border bg-surface-2/20 text-xs text-fg-2 open:bg-surface-2/30">
+        <summary className="cursor-pointer list-none flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2.5 text-fg hover:bg-surface-2/40 rounded-lg transition-colors [&::-webkit-details-marker]:hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-3">Ajuda</span>
+          <span className="text-sm text-fg">Pipeline agendado vs auto-match</span>
+          <span className="text-fg-3 group-open:rotate-180 transition-transform ml-auto">▾</span>
+        </summary>
+        <div className="px-3 pb-3 pt-0 space-y-2 leading-relaxed border-t border-border/60">
+          <p>
+            <strong className="text-fg">Pipeline agendado</strong> (scan → process → evaluate): dentro da janela de envio e com{' '}
+            <code className="text-[10px] bg-surface px-1 rounded">events_enabled</code>, detecta novidades/quedas/mínimos e dispara por adapters — é o caminho de{' '}
+            <em>eventos</em>, não é a fila contínua do auto-match.
+          </p>
+          <p>
+            <strong className="text-fg">Auto-match</strong> (a cada ~1 min): lê os últimos produtos do catálogo, pontua contra audiência dos canais e cria dispatches{' '}
+            <code className="text-[10px] bg-surface px-1 rounded">composed_by=auto-match</code>. Se <strong>full-auto</strong> estiver desligado em Config, o status fica{' '}
+            <code className="text-[10px] bg-surface px-1 rounded">pending_approval</code> até aprovação; só <code className="text-[10px] bg-surface px-1 rounded">queued</code>{' '}
+            entra no worker Evolution (WhatsApp). Rate limit: 3 mensagens/hora/grupo.
+          </p>
+        </div>
+      </details>
 
       {/* ── KPI + controles num grid único ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
