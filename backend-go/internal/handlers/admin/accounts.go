@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"snatcher/backendv2/internal/models"
@@ -843,6 +844,56 @@ func (e *evoClient) getGroupInviteCode(ctx context.Context, groupJID string) (st
 		return "https://chat.whatsapp.com/" + body.InviteCode, nil
 	}
 	return "", fmt.Errorf("inviteCode vazio na resposta")
+}
+
+// updateGroupSubject altera o assunto (nome visível) do grupo no WhatsApp via Evolution.
+func (e *evoClient) updateGroupSubject(ctx context.Context, groupJID, subject string) error {
+	b, err := json.Marshal(map[string]any{"subject": subject})
+	if err != nil {
+		return err
+	}
+	u := fmt.Sprintf("%s/group/updateGroupSubject/%s?groupJid=%s", e.baseURL, e.instance, url.QueryEscape(groupJID))
+	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apiKey", e.apiKey)
+	resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("evolution updateGroupSubject %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// updateParticipant executa add | remove | promote | demote em participantes (números com DDI, sem sufixo @).
+func (e *evoClient) updateParticipant(ctx context.Context, groupJID, action string, participants []string) error {
+	b, err := json.Marshal(map[string]any{"action": action, "participants": participants})
+	if err != nil {
+		return err
+	}
+	u := fmt.Sprintf("%s/group/updateParticipant/%s?groupJid=%s", e.baseURL, e.instance, url.QueryEscape(groupJID))
+	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apiKey", e.apiKey)
+	resp, err := (&http.Client{Timeout: 45 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("evolution updateParticipant %s %d: %s", action, resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 // createInstanceWithQR cria a instância pedindo QR code imediato.

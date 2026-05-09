@@ -335,6 +335,7 @@ func Build(
 		r.Post("/api/groups", groups.Create)
 		r.Get("/api/groups/{id}", groups.Get)
 		r.Patch("/api/groups/{id}", groups.Update)
+		r.Post("/api/groups/{id}/propagate-subject", groups.PropagateSubject)
 		r.Delete("/api/groups/{id}", groups.Delete)
 		r.Get("/api/groups/{id}/members", groups.Members)
 		r.Post("/api/groups/{id}/suggest-audience", groups.SuggestAudience)

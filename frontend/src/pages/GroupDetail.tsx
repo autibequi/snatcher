@@ -23,6 +23,9 @@ interface GroupDetail {
   dormant_members?: number
   clicks_30d?: number
   per_member_clicks?: number
+  /** WA: admins cadastrados que a Evolution confirma como admin no grupo */
+  verified_admin_count?: number
+  admin_count?: number
 }
 
 interface AdminAccount {
@@ -105,6 +108,17 @@ function PlatformBadge({ platform }: { platform: string }) {
       {isWA ? '📱' : '✈️'} {isWA ? 'WA' : 'TG'}
     </span>
   )
+}
+
+function GroupRoleBadge({ role }: { role?: string }) {
+  if (role === 'admin') {
+    return (
+      <Badge variant="default" size="sm">
+        admin
+      </Badge>
+    )
+  }
+  return <span className="text-xs text-fg-3">membro</span>
 }
 
 function EngagementBadge({ role }: { role?: string }) {
@@ -224,35 +238,59 @@ function ConfigModal({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [name, setName] = React.useState(group.name)
-  const [saving, setSaving] = React.useState(false)
+  const isWA = group.platform === 'whatsapp' || group.platform === 'wa'
+  const [subject, setSubject] = React.useState(group.name)
+  const [propagating, setPropagating] = React.useState(false)
 
-  const handleSave = async (e: React.SyntheticEvent) => {
+  React.useEffect(() => {
+    setSubject(group.name)
+  }, [group.name])
+
+  const handlePropagate = async (e: React.SyntheticEvent) => {
     e.preventDefault()
-    if (!name.trim()) return
-    setSaving(true)
+    if (!subject.trim()) return
+    if (!isWA) {
+      setPropagating(true)
+      try {
+        await apiClient.patch(`/api/groups/${group.id}`, { name: subject.trim() })
+        onSaved()
+        onClose()
+      } catch {
+        alert('Erro ao salvar nome')
+      } finally {
+        setPropagating(false)
+      }
+      return
+    }
+    setPropagating(true)
     try {
-      await apiClient.patch(`/api/groups/${group.id}`, { name: name.trim() })
+      await apiClient.post(`/api/groups/${group.id}/propagate-subject`, { subject: subject.trim() })
       onSaved()
       onClose()
-    } catch {
-      alert('Erro ao salvar configurações')
+    } catch (err: any) {
+      alert(err?.response?.data?.error ?? err?.message ?? 'Erro ao aplicar nome no WhatsApp')
     } finally {
-      setSaving(false)
+      setPropagating(false)
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-sm shadow-modal" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold text-fg mb-4">Configurações do grupo</h3>
-        <form onSubmit={handleSave} className="space-y-4">
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-fg mb-1">Configurações do grupo</h3>
+        {isWA && (
+          <p className="text-[11px] text-fg-3 mb-4 leading-snug">
+            O nome exibido no Snatcher só é atualizado no banco depois de aplicar no WhatsApp (Evolution). Você pode editar o
+            texto abaixo e confirmar.
+          </p>
+        )}
+        <form onSubmit={handlePropagate} className="space-y-4">
           <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome</label>
+            <label className="text-xs text-fg-2 block mb-1">{isWA ? 'Nome do grupo (WhatsApp)' : 'Nome'}</label>
             <input
               required
-              value={name}
-              onChange={e => setName(e.target.value)}
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
             />
           </div>
@@ -260,8 +298,12 @@ function ConfigModal({
             <button type="button" onClick={onClose} className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2 hover:bg-border">
               Cancelar
             </button>
-            <button type="submit" disabled={saving || !name.trim()} className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50">
-              {saving ? 'Salvando...' : 'Salvar'}
+            <button
+              type="submit"
+              disabled={propagating || !subject.trim()}
+              className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {propagating ? 'Aplicando…' : isWA ? 'Aplicar no WhatsApp' : 'Salvar'}
             </button>
           </div>
         </form>
@@ -614,7 +656,10 @@ function MembersTable({
                 Último clique
               </th>
               <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-                Papel
+                Engajamento
+              </th>
+              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
+                Papel (WA)
               </th>
               <th className="w-6 px-4" />
             </tr>
@@ -624,7 +669,7 @@ function MembersTable({
               const displayName = m.name ?? m.jid ?? m.id ?? '—'
               const label = typeof displayName === 'string' ? initials(String(displayName)) : '?'
               const color = avatarColor(String(displayName))
-              const engagement = m.engagement ?? (m.role === 'admin' ? 'active' : undefined)
+              const engagement = m.engagement
               return (
                 <tr
                   key={m.id ?? m.jid ?? i}
@@ -655,6 +700,9 @@ function MembersTable({
                   <td className="px-4 py-2.5 text-fg-2 text-xs">{relativeTime(m.last_click_at)}</td>
                   <td className="px-4 py-2.5">
                     <EngagementBadge role={engagement} />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <GroupRoleBadge role={m.role} />
                   </td>
                   <td className="px-4 py-2.5 text-fg-3 text-xs">›</td>
                 </tr>
@@ -780,7 +828,12 @@ export default function GroupDetail() {
       ? (clicks30d / memberCount).toFixed(1)
       : '—'
   const totalAudience = group.total_audience
-  const isProtected = admins.length >= 2
+  const isWAPlat = group.platform === 'whatsapp' || group.platform === 'wa'
+  const verified = group.verified_admin_count
+  const isProtected =
+    isWAPlat && typeof verified === 'number'
+      ? verified >= 2
+      : admins.length >= 2
 
   return (
     <div className="flex flex-col h-full">
@@ -934,7 +987,11 @@ export default function GroupDetail() {
           groupId={id!}
           admins={admins}
           isProtected={isProtected}
-          onAdminAdded={() => qc.invalidateQueries({ queryKey: ['groups', id, 'admins'] })}
+          onAdminAdded={() => {
+            qc.invalidateQueries({ queryKey: ['groups', id, 'admins'] })
+            qc.invalidateQueries({ queryKey: ['groups', id] })
+            qc.invalidateQueries({ queryKey: ['groups', id, 'members'] })
+          }}
         />
 
         {/* Members section */}

@@ -44,6 +44,8 @@ interface GroupRow {
   member_count?: number
   size?: number
   admin_count?: number
+  /** Admins cadastrados que a Evolution confirma como admin no grupo (WA). */
+  verified_admin_count?: number
   admins?: Array<{ initials: string; color?: string }>
   status?: string
   audience_status?: 'profile' | 'no_profile' | string
@@ -94,14 +96,21 @@ function PlatformBadge({ platform }: { platform: string }) {
 function AdminAvatars({
   admins,
   adminCount,
+  verifiedAdminCount,
+  platform,
 }: {
   admins?: Array<{ initials: string; color?: string }>
   adminCount?: number
+  verifiedAdminCount?: number
+  platform?: string
 }) {
-  const count = adminCount ?? admins?.length ?? 0
+  const isWA = platform === 'whatsapp' || platform === 'wa'
+  const registered = adminCount ?? admins?.length ?? 0
+  const effective =
+    isWA && typeof verifiedAdminCount === 'number' ? verifiedAdminCount : registered
   const avatarList = admins ?? []
   const show = avatarList.slice(0, 3)
-  const isRisky = count < 2
+  const isRisky = effective < 2
 
   return (
     <div className="flex items-center gap-1.5">
@@ -119,9 +128,12 @@ function AdminAvatars({
             ))
           : null}
       </div>
-      {count > 0 ? (
-        <span className={`text-xs font-medium ${isRisky ? 'text-warning' : 'text-fg-2'}`}>
-          {count > 0 ? `${Math.min(show.length || 1, count)} / ${count}` : '—'}
+      {effective > 0 || registered > 0 ? (
+        <span className={`text-xs font-medium tabular-nums ${isRisky ? 'text-warning' : 'text-fg-2'}`}>
+          {effective}
+          {isWA && typeof verifiedAdminCount === 'number' && verifiedAdminCount !== registered ? (
+            <span className="text-fg-3 font-normal">/{registered}</span>
+          ) : null}
           {isRisky && (
             <span className="ml-1 text-warning text-[10px] font-bold">risco</span>
           )}
@@ -159,11 +171,14 @@ function AudienceBadge({ audienceStatus }: { audienceStatus?: string }) {
 
 // ── Alert banner ──────────────────────────────────────────────────────────────
 
+function effectiveAdminRiskCount(g: GroupRow): number {
+  const isWA = g.platform === 'whatsapp' || g.platform === 'wa'
+  if (isWA && typeof g.verified_admin_count === 'number') return g.verified_admin_count
+  return g.admin_count ?? g.admins?.length ?? 0
+}
+
 function AdminRiskBanner({ groups }: { groups: GroupRow[] }) {
-  const risky = groups.filter(g => {
-    const count = g.admin_count ?? g.admins?.length
-    return count !== undefined && count < 2
-  })
+  const risky = groups.filter(g => effectiveAdminRiskCount(g) < 2)
   if (risky.length === 0) return null
   return (
     <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-warning/10 border border-warning/30 rounded-md text-sm text-warning">
@@ -268,7 +283,12 @@ function GroupsTable({
                   {memberCount != null ? memberCount.toLocaleString('pt-BR') : '—'}
                 </td>
                 <td className="px-4 py-2.5">
-                  <AdminAvatars admins={g.admins} adminCount={g.admin_count} />
+                  <AdminAvatars
+                    admins={g.admins}
+                    adminCount={g.admin_count}
+                    verifiedAdminCount={g.verified_admin_count}
+                    platform={g.platform}
+                  />
                 </td>
                 <td className="px-4 py-2.5">
                   <StatusDot status={g.status} />

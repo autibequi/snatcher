@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,10 +46,19 @@ type groupRequest struct {
 // groupEnriched estende RedesignGroup com campos calculados para o redesign.
 type groupEnriched struct {
 	models.RedesignGroup
-	ChannelName    string `json:"channel_name"`
-	AccountLabel   string `json:"account_label"`
-	AdminCount     int    `json:"admin_count"`
-	AudienceStatus string `json:"audience_status"` // "perfil" | "sem_perfil"
+	ChannelName          string `json:"channel_name"`
+	AccountLabel         string `json:"account_label"`
+	AdminCount           int    `json:"admin_count"`
+	VerifiedAdminCount   int    `json:"verified_admin_count"` // admins cadastrados que a Evolution reporta como admin no grupo
+	AudienceStatus       string `json:"audience_status"`      // "perfil" | "sem_perfil"
+}
+
+// Cache curto por instância WA — fetchAllGroups com participantes é pesado.
+var waFetchAllGroupsCache sync.Map // key: cred key → cachedFetchAll
+
+type cachedFetchAll struct {
+	at     time.Time
+	groups []map[string]any
 }
 
 func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -69,47 +80,53 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 		groups = []models.RedesignGroup{}
 	}
 
-	// Enriquece cada grupo com channel_name, account_label, admin_count e audience_status.
 	out := make([]groupEnriched, 0, len(groups))
 	for _, g := range groups {
-		adminCount, _ := h.store.CountGroupAdmins(g.ID)
-		enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount}
+		out = append(out, h.enrichRedesignGroup(r.Context(), g))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
 
-		// channel_name
-		if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
-			enriched.ChannelName = ch.Name
+// enrichRedesignGroup agrega channel_name, account_label, admin_count, verified_admin_count, audience_status.
+func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.RedesignGroup) groupEnriched {
+	adminCount, _ := h.store.CountGroupAdmins(g.ID)
+	enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount, VerifiedAdminCount: adminCount}
 
-			// audience_status: "perfil" se Audience tiver pelo menos 1 categoria ou brand
-			if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
-				enriched.AudienceStatus = "perfil"
-			} else {
-				enriched.AudienceStatus = "sem_perfil"
-			}
+	if ch, err := h.store.GetChannel(g.ChannelID); err == nil {
+		enriched.ChannelName = ch.Name
+		if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
+			enriched.AudienceStatus = "perfil"
 		} else {
 			enriched.AudienceStatus = "sem_perfil"
 		}
-
-		// account_label: nome da conta WA ou TG associada
-		if g.WAAccountID.Valid {
-			if acc, err := h.store.GetWAAccount(g.WAAccountID.Int64); err == nil {
-				enriched.AccountLabel = acc.Name
-			}
-		} else if g.TGAccountID.Valid {
-			if acc, err := h.store.GetTGAccount(g.TGAccountID.Int64); err == nil {
-				enriched.AccountLabel = acc.Name
-			}
-		}
-
-		if g.Platform == "whatsapp" && g.InviteLink.Valid && g.InviteLink.String != "" {
-			norm := invitelinks.NormalizeWhatsAppInvite(g.InviteLink.String)
-			if norm != g.InviteLink.String {
-				enriched.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: true}}
-			}
-		}
-
-		out = append(out, enriched)
+	} else {
+		enriched.AudienceStatus = "sem_perfil"
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	if g.WAAccountID.Valid {
+		if acc, err := h.store.GetWAAccount(g.WAAccountID.Int64); err == nil {
+			enriched.AccountLabel = acc.Name
+		}
+	} else if g.TGAccountID.Valid {
+		if acc, err := h.store.GetTGAccount(g.TGAccountID.Int64); err == nil {
+			enriched.AccountLabel = acc.Name
+		}
+	}
+
+	if g.Platform == "whatsapp" && g.InviteLink.Valid && g.InviteLink.String != "" {
+		norm := invitelinks.NormalizeWhatsAppInvite(g.InviteLink.String)
+		if norm != g.InviteLink.String {
+			enriched.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: true}}
+		}
+	}
+
+	if g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
+		if v, err := h.countVerifiedWAAdmins(ctx, g); err == nil {
+			enriched.VerifiedAdminCount = v
+		}
+	}
+
+	return enriched
 }
 
 func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +140,7 @@ func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
 		return
 	}
-	writeJSON(w, http.StatusOK, g)
+	writeJSON(w, http.StatusOK, h.enrichRedesignGroup(r.Context(), g))
 }
 
 func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +202,11 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v, ok := patch["name"].(string); ok && v != "" {
-		existing.Name = v
+		// Nome de grupos WhatsApp só deve ser persistido após POST .../propagate-subject
+		// (atualiza Evolution + DB). PATCH ignorado para não divergir do título real no WA.
+		if existing.Platform != "whatsapp" {
+			existing.Name = v
+		}
 	}
 	if v, ok := patch["status"].(string); ok && v != "" {
 		existing.Status = v
@@ -234,9 +255,8 @@ func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/groups/:id/members
-// Retorna membros do grupo com campos de engajamento enriquecidos.
-// clicks_30d e last_click_at: TODO quando tabela de membros individuais existir.
-// Por ora, retorna o próprio grupo como proxy (JID único) com clicks agregados do dispatch_targets.
+// WhatsApp: participantes reais via Evolution (fetchAllGroups + participantes).
+// Engajamento/clicks por membro continua pendente de tabela — vem 0.
 func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
@@ -250,39 +270,71 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// clicks_30d para o grupo — soma click_count de dispatch_targets nos últimos 30 dias.
-	// TODO: granularidade por membro individual requer tabela member_clicks (não existe ainda).
-	clicks30d := 0
-
-	// Calcula role com base em clicks_30d
-	role := memberRole(clicks30d)
-
 	type Member struct {
-		JID         string  `json:"jid"`
-		Name        string  `json:"name"`
-		Clicks30d   int     `json:"clicks_30d"`
-		LastClickAt *string `json:"last_click_at"`
-		Role        string  `json:"role"`
+		JID         string `json:"jid"`
+		Name        string `json:"name"`
+		Phone       string `json:"phone,omitempty"`
+		Clicks30d   int    `json:"clicks_30d"`
+		LastClickAt string `json:"last_click_at,omitempty"`
+		Role        string `json:"role"` // admin | member — papel no grupo WA quando disponível
+		Engagement  string `json:"engagement,omitempty"`
 	}
 
-	var members []Member
-	if group.JID.Valid && group.JID.String != "" {
-		members = []Member{{
-			JID:         group.JID.String,
-			Name:        group.Name,
-			Clicks30d:   clicks30d,
-			LastClickAt: nil, // TODO: popular de member_clicks quando disponível
-			Role:        role,
-		}}
-	} else {
-		members = []Member{}
+	if group.Platform != "whatsapp" || !group.JID.Valid || group.JID.String == "" || !group.WAAccountID.Valid {
+		writeJSON(w, http.StatusOK, []Member{})
+		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": members,
-		"total": len(members),
-		"note":  "membros reais requerem sidecar WA/TG (v2); clicks_30d e last_click_at pendentes de tabela member_clicks",
-	})
+	acc, err := h.store.GetWAAccount(group.WAAccountID.Int64)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []Member{})
+		return
+	}
+	cfg, _ := h.store.GetConfig()
+	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	if baseURL == "" {
+		writeJSON(w, http.StatusOK, []Member{})
+		return
+	}
+
+	groups, err := h.fetchAllGroupsWithParticipantsCached(r.Context(), baseURL, apiKey, instance)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "evolution: "+err.Error())
+		return
+	}
+	gmeta := findGroupMetaByJID(groups, group.JID.String)
+	if gmeta == nil {
+		writeJSON(w, http.StatusOK, []Member{})
+		return
+	}
+
+	participants := evolutionParticipantMaps(gmeta)
+	members := make([]Member, 0, len(participants))
+	for _, pm := range participants {
+		jid, _ := pm["id"].(string)
+		if jid == "" {
+			continue
+		}
+		name, _ := pm["name"].(string)
+		if name == "" {
+			name, _ = pm["pushName"].(string)
+		}
+		role := "member"
+		if participantIsGroupAdmin(pm) {
+			role = "admin"
+		}
+		phone := jidDigits(jid)
+		members = append(members, Member{
+			JID:        jid,
+			Name:       name,
+			Phone:      phone,
+			Clicks30d:  0,
+			Role:       role,
+			Engagement: memberRole(0),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, members)
 }
 
 // memberRole classifica o membro com base nos clicks dos últimos 30 dias.
@@ -361,7 +413,8 @@ func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if _, err := h.store.GetRedesignGroup(id); err != nil {
+	g, err := h.store.GetRedesignGroup(id)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
 		return
 	}
@@ -373,6 +426,14 @@ func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 	if err := decodeAndValidate(r, &req); err != nil {
 		writeValidationErr(w, err)
 		return
+	}
+
+	if req.AccountType == "wa" && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
+		cfg, _ := h.store.GetConfig()
+		if errWA := h.promoteWAAccountAsGroupAdmin(r.Context(), g, req.AccountID, cfg); errWA != nil {
+			writeErr(w, http.StatusBadGateway, errWA.Error())
+			return
+		}
 	}
 
 	adminID, err := h.store.AddGroupAdmin(models.GroupAdmin{
@@ -391,6 +452,60 @@ func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 		"account_type": req.AccountType,
 		"account_id":   req.AccountID,
 	})
+}
+
+// PropagateSubject POST /api/groups/{id}/propagate-subject
+// Body: { "subject": "novo nome" } — aplica no WhatsApp via Evolution e persiste em groups.name.
+func (h *GroupsHandler) PropagateSubject(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	g, err := h.store.GetRedesignGroup(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "grupo nao encontrado")
+		return
+	}
+	if g.Platform != "whatsapp" {
+		writeErr(w, http.StatusBadRequest, "apenas grupos WhatsApp")
+		return
+	}
+	if !g.JID.Valid || g.JID.String == "" || !g.WAAccountID.Valid {
+		writeErr(w, http.StatusUnprocessableEntity, "grupo sem JID ou sem conta WA")
+		return
+	}
+	var body struct {
+		Subject string `json:"subject"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Subject) == "" {
+		writeErr(w, http.StatusBadRequest, "subject obrigatorio")
+		return
+	}
+	subject := strings.TrimSpace(body.Subject)
+
+	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conta WA nao encontrada")
+		return
+	}
+	cfg, _ := h.store.GetConfig()
+	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution nao configurada")
+		return
+	}
+	evo := newEvolutionClient(baseURL, apiKey, instance)
+	if err := evo.updateGroupSubject(r.Context(), g.JID.String, subject); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	g.Name = subject
+	if err := h.store.UpdateRedesignGroup(g); err != nil {
+		writeErr(w, http.StatusInternalServerError, "nome aplicado no WA mas falhou ao salvar no banco")
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
 }
 
 // DeleteAdmin remove um administrador de um grupo.
@@ -554,4 +669,256 @@ func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"invite_link": link, "updated": true})
+}
+
+// --- Evolution helpers (WhatsApp grupos) -------------------------------------
+
+func resolveWAEvolutionCredentials(acc models.WAAccount, cfg models.AppConfig) (baseURL, apiKey, instance string) {
+	baseURL = acc.BaseURL.String
+	apiKey = acc.APIKey.String
+	instance = acc.Instance.String
+	if baseURL == "" && cfg.WABaseURL.Valid {
+		baseURL = cfg.WABaseURL.String
+	}
+	if apiKey == "" && cfg.WAApiKey.Valid {
+		apiKey = cfg.WAApiKey.String
+	}
+	if instance == "" && cfg.WAInstance.Valid {
+		instance = cfg.WAInstance.String
+	}
+	return
+}
+
+func (h *GroupsHandler) fetchAllGroupsWithParticipantsCached(ctx context.Context, baseURL, apiKey, instance string) ([]map[string]any, error) {
+	apKeyShort := apiKey
+	if len(apKeyShort) > 12 {
+		apKeyShort = apKeyShort[:12]
+	}
+	key := baseURL + "|" + apKeyShort + "|" + instance
+	if v, ok := waFetchAllGroupsCache.Load(key); ok {
+		c := v.(cachedFetchAll)
+		if time.Since(c.at) < 45*time.Second && len(c.groups) > 0 {
+			return c.groups, nil
+		}
+	}
+	evo := newEvolutionClient(baseURL, apiKey, instance)
+	groups, err := evo.getGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	waFetchAllGroupsCache.Store(key, cachedFetchAll{at: time.Now(), groups: groups})
+	return groups, nil
+}
+
+func findGroupMetaByJID(groups []map[string]any, jid string) map[string]any {
+	want := strings.TrimSpace(strings.ToLower(jid))
+	for _, g := range groups {
+		gid, _ := g["id"].(string)
+		if gid == "" {
+			gid, _ = g["groupJid"].(string)
+		}
+		gid = strings.TrimSpace(strings.ToLower(gid))
+		if gid != "" && (gid == want || stripJIDSuffix(gid) == stripJIDSuffix(want)) {
+			return g
+		}
+	}
+	return nil
+}
+
+func stripJIDSuffix(j string) string {
+	j = strings.TrimSpace(strings.ToLower(j))
+	if i := strings.Index(j, "@"); i > 0 {
+		return j[:i]
+	}
+	return j
+}
+
+func evolutionParticipantMaps(gmeta map[string]any) []map[string]any {
+	raw, ok := gmeta["participants"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, p := range raw {
+		pm, ok := p.(map[string]any)
+		if ok {
+			out = append(out, pm)
+		}
+	}
+	return out
+}
+
+func jidDigits(jid string) string {
+	s := strings.TrimSpace(jid)
+	if i := strings.Index(s, "@"); i > 0 {
+		s = s[:i]
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func participantIsGroupAdmin(pm map[string]any) bool {
+	if v, ok := pm["admin"].(bool); ok && v {
+		return true
+	}
+	if s, ok := pm["admin"].(string); ok && s != "" && s != "false" {
+		return true
+	}
+	if r, ok := pm["rank"].(string); ok {
+		switch strings.ToLower(r) {
+		case "admin", "superadmin", "super_admin":
+			return true
+		}
+	}
+	return false
+}
+
+func phoneTailsMatch(a, b string) bool {
+	a = jidDigits(a)
+	b = jidDigits(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	const n = 11
+	sa := a
+	sb := b
+	if len(sa) >= n {
+		sa = sa[len(sa)-n:]
+	}
+	if len(sb) >= n {
+		sb = sb[len(sb)-n:]
+	}
+	return sa == sb
+}
+
+func adminDigitsIndex(participants []map[string]any) map[string]bool {
+	out := make(map[string]bool)
+	for _, pm := range participants {
+		if !participantIsGroupAdmin(pm) {
+			continue
+		}
+		id, _ := pm["id"].(string)
+		d := jidDigits(id)
+		if d == "" {
+			continue
+		}
+		out[d] = true
+		if len(d) >= 11 {
+			out[d[len(d)-11:]] = true
+		}
+	}
+	return out
+}
+
+func digitsSeenInAdminIndex(idx map[string]bool, digits string) bool {
+	if digits == "" {
+		return false
+	}
+	if idx[digits] {
+		return true
+	}
+	if len(digits) >= 11 && idx[digits[len(digits)-11:]] {
+		return true
+	}
+	for k := range idx {
+		if phoneTailsMatch(k, digits) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *GroupsHandler) waDigitsForAccount(ctx context.Context, accID int64, cfg models.AppConfig) string {
+	acc, err := h.store.GetWAAccount(accID)
+	if err != nil {
+		return ""
+	}
+	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	if baseURL == "" {
+		return ""
+	}
+	evo := newEvolutionClient(baseURL, apiKey, instance)
+	n := evo.getOwnNumber(ctx)
+	return jidDigits(n)
+}
+
+func (h *GroupsHandler) countVerifiedWAAdmins(ctx context.Context, g models.RedesignGroup) (int, error) {
+	admins, err := h.store.ListGroupAdmins(g.ID)
+	if err != nil {
+		return 0, err
+	}
+	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
+	if err != nil {
+		return 0, err
+	}
+	cfg, _ := h.store.GetConfig()
+	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	if baseURL == "" {
+		return 0, fmt.Errorf("no evolution")
+	}
+	groups, err := h.fetchAllGroupsWithParticipantsCached(ctx, baseURL, apiKey, instance)
+	if err != nil {
+		return 0, err
+	}
+	gmeta := findGroupMetaByJID(groups, g.JID.String)
+	if gmeta == nil {
+		return 0, nil
+	}
+	participants := evolutionParticipantMaps(gmeta)
+	idx := adminDigitsIndex(participants)
+
+	n := 0
+	for _, a := range admins {
+		if a.AccountType != "wa" {
+			continue
+		}
+		d := h.waDigitsForAccount(ctx, a.AccountID, cfg)
+		if d == "" {
+			continue
+		}
+		if digitsSeenInAdminIndex(idx, d) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (h *GroupsHandler) promoteWAAccountAsGroupAdmin(ctx context.Context, g models.RedesignGroup, targetWAAccountID int64, cfg models.AppConfig) error {
+	if !g.JID.Valid || g.JID.String == "" || !g.WAAccountID.Valid {
+		return fmt.Errorf("grupo sem JID ou conta WA")
+	}
+	linkAcc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
+	if err != nil {
+		return err
+	}
+	_, err = h.store.GetWAAccount(targetWAAccountID)
+	if err != nil {
+		return fmt.Errorf("conta WA alvo nao encontrada")
+	}
+	baseURL, apiKey, instance := resolveWAEvolutionCredentials(linkAcc, cfg)
+	if baseURL == "" {
+		return fmt.Errorf("Evolution nao configurada para a conta do grupo")
+	}
+	evoGroup := newEvolutionClient(baseURL, apiKey, instance)
+
+	targetDigits := h.waDigitsForAccount(ctx, targetWAAccountID, cfg)
+	if targetDigits == "" {
+		return fmt.Errorf("nao foi possivel obter o numero WhatsApp da conta selecionada (instancia desconectada?)")
+	}
+
+	phoneArg := targetDigits
+	// Evolution espera participantes sem sufixo @ — algumas versoes aceitam com @c.us
+	_ = evoGroup.updateParticipant(ctx, g.JID.String, "add", []string{phoneArg})
+	if err := evoGroup.updateParticipant(ctx, g.JID.String, "promote", []string{phoneArg}); err != nil {
+		return err
+	}
+	return nil
 }
