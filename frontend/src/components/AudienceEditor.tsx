@@ -358,7 +358,13 @@ export default function AudienceEditor({ channelId, audience }: { channelId: str
 }
 
 // ── Seção de filtros estruturados (taxonomias) ──────────────────────────────
-function TaxonomySection({ audience }: { audience: any }) {
+// Wrapper seguro — garante que audience existe antes de chamar hooks
+export function TaxonomySection({ audience }: { audience: any }) {
+  if (!audience) return null
+  return <TaxonomySectionInner audience={audience} />
+}
+
+function TaxonomySectionInner({ audience }: { audience: any }) {
   const { data: allTaxonomies = [] } = useQuery({
     queryKey: ['taxonomy', 'all'],
     queryFn: () =>

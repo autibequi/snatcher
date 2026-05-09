@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Badge, Button, Tabs, KpiCard, Skeleton, Switch } from '../components/ui'
+import { Badge, Button, Tabs, KpiCard, Skeleton, Switch, Tooltip as UITooltip } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import AudienceEditor from '../components/AudienceEditor'
 
@@ -575,6 +575,24 @@ export default function ChannelDetail() {
   const [search, setSearch] = React.useState('')
   const [editingInviteLink, setEditingInviteLink] = React.useState<Record<number, string>>({})
 
+  const [showSuggest, setShowSuggest] = React.useState(false)
+  const [suggestResult, setSuggestResult] = React.useState<any>(null)
+  const [suggestLoading, setSuggestLoading] = React.useState(false)
+
+  const runSuggest = async () => {
+    setSuggestLoading(true)
+    setSuggestResult(null)
+    setShowSuggest(true)
+    try {
+      const r = await apiClient.post('/api/automations/' + String(id) + '/advise', {}, { timeout: 60_000 })
+      setSuggestResult(r.data)
+    } catch (e: any) {
+      setSuggestResult({ error: e?.response?.data?.error ?? e?.message ?? 'Falha ao buscar sugestões' })
+    } finally {
+      setSuggestLoading(false)
+    }
+  }
+
   const updateInviteLinkMut = useMutation({
     mutationFn: ({ groupId, link }: { groupId: number; link: string }) =>
       apiClient.patch(`/api/groups/${groupId}`, { invite_link: link }),
@@ -662,6 +680,11 @@ export default function ChannelDetail() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={channel.active ? 'success' : 'default'}>{channel.active ? 'ativo' : 'inativo'}</Badge>
+            <UITooltip content="Pedir conselho à IA com base nos últimos disparos deste canal — sugere ajustes de threshold, cooldown e horário" side="bottom">
+              <Button variant="secondary" size="sm" loading={suggestLoading} onClick={runSuggest}>
+                ✨ Sugerir
+              </Button>
+            </UITooltip>
             <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>Editar</Button>
             <Button variant="danger" size="sm" loading={deleteMut.isPending}
               onClick={() => { if (confirm(`Excluir canal "${channel.name}"? Esta ação é irreversível.`)) deleteMut.mutate() }}>
@@ -669,6 +692,38 @@ export default function ChannelDetail() {
             </Button>
           </div>
         </div>
+
+        {/* Painel de sugestões da IA */}
+        {showSuggest && (
+          <div className="border-t border-border bg-surface-2 px-5 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-medium text-fg">✨ Sugestões de melhoria — IA</p>
+              <button type="button" onClick={() => setShowSuggest(false)} className="text-fg-3 hover:text-fg text-xs">× Fechar</button>
+            </div>
+            {suggestLoading && <p className="text-xs text-fg-3 mt-1">Analisando desempenho do canal…</p>}
+            {suggestResult?.error && (
+              <p className="text-xs text-danger mt-1">{suggestResult.error}</p>
+            )}
+            {suggestResult && !suggestResult.error && (
+              <div className="mt-2 space-y-2">
+                {suggestResult.summary && <p className="text-sm text-fg-2">{suggestResult.summary}</p>}
+                {Array.isArray(suggestResult.suggestions) && suggestResult.suggestions.length > 0 ? (
+                  suggestResult.suggestions.map((s: any, i: number) => (
+                    <div key={i} className="text-xs border border-border rounded-md p-2 bg-surface">
+                      <span className="font-mono text-accent">{s.field}</span>{' '}
+                      <span className="text-fg-3">atual: </span><span className="font-mono">{s.current}</span>
+                      {' → '}
+                      <span className="text-fg-3">sugerido: </span><span className="font-mono text-success">{s.recommended}</span>
+                      {s.reason && <p className="text-fg-3 mt-0.5">{s.reason}</p>}
+                    </div>
+                  ))
+                ) : (
+                  !suggestLoading && <p className="text-xs text-fg-3">Nenhuma sugestão — canal já está bem configurado.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modal de edição */}
