@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -76,5 +77,9 @@ func (h *PublicLinksResolver) Resolve(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: erro de update não deve impedir o redirect.
 	_ = h.store.IncrementPublicLinkClicks(link.ID)
 
-	http.Redirect(w, r, group.InviteLink.String, http.StatusFound)
+	url := group.InviteLink.String
+	if group.Platform == "whatsapp" {
+		url = invitelinks.NormalizeWhatsAppInvite(url)
+	}
+	http.Redirect(w, r, url, http.StatusFound)
 }
