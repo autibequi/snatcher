@@ -103,10 +103,6 @@ function computeNextAutoMatchTickMs(lastRunISO: string | null | undefined, inter
   return t
 }
 
-function fmtWhen(ts: number): string {
-  return new Date(ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-}
-
 const SOURCE_LABEL: Record<string, string> = {
   amz: 'Amazon',
   amazon: 'Amazon',
@@ -711,11 +707,31 @@ export function TabOverview() {
           </div>
         )}
 
+        {/* Últimos disparos com registro (auto_match_logs) — visível logo após a prévia */}
+        <div className="px-4 py-2 border-t border-b border-border bg-surface-2/20">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-fg">2 · Últimos disparos registrados</p>
+            <a href="/logs" className="text-[10px] text-accent hover:underline">
+              Ver fila / entregas →
+            </a>
+          </div>
+          <p className="text-[10px] text-fg-3 mt-0.5">
+            Criado ao gerar o dispatch (inclui <code className="text-[10px] bg-surface-2 px-1 rounded">pending_approval</code>). Sem linha aqui = nenhum dispatch foi criado no último tempo — veja aviso acima (saturação, URL, etc.).
+          </p>
+        </div>
+        {logsSorted.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo registrado nos logs recentes do auto-match.</p>
+        ) : (
+          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
+            {logsSorted.slice(0, 50).map(renderLogRow)}
+          </div>
+        )}
+
         {/* Aprovação manual */}
         {!fullAutoMode && (
           <>
             <div className="px-4 py-2 border-t border-b border-border bg-warning/5">
-              <p className="text-xs font-medium text-fg">2 · Aguardando aprovação manual</p>
+              <p className="text-xs font-medium text-fg">3 · Aguardando aprovação manual</p>
               <p className="text-[10px] text-fg-3 mt-0.5">
                 <code className="text-[10px] bg-surface-2 px-1 rounded">pending_approval</code> — aprove para entrar na fila do worker.
               </p>
@@ -827,23 +843,6 @@ export function TabOverview() {
               </div>
             )}
           </>
-        )}
-
-        {/* Histórico */}
-        <div className="px-4 py-2 border-t border-border bg-surface-2/20">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-fg">3 · Histórico · auto-match</p>
-            <a href="/logs" className="text-[10px] text-accent hover:underline">
-              Logs completos →
-            </a>
-          </div>
-        </div>
-        {logsSorted.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo registrado nos logs recentes do auto-match.</p>
-        ) : (
-          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
-            {logsSorted.slice(0, 50).map(renderLogRow)}
-          </div>
         )}
       </div>
     </div>
