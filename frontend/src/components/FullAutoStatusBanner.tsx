@@ -26,8 +26,10 @@ function useJonfreyQueueBusy(): boolean {
 export interface FullAutoStatusBannerProps {
   /** jonfrey: link → Automações | automações: só texto (toggle no KPI) | default: links combinados */
   placement?: FullAutoBannerPlacement
-  /** Por defeito: automações = sem toggle; resto = com toggle */
+  /** Por defeito: automações = sem toggle Full-auto; resto = com toggle */
   showToggle?: boolean
+  /** Conteúdo à direita (ex.: toggle Auto-pilot na página Automações). Quando definido em `automations`, substitui o espaço onde antes só havia texto. */
+  trailing?: React.ReactNode
   /** Se omitido, calcula-se pela fila de trabalho (Jonfrey em execução) */
   queueBusy?: boolean
   className?: string
@@ -40,11 +42,12 @@ export interface FullAutoStatusBannerProps {
 export function FullAutoStatusBanner({
   placement = 'default',
   showToggle,
+  trailing,
   queueBusy: queueBusyProp,
   className = '',
 }: FullAutoStatusBannerProps) {
   const qc = useQueryClient()
-  const showToggleResolved = showToggle ?? placement !== 'automations'
+  const showToggleResolved = (showToggle ?? placement !== 'automations') && !trailing
 
   const internalBusy = useJonfreyQueueBusy()
   const queueBusy = queueBusyProp ?? internalBusy
@@ -79,13 +82,23 @@ export function FullAutoStatusBanner({
 
   const syncLine =
     placement === 'automations' ? (
-      <span>
-        O mesmo estado acompanha o cartão <strong className="text-fg-2">Auto-pilot</strong> abaixo. Piloto, intervalo e ações em{' '}
-        <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
-          Jonfrey
-        </Link>
-        .
-      </span>
+      trailing ? (
+        <span>
+          À direita: <strong className="text-fg-2">Auto-pilot</strong> (auto-match + ciclo Jonfrey). Intervalo e lista de ações em{' '}
+          <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
+            Jonfrey
+          </Link>
+          .
+        </span>
+      ) : (
+        <span>
+          O mesmo estado acompanha o cartão <strong className="text-fg-2">Auto-pilot</strong> abaixo. Piloto, intervalo e ações em{' '}
+          <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
+            Jonfrey
+          </Link>
+          .
+        </span>
+      )
     ) : placement === 'jonfrey' ? (
       <span>
         Sincronizado com o Auto-pilot em{' '}
@@ -125,6 +138,7 @@ export function FullAutoStatusBanner({
         </p>
         <p className="text-xs text-fg-3 mt-1">{syncLine}</p>
       </div>
+      {trailing ? <div className="flex-shrink-0 flex flex-col items-end gap-2">{trailing}</div> : null}
       {showToggleResolved ? (
         <button
           type="button"

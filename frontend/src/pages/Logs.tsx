@@ -11,8 +11,6 @@ import {
   primaryJonfreyOutcome,
   type JonfreyAction,
 } from '../components/JonfreyActionCard'
-import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CrawlLogEntry {
@@ -81,7 +79,7 @@ export const DISPATCH_STATUS_TOOLTIP: Record<string, string> = {
   scheduled: 'Agendado — será disparado no horário configurado.',
   sending: 'Enviando — processo de entrega em andamento para os grupos alvo.',
   completed: 'Concluído — todos os grupos receberam a mensagem com sucesso.',
-  failed: 'Falhou — um ou mais grupos não receberam. Veja o painel de erros.',
+  failed: 'Falhou — um ou mais grupos não receberam. Veja esta aba com filtro Falhou.',
   cancelled: 'Cancelado — disparo interrompido manualmente antes da entrega.',
 }
 
@@ -177,6 +175,8 @@ function CrawlerLogs() {
   if (!logs.length) return <EmptyState title="Nenhum log de crawler" description="Os logs aparecem após rodar um crawler." />
 
   return (
+    <>
+    <CrawlerErrorsAlert logs={logs} />
     <div className="bg-surface border border-border rounded-md overflow-hidden">
       <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -212,6 +212,7 @@ function CrawlerLogs() {
       </table>
       </div>
     </div>
+    </>
   )
 }
 
@@ -521,98 +522,91 @@ function ScheduledDispatches() {
   )
 }
 
-// ── ErrorsTab ─────────────────────────────────────────────────────────────────
+// ── Blocos de erro por domínio (antes havia aba “Erros” dedicada) ─────────────
 
-function ErrorsTab({
-  dispatches,
-  crawlLogs,
-  jonfreyActions,
-}: {
-  dispatches: Dispatch[]
-  crawlLogs: CrawlLogEntry[]
-  jonfreyActions: JonfreyAction[]
-}) {
+function FailedDispatchesAlert({ dispatches }: { dispatches: Dispatch[] }) {
   const failedDispatches = dispatches.filter(d => d.status === 'failed')
-  const errorCrawls = crawlLogs.filter(l => l.status === 'error')
-  const failedJonfrey = jonfreyActions.filter(a => a.status === 'failed')
-
-  if (failedDispatches.length === 0 && errorCrawls.length === 0 && failedJonfrey.length === 0) {
-    return (
-      <EmptyState
-        title="Nenhum erro"
-        description="Nenhum disparo, crawl ou ação Jonfrey com falha encontrada."
-      />
-    )
-  }
-
+  if (failedDispatches.length === 0) return null
   return (
-    <div className="space-y-4">
-      {failedDispatches.length > 0 && (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Disparos com falha ({failedDispatches.length})</p>
+    <div className="bg-surface border border-danger/30 rounded-md overflow-hidden mb-4">
+      <div className="px-4 py-2.5 border-b border-border bg-danger/5">
+        <p className="text-xs font-medium text-danger uppercase tracking-wide">Disparos com falha ({failedDispatches.length})</p>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {failedDispatches.map(d => (
+            <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+              <td className="px-4 py-2.5 text-fg font-mono text-xs">{d.short_id ?? `#${d.id}`}</td>
+              <td className="px-4 py-2.5 text-fg-2 text-xs">{d.message?.text?.slice(0, 60) ?? '(sem texto)'}</td>
+              <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(d.created_at).toLocaleString('pt-BR')}</td>
+              <td className="px-4 py-2.5">
+                <Badge variant="danger" size="sm">
+                  falhou
+                </Badge>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CrawlerErrorsAlert({ logs }: { logs: CrawlLogEntry[] }) {
+  const errorCrawls = logs.filter(l => l.status === 'error')
+  if (errorCrawls.length === 0) return null
+  return (
+    <div className="bg-surface border border-danger/30 rounded-md overflow-hidden mb-4">
+      <div className="px-4 py-2.5 border-b border-border bg-danger/5">
+        <p className="text-xs font-medium text-danger uppercase tracking-wide">Execuções com erro ({errorCrawls.length})</p>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {errorCrawls.map(l => (
+            <tr key={l.id} className="border-b border-border last:border-0 hover:bg-surface-2">
+              <td className="px-4 py-2.5 text-fg text-xs">{`#${l.search_term_id}`}</td>
+              <td className="px-4 py-2.5 text-xs text-danger truncate max-w-xs">{l.error_msg?.Valid ? l.error_msg.String : 'erro desconhecido'}</td>
+              <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(l.started_at).toLocaleString('pt-BR')}</td>
+              <td className="px-4 py-2.5">
+                <Badge variant="danger" size="sm">
+                  erro
+                </Badge>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function JonfreyFailuresAlert({ actions }: { actions: JonfreyAction[] }) {
+  const failedJonfrey = actions.filter(a => a.status === 'failed')
+  if (failedJonfrey.length === 0) return null
+  return (
+    <div className="bg-surface border border-danger/30 rounded-md overflow-hidden mb-4">
+      <div className="px-4 py-2.5 border-b border-border bg-danger/5">
+        <p className="text-xs font-medium text-danger uppercase tracking-wide">Ações com falha ({failedJonfrey.length})</p>
+      </div>
+      <div className="divide-y divide-border">
+        {failedJonfrey.map(a => (
+          <div key={a.id} className="px-4 py-3 hover:bg-surface-2">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="text-xs font-mono text-fg">{a.action_type}</span>
+              <Badge variant="danger" size="sm">
+                failed
+              </Badge>
+              <span className="text-[10px] text-fg-3">{a.triggered_by}</span>
+              <span className="text-[10px] text-fg-3 ml-auto">{new Date(a.created_at).toLocaleString('pt-BR')}</span>
+            </div>
+            {a.error_message?.trim() ? (
+              <p className="text-xs text-danger font-mono break-words">{a.error_message}</p>
+            ) : (
+              <p className="text-xs text-fg-3">Sem mensagem de erro detalhada.</p>
+            )}
           </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {failedDispatches.map(d => (
-                <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-2.5 text-fg font-mono text-xs">{d.short_id ?? `#${d.id}`}</td>
-                  <td className="px-4 py-2.5 text-fg-2 text-xs">{d.message?.text?.slice(0, 60) ?? '(sem texto)'}</td>
-                  <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(d.created_at).toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-2.5"><Badge variant="danger" size="sm">falhou</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {errorCrawls.length > 0 && (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Crawlers com erro ({errorCrawls.length})</p>
-          </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {errorCrawls.map(l => (
-                <tr key={l.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-2.5 text-fg text-xs">{`#${l.search_term_id}`}</td>
-                  <td className="px-4 py-2.5 text-xs text-danger truncate max-w-xs">{l.error_msg?.Valid ? l.error_msg.String : 'erro desconhecido'}</td>
-                  <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(l.started_at).toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-2.5"><Badge variant="danger" size="sm">erro</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {failedJonfrey.length > 0 && (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">
-              Jonfrey — falhas ({failedJonfrey.length})
-            </p>
-          </div>
-          <div className="divide-y divide-border">
-            {failedJonfrey.map(a => (
-              <div key={a.id} className="px-4 py-3 hover:bg-surface-2">
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="text-xs font-mono text-fg">{a.action_type}</span>
-                  <Badge variant="danger" size="sm">failed</Badge>
-                  <span className="text-[10px] text-fg-3">{a.triggered_by}</span>
-                  <span className="text-[10px] text-fg-3 ml-auto">
-                    {new Date(a.created_at).toLocaleString('pt-BR')}
-                  </span>
-                </div>
-                {a.error_message?.trim() ? (
-                  <p className="text-xs text-danger font-mono break-words">{a.error_message}</p>
-                ) : (
-                  <p className="text-xs text-fg-3">Sem mensagem de erro detalhada.</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   )
 }
@@ -750,7 +744,7 @@ function MatchLogs() {
 
 // ── Main Logs page ────────────────────────────────────────────────────────────
 
-type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'jonfrey' | 'errors' | 'llm' | 'match_logs'
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'jonfrey' | 'llm' | 'match_logs'
 
 const VALID_LOG_TABS = new Set<string>([
   'all',
@@ -758,13 +752,13 @@ const VALID_LOG_TABS = new Set<string>([
   'crawlers',
   'scheduled',
   'jonfrey',
-  'errors',
   'llm',
   'match_logs',
 ])
 
 function initialLogTabFromURL(sp: URLSearchParams): LogTab {
   const t = sp.get('tab')
+  if (t === 'errors') return 'dispatches'
   if (t && VALID_LOG_TABS.has(t)) return t as LogTab
   return 'dispatches'
 }
@@ -775,6 +769,10 @@ export default function Logs() {
   const [logTab, setLogTab] = React.useState<LogTab>(() => initialLogTabFromURL(params))
   React.useEffect(() => {
     const raw = params.get('tab')
+    if (raw === 'errors') {
+      setLogTab('dispatches')
+      return
+    }
     if (raw && VALID_LOG_TABS.has(raw)) setLogTab(raw as LogTab)
   }, [params])
   const statusFilter = params.get('status') ?? ''
@@ -880,21 +878,20 @@ export default function Logs() {
 
   // ── Badge counts ──────────────────────────────────────────────────────────
 
-  const errorCount =
-    items.filter(d => d.status === 'failed').length +
-    crawlLogs.filter(l => l.status === 'error').length +
-    jonfreyActions.filter(a => a.status === 'failed').length
+  const failedDispatchCount = items.filter(d => d.status === 'failed').length
+  const crawlerErrorCount = crawlLogs.filter(l => l.status === 'error').length
+  const jonfreyFailCount = jonfreyActions.filter(a => a.status === 'failed').length
+
   const allCount = items.length + crawlLogs.length + scheduledItems.length + jonfreyActions.length
 
-  const TAB_DEFS: { id: LogTab; label: string; count?: number }[] = [
+  const TAB_DEFS: { id: LogTab; label: string; count?: number; warnCount?: number }[] = [
     { id: 'all', label: 'Tudo', count: allCount },
-    { id: 'dispatches', label: 'Disparos', count: items.length },
-    { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length },
+    { id: 'dispatches', label: 'Disparos', count: items.length, warnCount: failedDispatchCount },
+    { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length, warnCount: crawlerErrorCount },
     { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
-    { id: 'jonfrey', label: 'Jonfrey', count: jonfreyActions.length },
+    { id: 'jonfrey', label: 'Jonfrey', count: jonfreyActions.length, warnCount: jonfreyFailCount },
     { id: 'match_logs', label: 'Matches' },
     { id: 'llm', label: 'LLM' },
-    { id: 'errors', label: 'Erros', count: errorCount },
   ]
 
   // ── Unified rows for "Tudo" tab ────────────────────────────────────────────
@@ -937,76 +934,53 @@ export default function Logs() {
   // ── Export CSV ─────────────────────────────────────────────────────────────
 
   function handleExport() {
-    const rows = logTab === 'all' ? unifiedRows
-      : logTab === 'dispatches' ? items.map<UnifiedRow>(d => ({
-          id: String(d.short_id ?? d.id),
-          type: 'dispatch',
-          label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
-          status: d.status,
-          date: d.created_at,
-          channel: d.channel_name,
-          group: d.group_name,
-        }))
-      : logTab === 'crawlers' ? crawlLogs.map<UnifiedRow>(l => ({
-          id: String(l.id),
-          type: 'crawl',
-          label: `Crawler #${l.search_term_id}`,
-          status: l.status,
-          date: l.started_at,
-        }))
-      : logTab === 'scheduled' ? (scheduledItems as any[]).map<UnifiedRow>(d => ({
-          id: String(d.short_id ?? d.id),
-          type: 'scheduled',
-          label: d.message?.text?.slice(0, 80) ?? `Agendado #${d.id}`,
-          status: d.status,
-          date: d.scheduled_for ?? d.created_at,
-        }))
-      : logTab === 'jonfrey'
-        ? jonfreyActions.map<UnifiedRow>(j => {
-            const outcome = primaryJonfreyOutcome(j)
-            return {
-              id: `jf-${j.id}`,
-              type: 'jonfrey',
-              label: `${j.action_type} — ${outcome.slice(0, 80)}`,
-              status: j.status,
-              date: j.created_at,
-            }
-          })
-      : /* errors (+ fallback p/ abas sem CSV dedicado) */ [
-          ...items.filter(d => d.status === 'failed').map<UnifiedRow>(d => ({
-            id: String(d.short_id ?? d.id),
-            type: 'dispatch' as LogType,
-            label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
-            status: d.status,
-            date: d.created_at,
-          })),
-          ...crawlLogs.filter(l => l.status === 'error').map<UnifiedRow>(l => ({
-            id: String(l.id),
-            type: 'crawl' as LogType,
-            label: `Crawler #${l.search_term_id}`,
-            status: l.status,
-            date: l.started_at,
-          })),
-          ...jonfreyActions.filter(a => a.status === 'failed').map<UnifiedRow>(j => {
-            const outcome = primaryJonfreyOutcome(j)
-            return {
-              id: `jf-${j.id}`,
-              type: 'jonfrey' as LogType,
-              label: `${j.action_type} — ${outcome.slice(0, 80)}`,
-              status: j.status,
-              date: j.created_at,
-            }
-          }),
-        ]
-    exportCsv(rows, `logs-${logTab}-${new Date().toISOString().slice(0,10)}.csv`)
+    let rows: UnifiedRow[] = []
+    if (logTab === 'all') rows = unifiedRows
+    else if (logTab === 'dispatches') {
+      rows = items.map<UnifiedRow>(d => ({
+        id: String(d.short_id ?? d.id),
+        type: 'dispatch',
+        label: d.message?.text?.slice(0, 80) ?? `Disparo #${d.id}`,
+        status: d.status,
+        date: d.created_at,
+        channel: d.channel_name,
+        group: d.group_name,
+      }))
+    } else if (logTab === 'crawlers') {
+      rows = crawlLogs.map<UnifiedRow>(l => ({
+        id: String(l.id),
+        type: 'crawl',
+        label: `Crawler #${l.search_term_id}`,
+        status: l.status,
+        date: l.started_at,
+      }))
+    } else if (logTab === 'scheduled') {
+      rows = (scheduledItems as any[]).map<UnifiedRow>(d => ({
+        id: String(d.short_id ?? d.id),
+        type: 'scheduled',
+        label: d.message?.text?.slice(0, 80) ?? `Agendado #${d.id}`,
+        status: d.status,
+        date: d.scheduled_for ?? d.created_at,
+      }))
+    } else if (logTab === 'jonfrey') {
+      rows = jonfreyActions.map<UnifiedRow>(j => {
+        const outcome = primaryJonfreyOutcome(j)
+        return {
+          id: `jf-${j.id}`,
+          type: 'jonfrey',
+          label: `${j.action_type} — ${outcome.slice(0, 80)}`,
+          status: j.status,
+          date: j.created_at,
+        }
+      })
+    }
+    exportCsv(rows, `logs-${logTab}-${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className={`p-6 mx-auto w-full ${logTab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'}`}>
-      <FullAutoStatusBanner placement="default" className="mb-4" />
-
       <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
           <Button
             variant="secondary"
@@ -1020,7 +994,17 @@ export default function Logs() {
           >
             Expirar stale
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleExport}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={logTab === 'llm' || logTab === 'match_logs'}
+            title={
+              logTab === 'llm' || logTab === 'match_logs'
+                ? 'Exportação CSV só nas abas com tabela unificada ou por tipo (Tudo, Disparos, …)'
+                : undefined
+            }
+            onClick={handleExport}
+          >
             Exportar CSV
           </Button>
       </div>
@@ -1033,10 +1017,16 @@ export default function Logs() {
             className={`pb-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 whitespace-nowrap ${logTab === t.id ? 'border-accent text-accent' : 'border-transparent text-fg-2 hover:text-fg'}`}>
             {t.label}
             {t.count !== undefined && t.count > 0 && (
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full ${
-                t.id === 'errors' ? 'bg-danger/10 text-danger' : 'bg-surface-2 text-fg-3'
-              }`}>
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-surface-2 text-fg-3">
                 {t.count}
+              </span>
+            )}
+            {t.warnCount !== undefined && t.warnCount > 0 && (
+              <span
+                className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-danger/15 text-danger"
+                title="Registros com falha nesta aba"
+              >
+                {t.warnCount}
               </span>
             )}
           </button>
@@ -1050,6 +1040,7 @@ export default function Logs() {
       {logTab === 'llm' && <LLMLogs />}
       {logTab === 'jonfrey' && (
         <div className="space-y-3">
+          <JonfreyFailuresAlert actions={jonfreyActions} />
           <p className="text-xs text-fg-3">
             Auditoria do assistente Jonfrey (mesmos registros que em{' '}
             <a href="/automations/jonfrey" className="text-accent hover:underline">
@@ -1073,10 +1064,6 @@ export default function Logs() {
           )}
         </div>
       )}
-      {logTab === 'errors' && (
-        <ErrorsTab dispatches={items} crawlLogs={crawlLogs} jonfreyActions={jonfreyActions} />
-      )}
-
       {/* "Tudo" tab — unified table */}
       {logTab === 'all' && (
         <div className="bg-surface border border-border rounded-md overflow-hidden">
@@ -1113,6 +1100,7 @@ export default function Logs() {
       {/* "Disparos" tab */}
       {logTab === 'dispatches' && (
         <div>
+          <FailedDispatchesAlert dispatches={items} />
           {/* Filtros */}
           <div className="flex gap-3 mb-4 flex-wrap items-end">
             <div className="flex flex-col gap-1">

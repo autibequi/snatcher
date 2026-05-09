@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Button, KpiCard } from '../components/ui'
+import { Button, KpiCard, Switch } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
@@ -10,6 +10,12 @@ import { useAuth } from '../lib/auth'
 import type { InboxItem } from '../components/dashboard/OperationInbox'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
+
+interface JonfreyConfigLite {
+  enabled: boolean
+  interval_minutes?: number
+  last_run_at?: string | null
+}
 
 interface KPIs {
   // Campos originais (mantidos por compatibilidade)
@@ -97,6 +103,23 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   })
 
+  const { data: jonfreyConfig } = useQuery<JonfreyConfigLite | null>({
+    queryKey: ['jonfrey-config'],
+    queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
+    refetchInterval: 30_000,
+  })
+
+  const jonfreyPilotMut = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiClient.put('/api/jonfrey/config', { enabled }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } } }
+      alert(e?.response?.data?.error ?? 'Erro ao atualizar Auto-pilot')
+    },
+  })
 
   // Use backend KPIs or null if not available
   const resolvedKpis = kpis ?? null
@@ -138,7 +161,25 @@ export default function Dashboard() {
             dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined,
           )}
         </p>
-        <div className="flex flex-wrap gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0 items-center">
+          <div
+            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 mr-1"
+            title="Ciclo agendado do Jonfrey (detalhes em Automations → Jonfrey)"
+          >
+            <span className="text-xs text-fg-2 whitespace-nowrap">Auto-pilot Jonfrey</span>
+            <Switch
+              checked={jonfreyConfig?.enabled ?? false}
+              disabled={jonfreyPilotMut.isPending || jonfreyConfig == null}
+              onChange={v => jonfreyPilotMut.mutate(v)}
+            />
+            <button
+              type="button"
+              className="text-[11px] text-accent hover:underline whitespace-nowrap"
+              onClick={() => navigate('/automations/jonfrey')}
+            >
+              config →
+            </button>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -148,6 +189,7 @@ export default function Dashboard() {
               qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
               qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
               qc.invalidateQueries({ queryKey: ['catalog'] })
+              qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
             }}
           >
             ↻ Atualizar

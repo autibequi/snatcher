@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, KpiCard } from '../components/ui'
-import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 import { apiClient } from '../lib/apiClient'
 import TagInput from '../components/TagInput'
 
@@ -85,7 +84,6 @@ export default function Curation() {
 
   return (
     <div className="p-6">
-      <FullAutoStatusBanner placement="default" className="mb-6" />
       <JonfreyCurationCard />
 
       {/* Stats */}

@@ -518,96 +518,107 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
-      <FullAutoStatusBanner placement="automations" />
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <a href="#timeline" className="text-accent hover:underline text-sm">
-          Ir para linha do tempo
-        </a>
-        {!fullAutoMode && pendingList.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 justify-end">
-            {selected.size > 0 && (
-              <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={approveBatchMut.isPending}
-                  onClick={() => approveBatchMut.mutate(Array.from(selected))}
-                >
-                  ✓ Aprovar {selected.size}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  loading={rejectBatchMut.isPending}
-                  onClick={() => {
-                    if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected))
+      <FullAutoStatusBanner
+        placement="automations"
+        trailing={
+          <div className="flex flex-col items-end gap-2">
+            <div
+              className={`rounded-md border p-3 shadow-card transition-colors min-w-[14rem] ${
+                fullyEnabled && fullAutoMode ? 'border-success/40 bg-surface' : fullyEnabled ? 'border-warning/40 bg-surface' : 'border-border bg-surface'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 text-right">
+                  <p className="text-[10px] text-fg-3 font-medium uppercase tracking-wide">Auto-pilot</p>
+                  <p
+                    className={`text-xs font-semibold mt-0.5 leading-snug ${fullyEnabled && fullAutoMode ? 'text-success' : fullyEnabled ? 'text-warning' : 'text-fg-2'}`}
+                  >
+                    {fullyEnabled && fullAutoMode ? 'Ativo · enviando' : fullyEnabled ? 'Ativo · aguardando aprovação' : 'Pausado'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={toggleMut.isPending || toggleFullAuto.isPending}
+                  onClick={async () => {
+                    const next = !fullyEnabled
+                    await toggleMut.mutateAsync({ enabled: next })
+                    if (next) await toggleFullAuto.mutateAsync(true)
                   }}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
                 >
-                  ✕ Rejeitar {selected.size}
-                </Button>
-              </>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={approveAllMut.isPending}
-              onClick={() => {
-                if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
-              }}
-            >
-              Aprovar todos ({pendingList.length})
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={rejectBatchMut.isPending}
-              onClick={() => {
-                if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
-              }}
-            >
-              Rejeitar todos
-            </Button>
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </button>
+              </div>
+              {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
+                <button
+                  type="button"
+                  disabled={approveAllMut.isPending}
+                  onClick={() => approveAllMut.mutate()}
+                  className="w-full mt-2 text-xs bg-accent text-white rounded px-2 py-1 hover:bg-accent/90 disabled:opacity-50"
+                >
+                  {approveAllMut.isPending ? 'Enviando…' : `Enviar ${pendingCount} pendentes`}
+                </button>
+              )}
+            </div>
           </div>
-        ) : null}
-      </div>
+        }
+      />
 
-      {/* ── KPI + controles num grid único (countdown só na linha do tempo abaixo) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      {!fullAutoMode && pendingList.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {selected.size > 0 && (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={approveBatchMut.isPending}
+                onClick={() => approveBatchMut.mutate(Array.from(selected))}
+              >
+                ✓ Aprovar {selected.size}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={rejectBatchMut.isPending}
+                onClick={() => {
+                  if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected))
+                }}
+              >
+                ✕ Rejeitar {selected.size}
+              </Button>
+            </>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={approveAllMut.isPending}
+            onClick={() => {
+              if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
+            }}
+          >
+            Aprovar todos ({pendingList.length})
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={rejectBatchMut.isPending}
+            onClick={() => {
+              if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
+            }}
+          >
+            Rejeitar todos
+          </Button>
+        </div>
+      ) : null}
+
+      {/* ── KPI + thresholds ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 max-w-4xl">
 
         {/* Disparos 24h */}
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
           tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h." />
-
-        {/* Auto-pilot — toggle único que controla auto-match + full_auto_mode */}
-        <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled && fullAutoMode ? 'border-success/40' : fullyEnabled ? 'border-warning/40' : 'border-border'}`}>
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="min-w-0">
-              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Auto-pilot</p>
-              <p className={`text-sm font-semibold mt-1 ${fullyEnabled && fullAutoMode ? 'text-success' : fullyEnabled ? 'text-warning' : 'text-fg-2'}`}>
-                {fullyEnabled && fullAutoMode ? 'Ativo · enviando' : fullyEnabled ? 'Ativo · aguardando aprovação' : 'Pausado'}
-              </p>
-            </div>
-            <button type="button"
-              disabled={toggleMut.isPending || toggleFullAuto.isPending}
-              onClick={async () => {
-                const next = !fullyEnabled
-                await toggleMut.mutateAsync({ enabled: next })
-                if (next) await toggleFullAuto.mutateAsync(true)
-              }}
-              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
-          </div>
-          {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
-            <button type="button" disabled={approveAllMut.isPending}
-              onClick={() => approveAllMut.mutate()}
-              className="w-full text-xs bg-accent text-white rounded px-2 py-1 hover:bg-accent/90 disabled:opacity-50">
-              {approveAllMut.isPending ? 'Enviando…' : `Enviar ${pendingCount} pendentes`}
-            </button>
-          )}
-        </div>
 
         {/* Score mínimo + Max/ciclo juntos */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">
@@ -635,7 +646,7 @@ export function TabOverview() {
       </div>
 
       {/* Timeline unificada: próximos + aprovação + histórico */}
-      <div id="timeline" className="bg-surface border border-border rounded-md overflow-hidden scroll-mt-20">
+      <div className="bg-surface border border-border rounded-md overflow-hidden">
         <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="text-sm font-medium text-fg">Linha do tempo de envios</p>
