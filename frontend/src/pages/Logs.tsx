@@ -415,113 +415,6 @@ function DispatchDrawer({
   )
 }
 
-// ── ScheduledDispatches ───────────────────────────────────────────────────────
-
-function ScheduledDispatches() {
-  const qc = useQueryClient()
-  const [previewText, setPreviewText] = React.useState<string | null>(null)
-
-  const { data: items = [], isLoading, refetch } = useQuery({
-    queryKey: ['dispatches', 'scheduled'],
-    queryFn: () =>
-      apiClient.get('/api/dispatches?status=queued&limit=100').then(r =>
-        (Array.isArray(r.data) ? r.data : []).filter((d: any) => d.scheduled_for)
-      ).catch(() => []),
-    refetchInterval: 30_000,
-  })
-
-  const cancelMut = useMutation({
-    mutationFn: (id: number) => apiClient.post(`/api/dispatches/${id}/cancel`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dispatches', 'scheduled'] }) },
-  })
-
-  if (isLoading) return <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-
-  if (!items.length) return (
-    <div className="text-center py-12 space-y-2">
-      <p className="text-sm text-fg-2">Nenhum disparo agendado</p>
-      <p className="text-xs text-fg-3">Use o Composer para agendar um disparo escolhendo data e hora.</p>
-      <a href="/compose" className="inline-block mt-2 text-xs text-accent hover:underline">→ Ir para Compor disparo</a>
-    </div>
-  )
-
-  return (
-    <>
-      {previewText !== null && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setPreviewText(null)}>
-          <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <p className="text-xs text-center text-white/60 mb-3">Preview · clique fora para fechar</p>
-            <div className="bg-[#0b141a] rounded-xl p-4">
-              <div className="bg-[#005c4b] rounded-xl p-3 ml-auto max-w-[90%] shadow">
-                <p className="text-sm text-white whitespace-pre-wrap break-words">{previewText}</p>
-                <p className="text-xs text-green-300 mt-1 text-right opacity-60">agendado ✓</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-surface-2 border-b border-border">
-              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Mensagem</th>
-              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Agendado para</th>
-              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium">Status</th>
-              <th className="px-4 py-2.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((d: any) => {
-              const msg = typeof d.message === 'string' ? (() => { try { return JSON.parse(d.message) } catch { return {} } })() : (d.message ?? {})
-              const text = msg?.text ?? ''
-              const displayText = text.slice(0, 60) || `Disparo agendado #${d.id}`
-              const scheduledAt = d.scheduled_for ? new Date(d.scheduled_for) : null
-              const isPast = scheduledAt && scheduledAt < new Date()
-              return (
-                <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-3 cursor-pointer" onClick={() => setPreviewText(text || displayText)}>
-                    <p className="text-sm text-fg truncate max-w-xs">{displayText}</p>
-                    <p className="text-xs text-accent hover:underline mt-0.5">ver preview →</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    {scheduledAt ? (
-                      <div>
-                        <p className="text-sm text-fg">{scheduledAt.toLocaleString('pt-BR')}</p>
-                        {isPast ? (
-                          <p className="text-xs text-warning">⏳ aguardando worker...</p>
-                        ) : (
-                          <p className="text-xs text-fg-3">em {Math.round((scheduledAt.getTime() - Date.now()) / 60000)} min</p>
-                        )}
-                      </div>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="warning" size="sm">agendado</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="text-xs text-danger hover:underline disabled:opacity-50"
-                      disabled={cancelMut.isPending}
-                      onClick={() => { if (confirm('Cancelar este agendamento?')) cancelMut.mutate(d.id) }}
-                    >
-                      Cancelar
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-fg-3 mt-2">
-        Disparos agendados são processados automaticamente pelo worker a cada 15s.{' '}
-        <button type="button" className="text-accent hover:underline" onClick={() => refetch()}>↻ Atualizar</button>
-      </p>
-    </>
-  )
-}
-
 // ── Blocos de erro por domínio (antes havia aba “Erros” dedicada) ─────────────
 
 function FailedDispatchesAlert({ dispatches }: { dispatches: Dispatch[] }) {
@@ -611,154 +504,15 @@ function JonfreyFailuresAlert({ actions }: { actions: JonfreyAction[] }) {
   )
 }
 
-// ── MatchLogs subcomponent ────────────────────────────────────────────────────
-
-interface MatchLog {
-  id: number
-  product_id: number
-  channel_id: number
-  score: number
-  score_breakdown?: Record<string, number>
-  match_reasons?: string[]
-  false_positive?: boolean
-  false_positive_reason?: string
-  false_positive_marked_at?: string
-  created_at: string
-}
-
-function MatchLogs() {
-  const [expandedId, setExpandedId] = React.useState<number | null>(null)
-  const qc = useQueryClient()
-
-  const { data: logs = [], isLoading } = useQuery<MatchLog[]>({
-    queryKey: ['match-logs'],
-    queryFn: () => apiClient.get('/api/match-logs?limit=50').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
-    refetchInterval: 30_000,
-  })
-
-  const markFalsePositiveMut = useMutation({
-    mutationFn: (logId: number) => {
-      const reason = window.prompt('Motivo do falso positivo:')
-      if (!reason) return Promise.reject('Cancelado')
-      return apiClient.post(`/api/match-logs/${logId}/false-positive`, { reason })
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['match-logs'] })
-      alert('Falso positivo marcado.')
-    },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao marcar falso positivo'),
-  })
-
-  if (isLoading) return <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-  if (!logs.length) return <EmptyState title="Nenhum match log" description="Os logs aparecem após matching automático de produtos." />
-
-  return (
-    <div className="space-y-2">
-      {logs.map(log => (
-        <div key={log.id} className="border border-border rounded-md bg-surface">
-          {/* Header row */}
-          <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-surface-2" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-fg">Produto #{log.product_id}</span>
-                <span className="text-xs text-fg-3">Canal #{log.channel_id}</span>
-                {log.false_positive && <Badge variant="danger" size="sm">Falso positivo</Badge>}
-              </div>
-              <div className="text-xs text-fg-3 mt-0.5">
-                {new Date(log.created_at).toLocaleString('pt-BR')}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-semibold text-fg">{log.score}</div>
-              <div className="text-xs text-fg-3">score</div>
-            </div>
-            <span className="ml-2 text-fg-3">{expandedId === log.id ? '▼' : '▶'}</span>
-          </div>
-
-          {/* Expandable content */}
-          {expandedId === log.id && (
-            <div className="border-t border-border p-3 space-y-3 bg-surface-2">
-              {/* Score breakdown */}
-              {log.score_breakdown && (
-                <div>
-                  <p className="text-xs font-medium text-fg mb-2">Score breakdown:</p>
-                  <div className="space-y-1">
-                    {Object.entries(log.score_breakdown).map(([key, val]) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <span className="text-xs text-fg-2 w-16">{key}:</span>
-                        <div className="flex-1 bg-surface rounded h-4 overflow-hidden relative">
-                          <div
-                            className="bg-accent h-full transition-all"
-                            style={{ width: `${Math.min(val * 100, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-fg-2 w-10 text-right">{(val * 100).toFixed(0)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Match reasons */}
-              {log.match_reasons && log.match_reasons.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-fg mb-2">Motivos do match:</p>
-                  <ul className="text-xs text-fg-3 space-y-1 list-disc list-inside">
-                    {log.match_reasons.map((reason, i) => (
-                      <li key={i}>{reason}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* False positive section */}
-              {log.false_positive && (
-                <div className="bg-danger/10 border border-danger/30 rounded p-2">
-                  <p className="text-xs font-medium text-danger mb-1">Falso positivo marcado</p>
-                  <p className="text-xs text-danger/70">{log.false_positive_reason}</p>
-                  <p className="text-xs text-danger/60 mt-1">
-                    {log.false_positive_marked_at && new Date(log.false_positive_marked_at).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-              )}
-
-              {/* Mark false positive button */}
-              {!log.false_positive && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => markFalsePositiveMut.mutate(log.id)}
-                  loading={markFalsePositiveMut.isPending}
-                  className="w-full"
-                >
-                  Marcar como falso positivo
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Main Logs page ────────────────────────────────────────────────────────────
 
-type LogTab = 'all' | 'dispatches' | 'crawlers' | 'scheduled' | 'jonfrey' | 'llm' | 'match_logs'
+type LogTab = 'all' | 'dispatches' | 'crawlers' | 'jonfrey' | 'llm'
 
-const VALID_LOG_TABS = new Set<string>([
-  'all',
-  'dispatches',
-  'crawlers',
-  'scheduled',
-  'jonfrey',
-  'llm',
-  'match_logs',
-])
+const VALID_LOG_TABS = new Set<string>(['all', 'dispatches', 'crawlers', 'jonfrey', 'llm'])
 
 function initialLogTabFromURL(sp: URLSearchParams): LogTab {
   const t = sp.get('tab')
-  if (t === 'errors') return 'dispatches'
+  if (t === 'errors' || t === 'scheduled' || t === 'match_logs') return 'dispatches'
   if (t && VALID_LOG_TABS.has(t)) return t as LogTab
   return 'dispatches'
 }
@@ -769,7 +523,7 @@ export default function Logs() {
   const [logTab, setLogTab] = React.useState<LogTab>(() => initialLogTabFromURL(params))
   React.useEffect(() => {
     const raw = params.get('tab')
-    if (raw === 'errors') {
+    if (raw === 'errors' || raw === 'scheduled' || raw === 'match_logs') {
       setLogTab('dispatches')
       return
     }
@@ -844,15 +598,6 @@ export default function Logs() {
     },
   })
 
-  const { data: scheduledItems = [] } = useQuery({
-    queryKey: ['dispatches', 'scheduled'],
-    queryFn: () =>
-      apiClient.get('/api/dispatches?status=queued&limit=100').then(r =>
-        (Array.isArray(r.data) ? r.data : []).filter((d: any) => d.scheduled_for)
-      ).catch(() => []),
-    refetchInterval: 30_000,
-  })
-
   // WS: atualizar dispatch status em tempo real
   useWSEvent('dispatch.target_updated', (data: any) => {
     setItems((prev) =>
@@ -882,15 +627,13 @@ export default function Logs() {
   const crawlerErrorCount = crawlLogs.filter(l => l.status === 'error').length
   const jonfreyFailCount = jonfreyActions.filter(a => a.status === 'failed').length
 
-  const allCount = items.length + crawlLogs.length + scheduledItems.length + jonfreyActions.length
+  const allCount = items.length + crawlLogs.length + jonfreyActions.length
 
   const TAB_DEFS: { id: LogTab; label: string; count?: number; warnCount?: number }[] = [
     { id: 'all', label: 'Tudo', count: allCount },
     { id: 'dispatches', label: 'Disparos', count: items.length, warnCount: failedDispatchCount },
     { id: 'crawlers', label: 'Crawlers', count: crawlLogs.length, warnCount: crawlerErrorCount },
-    { id: 'scheduled', label: 'Scheduler', count: (scheduledItems as any[]).length },
     { id: 'jonfrey', label: 'Jonfrey', count: jonfreyActions.length, warnCount: jonfreyFailCount },
-    { id: 'match_logs', label: 'Matches' },
     { id: 'llm', label: 'LLM' },
   ]
 
@@ -954,14 +697,6 @@ export default function Logs() {
         status: l.status,
         date: l.started_at,
       }))
-    } else if (logTab === 'scheduled') {
-      rows = (scheduledItems as any[]).map<UnifiedRow>(d => ({
-        id: String(d.short_id ?? d.id),
-        type: 'scheduled',
-        label: d.message?.text?.slice(0, 80) ?? `Agendado #${d.id}`,
-        status: d.status,
-        date: d.scheduled_for ?? d.created_at,
-      }))
     } else if (logTab === 'jonfrey') {
       rows = jonfreyActions.map<UnifiedRow>(j => {
         const outcome = primaryJonfreyOutcome(j)
@@ -997,12 +732,8 @@ export default function Logs() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={logTab === 'llm' || logTab === 'match_logs'}
-            title={
-              logTab === 'llm' || logTab === 'match_logs'
-                ? 'Exportação CSV só nas abas com tabela unificada ou por tipo (Tudo, Disparos, …)'
-                : undefined
-            }
+            disabled={logTab === 'llm'}
+            title={logTab === 'llm' ? 'Exportação CSV não disponível na aba LLM.' : undefined}
             onClick={handleExport}
           >
             Exportar CSV
@@ -1035,8 +766,6 @@ export default function Logs() {
 
       {/* Tab content */}
       {logTab === 'crawlers' && <CrawlerLogs />}
-      {logTab === 'scheduled' && <ScheduledDispatches />}
-      {logTab === 'match_logs' && <MatchLogs />}
       {logTab === 'llm' && <LLMLogs />}
       {logTab === 'jonfrey' && (
         <div className="space-y-3">

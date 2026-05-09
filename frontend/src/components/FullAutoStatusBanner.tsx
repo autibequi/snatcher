@@ -3,7 +3,15 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 
-export type FullAutoBannerPlacement = 'jonfrey' | 'automations' | 'default'
+/** Onde o banner aparece — define o texto “o que muda aqui” + links de contexto. */
+export type FullAutoBannerPlacement =
+  | 'default'
+  /** Visão geral / KPI de automações (`/automations`) */
+  | 'automations'
+  /** Lista de automações por canal (`/automations/channels`) */
+  | 'automations_channels'
+  /** Página Jonfrey */
+  | 'jonfrey'
 
 function useJonfreyQueueBusy(): boolean {
   const { data: wq } = useQuery({
@@ -80,11 +88,35 @@ export function FullAutoStatusBanner({
     },
   })
 
+  const impactLine =
+    placement === 'automations' ? (
+      <span>
+        <strong className="text-fg-2">Nesta página:</strong> controla se disparos gerados pelo auto-match (piloto) podem{' '}
+        <strong className="text-fg-2">sair da fila de aprovação</strong> automaticamente. Útil para não clicar &quot;Aprovar&quot; em cada oferta.
+      </span>
+    ) : placement === 'automations_channels' ? (
+      <span>
+        <strong className="text-fg-2">Nesta página:</strong> você ajusta <strong className="text-fg-2">cada canal</strong>. O Full-auto é{' '}
+        <strong className="text-fg-2">global</strong>: quando ligado, qualquer dispatch criado pelo auto-match em qualquer canal pode ser liberado sem revisão
+        (desde que o piloto e as regras do canal permitam).
+      </span>
+    ) : placement === 'jonfrey' ? (
+      <span>
+        <strong className="text-fg-2">Aqui:</strong> o Full-auto combina com as ações do Jonfrey — ao ligar, ajuda a liberar o fluxo de dispatches pendentes
+        conforme a action <strong className="text-fg-2">auto_release_pending</strong>.
+      </span>
+    ) : (
+      <span>
+        Afeta <strong className="text-fg-2">disparos automáticos</strong> (auto-match / piloto): com Full-auto ligado, eles podem ir direto para envio sem passar
+        pela caixa de aprovação manual.
+      </span>
+    )
+
   const syncLine =
     placement === 'automations' ? (
       trailing ? (
         <span>
-          À direita: <strong className="text-fg-2">Auto-pilot</strong> (auto-match + ciclo Jonfrey). Intervalo e lista de ações em{' '}
+          À direita: <strong className="text-fg-2">Auto-pilot</strong> (match + ciclo Jonfrey). Intervalo e ações em{' '}
           <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
             Jonfrey
           </Link>
@@ -92,28 +124,36 @@ export function FullAutoStatusBanner({
         </span>
       ) : (
         <span>
-          O mesmo estado acompanha o cartão <strong className="text-fg-2">Auto-pilot</strong> abaixo. Piloto, intervalo e ações em{' '}
+          O mesmo estado acompanha o cartão <strong className="text-fg-2">Auto-pilot</strong> abaixo. Piloto e lista de ações em{' '}
           <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
             Jonfrey
           </Link>
           .
         </span>
       )
+    ) : placement === 'automations_channels' ? (
+      <span>
+        Auto-match global e Full-auto são os mesmos de{' '}
+        <Link to="/automations" className="text-accent hover:underline font-medium">
+          Visão geral
+        </Link>
+        . Por canal: thresholds e grupos na linha da tabela ou no drawer.
+      </span>
     ) : placement === 'jonfrey' ? (
       <span>
-        Sincronizado com o Auto-pilot em{' '}
-        <Link to="/automations" className="text-accent hover:underline font-medium">
-          Automações
-        </Link>
-        .
-      </span>
-    ) : (
-      <span>
-        Sincronizado com o Auto-pilot em{' '}
+        Estado alinhado com{' '}
         <Link to="/automations" className="text-accent hover:underline font-medium">
           Automações
         </Link>{' '}
-        e com{' '}
+        e com o toggle acima.
+      </span>
+    ) : (
+      <span>
+        Sincronizado com{' '}
+        <Link to="/automations" className="text-accent hover:underline font-medium">
+          Automações
+        </Link>{' '}
+        e{' '}
         <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">
           Jonfrey
         </Link>
@@ -132,9 +172,10 @@ export function FullAutoStatusBanner({
         <p className={`text-sm font-semibold ${fullAutoMode ? 'text-success' : 'text-fg'}`}>
           Full-auto: {fullAutoMode ? 'ATIVO' : 'desligado (modo manual)'}
         </p>
-        <p className="text-xs text-fg-3 mt-0.5">
-          Quando ligado, dispatches criados pelo auto-match são liberados automaticamente pela action{' '}
-          <strong>auto_release_pending</strong> sem precisar de aprovação humana.
+        <p className="text-xs text-fg-3 mt-0.5 leading-relaxed">{impactLine}</p>
+        <p className="text-[11px] text-fg-3 mt-1.5 opacity-90">
+          Regra técnica: <strong className="text-fg-2">full_auto_mode</strong> destrava a action{' '}
+          <strong className="text-fg-2">auto_release_pending</strong> — dispatches pendentes do piloto podem seguir sem clique em &quot;Aprovar&quot;.
         </p>
         <p className="text-xs text-fg-3 mt-1">{syncLine}</p>
       </div>

@@ -36,7 +36,7 @@ export default function AutomationsByChannel() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 pt-6 pb-2 shrink-0">
-        <FullAutoStatusBanner placement="automations" />
+        <FullAutoStatusBanner placement="automations_channels" />
       </div>
       <div className="px-6 py-3 border-b border-border flex items-center justify-end flex-wrap gap-2">
         <div className="flex items-center gap-2">

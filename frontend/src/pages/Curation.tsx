@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, KpiCard } from '../components/ui'
+import { Button, Input, KpiCard, Switch } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import TagInput from '../components/TagInput'
 
@@ -361,6 +361,7 @@ function relMin(s: string): string {
 }
 
 function JonfreyCurationCard() {
+  const qc = useQueryClient()
   const { data: config } = useQuery<JonfreyConfigLite | null>({
     queryKey: ['jonfrey-config'],
     queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
@@ -376,47 +377,75 @@ function JonfreyCurationCard() {
     refetchInterval: 30_000,
   })
 
+  const toggleTriagemMut = useMutation({
+    mutationFn: async (enable: boolean) => {
+      if (!config) return
+      const nextActions = enable
+        ? Array.from(new Set([...config.enabled_actions, AUTO_CURATE_ACTION]))
+        : config.enabled_actions.filter(a => a !== AUTO_CURATE_ACTION)
+      await apiClient.put('/api/jonfrey/config', { enabled_actions: nextActions })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } } }
+      alert(e?.response?.data?.error ?? 'Erro ao salvar auto-triagem')
+    },
+  })
+
   const last = actions[0]
-  const enabled = !!config?.enabled
+  const pilotOn = !!config?.enabled
   const actionEnabled = config?.enabled_actions?.includes(AUTO_CURATE_ACTION) ?? false
-  const fullyOn = enabled && actionEnabled
+  const runsInCadence = pilotOn && actionEnabled
 
-  const stateLabel = fullyOn
-    ? `Ligado · ciclo a cada ${config?.interval_minutes ?? 60} min`
-    : enabled
-      ? 'Auto-pilot ligado, mas auto-curadoria desabilitada na lista de ações'
-      : 'Auto-pilot desligado'
-
-  const stateCls = fullyOn
-    ? 'border-success/30 bg-success/5'
-    : enabled
+  const stateCls = runsInCadence
+    ? 'border-success/35 bg-success/5'
+    : actionEnabled && !pilotOn
       ? 'border-warning/40 bg-warning/5'
       : 'border-border bg-surface-2'
 
   return (
-    <div className={`border rounded-md p-3 mb-4 flex items-start gap-3 ${stateCls}`}>
-      <span className="text-base leading-none mt-0.5">🤵</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium text-fg">Auto-curadoria do Jonfrey</p>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono uppercase ${fullyOn ? 'border-success/40 text-success' : 'border-fg-3/40 text-fg-3'}`}>
-            {fullyOn ? 'ligado' : 'pausado'}
-          </span>
-        </div>
-        <p className="text-xs text-fg-3 mt-0.5">{stateLabel}</p>
-        {last && (
-          <p className="text-[11px] text-fg-2 mt-1 truncate" title={last.reasoning ?? ''}>
-            <span className="text-fg-3">Última ação ({relMin(last.created_at)}):</span>{' '}
-            {last.reasoning ?? `status=${last.status}`}
+    <div className={`rounded-md border p-3 mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${stateCls}`}>
+      <div className="flex gap-3 min-w-0 flex-1">
+        <span className="text-lg leading-none mt-0.5 shrink-0" aria-hidden>
+          📋
+        </span>
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-semibold text-fg">Auto-triagem nesta página</p>
+          <p className="text-xs text-fg-3 leading-relaxed">
+            <strong className="text-fg-2">O que é:</strong> no ciclo do Jonfrey, produtos pendentes podem receber categoria e marca automaticamente quando a
+            confiança é alta — você continua podendo editar manualmente abaixo.
           </p>
-        )}
+          <p className="text-[11px] text-fg-3 leading-snug">
+            {pilotOn
+              ? actionEnabled
+                ? `Ativo no ciclo (~${config?.interval_minutes ?? 60} min).`
+                : 'Auto-pilot ligado, mas a triagem automática está desmarcada — use o interruptor à direita.'
+              : 'Auto-pilot desligado: nada roda em cadência até ligar em Jonfrey — o toggle abaixo só prepara a ação para quando o piloto voltar.'}
+          </p>
+          {last && (
+            <p className="text-[11px] text-fg-2 truncate pt-0.5" title={last.reasoning ?? ''}>
+              <span className="text-fg-3">Última execução ({relMin(last.created_at)}):</span>{' '}
+              {last.reasoning ?? `status=${last.status}`}
+            </p>
+          )}
+        </div>
       </div>
-      <a
-        href="/automations/jonfrey"
-        className="text-xs text-accent hover:underline whitespace-nowrap flex-shrink-0 mt-0.5"
-      >
-        Configurar →
-      </a>
+      <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 shrink-0 sm:pt-0.5 pl-8 sm:pl-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-fg-2 whitespace-nowrap">Triagem automática</span>
+          <Switch
+            checked={actionEnabled}
+            disabled={toggleTriagemMut.isPending || !config}
+            onChange={v => toggleTriagemMut.mutate(v)}
+          />
+        </div>
+        <a
+          href="/automations/jonfrey"
+          className="text-xs text-accent hover:underline whitespace-nowrap"
+        >
+          Piloto Jonfrey →
+        </a>
+      </div>
     </div>
   )
 }

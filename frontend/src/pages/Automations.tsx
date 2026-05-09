@@ -104,6 +104,25 @@ function computeNextAutoMatchTickMs(lastRunISO: string | null | undefined, inter
   return t
 }
 
+/** Countdown legível (evita "2757s" sem contexto). */
+function fmtEtaSeconds(secs: number | null): string {
+  if (secs == null) return '—'
+  const s = Math.max(0, Math.floor(secs))
+  if (s === 0) return 'agora'
+  if (s < 90) return `${s}s`
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  if (m >= 120) {
+    const h = Math.floor(m / 60)
+    const mm = m % 60
+    return `${h}h ${mm}min`
+  }
+  return r === 0 ? `${m} min` : `${m}min ${r}s`
+}
+
+const TIMELINE_PREVIEW_CAP = 12
+const TIMELINE_LOG_CAP = 25
+
 const SOURCE_LABEL: Record<string, string> = {
   amz: 'Amazon',
   amazon: 'Amazon',
@@ -316,8 +335,12 @@ export function TabOverview() {
   })
 
   const previewCandidates = React.useMemo(
-    () => (nextCyclePreview?.items ?? []).filter(i => !i.already_sent).slice(0, 30),
+    () => (nextCyclePreview?.items ?? []).filter(i => !i.already_sent).slice(0, 40),
     [nextCyclePreview],
+  )
+  const previewForTimeline = React.useMemo(
+    () => previewCandidates.slice(0, TIMELINE_PREVIEW_CAP),
+    [previewCandidates],
   )
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
@@ -381,14 +404,11 @@ export function TabOverview() {
   const autoMatchCountLabel =
     amSecs === null
       ? enabled && data?.last_run_at == null
-        ? 'sem log de ciclo ainda'
+        ? 'sem log ainda'
         : '—'
       : amSecs === 0
-        ? 'agora ou em segundos'
+        ? 'agora'
         : `${amSecs}s`
-
-  const jonfreyCountLabel =
-    jfSecs === null ? '—' : jfSecs === 0 ? 'janela liberada…' : `${jfSecs}s`
 
   const maxPerRunEffective = Math.max(1, nextCyclePreview?.max_per_run ?? data?.max_per_run ?? 3)
   const intervalSecAm = data?.interval_seconds ?? 60
@@ -413,7 +433,7 @@ export function TabOverview() {
   const previewQueueLabel = (p: GlobalPreviewItem): string => {
     if (!enabled) return '—'
     const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 1
-    return `${rank}º na fila · até ${maxPerRunEffective} por canal/ciclo`
+    return `${rank}º no canal · máx ${maxPerRunEffective}/ciclo`
   }
 
   const logsSorted = React.useMemo(
@@ -490,27 +510,24 @@ export function TabOverview() {
 
   const renderLogRow = (log: AutoMatchLog) => {
     const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
+    const groupsTitle = groups.length > 0 ? groups.join(', ') : undefined
     return (
-      <div key={log.id} className="px-4 py-2.5 flex items-start gap-3">
+      <div key={log.id} className="px-3 py-2 flex items-center gap-3 border-b border-border/80 last:border-0">
         <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${log.score >= 70 ? 'bg-success/10 text-success' : log.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
           {fmtScore(log.score)}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-fg truncate">{log.product_name || `Produto #${log.product_id}`}</p>
-          {log.channel_name && <p className="text-[10px] text-fg-3">canal: {log.channel_name}</p>}
-          {groups.length > 0 ? (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {groups.map(g => (
-                <span key={g} className="text-[10px] bg-accent/10 border border-accent/30 rounded px-1.5 py-0.5 text-accent truncate max-w-[140px]" title={g}>{g}</span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[10px] text-fg-3 mt-0.5">— sem grupos</p>
-          )}
+          <p className="text-sm text-fg truncate" title={groupsTitle}>
+            {log.product_name || `Produto #${log.product_id}`}
+          </p>
+          <p className="text-[10px] text-fg-3 truncate">{log.channel_name ?? '—'}</p>
         </div>
-        <div className="text-right shrink-0 flex flex-col items-end gap-1">
-          <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</span>
-          <a href={`/logs?dispatchId=${log.dispatch_id}`} className="text-[10px] text-accent hover:underline">ver →</a>
+        <div className="text-right shrink-0">
+          <p className="text-[10px] font-medium text-success">Enviado</p>
+          <p className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</p>
+          <a href={`/logs?dispatchId=${log.dispatch_id}`} className="text-[10px] text-accent hover:underline">
+            rastrear
+          </a>
         </div>
       </div>
     )
@@ -645,11 +662,15 @@ export function TabOverview() {
         </div>
       </div>
 
-      {/* Timeline unificada: próximos + aprovação + histórico */}
+      {/* Linha do tempo: uma lista — próximos (fila) + enviados; relógios no topo */}
       <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-sm font-medium text-fg">Linha do tempo de envios</p>
+        <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-fg">Quem entra na próxima janela · o que já foi disparado</p>
+            <p className="text-[11px] text-fg-3 mt-1 max-w-3xl leading-relaxed">
+              <strong className="text-fg-2">Auto-match</strong> é o ciclo que pode criar disparos;{' '}
+              <strong className="text-fg-2">Jonfrey</strong> é outro relógio (manutenção do piloto). Nem todo ciclo gera envio — cooldown, URL, grupos e aprovação manual contam.
+            </p>
           </div>
           <button
             type="button"
@@ -658,99 +679,110 @@ export function TabOverview() {
               qc.invalidateQueries({ queryKey: ['auto-match', 'preview'] })
               qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
             }}
-            className="text-xs text-fg-3 hover:text-fg"
+            className="text-xs text-fg-3 hover:text-fg shrink-0"
           >
             ↻ atualizar
           </button>
         </div>
 
-        {/* Agenda compacta */}
-        <div className="px-4 py-3 border-b border-border bg-surface-2/25 grid sm:grid-cols-2 gap-3 text-xs text-fg-2">
-          <div className="rounded border border-border bg-surface-2/40 px-3 py-2">
-            <span className="text-fg-3 uppercase tracking-wide font-medium">Próximo ciclo auto-match</span>
-            <p className="text-sm font-semibold text-fg mt-0.5">{autoMatchCountLabel}</p>
-            <p className="text-[10px] text-fg-3 mt-0.5">
-              Baseado no último ciclo do worker ou último disparo registrado. Mesmo com countdown, um ciclo pode não criar envio (grupos saturados, cooldown, sem URL de oferta).
+        <div className="px-4 py-3 border-b border-border grid grid-cols-1 sm:grid-cols-2 gap-3 bg-surface-2/15">
+          <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-wide text-fg-3">Próximo ciclo auto-match</p>
+            <p className="text-xl font-semibold text-fg tabular-nums mt-0.5">
+              {!enabled ? 'desligado' : amSecs == null ? autoMatchCountLabel : fmtEtaSeconds(amSecs)}
             </p>
+            <p className="text-[10px] text-fg-3 mt-1">Tick do worker a cada {intervalSecAm}s. Estimativa a partir do último ciclo registrado.</p>
           </div>
-          <div className="rounded border border-border bg-surface-2/40 px-3 py-2">
-            <span className="text-fg-3 uppercase tracking-wide font-medium">Próxima janela Jonfrey (piloto)</span>
-            <p className="text-sm font-semibold text-fg mt-0.5">{jonfreyConfig?.enabled === false ? 'piloto off' : jonfreyCountLabel}</p>
-            <p className="text-[10px] text-fg-3 mt-0.5">
-              Manutenção agendada ({jonfreyConfig?.interval_minutes ?? 60} min). Não substitui o envio ao WhatsApp.
+          <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-wide text-fg-3">Próxima janela Jonfrey</p>
+            <p className="text-xl font-semibold text-fg tabular-nums mt-0.5">
+              {jonfreyConfig?.enabled === false ? 'piloto off' : jfSecs == null ? '—' : fmtEtaSeconds(jfSecs)}
             </p>
+            <p className="text-[10px] text-fg-3 mt-1">Intervalo {jonfreyConfig?.interval_minutes ?? 60} min — não é o horário do WhatsApp.</p>
           </div>
         </div>
 
-        {/* Próximos candidatos */}
-        <div className="px-4 py-2 border-b border-border bg-surface-2/20">
-          <p className="text-xs font-medium text-fg">1 · Próximos (prévia elegível)</p>
-          <p className="text-[10px] text-fg-3 mt-0.5">
-            Até <strong className="text-fg-2">{maxPerRunEffective}</strong> por canal por ciclo · intervalo{' '}
-            <strong className="text-fg-2">{intervalSecAm}s</strong>. <a href="/automations/channels" className="text-accent hover:underline">Canais</a>
-            {' '}— a lista encolhe quando o produto entra em cooldown (houve tentativa registrada), mesmo que o WhatsApp ainda não tenha entregue.
-          </p>
-        </div>
-        {nextCyclePreview?.auto_match_master_enabled === false ? (
-          <p className="px-4 py-6 text-sm text-center text-warning">Auto-match global desligado — ligue o Auto-pilot nos KPI acima.</p>
-        ) : previewCandidates.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">
-            Nenhum candidato na prévia (canais pausados, filtros, cooldown ou sem URL de oferta).
-          </p>
-        ) : (
-          <div className="max-h-[280px] overflow-y-auto divide-y divide-border">
-            {previewCandidates.map(p => (
-              <div key={`${p.channel_id}-${p.product_id}`} className="px-4 py-2.5 flex flex-wrap items-center gap-3">
-                <span
-                  className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${
-                    p.score >= 70 ? 'bg-success/10 text-success' : 'bg-surface-2 text-fg-3'
-                  }`}
-                >
-                  {p.score.toFixed(0)}
-                </span>
-                <div className="flex-1 min-w-[140px]">
-                  <p className="text-sm text-fg truncate">{p.product_name}</p>
-                  <p className="text-[10px] text-fg-2">
-                    <strong className="text-fg-3 font-normal">Canal:</strong> {p.channel_name}
-                  </p>
-                </div>
-                <div className="text-right shrink-0 min-w-[100px]">
-                  <p className="text-[10px] text-fg-3 uppercase tracking-wide">Posição</p>
-                  <p className="text-xs text-fg font-medium leading-snug">{previewQueueLabel(p)}</p>
-                </div>
-              </div>
-            ))}
+        <div className="max-h-[min(70vh,560px)] overflow-y-auto">
+          <div className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-warning/10 border-b border-warning/25 text-xs">
+            <span className="font-semibold text-fg">
+              Na fila do próximo ciclo
+              <span className="font-normal text-fg-3">
+                {' '}
+                (~{enabled && amSecs != null ? fmtEtaSeconds(amSecs) : '—'})
+              </span>
+            </span>
+            <span className="text-[10px] text-fg-3">
+              Mostrando até {TIMELINE_PREVIEW_CAP} · até {maxPerRunEffective}/canal ·{' '}
+              <a href="/automations/channels" className="text-accent hover:underline">
+                por canal
+              </a>
+            </span>
           </div>
-        )}
+          {nextCyclePreview?.auto_match_master_enabled === false ? (
+            <p className="px-4 py-6 text-sm text-center text-warning">Auto-match global desligado — ligue o Auto-pilot acima.</p>
+          ) : previewForTimeline.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-fg-3 text-center">
+              Nenhum produto elegível na prévia (canais off, cooldown, threshold ou sem oferta).
+            </p>
+          ) : (
+            <div className="divide-y divide-border/80">
+              {previewCandidates.length > TIMELINE_PREVIEW_CAP && (
+                <p className="px-4 py-2 text-[11px] text-fg-3 bg-surface-2/40 border-b border-border/60">
+                  Lista reduzida: +{previewCandidates.length - TIMELINE_PREVIEW_CAP} candidatos a mais na prévia (ordenados por canal/score no servidor).
+                </p>
+              )}
+              {previewForTimeline.map(p => (
+                <div key={`${p.channel_id}-${p.product_id}`} className="px-3 py-2 flex items-center gap-3">
+                  <span
+                    className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                      p.score >= 70 ? 'bg-warning/15 text-warning' : 'bg-surface-2 text-fg-3'
+                    }`}
+                  >
+                    {p.score.toFixed(0)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-fg truncate">{p.product_name}</p>
+                    <p className="text-[10px] text-fg-3 truncate">{p.channel_name}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] font-medium text-warning">Fila</p>
+                    <p className="text-[10px] text-fg leading-tight">{previewQueueLabel(p)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {/* Últimos disparos com registro (auto_match_logs) — visível logo após a prévia */}
-        <div className="px-4 py-2 border-t border-b border-border bg-surface-2/20">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-fg">2 · Últimos disparos registrados</p>
-            <a href="/logs" className="text-[10px] text-accent hover:underline">
-              Ver fila / entregas →
+          <div className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-surface-2 border-y border-border text-xs mt-0">
+            <span className="font-semibold text-fg">Últimos disparos criados pelo auto-match</span>
+            <a href="/logs" className="text-[10px] text-accent hover:underline font-normal">
+              Logs completos →
             </a>
           </div>
-          <p className="text-[10px] text-fg-3 mt-0.5">
-            Criado ao gerar o dispatch (inclui <code className="text-[10px] bg-surface-2 px-1 rounded">pending_approval</code>). Sem linha aqui = nenhum dispatch foi criado no último tempo — veja aviso acima (saturação, URL, etc.).
-          </p>
+          {logsSorted.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-fg-3 text-center">Nenhum registro recente — quando o ciclo gerar dispatch, aparece aqui.</p>
+          ) : (
+            <div>
+              {logsSorted.length > TIMELINE_LOG_CAP && (
+                <p className="px-4 py-2 text-[11px] text-fg-3 bg-surface-2/30 border-b border-border/60">
+                  Mostrando os {TIMELINE_LOG_CAP} mais recentes de {logsSorted.length} registros —{' '}
+                  <a href="/logs?tab=dispatches" className="text-accent hover:underline">
+                    ver todos nos logs
+                  </a>
+                  .
+                </p>
+              )}
+              {logsSorted.slice(0, TIMELINE_LOG_CAP).map(renderLogRow)}
+            </div>
+          )}
         </div>
-        {logsSorted.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo registrado nos logs recentes do auto-match.</p>
-        ) : (
-          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
-            {logsSorted.slice(0, 50).map(renderLogRow)}
-          </div>
-        )}
 
-        {/* Aprovação manual */}
+        {/* Aprovação manual (só quando Full-auto off) */}
         {!fullAutoMode && (
           <>
-            <div className="px-4 py-2 border-t border-b border-border bg-warning/5">
-              <p className="text-xs font-medium text-fg">3 · Aguardando aprovação manual</p>
-              <p className="text-[10px] text-fg-3 mt-0.5">
-                <code className="text-[10px] bg-surface-2 px-1 rounded">pending_approval</code> — aprove para entrar na fila do worker.
-              </p>
+            <div className="px-4 py-2 border-t border-border bg-warning/5">
+              <p className="text-xs font-medium text-fg">Aguardando seu OK</p>
+              <p className="text-[10px] text-fg-3 mt-0.5">Dispatches em pending_approval não entram na fila até você aprovar (ou ligar Full-auto).</p>
             </div>
             {pendingLoading ? (
               <p className="px-4 py-6 text-sm text-fg-3">Carregando…</p>
