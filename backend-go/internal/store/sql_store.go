@@ -2244,6 +2244,22 @@ func (s *SQLStore) FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProd
 		args = append(args, "%"+f.Brand+"%")
 		idx++
 	}
+	if f.PrimaryCategory != "" {
+		base += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM catalogproduct_taxonomy cpt
+			INNER JOIN taxonomy t ON t.id = cpt.taxonomy_id
+			WHERE cpt.product_id = catalogproduct.id AND cpt.role = 'primary_category' AND t.name = $%d)`, idx)
+		args = append(args, f.PrimaryCategory)
+		idx++
+	}
+	if f.Subcategory != "" {
+		base += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM catalogproduct_taxonomy cpt
+			INNER JOIN taxonomy t ON t.id = cpt.taxonomy_id
+			WHERE cpt.product_id = catalogproduct.id AND cpt.role = 'subcategory' AND t.name = $%d)`, idx)
+		args = append(args, f.Subcategory)
+		idx++
+	}
 	switch f.Status {
 	case "novos":
 		base += ` AND curation_status = 'pending'`

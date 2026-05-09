@@ -143,19 +143,21 @@ function FilterSection({ label, active, children }: { label: string; active?: bo
 
 function FilterList({
   items, value, onSelect, allLabel = 'Todos',
+  formatLabel,
 }: {
   items: string[]
   value: string
   onSelect: (v: string) => void
   allLabel?: string
+  /** Só Fonte usa labels amigáveis; marcas/categorias mostram o texto da base. */
+  formatLabel?: (s: string) => string
 }) {
   const [q, setQ] = React.useState('')
   const TOP = 5
   const filtered = q ? items.filter(i => i.toLowerCase().includes(q.toLowerCase())) : items
   const visible = q ? filtered : filtered.slice(0, TOP)
   const hasMore = !q && items.length > TOP
-  const labelFor = (s: string) =>
-    s === 'mercadolivre' ? 'Mercado Livre' : s === 'casasbahia' ? 'Casas Bahia' : s
+  const labelFor = formatLabel ?? ((s: string) => s)
 
   return (
     <div className="space-y-0.5">
@@ -185,8 +187,9 @@ function FilterList({
 
 function CatalogSidebar({
   search, onSearch,
-  source, onSource,
-  tagFilter, onTagFilter, categories,
+  source, onSource, sources,
+  categoryFilter, onCategoryFilter, categories,
+  subcategoryFilter, onSubcategoryFilter, subcategories,
   brandFilter, onBrandFilter, brands,
   priceMin, onPriceMin,
   priceMax, onPriceMax,
@@ -196,8 +199,9 @@ function CatalogSidebar({
   products,
 }: {
   search: string; onSearch: (v: string) => void
-  source: string; onSource: (v: string) => void
-  tagFilter: string; onTagFilter: (v: string) => void; categories: string[]
+  source: string; onSource: (v: string) => void; sources: string[]
+  categoryFilter: string; onCategoryFilter: (v: string) => void; categories: string[]
+  subcategoryFilter: string; onSubcategoryFilter: (v: string) => void; subcategories: string[]
   brandFilter: string; onBrandFilter: (v: string) => void; brands: string[]
   priceMin: string; onPriceMin: (v: string) => void
   priceMax: string; onPriceMax: (v: string) => void
@@ -232,18 +236,25 @@ function CatalogSidebar({
         ))}
       </FilterSection>
 
-      {/* Fonte */}
+      {/* Fonte — valores distintos na base */}
       <FilterSection label="Fonte" active={!!source}>
         <FilterList
-          items={['amazon', 'mercadolivre', 'magalu', 'shopee', 'aliexpress', 'kabum', 'americanas', 'casasbahia']}
+          items={sources}
           value={source} onSelect={onSource} allLabel="Todas"
+          formatLabel={(s) => {
+            const meta = SOURCE_LABELS[s.toLowerCase()]
+            if (meta?.label) return meta.label
+            if (s === 'mercadolivre') return 'Mercado Livre'
+            if (s === 'casasbahia') return 'Casas Bahia'
+            return s
+          }}
         />
       </FilterSection>
 
-      {/* Tags / Categoria */}
+      {/* Categoria (taxonomy primary em produtos ativos) */}
       {categories.length > 0 && (
-        <FilterSection label="Tag / Categoria" active={!!tagFilter}>
-          <FilterList items={categories} value={tagFilter} onSelect={onTagFilter} allLabel="Todas" />
+        <FilterSection label="Categoria" active={!!categoryFilter}>
+          <FilterList items={categories} value={categoryFilter} onSelect={onCategoryFilter} allLabel="Todas" />
         </FilterSection>
       )}
 
@@ -254,26 +265,17 @@ function CatalogSidebar({
         </FilterSection>
       )}
 
-      {/* Subcategoria — extraída de products */}
-      {(() => {
-        const subcats = new Set<string>()
-        products.forEach(p => {
-          if (p.tags) {
-            const tags = parseTags(p.tags)
-            tags.forEach(t => subcats.add(t))
-          }
-        })
-        return subcats.size > 0 ? (
-          <FilterSection label="Subcategoria" active={false}>
-            <FilterList
-              items={Array.from(subcats).sort()}
-              value=""
-              onSelect={() => {}}
-              allLabel="Todas"
-            />
-          </FilterSection>
-        ) : null
-      })()}
+      {/* Subcategoria (taxonomy role=subcategory) */}
+      {subcategories.length > 0 && (
+        <FilterSection label="Subcategoria" active={!!subcategoryFilter}>
+          <FilterList
+            items={subcategories}
+            value={subcategoryFilter}
+            onSelect={onSubcategoryFilter}
+            allLabel="Todas"
+          />
+        </FilterSection>
+      )}
 
       {/* Atributos — cor, tamanho, voltagem, capacidade */}
       {(() => {
@@ -358,6 +360,8 @@ export default function Catalog() {
   const [search, setSearch] = React.useState('')
   const [source, setSource] = React.useState('')
   const [tagFilter, setTagFilter] = React.useState('')
+  const [categoryFilter, setCategoryFilter] = React.useState('')
+  const [subcategoryFilter, setSubcategoryFilter] = React.useState('')
   const [priceMin, setPriceMin] = React.useState('')
   const [priceMax, setPriceMax] = React.useState('')
   const [page, setPage] = React.useState(0)
@@ -407,10 +411,22 @@ export default function Catalog() {
     onError: () => alert('Erro ao reprocessar'),
   })
 
-  // Categorias em uso no catálogo (não filtra taxonomia aprovada — pega tudo que está nos produtos)
+  // Categorias principais (taxonomy em produtos ativos)
   const { data: categories = [] } = useQuery<string[]>({
     queryKey: ['catalog', 'categories'],
     queryFn: () => apiClient.get('/api/catalog/categories').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 60_000,
+  })
+
+  const { data: subcategories = [] } = useQuery<string[]>({
+    queryKey: ['catalog', 'subcategories'],
+    queryFn: () => apiClient.get('/api/catalog/subcategories').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    staleTime: 60_000,
+  })
+
+  const { data: sources = [] } = useQuery<string[]>({
+    queryKey: ['catalog', 'sources'],
+    queryFn: () => apiClient.get('/api/catalog/sources').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 60_000,
   })
 
@@ -422,15 +438,17 @@ export default function Catalog() {
   })
 
   // Resetar página ao mudar filtros
-  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, brandFilter, showInactive, statusFilter])
+  React.useEffect(() => { setPage(0) }, [search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter])
 
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
-    queryKey: ['catalog', search, source, tagFilter, brandFilter, showInactive, statusFilter, page],
+    queryKey: ['catalog', search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter, page],
     queryFn: () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (source) params.set('source', source)
       if (tagFilter) params.set('tag', tagFilter)
+      if (categoryFilter) params.set('primary_category', categoryFilter)
+      if (subcategoryFilter) params.set('subcategory', subcategoryFilter)
       if (brandFilter) params.set('brand', brandFilter)
       if (statusFilter) params.set('status', statusFilter)
       if (showInactive) params.set('include_inactive', 'true')
@@ -480,15 +498,26 @@ export default function Catalog() {
       <div className="flex flex-col w-52 flex-shrink-0 border-r border-border bg-surface">
         <CatalogSidebar
           search={search} onSearch={setSearch}
-          source={source} onSource={setSource}
-          tagFilter={tagFilter} onTagFilter={setTagFilter} categories={categories}
+          source={source} onSource={setSource} sources={sources}
+          categoryFilter={categoryFilter} onCategoryFilter={setCategoryFilter} categories={categories}
+          subcategoryFilter={subcategoryFilter} onSubcategoryFilter={setSubcategoryFilter} subcategories={subcategories}
           brandFilter={brandFilter} onBrandFilter={setBrandFilter} brands={brands}
           priceMin={priceMin} onPriceMin={setPriceMin}
           priceMax={priceMax} onPriceMax={setPriceMax}
           statusFilter={statusFilter} onStatusFilter={setStatusFilter}
           showInactive={showInactive} onShowInactive={setShowInactive}
-          onClear={() => { setSearch(''); setSource(''); setTagFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('') }}
-          hasActiveFilters={!!(search || source || tagFilter || brandFilter || priceMin || priceMax || statusFilter)}
+          onClear={() => {
+            setSearch('')
+            setSource('')
+            setTagFilter('')
+            setCategoryFilter('')
+            setSubcategoryFilter('')
+            setBrandFilter('')
+            setPriceMin('')
+            setPriceMax('')
+            setStatusFilter('')
+          }}
+          hasActiveFilters={!!(search || source || tagFilter || categoryFilter || subcategoryFilter || brandFilter || priceMin || priceMax || statusFilter)}
           products={products}
         />
         <CountChip total={totalProducts} page={page} totalPages={totalPages} />

@@ -228,6 +228,8 @@ func Build(
 		r.Get("/api/catalog/search", catalog.Search)
 		r.Get("/api/catalog/brands", catalog.ListBrands)
 		r.Get("/api/catalog/categories", catalog.ListCategories)
+		r.Get("/api/catalog/subcategories", catalog.ListSubcategories)
+		r.Get("/api/catalog/sources", catalog.ListSources)
 		r.Get("/api/catalog/{id}", catalog.Get)
 		r.Put("/api/catalog/{id}", catalog.Update)
 		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)

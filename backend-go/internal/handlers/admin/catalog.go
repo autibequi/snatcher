@@ -76,14 +76,16 @@ func (h *CatalogHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := store.CatalogFilters{
-		Search:          q.Get("search"),
-		Source:          q.Get("source"),
-		Status:          q.Get("status"),
-		Tag:             q.Get("tag"),
-		Brand:           q.Get("brand"),
-		IncludeInactive: q.Get("include_inactive") == "true",
-		Limit:           limit,
-		Offset:          offset,
+		Search:           q.Get("search"),
+		Source:           q.Get("source"),
+		Status:           q.Get("status"),
+		Tag:              q.Get("tag"),
+		Brand:            q.Get("brand"),
+		PrimaryCategory:  q.Get("primary_category"),
+		Subcategory:      q.Get("subcategory"),
+		IncludeInactive:  q.Get("include_inactive") == "true",
+		Limit:            limit,
+		Offset:           offset,
 	}
 
 	products, total, err := h.store.FilterCatalogProducts(filters)
@@ -570,33 +572,88 @@ func (h *CatalogHandler) ListBrands(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListCategories GET /api/catalog/categories
-// Retorna categorias (tags) distintas em uso em produtos ativos.
+// Retorna nomes de taxonomy distintos usados como categoria principal em produtos ativos.
 func (h *CatalogHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
 		writeJSON(w, http.StatusOK, []string{})
 		return
 	}
-	// catalogproduct.tags é JSON array string. Extrai elementos via jsonb.
 	type row struct {
-		Tag string `db:"tag"`
+		Name string `db:"name"`
 	}
 	var rows []row
 	err := h.db.SelectContext(r.Context(), &rows, `
-		SELECT DISTINCT jsonb_array_elements_text(tags::jsonb) AS tag
-		FROM catalogproduct
-		WHERE tags IS NOT NULL AND tags <> '' AND tags <> '[]'
-		  AND inactive = false
-		ORDER BY tag`)
+		SELECT DISTINCT t.name AS name
+		FROM catalogproduct_taxonomy cpt
+		INNER JOIN taxonomy t ON t.id = cpt.taxonomy_id
+		INNER JOIN catalogproduct cp ON cp.id = cpt.product_id AND cp.inactive = false
+		WHERE cpt.role = 'primary_category' AND t.name IS NOT NULL AND t.name <> ''
+		ORDER BY t.name`)
 	if err != nil {
-		// fallback gracioso (caso tags esteja como TEXT, não JSON)
 		writeJSON(w, http.StatusOK, []string{})
 		return
 	}
 	out := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r.Tag != "" {
-			out = append(out, r.Tag)
-		}
+	for _, row := range rows {
+		out = append(out, row.Name)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListSubcategories GET /api/catalog/subcategories
+// Retorna nomes de taxonomy distintos usados como subcategoria em produtos ativos.
+func (h *CatalogHandler) ListSubcategories(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	type row struct {
+		Name string `db:"name"`
+	}
+	var rows []row
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT DISTINCT t.name AS name
+		FROM catalogproduct_taxonomy cpt
+		INNER JOIN taxonomy t ON t.id = cpt.taxonomy_id
+		INNER JOIN catalogproduct cp ON cp.id = cpt.product_id AND cp.inactive = false
+		WHERE cpt.role = 'subcategory' AND t.name IS NOT NULL AND t.name <> ''
+		ORDER BY t.name`)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Name)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListSources GET /api/catalog/sources
+// Retorna valores distintos de lowest_price_source em produtos ativos.
+func (h *CatalogHandler) ListSources(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	type row struct {
+		Source string `db:"source"`
+	}
+	var rows []row
+	err := h.db.SelectContext(r.Context(), &rows, `
+		SELECT DISTINCT TRIM(lowest_price_source) AS source
+		FROM catalogproduct
+		WHERE inactive = false
+		  AND lowest_price_source IS NOT NULL
+		  AND TRIM(lowest_price_source) <> ''
+		ORDER BY source`)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Source)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

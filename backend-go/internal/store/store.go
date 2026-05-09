@@ -30,14 +30,16 @@ type GroupDeliveryCount struct {
 
 // CatalogFilters agrupa filtros para listagem do catálogo.
 type CatalogFilters struct {
-	Search          string
-	Source          string
-	Status          string // 'novos' | 'curados' | 'disparados_7d' | '' (all)
-	Tag             string // filtro por tag exata (JSONB contains)
-	Brand           string // filtro por marca (ILIKE)
-	IncludeInactive bool
-	Limit           int
-	Offset          int
+	Search           string
+	Source           string
+	Status           string // 'novos' | 'curados' | 'disparados_7d' | '' (all)
+	Tag              string // filtro por tag exata (JSONB contains)
+	Brand            string // filtro por marca (ILIKE)
+	PrimaryCategory  string // nome da taxonomy ligada como primary_category
+	Subcategory      string // nome da taxonomy ligada como subcategory
+	IncludeInactive  bool
+	Limit            int
+	Offset           int
 }
 
 // Store é a interface central de persistência.
