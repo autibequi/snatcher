@@ -12,6 +12,43 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// affiliateProgramResp expõe credentials para a UI admin (o modelo usa json:"-" no Credentials).
+type affiliateProgramResp struct {
+	ID          int64           `json:"id"`
+	ShortID     string          `json:"short_id"`
+	Name        string          `json:"name"`
+	Marketplace string          `json:"marketplace"`
+	Credentials json.RawMessage `json:"credentials"`
+	Active      bool            `json:"active"`
+	Rules       json.RawMessage `json:"rules"`
+	Postback    json.RawMessage `json:"postback"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+func toAffiliateProgramResp(p models.AffiliateProgram) affiliateProgramResp {
+	rawOrEmpty := func(b []byte) json.RawMessage {
+		if len(b) == 0 {
+			return json.RawMessage([]byte("{}"))
+		}
+		return json.RawMessage(b)
+	}
+	creds := p.Credentials
+	if len(creds) == 0 {
+		creds = []byte("{}")
+	}
+	return affiliateProgramResp{
+		ID:          p.ID,
+		ShortID:     p.ShortID,
+		Name:        p.Name,
+		Marketplace: p.Marketplace,
+		Credentials: json.RawMessage(creds),
+		Active:      p.Active,
+		Rules:       rawOrEmpty(p.Rules),
+		Postback:    rawOrEmpty(p.Postback),
+		CreatedAt:   p.CreatedAt,
+	}
+}
+
 type AffiliateProgramsHandler struct {
 	store store.Store
 	db    *sqlx.DB
@@ -36,7 +73,11 @@ func (h *AffiliateProgramsHandler) List(w http.ResponseWriter, r *http.Request) 
 	if programs == nil {
 		programs = []models.AffiliateProgram{}
 	}
-	writeJSON(w, http.StatusOK, programs)
+	out := make([]affiliateProgramResp, len(programs))
+	for i := range programs {
+		out[i] = toAffiliateProgramResp(programs[i])
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Get retorna um programa de afiliado por ID.
@@ -51,15 +92,16 @@ func (h *AffiliateProgramsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "programa nao encontrado")
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, toAffiliateProgramResp(p))
 }
 
 // Create cria um novo programa de afiliado.
 func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string `json:"name" validate:"required"`
-		Marketplace string `json:"marketplace" validate:"required"`
-		Active      *bool  `json:"active"`
+		Name        string          `json:"name" validate:"required"`
+		Marketplace string          `json:"marketplace" validate:"required"`
+		Active      *bool           `json:"active"`
+		Credentials json.RawMessage `json:"credentials"`
 	}
 	if err := decodeAndValidate(r, &req); err != nil {
 		writeValidationErr(w, err)
@@ -69,11 +111,20 @@ func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request
 	if req.Active != nil {
 		active = *req.Active
 	}
+	creds := []byte("{}")
+	if len(req.Credentials) > 0 {
+		b, err := normalizeAffiliateCredentialsJSON(req.Credentials)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid credentials")
+			return
+		}
+		creds = b
+	}
 	p := models.AffiliateProgram{
 		Name:        req.Name,
 		Marketplace: req.Marketplace,
 		Active:      active,
-		Credentials: []byte("{}"),
+		Credentials: creds,
 		Rules:       []byte("{}"),
 		Postback:    []byte("{}"),
 	}
@@ -82,8 +133,12 @@ func (h *AffiliateProgramsHandler) Create(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusInternalServerError, "erro ao criar programa")
 		return
 	}
-	p.ID = id
-	writeJSON(w, http.StatusCreated, p)
+	reloaded, err := h.store.GetAffiliateProgram(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao recarregar programa")
+		return
+	}
+	writeJSON(w, http.StatusCreated, toAffiliateProgramResp(reloaded))
 }
 
 // Update aplica PATCH parcial em um programa (active, credentials, rules, postback, name).
@@ -145,7 +200,7 @@ func (h *AffiliateProgramsHandler) Update(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusInternalServerError, "erro ao recarregar programa")
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, toAffiliateProgramResp(out))
 }
 
 func normalizeAffiliateCredentialsJSON(raw json.RawMessage) ([]byte, error) {
