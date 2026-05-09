@@ -813,6 +813,8 @@ func (h *DashboardHandler) Recommendation(w http.ResponseWriter, r *http.Request
 
 Use APENAS os dados locais abaixo. Não especule sobre tendências de mercado externas.
 
+Ao priorizar, considere o encaixe entre: (1) audiência e categorias dos canais ativos, (2) fontes já cobertas pelos crawlers, (3) produtos sem URL de oferta ou sem categoria primária quando os números forem relevantes.
+
 ESTADO (Snatcher):
 %s
 
@@ -975,6 +977,12 @@ func (h *DashboardHandler) collectOperationalSnapshot(ctx context.Context) strin
 		SELECT action_type, status, created_at FROM jonfrey_actions ORDER BY id DESC LIMIT 1`); err == nil && jf.ActionType != "" {
 		lines = append(lines, fmt.Sprintf("- último Jonfrey: %s (%s) em %s",
 			jf.ActionType, jf.Status, jf.CreatedAt.Format(time.RFC3339)))
+	}
+
+	if oc, err := h.store.GetOperationalContext(ctx); err == nil {
+		lines = append(lines, "")
+		lines = append(lines, "CONTEXTO CRUZADO (canais ↔ crawlers ↔ cobertura do catálogo):")
+		lines = append(lines, strings.TrimSpace(store.FormatOperationalContextBlock(oc)))
 	}
 
 	return strings.Join(lines, "\n")

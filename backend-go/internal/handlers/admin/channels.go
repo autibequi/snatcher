@@ -959,6 +959,11 @@ func (h *ChannelsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 	intentCtx := ""
 	if req.Intent != "" { intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent) }
 
+	opBlock := ""
+	if oc, err := h.store.GetOperationalContext(r.Context()); err == nil {
+		opBlock = store.FormatOperationalContextBlock(oc)
+	}
+
 	prompt := fmt.Sprintf(`Você é um especialista em marketing de afiliados brasileiro via grupos de WhatsApp e Telegram.
 
 Você TEM ACESSO À INTERNET — use-a para:
@@ -967,14 +972,17 @@ Você TEM ACESSO À INTERNET — use-a para:
 - Confirmar quais perfis de audiência convertem melhor em grupos de link de afiliado
 - Descobrir marcas e produtos específicos que estão viralizando em grupos de desconto
 
-CANAIS JÁ EXISTENTES:
+CONTEXTO OPERACIONAL LOCAL (crawlers ativos, cobertura do catálogo, lacunas marketplace/audiência — use para alinhar audiência do canal às fontes já rastreadas e aos produtos sem cobertura):
+%s
+
+CANAIS JÁ EXISTENTES (resumo):
 %s
 
 PRODUTOS NO CATÁLOGO (sample):
 %s
 %s%s
 
-Com base na sua pesquisa e nos canais existentes, recomende UM canal. Responda SOMENTE em JSON:
+Com base na sua pesquisa, no contexto operacional e nos canais existentes, recomende UM canal. Responda SOMENTE em JSON:
 {
   "name": "Nome do canal (ex: Suplementos Fitness SP)",
   "description": "Descrição em 1 frase — quem é a audiência e que tipo de oferta receberá",
@@ -997,9 +1005,9 @@ REGRAS:
 - audience_min_drop: mínimo 10%% de desconto para disparar (aumentar pra nichos premium)
 - send_start_hour/end_hour: horário BRT — 7-22 jovens/tech, 8-21 geral, 9-20 para públicos mais velhos
 - digest_mode: true para audiências que preferem 1 resumo diário; false para disparo imediato
-- rationale: mencione dados concretos da sua pesquisa online (ex: "grupos de whey no WA têm média de X membros")
+- rationale: mencione dados concretos da sua pesquisa online e, quando aplicável, como este canal se encaixa nas fontes dos crawlers ativos e nas lacunas de cobertura do contexto operacional (ex.: produtos sem URL de oferta no nicho)
 
-JSON:`, channelCtx, productCtx, modeInst, intentCtx)
+JSON:`, opBlock, channelCtx, productCtx, modeInst, intentCtx)
 
 	// Timeout 45s — Cloudflare corta em ~100s.
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)

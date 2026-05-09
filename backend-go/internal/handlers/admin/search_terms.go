@@ -301,6 +301,11 @@ func (h *SearchTermsHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 		intentCtx = fmt.Sprintf("\n\nINTENÇÃO DO USUÁRIO: %s", req.Intent)
 	}
 
+	opBlock := ""
+	if oc, err := h.store.GetOperationalContext(r.Context()); err == nil {
+		opBlock = store.FormatOperationalContextBlock(oc)
+	}
+
 	prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro, grupos de afiliados (WhatsApp/Telegram) e configuração de crawlers de preço.
 
 Você TEM ACESSO À INTERNET — use-a para:
@@ -309,11 +314,14 @@ Você TEM ACESSO À INTERNET — use-a para:
 - Identificar nichos com alta demanda em grupos de link de afiliados brasileiros (suplementos, eletrônicos, moda plus size, itens de casa, pet, etc.)
 - Confirmar se o mercado sugerido tem volume suficiente pra valer o crawler
 
-CRAWLERS JÁ CONFIGURADOS:
+CONTEXTO OPERACIONAL LOCAL (obrigatório — alinhe query, sources e faixa de preço a estes dados; não ignore canais nem lacunas de cobertura):
+%s
+
+CRAWLERS JÁ CONFIGURADOS (resumo):
 %s
 %s%s
 
-Com base na sua pesquisa online e nos crawlers existentes, recomende UMA configuração de crawler. Responda SOMENTE em JSON:
+Com base na sua pesquisa online, no contexto operacional acima e nos crawlers existentes, recomende UMA configuração de crawler. Responda SOMENTE em JSON:
 {
   "query": "termo curto 1-3 palavras otimizado para busca em marketplace (ex: whey protein, fone anc, nintendo switch)",
   "queries": ["variação 1 curta", "variação 2 curta", "variação 3 curta", "variação 4 curta"],
@@ -330,12 +338,17 @@ Com base na sua pesquisa online e nos crawlers existentes, recomende UMA configu
 REGRAS:
 - query: MÁXIMO 3 PALAVRAS — curto como os usuários digitam em marketplace (ex: "whey protein", "fone anc", "ps5 controle"). Frases longas retornam 0 resultados nos scrapers.
 - queries: 4-6 variações CURTAS (1-3 palavras cada) com marcas conhecidas, abreviações e sinônimos. Ex: ["fone jbl", "headphone anc", "fone sem fio"], NÃO ["fone de ouvido bluetooth cancelamento de ruido"]
-- sources: ["amazon","mercadolivre"] como padrão; Shopee pra moda/acessórios; Magalu pra eletrodomésticos
-- min_val/max_val: faixa realista baseada nos preços atuais que você pesquisou
+- sources: use os identificadores aceitos pelo sistema (ex.: amazon, mercadolivre, shopee, magalu, aliexpress). Inclua toda fonte necessária para cobrir lacunas de marketplace no contexto operacional; evite redundância sem motivo.
+- min_val/max_val: coerentes com a faixa de preço dos canais ativos no contexto quando aplicável, e com a pesquisa online
 - crawl_interval: 30 pra tech/games voláteis, 60 pra suplementos, 120 pra itens estáveis
-- rationale: cite especificamente o gap nos crawlers atuais E o potencial de conversão em grupos WA/TG
+- rationale: cite lacunas audiência↔crawler ou marketplace↔crawler do contexto local quando existirem; explique como a sugestão melhora envio pra grupos (produtos com URL de oferta, match por categoria)
 
-JSON:`, existingCtx, modeInstruction, intentCtx)
+REGRAS ADICIONAIS (cobertura):
+- Se o contexto mostrar muitos produtos sem URL de oferta ou sem categoria primária, prefira crawlers/fontes que ajudem a preencher esses gaps antes de abrir nicho totalmente novo.
+- Se houver lacunas de marketplace (volume no catálogo sem crawler para aquela fonte), priorize incluir essa fonte em sources.
+- Se houver lacunas audiência↔crawler (categoria em canal sem query óbvia), priorize query/queries que cubram esses termos.
+
+JSON:`, opBlock, existingCtx, modeInstruction, intentCtx)
 
 	// Timeout 45s — Cloudflare corta em ~100s.
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)

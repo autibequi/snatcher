@@ -244,6 +244,9 @@ type Store interface {
 	// Channel stats (cliques reais, disparos, série diária)
 	GetChannelStats(channelID int64) (ChannelStats, error)
 
+	// OperationalContext agrega canais ativos, crawlers, cobertura do catálogo e lacunas (prompts LLM).
+	GetOperationalContext(ctx context.Context) (OperationalContext, error)
+
 	// AffiliateConversions
 	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
 

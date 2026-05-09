@@ -345,6 +345,12 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar config")
+		return
+	}
+
 	// Buscar produto
 	products, err := h.store.ListCatalogProducts(200, 0, true)
 	if err != nil {
