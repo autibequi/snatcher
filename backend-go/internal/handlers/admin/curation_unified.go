@@ -155,7 +155,7 @@ func (h *CurationHandler) ProcessProductUnified(ctx context.Context, cli llm.Cli
 		return nil, err
 	}
 
-	prompt := buildUnifiedCurationInspectPrompt(p)
+	prompt := buildUnifiedCurationInspectPrompt(&p)
 
 	callCtx, cancel := context.WithTimeout(ctx, unifiedPerProductTimeout)
 	defer cancel()

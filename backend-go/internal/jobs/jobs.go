@@ -108,7 +108,7 @@ func (m *Manager) ReconcileStaleRunning(maxAge time.Duration) int {
 	defer m.mu.Unlock()
 	now := time.Now()
 	fixed := 0
-	for id, j := range m.jobs {
+	for _, j := range m.jobs {
 		if j.Status != StatusRunning {
 			continue
 		}

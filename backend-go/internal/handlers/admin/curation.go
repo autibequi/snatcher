@@ -15,7 +15,6 @@ import (
 
 	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
-	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 )
