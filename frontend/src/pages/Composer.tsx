@@ -486,11 +486,14 @@ export default function Composer() {
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {productIds.map((pid, i) => {
-                      const pd = productsData[i] as any
+                      const row = catalogRows[i]
+                      const pd = row?.product as Record<string, unknown> | undefined
                       const img = pd ? nullStr(pd?.image_url) : null
-                      const name = pd ? (nullStr(pd?.canonical_name) || pd?.canonical_name || '') : null
-                      const price: number = pd?.lowest_price?.Float64 ?? pd?.lowest_price ?? 0
-                      const origPrice: number = pd?.original_price?.Float64 ?? pd?.original_price ?? 0
+                      const name = pd ? (nullStr(pd?.canonical_name) || (pd?.canonical_name as string) || '') : null
+                      const { price } = resolveCatalogPricing(pd ?? null, row?.variants ?? [])
+                      const origPrice: number =
+                        (pd?.original_price as { Float64?: number } | undefined)?.Float64 ??
+                        (typeof pd?.original_price === 'number' ? pd.original_price : 0)
                       const discountPct = origPrice > 0 && price > 0 && origPrice > price
                         ? Math.round((origPrice - price) / origPrice * 100)
                         : 0
