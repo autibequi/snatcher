@@ -3,9 +3,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o backendv2 ./cmd/server && \
-    CGO_ENABLED=0 go build -o seed ./cmd/seed && \
-    CGO_ENABLED=0 go build -o public ./cmd/public
+# Um RUN por binário: no Coolify/Docker legacy o log mostra qual etapa falhou.
+RUN CGO_ENABLED=0 go build -o backendv2 ./cmd/server
+RUN CGO_ENABLED=0 go build -o seed ./cmd/seed
+RUN CGO_ENABLED=0 go build -o public ./cmd/public
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
