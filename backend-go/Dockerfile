@@ -1,13 +1,24 @@
 FROM golang:1.23-alpine AS builder
+# git: dependências / replace que ainda tocam VCS; ca-certificates: fetch HTTPS de sum/mod
+RUN apk add --no-cache git ca-certificates
 WORKDIR /app
+
+# Sem BuildKit / VPS pequeno: compilação Go paralela pode matar o processo (OOM → exit 1 sem stderr útil).
+ENV CGO_ENABLED=0
+ENV GOMAXPROCS=1
+
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+
+RUN go version && go env GOVERSION GOPATH
+
 # Um RUN por binário: no Coolify/Docker legacy o log mostra qual etapa falhou.
 # -buildvcs=false: contexto de build costuma não ter .git completo → Go 1.18+ falha ao stampar VCS.
-RUN CGO_ENABLED=0 go build -buildvcs=false -o backendv2 ./cmd/server
-RUN CGO_ENABLED=0 go build -buildvcs=false -o seed ./cmd/seed
-RUN CGO_ENABLED=0 go build -buildvcs=false -o public ./cmd/public
+# -v: imprime pacotes compilados — ajuda a ver onde parou se o build falhar.
+RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o backendv2 ./cmd/server
+RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o seed ./cmd/seed
+RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o public ./cmd/public
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
