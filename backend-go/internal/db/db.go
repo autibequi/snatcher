@@ -12,7 +12,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	_ "modernc.org/sqlite"
 )
 
 //go:embed migrations/*.sql

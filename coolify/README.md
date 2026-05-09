@@ -29,10 +29,12 @@ coolify/
 
 ## Banco
 
-- **App**: SQLite em `/app/data/app.db` no volume `snatcher-data` (Docker named volume, sobrevive a redeploy)
-- **Evolution**: Postgres dedicado (`evo-postgres`) com schema `evolution_api` + Redis (`evo-redis`)
+- **App (este compose)**: Postgres (`snatcher-postgres`) — ver `DATABASE_URL` no serviço `backend`
+- **Evolution**: Postgres (`evo-postgres`) + Redis (`evo-redis`)
 
-Sem Coolify-managed DBs — SQLite é arquivo (não tem instance), e o Postgres aqui serve só ao Evolution.
+Volume `snatcher-data` segue montado para dados em disco que o app gravar em `/app/data` se precisar.
+
+Dev local sem Docker pode usar `sqlite://` no `DATABASE_URL`; o binário precisa ser compilado **sem** `-tags=nosqlite` para registrar o driver SQLite.
 
 ## Setup
 
@@ -140,5 +142,8 @@ docker exec "$EVO_PG" pg_dump -U evolution evolution > evolution-$(date +%F).sql
 **Short links 404**
 - `PUBLIC_URL` errada — backend gera link com host errado e nginx não roteia.
 
-**SQLite locked**
+**SQLite locked** (só se usar SQLite fora deste compose)
 - Restart do backend pelo Coolify. Volume preservado.
+
+**Build Docker falha (exit 255) no passo `go build`, log para em `modernc.org/sqlite` / `libc`**
+- Em VPS com pouca RAM o compilador pode ser morto (OOM) ao compilar o driver SQLite puro Go. A imagem oficial do backend usa `go build -tags=nosqlite` (só Postgres). Confirma que o `Dockerfile` do repo inclui esse tag; se ainda falhar, aumenta memória/timeout do builder no host ou no Coolify.
