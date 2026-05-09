@@ -1621,6 +1621,9 @@ function LLMLogs() {
                       <td className={`px-3 py-2.5 text-[11px] align-top leading-snug ${isTransient ? 'text-fg-3 italic' : 'text-fg'}`}>
                         <span className="line-clamp-2 break-all">{showOp}</span>
                       </td>
+                      <td className="px-3 py-2.5 text-[11px] text-fg-2 font-mono align-top whitespace-nowrap uppercase tracking-tight">
+                        {r.provider?.trim() ? r.provider : '—'}
+                      </td>
                       <td className="px-3 py-2.5 text-[11px] text-fg-2 font-mono align-top leading-snug">
                         <span className="line-clamp-3 break-all">{r.model || '—'}</span>
                       </td>
@@ -1708,6 +1711,9 @@ function LLMLogs() {
                                           })}
                                         </span>
                                         <span className="text-fg shrink-0">{a.operation}</span>
+                                        {a.provider?.trim() ? (
+                                          <span className="text-fg-2 shrink-0 uppercase">{a.provider}</span>
+                                        ) : null}
                                         <span className={a.error ? 'text-danger' : 'text-fg-3'}>{a.status}</span>
                                         {a.error_msg && (
                                           <span className="text-danger break-all w-full">{a.error_msg}</span>
