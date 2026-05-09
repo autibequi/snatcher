@@ -134,6 +134,14 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionAutoReleasePending,
 	},
+	// Alias usado pelo front (Automations, Jonfrey, Settings) ao ligar full-auto — antes não existia no registry e era ignorado.
+	"enable_full_auto": {
+		Type:        "enable_full_auto",
+		Category:    "dispatch",
+		Description: "Mesmo efeito que auto_release_pending: com full_auto ON, passa pending_approval → queued para o dispatch worker enviar",
+		UsesLLM:     false,
+		Run:         actionAutoReleasePending,
+	},
 	"reset_stale_cooldown": {
 		Type:        "reset_stale_cooldown",
 		Category:    "cleanup",
