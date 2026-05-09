@@ -104,6 +104,25 @@ func (h *WorkQueueHandler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Clear POST /api/work-queue/clear
+// Remove jobs terminal em background_jobs (completed/failed/cancelled) + auditoria Jonfrey já finalizada.
+func (h *WorkQueueHandler) Clear(w http.ResponseWriter, r *http.Request) {
+	nJobs := jobs.Default().Clear()
+	var nJF int64
+	if h.Store != nil {
+		n, err := h.Store.DeleteTerminalJonfreyActions()
+		if err != nil {
+			slog.Warn("work-queue DeleteTerminalJonfreyActions", "err", err)
+		} else {
+			nJF = n
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cleared_jobs":    nJobs,
+		"cleared_jonfrey": nJF,
+	})
+}
+
 func jonfreyActionToQueueItem(a models.JonfreyAction) map[string]any {
 	var before, after map[string]any
 	if len(a.BeforeSnapshot) > 0 {

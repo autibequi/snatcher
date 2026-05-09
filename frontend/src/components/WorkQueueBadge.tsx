@@ -51,12 +51,22 @@ interface WorkQueuePayload {
   }
 }
 
+interface WorkQueueClearResponse {
+  cleared_jobs?: number
+  cleared_jonfrey?: number
+}
+
 function isJobRow(item: WorkQueueItem): item is WorkQueueJobRow {
   return item.kind === 'job'
 }
 
 function isQueueItemRunning(item: WorkQueueItem): boolean {
   return item.status === 'running'
+}
+
+/** Qualquer linha já finalizada (jobs failed/completed + auditoria Jonfrey success/failed/…) */
+function hasTerminalQueueItem(items: WorkQueueItem[]): boolean {
+  return items.some(i => !isQueueItemRunning(i))
 }
 
 function fmtShort(s: string): string {
@@ -130,10 +140,19 @@ export function WorkQueueBadge() {
       })
     }
   }
-  const clearFinished = () => {
-    apiClient.post('/api/jobs/clear').then(() => {
+  const clearTerminalHistory = () => {
+    if (
+      !confirm(
+        'Remover do histórico desta lista:\n• jobs finalizados (OK, falha, cancelado) na tabela background_jobs;\n• auditorias Jonfrey já concluídas (sucesso, falha, skipped).\n\nLinhas ainda em execução (running) não são apagadas.',
+      )
+    ) {
+      return
+    }
+    apiClient.post<WorkQueueClearResponse>('/api/work-queue/clear').then(() => {
       refetch()
       qc.invalidateQueries({ queryKey: ['jobs'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-actions-recent'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
     })
   }
 
@@ -177,9 +196,14 @@ export function WorkQueueBadge() {
                   cancelar jobs
                 </button>
               )}
-              {jobRows.some(j => j.status !== 'running') && (
-                <button type="button" onClick={clearFinished} className="text-xs text-fg-3 hover:text-fg whitespace-nowrap">
-                  limpar jobs OK
+              {hasTerminalQueueItem(items) && (
+                <button
+                  type="button"
+                  onClick={clearTerminalHistory}
+                  className="text-xs text-fg-3 hover:text-fg whitespace-nowrap"
+                  title="Remove jobs finalizados (incluindo falhas) e auditorias Jonfrey concluídas"
+                >
+                  limpar histórico
                 </button>
               )}
             </div>

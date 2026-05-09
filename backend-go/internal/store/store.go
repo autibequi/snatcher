@@ -279,6 +279,8 @@ type Store interface {
 	ListJonfreyActions(limit int, actionType string) ([]models.JonfreyAction, error)
 	ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAction, error)
 	ReconcileStaleJonfreyActions(staleMinutes int, message string) (int64, error)
+	// DeleteTerminalJonfreyActions remove linhas de auditoria já finalizadas (success/failed/skipped).
+	DeleteTerminalJonfreyActions() (int64, error)
 	GetJonfreyConfig() (models.JonfreyConfig, error)
 	UpdateJonfreyConfig(c models.JonfreyConfig) error
 

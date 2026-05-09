@@ -132,6 +132,19 @@ func (s *SQLStore) ReconcileStaleJonfreyActions(staleMinutes int, message string
 	return n, nil
 }
 
+// DeleteTerminalJonfreyActions apaga registros de jonfrey_actions que não estão em execução.
+// Libera a fila universal / página de ações sem remover linhas running.
+func (s *SQLStore) DeleteTerminalJonfreyActions() (int64, error) {
+	res, err := s.db.Exec(`
+		DELETE FROM jonfrey_actions
+		WHERE status IS DISTINCT FROM 'running'`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // GetJonfreyConfig retorna a config singleton (id=1).
 func (s *SQLStore) GetJonfreyConfig() (models.JonfreyConfig, error) {
 	var c models.JonfreyConfig
