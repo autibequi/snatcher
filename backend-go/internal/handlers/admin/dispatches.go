@@ -67,6 +67,10 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 				if prod.LowestPriceSource.Valid {
 					src = prod.LowestPriceSource.String
 				}
+				src = strings.TrimSpace(src)
+				if src == "" {
+					src = affiliates.InferMarketplaceFromProductURL(prod.LowestPriceURL.String)
+				}
 				progs, _ := h.store.ListAffiliatePrograms(nil)
 				if affiliates.HasAffiliate(src, progs) {
 					hasLink = true

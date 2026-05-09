@@ -42,6 +42,20 @@ func TestHasAffiliate_amzMatchesAmazonProgram(t *testing.T) {
 	}
 }
 
+func TestInferMarketplaceFromProductURL(t *testing.T) {
+	tests := []struct{ url, want string }{
+		{"https://www.amazon.com.br/dp/B00TEST", "amazon"},
+		{"https://lista.mercadolivre.com.br/x", "mercadolivre"},
+		{"https://click.mlcdn.com.br/LP/PT/X/123/PNhttps%3A%2F%2Fprod", "mercadolivre"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := InferMarketplaceFromProductURL(tt.url); got != tt.want {
+			t.Errorf("InferMarketplaceFromProductURL(%q) = %q, want %q", tt.url, got, tt.want)
+		}
+	}
+}
+
 func TestHasAffiliate_skipsInactive(t *testing.T) {
 	creds, _ := json.Marshal(map[string]string{"tag": "x"})
 	progs := []models.AffiliateProgram{

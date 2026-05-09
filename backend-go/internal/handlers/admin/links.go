@@ -29,22 +29,33 @@ func (h *LinksHandler) Shorten(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "url required")
 		return
 	}
-	source := strings.ToLower(strings.TrimSpace(req.Source))
+	sourceMeta := strings.ToLower(strings.TrimSpace(req.Source))
 
 	// Normalizar rótulo gravado em short_links.source (analytics)
-	switch source {
+	switch sourceMeta {
 	case "amazon", "amz":
-		source = "amazon"
+		sourceMeta = "amazon"
 	case "mercadolivre", "ml":
-		source = "mercadolivre"
+		sourceMeta = "mercadolivre"
 	}
 
 	dest := strings.TrimSpace(req.URL)
+	buildMarketplace := strings.TrimSpace(req.Source)
+	if buildMarketplace == "" {
+		buildMarketplace = affiliates.InferMarketplaceFromProductURL(dest)
+	}
+	if buildMarketplace == "" {
+		buildMarketplace = "amazon"
+	}
 	programs, _ := h.store.ListAffiliatePrograms(nil)
-	built, _, _ := affiliates.BuildLink(dest, req.Source, programs)
+	built, _, _ := affiliates.BuildLink(dest, buildMarketplace, programs)
 	dest = built
 
-	shortID, err := h.store.GetOrCreateShortLink(dest, source)
+	if sourceMeta == "" {
+		sourceMeta = affiliates.CanonicalAffiliateMarketplace(buildMarketplace)
+	}
+
+	shortID, err := h.store.GetOrCreateShortLink(dest, sourceMeta)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar short link")
 		return

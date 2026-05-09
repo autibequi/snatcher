@@ -37,6 +37,37 @@ func CanonicalAffiliateMarketplace(s string) string {
 	}
 }
 
+// InferMarketplaceFromProductURL deduz o marketplace interno a partir do host da URL do produto.
+// Usado quando catalogproduct.lowest_price_source vem vazio mas há lowest_price_url.
+func InferMarketplaceFromProductURL(productURL string) string {
+	u, err := url.Parse(productURL)
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	switch {
+	case strings.Contains(host, "amazon."):
+		return "amazon"
+	case strings.Contains(host, "mercadolivre") || strings.Contains(host, "mercadoliv") ||
+		strings.Contains(host, "mlcdn") || strings.Contains(host, "meli.com"):
+		return "mercadolivre"
+	case strings.Contains(host, "magazineluiza") || strings.Contains(host, "magalu"):
+		return "magalu"
+	case strings.Contains(host, "shopee."):
+		return "shopee"
+	case strings.Contains(host, "aliexpress"):
+		return "aliexpress"
+	case strings.Contains(host, "kabum"):
+		return "kabum"
+	case strings.Contains(host, "americanas"):
+		return "americanas"
+	case strings.Contains(host, "casasbahia") || strings.Contains(host, "casas-bahia"):
+		return "casasbahia"
+	default:
+		return ""
+	}
+}
+
 // HasAffiliate verifica se há programa ativo com credenciais para o marketplace.
 // Retorna true só quando o link seria efetivamente reescrito com tag/affiliate_id.
 func HasAffiliate(marketplace string, programs []models.AffiliateProgram) bool {

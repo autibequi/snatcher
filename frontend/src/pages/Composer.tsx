@@ -150,11 +150,13 @@ export default function Composer() {
     )
   }
 
-  const affiliateLink = params.get('affiliateLink') ?? undefined
+  /** Override opcional via ?affiliateLink= — senão usa shortlink gerado ou URL do produto (API exige affiliate_link não vazio ou HasAffiliate no produto). */
+  const affiliateLinkFromQuery = params.get('affiliateLink') ?? ''
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
       const link = affiliateUrl || realUrl || ''
+      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || realUrl || ''
       // Se "de" e "por" forem iguais (sem preço original real), inflar "de" em 15% e calcular desconto
       const dePrice = realPrice > 0 ? realPrice * 1.15 : 0
       const deStr = dePrice > 0 ? `R$ ${dePrice.toFixed(2)}` : 'R$ --'
@@ -175,7 +177,7 @@ export default function Composer() {
         .post<DispatchResponse>('/api/dispatches', {
           product_id: productIds[0] ?? undefined,
           message: { text: finalText, media_url: productImage || undefined },
-          affiliate_link: affiliateLink,
+          affiliate_link: resolvedAffiliateLink,
           scheduled_for: scheduledFor || undefined,
           targets,
         } as DispatchPayload & { scheduled_for?: string })
