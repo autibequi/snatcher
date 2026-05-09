@@ -233,9 +233,21 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 	rawResponse := string(body)
 
 	if resp.StatusCode >= 400 {
-		errMsg := fmt.Sprintf("llm status %d: %s", resp.StatusCode, rawResponse)
-		recordMetric(opts.Operation, model, fmt.Sprintf("http_%d", resp.StatusCode), 0, 0, 0, latency, true, errMsg, prompt, rawResponse)
-		return "", fmt.Errorf("%s", errMsg)
+		rawErrMsg := fmt.Sprintf("llm status %d: %s", resp.StatusCode, rawResponse)
+		// 429 / rate-limit: transient, is_error=false — aparece como info nos logs
+		// Mensagem curta em vez do JSON bruto do OpenRouter.
+		if resp.StatusCode == 429 {
+			// Extrai retry_after_seconds se disponível
+			retryAfter := resp.Header.Get("Retry-After")
+			shortMsg := "rate limited"
+			if retryAfter != "" {
+				shortMsg = "rate limited — retry em " + retryAfter + "s"
+			}
+			recordMetric(opts.Operation, model, "rate_limited", 0, 0, 0, latency, false, shortMsg, prompt, "")
+			return "", fmt.Errorf("%s", rawErrMsg)
+		}
+		recordMetric(opts.Operation, model, fmt.Sprintf("http_%d", resp.StatusCode), 0, 0, 0, latency, true, rawErrMsg, prompt, rawResponse)
+		return "", fmt.Errorf("%s", rawErrMsg)
 	}
 
 	var result struct {

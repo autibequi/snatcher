@@ -1135,17 +1135,20 @@ function LLMLogs() {
             {rows.map(r => {
               const isExpanded = expandedId === r.id
               const hasPayload = !!(r.prompt || r.response)
+              // Transient = retry automático que não é falha real: não mostrar em vermelho
+              const isTransient = r.operation?.includes('_retry_transient') || r.status === 'rate_limited'
+              const isRealError = r.error && !isTransient
               return (
                 <React.Fragment key={r.id}>
                   <tr
-                    className={`border-b border-border last:border-0 ${r.error ? 'bg-danger/5' : ''} ${hasPayload ? 'cursor-pointer hover:bg-surface-2' : ''}`}
+                    className={`border-b border-border last:border-0 ${isRealError ? 'bg-danger/5' : isTransient ? 'opacity-60' : ''} ${hasPayload ? 'cursor-pointer hover:bg-surface-2' : ''}`}
                     onClick={() => hasPayload && setExpandedId(isExpanded ? null : r.id)}
                   >
                     <td className="px-3 py-2 text-xs text-fg-3 whitespace-nowrap">
                       {hasPayload && <span className="text-fg-3 mr-1">{isExpanded ? '▼' : '▶'}</span>}
                       {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
                     </td>
-                    <td className="px-3 py-2 text-xs text-fg">{r.operation}</td>
+                    <td className={`px-3 py-2 text-xs ${isTransient ? 'text-fg-3 italic' : 'text-fg'}`}>{r.operation}</td>
                     <td className="px-3 py-2 text-xs text-fg-2 font-mono truncate max-w-xs">{r.model}</td>
                     <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">{r.tokens_in}→{r.tokens_out}</td>
                     <td className="px-3 py-2 text-xs text-fg-2 font-mono text-right">${r.cost_usd.toFixed(4)}</td>
@@ -1153,7 +1156,9 @@ function LLMLogs() {
                       {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
                     </td>
                     <td className="px-3 py-2">
-                      {r.error ? (
+                      {isTransient ? (
+                        <span className="text-xs px-1.5 py-0.5 bg-warning/10 text-warning rounded">{r.status || 'retry'}</span>
+                      ) : r.error ? (
                         <span className="text-xs px-1.5 py-0.5 bg-danger/10 text-danger rounded font-medium">erro</span>
                       ) : r.cache_hit ? (
                         <span className="text-xs px-1.5 py-0.5 bg-accent/10 text-accent rounded">cache</span>
@@ -1162,9 +1167,18 @@ function LLMLogs() {
                       )}
                     </td>
                   </tr>
-                  {r.error && r.error_msg && (
+                  {/* Mostrar error_msg apenas pra erros reais (não transient/rate-limit) */}
+                  {isRealError && r.error_msg && (
                     <tr className="bg-danger/5 border-b border-border last:border-0">
                       <td colSpan={7} className="px-4 py-2 text-xs font-mono text-danger break-all">
+                        {r.error_msg}
+                      </td>
+                    </tr>
+                  )}
+                  {/* Transient: mensagem curta e muted */}
+                  {isTransient && r.error_msg && (
+                    <tr className="border-b border-border last:border-0 opacity-50">
+                      <td colSpan={7} className="px-4 py-1 text-[10px] font-mono text-fg-3 truncate">
                         {r.error_msg}
                       </td>
                     </tr>
