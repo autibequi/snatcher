@@ -1,6 +1,8 @@
 package store
 
 import (
+	"time"
+
 	"snatcher/backendv2/internal/models"
 )
 
@@ -104,6 +106,28 @@ func (s *SQLStore) ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAc
 		}
 		seen[a.ID] = struct{}{}
 		out = append(out, a)
+	}
+	return out, nil
+}
+
+// JonfreyLastFinishedAtByActionType retorna a última conclusão (finished_at) por tipo de ação.
+func (s *SQLStore) JonfreyLastFinishedAtByActionType() (map[string]time.Time, error) {
+	type row struct {
+		ActionType string    `db:"action_type"`
+		Ts         time.Time `db:"ts"`
+	}
+	var rows []row
+	err := s.db.Select(&rows, `
+		SELECT action_type, MAX(finished_at) AS ts
+		FROM jonfrey_actions
+		WHERE finished_at IS NOT NULL
+		GROUP BY action_type`)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]time.Time, len(rows))
+	for _, r := range rows {
+		out[r.ActionType] = r.Ts
 	}
 	return out, nil
 }

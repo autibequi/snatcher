@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -370,16 +371,27 @@ func (h *JonfreyHandler) ListActions(w http.ResponseWriter, r *http.Request) {
 
 // ListAvailable GET /api/jonfrey/available
 func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
+	lastBy, _ := h.store.JonfreyLastFinishedAtByActionType()
+	if lastBy == nil {
+		lastBy = map[string]time.Time{}
+	}
 	type item struct {
-		Type        string `json:"type"`
-		Category    string `json:"category"`
-		Description string `json:"description"`
-		UsesLLM     bool   `json:"uses_llm"`
+		Type        string     `json:"type"`
+		Category    string     `json:"category"`
+		Description string     `json:"description"`
+		UsesLLM     bool       `json:"uses_llm"`
+		LastRunAt   *time.Time `json:"last_run_at,omitempty"`
 	}
 	out := []item{}
 	for _, a := range actionRegistry {
-		out = append(out, item{Type: a.Type, Category: a.Category, Description: a.Description, UsesLLM: a.UsesLLM})
+		it := item{Type: a.Type, Category: a.Category, Description: a.Description, UsesLLM: a.UsesLLM}
+		if t, ok := lastBy[a.Type]; ok {
+			tCopy := t
+			it.LastRunAt = &tCopy
+		}
+		out = append(out, it)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Switch, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
-import { relJonfreyTime } from '../components/JonfreyActionCard'
+import { fmtJonfreyDate, relJonfreyTime } from '../components/JonfreyActionCard'
 
 interface JonfreyConfig {
   enabled: boolean
@@ -16,6 +16,21 @@ interface AvailableAction {
   description: string
   uses_llm: boolean
   category: string
+  /** ISO — última conclusão desta ação (auditoria Jonfrey) */
+  last_run_at?: string | null
+}
+
+/** Ação ligada + auto-pilot ligado, e sem run recente dentro do intervalo → destaque (atraso). */
+function isJonfreyActionOverdue(
+  actionEnabled: boolean,
+  pilotEnabled: boolean,
+  lastRunAt: string | null | undefined,
+  intervalMinutes: number,
+): boolean {
+  if (!actionEnabled || !pilotEnabled) return false
+  if (!lastRunAt) return true
+  const ms = Date.now() - new Date(lastRunAt).getTime()
+  return ms > intervalMinutes * 60 * 1000
 }
 
 export default function Jonfrey() {
@@ -29,6 +44,7 @@ export default function Jonfrey() {
   const { data: available = [] } = useQuery<AvailableAction[]>({
     queryKey: ['jonfrey-available'],
     queryFn: () => apiClient.get('/api/jonfrey/available').then(r => r.data ?? []).catch(() => []),
+    refetchInterval: 60_000,
   })
 
   const runMut = useMutation({
@@ -39,6 +55,7 @@ export default function Jonfrey() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
       qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-available'] })
       qc.invalidateQueries({ queryKey: ['work-queue'] })
     },
   })
@@ -46,7 +63,10 @@ export default function Jonfrey() {
   const updateConfigMut = useMutation({
     mutationFn: (patch: Partial<JonfreyConfig>) =>
       apiClient.put('/api/jonfrey/config', patch).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-available'] })
+    },
   })
 
   const toggleEnabledAction = (type: string) => {
@@ -141,11 +161,21 @@ export default function Jonfrey() {
           {(() => {
             const renderRow = (a: AvailableAction) => {
               const enabled = config?.enabled_actions.includes(a.type) ?? false
+              const intervalMin = config?.interval_minutes ?? 60
+              const pilotOn = config?.enabled ?? false
+              const overdue = isJonfreyActionOverdue(enabled, pilotOn, a.last_run_at, intervalMin)
               return (
                 <div key={a.type} className="flex items-center justify-between gap-3 py-1.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-mono text-fg">{a.type}</p>
                     <p className="text-xs text-fg-3">{a.description}</p>
+                    <p
+                      className={`text-[10px] mt-0.5 tabular-nums ${overdue ? 'text-danger font-medium' : 'text-fg-3'}`}
+                      title={a.last_run_at ? fmtJonfreyDate(a.last_run_at) : undefined}
+                    >
+                      Última exec.:{' '}
+                      {a.last_run_at ? relJonfreyTime(a.last_run_at) : '—'}
+                    </p>
                     {a.uses_llm && (
                       <span className="text-[10px] text-warning font-medium flex items-center gap-1">
                         🧠 Usa LLM <TooltipIcon content="Esta ação chama a IA configurada (OpenRouter). Gasta tokens e pode demorar mais. Desabilite se o LLM não estiver configurado ou pra economizar." side="right" />
