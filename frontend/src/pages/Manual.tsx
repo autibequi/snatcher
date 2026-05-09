@@ -1,11 +1,15 @@
 import { Link } from 'react-router-dom'
+import { TutorialHelpButton } from '../components/TutorialHelpButton'
 import { MANUAL_TUTORIALS } from '../content/tutorials'
 
 export default function Manual() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <header className="mb-8">
-        <h1 className="text-xl font-semibold text-fg">Manual</h1>
+        <div className="flex flex-wrap items-center gap-2 justify-between gap-y-2">
+          <h1 className="text-xl font-semibold text-fg">Manual</h1>
+          <TutorialHelpButton />
+        </div>
         <p className="text-sm text-fg-3 mt-1">Tutoriais e guias disponíveis.</p>
       </header>
       <ul className="grid gap-3 sm:grid-cols-2">

@@ -795,9 +795,15 @@ function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: (
                     onClick={() => crawlNow.mutate(t.id)}
                     loading={runningIds.has(t.id)}
                     disabled={runningIds.size > 0}
-                    className="border-success/40 text-success hover:bg-success/10"
+                    className="border-success/40 text-success hover:bg-success/10 px-2 min-w-[1.75rem]"
+                    aria-label={runningIds.has(t.id) ? 'Rodando…' : 'Rodar agora'}
+                    title={runningIds.has(t.id) ? 'Rodando…' : 'Rodar agora'}
                   >
-                    {runningIds.has(t.id) ? 'Rodando...' : '▶ Rodar agora'}
+                    {!runningIds.has(t.id) ? (
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    ) : null}
                   </Button>
                 </td>
               </tr>

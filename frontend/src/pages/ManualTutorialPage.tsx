@@ -1,4 +1,5 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { TutorialHelpButton } from '../components/TutorialHelpButton'
 import { renderTutorialBody } from '../content/tutorialBodies'
 import { MANUAL_TUTORIALS } from '../content/tutorials'
 
@@ -15,7 +16,10 @@ export default function ManualTutorialPage() {
         ← Tutoriais
       </Link>
       <header className="mb-8">
-        <h1 className="text-xl font-semibold text-fg">{def.title}</h1>
+        <div className="flex flex-wrap items-center gap-2 justify-between gap-y-2">
+          <h1 className="text-xl font-semibold text-fg">{def.title}</h1>
+          <TutorialHelpButton />
+        </div>
         <p className="text-sm text-fg-3 mt-1">{def.description}</p>
       </header>
       {body}

@@ -837,6 +837,14 @@ export default function GroupDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', id] }),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: () => apiClient.delete(`/api/groups/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      navigate('/groups')
+    },
+  })
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-4">
@@ -913,6 +921,23 @@ export default function GroupDetail() {
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowConfigModal(true)}>
               Configurações
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={deleteMut.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Remover o cadastro do grupo "${group.name}"? O grupo deixa de aparecer no sistema; esta ação não pode ser desfeita.`,
+                  )
+                ) {
+                  deleteMut.mutate()
+                }
+              }}
+              title="Apaga o registro deste grupo no banco"
+            >
+              Remover cadastro
             </Button>
           </div>
         </div>
