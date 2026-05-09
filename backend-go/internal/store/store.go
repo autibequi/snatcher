@@ -176,6 +176,9 @@ type Store interface {
 	UpdateRedesignGroup(g models.RedesignGroup) error
 	DeleteRedesignGroup(id int64) error
 	CountGroupsWithSameJID(platform, jid string) (int, error)
+	// FindConflictingRedesignGroup retorna outra linha ativa com o mesmo JID+plataforma no mesmo escopo
+	// (canal vinculado, ou conta WA/TG quando sem canal). excludeID ignora a própria linha em updates.
+	FindConflictingRedesignGroup(g models.RedesignGroup, excludeID int64) (*models.RedesignGroup, error)
 	SetGroupArchived(id int64, archived bool, lastError *string) error
 	// FetchAndPersistWhatsAppInvite busca invite na Evolution e atualiza o grupo (página pública /canal).
 	FetchAndPersistWhatsAppInvite(ctx context.Context, groupID int64) (string, error)

@@ -4,6 +4,7 @@ import (
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"snatcher/backendv2/internal/models"
 	"strconv"
@@ -1468,6 +1469,50 @@ func (s *SQLStore) CountGroupsWithSameJID(platform, jid string) (int, error) {
 		WHERE platform = $1 AND jid = $2 AND COALESCE(archived, false) = false`,
 		platform, jid)
 	return n, err
+}
+
+func (s *SQLStore) FindConflictingRedesignGroup(candidate models.RedesignGroup, excludeID int64) (*models.RedesignGroup, error) {
+	if !candidate.JID.Valid {
+		return nil, nil
+	}
+	jid := strings.TrimSpace(candidate.JID.String)
+	if jid == "" {
+		return nil, nil
+	}
+	platform := strings.TrimSpace(candidate.Platform)
+	if platform == "" {
+		return nil, nil
+	}
+
+	const base = `SELECT id, short_id, channel_id, wa_account_id, tg_account_id, name, platform,
+		jid, invite_link, status, member_count, overrides, created_at, last_message_at,
+		COALESCE(archived, false) AS archived, last_error, last_error_at
+		FROM groups
+		WHERE id <> $1 AND COALESCE(archived, false) = false
+		AND platform = $2
+		AND trim(jid) <> ''
+		AND lower(trim(jid)) = lower(trim($3))`
+
+	var dup models.RedesignGroup
+	var err error
+
+	switch {
+	case candidate.ChannelID.Valid:
+		err = s.db.Get(&dup, base+` AND channel_id = $4 LIMIT 1`, excludeID, platform, jid, candidate.ChannelID.Int64)
+	case candidate.WAAccountID.Valid:
+		err = s.db.Get(&dup, base+` AND channel_id IS NULL AND wa_account_id = $4 LIMIT 1`, excludeID, platform, jid, candidate.WAAccountID.Int64)
+	case candidate.TGAccountID.Valid:
+		err = s.db.Get(&dup, base+` AND channel_id IS NULL AND tg_account_id = $4 LIMIT 1`, excludeID, platform, jid, candidate.TGAccountID.Int64)
+	default:
+		return nil, nil
+	}
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &dup, nil
 }
 
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {

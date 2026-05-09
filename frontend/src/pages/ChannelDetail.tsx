@@ -207,6 +207,27 @@ function groupRowChannelId(row: any): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+function normRegistryPlat(p: string | undefined) {
+  const x = String(p ?? '').toLowerCase()
+  return x === 'telegram' || x === 'tg' ? 'telegram' : 'whatsapp'
+}
+
+/** Uma linha canônica por JID+plataforma (menor id) — evita duas entradas no modal quando o DB tem duplicata. */
+function dedupeRegistryByPhysicalJid<T extends { id?: number; jid?: string; platform?: string }>(rows: T[]): T[] {
+  const by = new Map<string, T>()
+  for (const g of rows) {
+    const jid = String(g.jid ?? '').trim().toLowerCase()
+    const key = jid ? `${normRegistryPlat(g.platform)}:${jid}` : `id:${g.id}`
+    const prev = by.get(key)
+    if (!prev) {
+      by.set(key, g)
+      continue
+    }
+    if (Number(g.id) < Number(prev.id)) by.set(key, g)
+  }
+  return Array.from(by.values())
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -511,6 +532,13 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
   const linkGroupMut = useMutation({
     mutationFn: async (row: any) => {
       const chId = Number(id)
+      const jidKey = String(row.jid ?? '').trim().toLowerCase()
+      if (jidKey) {
+        const jidDup = groups.some((x: any) => String(x.jid ?? '').trim().toLowerCase() === jidKey)
+        if (jidDup) {
+          throw new Error('Este grupo (mesmo JID) já está vinculado a este canal.')
+        }
+      }
       const currentCh = groupRowChannelId(row)
       if (currentCh != null && currentCh === chId) {
         throw new Error('Este grupo já está vinculado a este canal')
@@ -547,7 +575,8 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
         }
       }
     },
-    onError: (err: any) => alert(err?.message ?? err?.response?.data?.error ?? 'Erro ao vincular grupo'),
+    onError: (err: any) =>
+      alert(String(err?.response?.data?.error ?? err?.message ?? 'Erro ao vincular grupo')),
   })
 
   const removeGroupMut = useMutation({
@@ -879,7 +908,16 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
                       <div className="px-5 py-6 text-xs text-fg-3 text-center">Carregando grupos cadastrados...</div>
                     ) : (() => {
                       const linkedIds = new Set(groups.map((g: any) => Number(g.id)))
-                      const available = registryGroups.filter((g: any) => !linkedIds.has(Number(g.id)))
+                      const linkedJids = new Set(
+                        groups.map((g: any) => String(g.jid ?? '').trim().toLowerCase()).filter(Boolean),
+                      )
+                      const dedupedRegistry = dedupeRegistryByPhysicalJid(registryGroups)
+                      const available = dedupedRegistry.filter((g: any) => {
+                        if (linkedIds.has(Number(g.id))) return false
+                        const j = String(g.jid ?? '').trim().toLowerCase()
+                        if (j && linkedJids.has(j)) return false
+                        return true
+                      })
                       const q = search.trim().toLowerCase()
                       const filtered = q
                         ? available.filter((g: any) => {

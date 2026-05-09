@@ -157,12 +157,26 @@ func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.enrichRedesignGroup(r.Context(), g))
 }
 
+func duplicateGroupMessage(candidate models.RedesignGroup) string {
+	if candidate.ChannelID.Valid {
+		return "ja existe um grupo com este JID neste canal"
+	}
+	if candidate.WAAccountID.Valid && candidate.Platform == "whatsapp" {
+		return "este grupo ja foi importado nesta conta WhatsApp"
+	}
+	if candidate.TGAccountID.Valid && candidate.Platform == "telegram" {
+		return "este grupo ja foi importado nesta conta Telegram"
+	}
+	return "ja existe um grupo com este identificador"
+}
+
 func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req groupRequest
 	if err := decodeAndValidate(r, &req); err != nil {
 		writeValidationErr(w, err)
 		return
 	}
+	req.JID = strings.TrimSpace(req.JID)
 	if req.WAAccountID == nil && req.AccountID != nil && *req.AccountID != 0 && req.Platform == "whatsapp" {
 		req.WAAccountID = req.AccountID
 	}
@@ -191,6 +205,13 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.TGAccountID != nil {
 		g.TGAccountID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.TGAccountID, Valid: true}}
+	}
+	if dup, cerr := h.store.FindConflictingRedesignGroup(g, 0); cerr != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao verificar duplicata")
+		return
+	} else if dup != nil {
+		writeErr(w, http.StatusConflict, duplicateGroupMessage(g))
+		return
 	}
 	id, err := h.store.CreateRedesignGroup(g)
 	if err != nil {
@@ -290,6 +311,7 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		existing.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: norm != ""}}
 	}
 	if v, ok := patch["jid"].(string); ok {
+		v = strings.TrimSpace(v)
 		existing.JID = models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
 	}
 	if v, ok := patch["member_count"].(float64); ok {
@@ -315,6 +337,14 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			}
 			existing.ChannelID = models.NullInt64{NullInt64: sql.NullInt64{Int64: setID, Valid: true}}
 		}
+	}
+
+	if dup, cerr := h.store.FindConflictingRedesignGroup(existing, id); cerr != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao verificar duplicata")
+		return
+	} else if dup != nil {
+		writeErr(w, http.StatusConflict, duplicateGroupMessage(existing))
+		return
 	}
 
 	if err := h.store.UpdateRedesignGroup(existing); err != nil {

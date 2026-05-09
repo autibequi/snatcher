@@ -439,7 +439,10 @@ export default function Groups() {
     })
 
   const linkedJIDs = useMemo(
-    () => new Set(groupsRaw.map(g => String(g.jid ?? '').trim()).filter(Boolean)),
+    () =>
+      new Set(
+        groupsRaw.map(g => String(g.jid ?? '').trim().toLowerCase()).filter(Boolean),
+      ),
     [groupsRaw],
   )
 
@@ -486,7 +489,9 @@ export default function Groups() {
   const modalFiltered = waGroupOptions.filter(g =>
     !modalSearch.trim() || g.name.toLowerCase().includes(modalSearch.trim().toLowerCase()),
   )
-  const modalUnlinked = modalFiltered.filter(g => !linkedJIDs.has(g.id))
+  const modalUnlinked = modalFiltered.filter(
+    g => !linkedJIDs.has(String(g.id ?? '').trim().toLowerCase()),
+  )
 
   /** Lista vazia + fetch inicial ou refetch (polling Evolution): mostrar loading, não o aviso de “ainda não retornou”. */
   const waModalLoadingEmpty =
