@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Skeleton, EmptyState } from '../components/ui'
+import { Skeleton, EmptyState, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
 import { ProductSwitcher } from '../components/match/ProductSwitcher'
@@ -210,10 +210,10 @@ function ProductDetailMatch({ productId }: { productId: string }) {
     <div className="flex flex-col h-full">
       {/* Page header */}
       <div className="px-6 py-3 border-b border-border flex-shrink-0">
-        <p className="text-sm text-fg-3">
-          Escolha um produto. O sistema mostra{' '}
-          <strong>quais grupos têm fit</strong> — e por quê.
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-lg font-semibold text-fg">Match</h1>
+          <TutorialHelpButton />
+        </div>
       </div>
 
       {/* 2-col grid */}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Badge } from '../components/ui'
+import { Button, Input, Badge, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface TaxonomyEntry {
@@ -74,11 +74,10 @@ export default function Taxonomy() {
 
   return (
     <div className="p-6">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-sm text-fg-3">
-            Categorias e marcas usadas no Match e detectadas pelo crawler
-          </p>
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-lg font-semibold text-fg">Taxonomia</h1>
+          <TutorialHelpButton />
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
           + Adicionar

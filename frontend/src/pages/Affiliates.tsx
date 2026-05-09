@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, KpiCard, Skeleton } from '../components/ui'
+import { Badge, Button, KpiCard, Skeleton, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ---------------------------------------------------------------------------
@@ -338,10 +338,9 @@ export default function Affiliates() {
   return (
     <div className="p-6 max-w-6xl">
       {/* Header */}
-      <div className="mb-4">
-        <p className="text-sm text-fg-3">
-          Credenciais e tags por programa. Sem isso, link curto nao comissiona.
-        </p>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <h1 className="text-lg font-semibold text-fg">Afiliados</h1>
+        <TutorialHelpButton />
       </div>
 
       {/* KPI cards */}

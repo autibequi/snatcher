@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
 import { ManualModal } from '../components/ManualModal'
+import { TutorialModalProvider } from '../contexts/TutorialModalContext'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
@@ -37,9 +38,11 @@ export function AppShell() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setSidebarOpen(true)} onOpenManual={openManual} />
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
-        </main>
+        <TutorialModalProvider openTutorial={openManual}>
+          <main className="flex-1 overflow-y-auto">
+            <Outlet />
+          </main>
+        </TutorialModalProvider>
       </div>
       <ApiErrorToast />
       <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />

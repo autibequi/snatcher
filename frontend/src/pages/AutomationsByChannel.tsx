@@ -1,4 +1,5 @@
 import React from 'react'
+import { TutorialHelpButton } from '../components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
@@ -34,8 +35,11 @@ export default function AutomationsByChannel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-3 border-b border-border flex items-center justify-between">
-        <p className="text-sm text-fg-3">Configuração e monitor</p>
+      <div className="px-6 py-3 border-b border-border flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg font-semibold text-fg">Canais</span>
+          <TutorialHelpButton />
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"

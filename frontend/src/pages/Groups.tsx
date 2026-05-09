@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
+import { Badge, Button, EmptyState, Skeleton, Input, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -471,9 +471,10 @@ export default function Groups() {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <p className="text-sm text-fg-3">
-            Grupos importados das contas — vincule a canais no detalhe de cada canal ou do grupo
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-semibold text-fg">Grupos</h1>
+            <TutorialHelpButton />
+          </div>
           {!isLoading && (
             <p className="text-xs text-fg-3 mt-0.5">
               {connectedWA} WA conectada{connectedWA !== 1 ? 's' : ''} · {activeTG.length} TG

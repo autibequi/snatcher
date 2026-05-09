@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Switch, TooltipIcon } from '../components/ui'
+import { Button, Switch, TooltipIcon, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { fmtJonfreyDate, relJonfreyTime } from '../components/JonfreyActionCard'
 
@@ -89,13 +89,9 @@ export default function Jonfrey() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div>
-        <p className="text-sm text-fg-3">
-          Jonfrey é um assistente de IA que orquestra automaticamente as outras automações —
-          configura crawlers, audita pendências e ajusta thresholds. O histórico de execuções fica em{' '}
-          <a href="/logs?tab=jonfrey" className="text-accent hover:underline">Logs → aba Jonfrey</a>
-          {' '}(e na fila ⏱ na barra superior).
-        </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-xl font-semibold text-fg">Jonfrey</h1>
+        <TutorialHelpButton />
       </div>
 
       {/* Estado do Full-auto (sincronizado com /automations) */}
@@ -109,9 +105,6 @@ export default function Jonfrey() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <p className="text-base font-semibold text-fg tracking-tight">Auto-pilot</p>
-                <p className="text-xs text-fg-3 leading-relaxed max-w-xl">
-                  Com o interruptor ligado, o Jonfrey corre em ciclo e dispara as automações que estão ativas na lista abaixo.
-                </p>
               </div>
               <div className="flex items-center gap-3 sm:shrink-0 sm:pt-0.5">
                 <span className="text-xs text-fg-3 sm:hidden">Ativar</span>

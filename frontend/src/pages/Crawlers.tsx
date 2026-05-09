@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCard, Textarea } from '../components/ui'
+import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCard, Textarea, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
@@ -1266,7 +1266,11 @@ export default function Crawlers() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-xl font-semibold text-fg">Crawlers</h1>
+          <TutorialHelpButton />
+        </div>
         {tab === 'spy' && (
           <Button variant="primary" size="sm" onClick={() => setShowSpyModal(true)}>
             + Adicionar grupo a espionar

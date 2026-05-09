@@ -141,6 +141,7 @@ export default function Dashboard() {
             {user?.name ? `, ${user.name.split(' ')[0]}` : ''}
           </>
         }
+        help
         subtitle={renderDynamicSubtitle(
           inboxItems.length,
           dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined

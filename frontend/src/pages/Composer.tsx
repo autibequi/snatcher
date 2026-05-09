@@ -1,7 +1,7 @@
 import React from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Button, Spinner, PlatformPill } from '../components/ui'
+import { Button, Spinner, PlatformPill, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -388,10 +388,10 @@ export default function Composer() {
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-4 md:py-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 md:mb-8">
         <div>
-          <h1 className="text-lg md:text-xl font-semibold text-fg tracking-tight">Compor disparo</h1>
-          <p className="text-sm text-fg-3 mt-1 max-w-xl leading-relaxed">
-            Produtos, mensagem, canais — o preview ao lado atualiza em tempo real.
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg md:text-xl font-semibold text-fg tracking-tight">Compor disparo</h1>
+            <TutorialHelpButton />
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button

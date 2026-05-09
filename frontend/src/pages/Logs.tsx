@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from 'recharts'
 import { Tooltip } from '../components/ui'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
+import { Badge, Button, Skeleton, EmptyState, TutorialHelpButton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 import {
@@ -1004,22 +1004,28 @@ export default function Logs() {
 
   return (
     <div className={`p-6 mx-auto w-full ${logTab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'}`}>
-      <div className="flex items-center justify-end gap-2 mb-4">
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={expireStale.isPending}
-          onClick={() => {
-            if (confirm('Marcar como "failed" todos os targets pending há mais de 2h?'))
-              expireStale.mutate()
-          }}
-          title="Limpa targets presos em 'pending' que nunca foram processados"
-        >
-          Expirar stale
-        </Button>
-        <Button variant="secondary" size="sm" onClick={handleExport}>
-          Exportar CSV
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-fg">Logs</h1>
+          <TutorialHelpButton />
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={expireStale.isPending}
+            onClick={() => {
+              if (confirm('Marcar como "failed" todos os targets pending há mais de 2h?'))
+                expireStale.mutate()
+            }}
+            title="Limpa targets presos em 'pending' que nunca foram processados"
+          >
+            Expirar stale
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExport}>
+            Exportar CSV
+          </Button>
+        </div>
       </div>
 
       {/* Tabs with badge counts */}

@@ -1,4 +1,5 @@
 import React from 'react'
+import { TutorialHelpButton } from '../TutorialHelpButton'
 
 export interface PageHeaderProps {
   title: React.ReactNode
@@ -9,6 +10,8 @@ export interface PageHeaderProps {
   size?: 'lg' | 'md'
   /** `id` no parágrafo do subtítulo (ex.: leitores de tela / testes) */
   subtitleId?: string
+  /** Botão 📖 Ajuda — abre o tutorial desta página (mesmo modal do ❓ da barra). */
+  help?: boolean
   className?: string
 }
 
@@ -21,6 +24,7 @@ export function PageHeader({
   actions,
   size = 'lg',
   subtitleId,
+  help = false,
   className = '',
 }: PageHeaderProps) {
   const titleClass = size === 'lg' ? 'text-xl font-semibold text-fg' : 'text-lg font-semibold text-fg'
@@ -30,7 +34,10 @@ export function PageHeader({
       className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${className}`.trim()}
     >
       <div>
-        <h1 className={titleClass}>{title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className={titleClass}>{title}</h1>
+          {help ? <TutorialHelpButton /> : null}
+        </div>
         {subtitle != null ? (
           <p id={subtitleId} className="text-sm text-fg-3 mt-0.5">
             {subtitle}
