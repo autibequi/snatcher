@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, KpiCard, TooltipIcon, TutorialHelpButton } from '../components/ui'
+import { Button, KpiCard, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Ad {
@@ -316,11 +316,7 @@ export default function Ads() {
 
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h1 className="text-lg font-semibold text-fg">Anúncios pagos</h1>
-          <TutorialHelpButton />
-        </div>
+      <div className="flex items-center justify-end gap-3 flex-wrap">
         <Button variant="primary" size="sm" onClick={() => { setEditing(null); setShowModal(true) }}>
           + Novo anúncio
         </Button>

@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Switch, TooltipIcon, TutorialHelpButton } from '../components/ui'
+import { Button, Switch, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { fmtJonfreyDate, relJonfreyTime } from '../components/JonfreyActionCard'
 
@@ -88,12 +88,6 @@ export default function Jonfrey() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-semibold text-fg">Jonfrey</h1>
-        <TutorialHelpButton />
-      </div>
-
       {/* Estado do Full-auto (sincronizado com /automations) */}
       <FullAutoStatusCard />
 

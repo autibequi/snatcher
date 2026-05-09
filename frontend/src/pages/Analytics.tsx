@@ -5,7 +5,7 @@ import {
   CartesianGrid, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { apiClient } from '../lib/apiClient'
-import { Skeleton, TutorialHelpButton } from '../components/ui'
+import { Skeleton } from '../components/ui'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -96,11 +96,7 @@ export default function Analytics() {
   return (
     <div className="p-6 space-y-6">
       {/* Header + filtro de período */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-fg">Insights</h1>
-          <TutorialHelpButton />
-        </div>
+      <div className="flex items-center justify-end flex-wrap gap-3">
         <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border">
           {PERIOD_OPTIONS.map(opt => (
             <button
