@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"snatcher/backendv2/internal/jobs"
@@ -44,7 +45,13 @@ func (h *ScanHandler) TriggerPipeline(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 		jobs.Default().Update(jobID, 0, 1, "executando full pipeline…")
-		h.runner.Run(ctx)
+		if err := h.runner.Run(ctx); err != nil {
+			// Runner já executa as 3 etapas (crawl→process→evaluate) em modo best-effort;
+			// err é o primeiro erro agregado — útil pra diagnóstico, não indica que nada rodou.
+			slog.Warn("pipeline job: rodada com alerta", "job_id", jobID, "err", err)
+			jobs.Default().Done(jobID, fmt.Sprintf("pipeline finalizado (etapas executadas) — alerta: %v", err))
+			return
+		}
 		jobs.Default().Done(jobID, "pipeline concluído")
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "triggered", "job_id": jobID})
