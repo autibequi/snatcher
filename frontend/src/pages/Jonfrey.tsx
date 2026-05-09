@@ -43,6 +43,15 @@ function fmtDate(s: string): string {
   return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function primaryOutcome(action: JonfreyAction): string {
+  const err = action.error_message?.trim()
+  if (err) return err
+  const r = action.reasoning?.trim()
+  if (r) return r
+  if (action.status === 'running') return 'Em execução…'
+  return '—'
+}
+
 function relTime(s: string): string {
   const ms = Date.now() - new Date(s).getTime()
   const min = Math.floor(ms / 60000)
@@ -57,6 +66,7 @@ function relTime(s: string): string {
 function ActionCard({ action }: { action: JonfreyAction }) {
   const [open, setOpen] = React.useState(false)
   const statusCls = STATUS_COLORS[action.status] ?? STATUS_COLORS.pending
+  const outcome = primaryOutcome(action)
 
   return (
     <div className="border border-border rounded-md bg-surface overflow-hidden">
@@ -76,9 +86,7 @@ function ActionCard({ action }: { action: JonfreyAction }) {
             )}
             <span className="text-[10px] text-fg-3 ml-auto">{action.triggered_by}</span>
           </div>
-          {action.reasoning && (
-            <p className="text-xs text-fg-2 mt-1 truncate">{action.reasoning}</p>
-          )}
+          <p className="text-sm text-fg-2 mt-1 leading-snug line-clamp-4">{outcome}</p>
           <p className="text-[10px] text-fg-3 mt-0.5">
             {fmtDate(action.created_at)} · {relTime(action.created_at)}
           </p>
@@ -88,31 +96,37 @@ function ActionCard({ action }: { action: JonfreyAction }) {
 
       {open && (
         <div className="border-t border-border bg-surface-2 p-3 space-y-2">
-          {action.error_message && (
+          {action.reasoning?.trim() && (
+            <div>
+              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Texto completo</p>
+              <p className="text-sm text-fg-2 whitespace-pre-wrap">{action.reasoning}</p>
+            </div>
+          )}
+          {action.error_message?.trim() && (
             <div className="bg-danger/5 border border-danger/30 rounded p-2">
-              <p className="text-[10px] text-danger font-mono">{action.error_message}</p>
+              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Erro</p>
+              <p className="text-xs text-danger font-mono whitespace-pre-wrap break-words">{action.error_message}</p>
             </div>
           )}
-          {action.reasoning && (
-            <div>
-              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Raciocínio</p>
-              <p className="text-xs text-fg-2">{action.reasoning}</p>
+          <details className="rounded border border-border bg-surface p-2">
+            <summary className="cursor-pointer text-[10px] text-fg-3 uppercase tracking-wide select-none">
+              Snapshots técnicos (antes / depois)
+            </summary>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              <div>
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Antes</p>
+                <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2 max-h-48 overflow-y-auto">
+                  {JSON.stringify(action.before ?? {}, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Depois</p>
+                <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2 max-h-48 overflow-y-auto">
+                  {JSON.stringify(action.after ?? {}, null, 2)}
+                </pre>
+              </div>
             </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Antes</p>
-              <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2">
-                {JSON.stringify(action.before ?? {}, null, 2)}
-              </pre>
-            </div>
-            <div>
-              <p className="text-[10px] text-fg-3 uppercase tracking-wide mb-1">Depois</p>
-              <pre className="text-[10px] bg-surface border border-border rounded p-2 overflow-x-auto font-mono text-fg-2">
-                {JSON.stringify(action.after ?? {}, null, 2)}
-              </pre>
-            </div>
-          </div>
+          </details>
         </div>
       )}
     </div>

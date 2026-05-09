@@ -30,12 +30,13 @@ func (s *SQLStore) CreateJonfreyAction(a models.JonfreyAction) (int64, error) {
 	return id, err
 }
 
-// UpdateJonfreyAction atualiza status, reasoning, after_snapshot, error_message e finished_at.
+// UpdateJonfreyAction atualiza status, reasoning, snapshots, error_message e finished_at.
 func (s *SQLStore) UpdateJonfreyAction(a models.JonfreyAction) error {
 	_, err := s.db.NamedExec(`
 		UPDATE jonfrey_actions SET
 		  status = :status,
 		  reasoning = :reasoning,
+		  before_snapshot = :before_snapshot,
 		  after_snapshot = :after_snapshot,
 		  error_message = :error_message,
 		  finished_at = :finished_at

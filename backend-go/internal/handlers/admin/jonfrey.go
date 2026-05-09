@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
 	"snatcher/backendv2/internal/clusters"
+	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -24,7 +27,14 @@ type JonfreyHandler struct {
 	db       *sqlx.DB
 	llmFn    func() llm.Client
 	curation *CurationHandler // delega tarefas longas (inspect-all, etc)
+	execMu   sync.Mutex       // evita dois ciclos/manual em paralelo partilharem estado
 }
+
+const (
+	jonfreyActionHardTimeout = 22 * time.Minute // teto por ação dentro de executeAction
+	jonfreyLLMOuterBudget    = 20 * time.Minute // ações que fazem muitas chamadas LLM em loop
+	jonfreyStaleRunningMin   = 90               // marca running antigo como failed ao listar
+)
 
 func NewJonfreyHandler(st store.Store, db *sqlx.DB) *JonfreyHandler {
 	return &JonfreyHandler{store: st, db: db}
@@ -331,6 +341,8 @@ JSON apenas:
 
 // ListActions GET /api/jonfrey/actions
 func (h *JonfreyHandler) ListActions(w http.ResponseWriter, r *http.Request) {
+	h.reconcileStaleJonfreyActions(r.Context())
+
 	actionType := r.URL.Query().Get("type")
 	limit := 100
 	out, err := h.store.ListJonfreyActions(limit, actionType)
@@ -375,7 +387,7 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 			if !ok || def.Category != cat {
 				continue
 			}
-			_ = h.executeAction(ctx, def, "scheduler", "")
+			_ = h.executeAction(ctx, def, "scheduled", "")
 		}
 	}
 
@@ -401,6 +413,22 @@ func (h *JonfreyHandler) RunAction(w http.ResponseWriter, r *http.Request) {
 		typesToRun = []string(cfg.EnabledActions)
 	}
 
+	// Várias ações: não bloquear o pedido HTTP (evita proxy/Chi matar antes do fim).
+	if len(typesToRun) > 1 {
+		jm := jobs.Default()
+		job, jobCtx := jm.Start(context.Background(), fmt.Sprintf("Jonfrey×%d", len(typesToRun)))
+		go h.runJonfreyBatch(jobCtx, job.ID, "manual", req.Target, typesToRun)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"batch":      true,
+			"queued":     true,
+			"job_id":     job.ID,
+			"count":      len(typesToRun),
+			"action_ids": []int64{},
+			"message":    "execução em background; changelog atualiza aos poucos — veja também /api/jobs",
+		})
+		return
+	}
+
 	results := []int64{}
 	for _, t := range typesToRun {
 		def, ok := actionRegistry[t]
@@ -415,8 +443,72 @@ func (h *JonfreyHandler) RunAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"action_ids": results, "count": len(results)})
 }
 
+func truncJonfreyStr(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+func (h *JonfreyHandler) reconcileStaleJonfreyActions(ctx context.Context) {
+	if h.db == nil {
+		return
+	}
+	msg := "encerrado como falha: execução não finalizou a tempo ou o servidor reiniciou (running antigo)."
+	_, err := h.db.ExecContext(ctx, `
+		UPDATE jonfrey_actions
+		SET status = 'failed',
+		    error_message = $1,
+		    finished_at = NOW()
+		WHERE status = 'running'
+		  AND created_at < NOW() - ($2::bigint * INTERVAL '1 minute')`,
+		msg, jonfreyStaleRunningMin,
+	)
+	if err != nil {
+		slog.Warn("jonfrey reconcile stale running", "err", err)
+	}
+}
+
+// runJonfreyBatch executa várias definições em sequência num goroutine (ver RunAction).
+func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, triggeredBy, target string, typesToRun []string) {
+	defer func() {
+		if r := recover(); r != nil {
+			jobs.Default().Fail(jobID, fmt.Sprintf("panic no batch: %v", r))
+			slog.Error("jonfrey batch panic", "job", jobID, "panic", r)
+		}
+	}()
+
+	runCtx, cancel := context.WithTimeout(parentCtx, 50*time.Minute)
+	defer cancel()
+
+	total := len(typesToRun)
+	done := 0
+	var ids []int64
+
+	for _, t := range typesToRun {
+		def, ok := actionRegistry[t]
+		if !ok {
+			jobs.Default().Update(jobID, done, total, fmt.Sprintf("ignorado (desconhecido): %s", t))
+			done++
+			continue
+		}
+		jobs.Default().Update(jobID, done, total, fmt.Sprintf("a correr %s…", def.Type))
+		id := h.executeAction(runCtx, def, triggeredBy, target)
+		if id > 0 {
+			ids = append(ids, id)
+		}
+		done++
+		jobs.Default().Update(jobID, done, total, fmt.Sprintf("%s terminou (audit id=%d)", def.Type, id))
+	}
+
+	jobs.Default().Done(jobID, fmt.Sprintf("Jonfrey batch: %d/%d ações concluídas (ids=%v).", len(ids), total, ids))
+}
+
 // executeAction roda uma ação e grava no audit log. Retorna o ID da action criada.
 func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, triggeredBy, target string) int64 {
+	h.execMu.Lock()
+	defer h.execMu.Unlock()
+
 	action := models.JonfreyAction{
 		ActionType:  def.Type,
 		Status:      "running",
@@ -427,22 +519,49 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	id, err := h.store.CreateJonfreyAction(action)
 	if err != nil {
+		slog.Warn("jonfrey CreateJonfreyAction failed", "type", def.Type, "err", err)
 		return 0
 	}
 	action.ID = id
 
-	before, after, reasoning, runErr := def.Run(ctx, h)
-	now := time.Now()
-	action.FinishedAt = models.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}}
+	actionCtx, cancel := context.WithTimeout(ctx, jonfreyActionHardTimeout)
+	defer cancel()
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		now := time.Now()
+		action.Status = "failed"
+		action.FinishedAt = models.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}}
+		action.ErrorMessage = models.NullString{NullString: sql.NullString{
+			String: truncJonfreyStr(fmt.Sprintf("panic: %v", r), 8000),
+			Valid:  true,
+		}}
+		if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
+			slog.Error("jonfrey UpdateJonfreyAction after panic", "id", action.ID, "type", def.Type, "err", updErr)
+		}
+		slog.Error("jonfrey action panic", "type", def.Type, "id", action.ID, "panic", r)
+	}()
+
+	before, after, reasoning, runErr := def.Run(actionCtx, h)
+	action.FinishedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
 
 	if runErr != nil {
 		action.Status = "failed"
-		action.ErrorMessage = models.NullString{NullString: sql.NullString{String: runErr.Error(), Valid: true}}
+		action.ErrorMessage = models.NullString{NullString: sql.NullString{
+			String: truncJonfreyStr(runErr.Error(), 8000),
+			Valid:  true,
+		}}
 	} else {
 		action.Status = "success"
 	}
 	if reasoning != "" {
-		action.Reasoning = models.NullString{NullString: sql.NullString{String: reasoning, Valid: true}}
+		action.Reasoning = models.NullString{NullString: sql.NullString{
+			String: truncJonfreyStr(reasoning, 12000),
+			Valid:  true,
+		}}
 	}
 	if before != nil {
 		action.BeforeSnapshot, _ = json.Marshal(before)
@@ -450,7 +569,9 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	if after != nil {
 		action.AfterSnapshot, _ = json.Marshal(after)
 	}
-	_ = h.store.UpdateJonfreyAction(action)
+	if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
+		slog.Error("jonfrey UpdateJonfreyAction failed", "id", action.ID, "type", def.Type, "err", updErr)
+	}
 	return id
 }
 
@@ -1168,7 +1289,7 @@ func actionComputeClusters(ctx context.Context, h *JonfreyHandler) (map[string]a
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
-	ctxC, cancel := context.WithTimeout(ctx, 90*time.Second)
+	ctxC, cancel := context.WithTimeout(ctx, jonfreyLLMOuterBudget)
 	defer cancel()
 
 	err := clusters.Compute(ctxC, h.store, cli)
@@ -1499,7 +1620,7 @@ func actionPauseDeadCrawlers(ctx context.Context, h *JonfreyHandler) (map[string
 // actionEnrichTaxonomyFromUnmatched: audita próximos 100 produtos sem categoria primária
 // Agrupa por similaridade de título; pede LLM JSON com sugestões; aplica se confiança ≥0.85
 func actionEnrichTaxonomyFromUnmatched(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, jonfreyLLMOuterBudget)
 	defer cancel()
 
 	if h.llmFn == nil {
@@ -1650,7 +1771,7 @@ JSON apenas:
 // actionPruneFalsePositives: top 20 taxonomias com false_positive flags
 // Para cada taxonomy_id, LLM sugere exclude_regex patterns
 func actionPruneFalsePositives(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, jonfreyLLMOuterBudget)
 	defer cancel()
 
 	if h.llmFn == nil {
@@ -1784,7 +1905,7 @@ JSON:
 // actionRefineSubcategories: para cada categoria-raiz com >100 produtos sem subcategory
 // LLM agrupa amostras (50) em 3-7 subcategorias
 func actionRefineSubcategories(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, jonfreyLLMOuterBudget)
 	defer cancel()
 
 	if h.llmFn == nil {
