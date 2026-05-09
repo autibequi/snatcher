@@ -2,48 +2,34 @@ package public
 
 import (
 	"net/http"
-	"strings"
 
+	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/store"
 )
 
-// ShortLinkRedirect resolve /v/{shortID} → affiliate URL com tracking de cliques.
+// ShortLinkRedirect resolve /v/{shortID} → URL final de afiliado.
+//
+// Registros em short_links já gravam dest_url após affiliates.BuildLink (tag/MLcdn/etc.);
+// não reaplicar a tabela affiliates legada — evita tag errada, duplicada ou matt_tool em URL MLcdn.
+// Fallback catalogvariant: monta afiliado via BuildLink + programas da UI.
 func ShortLinkRedirect(st store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		shortID := r.PathValue("shortID")
 
-		destURL, source, found := st.GetShortLinkByID(shortID)
-		if !found {
-			v, ok, err := st.GetVariantByShortID(shortID)
-			if err != nil || !ok {
-				http.Redirect(w, r, "/", http.StatusFound)
-				return
-			}
-			destURL = v.URL
-			source = v.Source
+		destURL, _, found := st.GetShortLinkByID(shortID)
+		if found {
+			w.Header().Set("Cache-Control", "no-cache")
+			http.Redirect(w, r, destURL, http.StatusFound)
+			return
 		}
 
-		finalURL := destURL
-		switch source {
-		case "amazon":
-			aff, ok, _ := st.GetAffiliateBySource("amz")
-			if ok && aff.TrackingID != "" {
-				sep := "?"
-				if strings.Contains(destURL, "?") {
-					sep = "&"
-				}
-				finalURL = destURL + sep + "tag=" + aff.TrackingID
-			}
-		case "mercadolivre":
-			aff, ok, _ := st.GetAffiliateBySource("ml")
-			if ok && aff.TrackingID != "" {
-				sep := "?"
-				if strings.Contains(destURL, "?") {
-					sep = "&"
-				}
-				finalURL = destURL + sep + "matt_tool=" + aff.TrackingID + "&matt_source=affiliate"
-			}
+		v, ok, err := st.GetVariantByShortID(shortID)
+		if err != nil || !ok {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
 		}
+		programs, _ := st.ListAffiliatePrograms(nil)
+		finalURL, _, _ := affiliates.BuildLink(v.URL, v.Source, programs)
 		w.Header().Set("Cache-Control", "no-cache")
 		http.Redirect(w, r, finalURL, http.StatusFound)
 	}
