@@ -7,6 +7,8 @@ interface Target {
   name: string
   provider: 'wa' | 'tg' | string
   status: 'ok' | 'error' | string
+  /** URL de convite (chat.whatsapp.com, t.me, etc.) — vindo dos grupos redesign ou legado */
+  invite_url?: string
 }
 
 interface ChannelData {
@@ -91,14 +93,30 @@ export default function ChannelList() {
                   .map(target => (
                     <div
                       key={target.id}
-                      className="rounded-lg border border-border bg-surface p-4 flex items-center justify-between"
+                      className="rounded-lg border border-border bg-surface p-4 flex flex-wrap items-center justify-between gap-3"
                     >
                       <div>
                         <p className="font-semibold text-fg">{target.name}</p>
                       </div>
-                      <span className="inline-block px-2 py-1 text-xs font-semibold rounded bg-accent/20 text-accent">
-                        {target.provider === 'wa' ? '💬 WhatsApp' : target.provider === 'tg' ? '📱 Telegram' : target.provider}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {target.invite_url && (
+                          <a
+                            href={target.invite_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                          >
+                            Entrar no grupo
+                          </a>
+                        )}
+                        <span className="inline-block px-2 py-1 text-xs font-semibold rounded bg-accent/20 text-accent">
+                          {target.provider === 'wa' || target.provider === 'whatsapp'
+                            ? '💬 WhatsApp'
+                            : target.provider === 'tg' || target.provider === 'telegram'
+                              ? '📱 Telegram'
+                              : target.provider}
+                        </span>
+                      </div>
                     </div>
                   ))}
               </div>

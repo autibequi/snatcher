@@ -1,13 +1,27 @@
 package public
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
+	"snatcher/backendv2/internal/handlers"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )
+
+func normalizePublicProvider(p string) string {
+	switch p {
+	case "whatsapp":
+		return "wa"
+	case "telegram":
+		return "tg"
+	default:
+		return p
+	}
+}
 
 type channelSummary struct {
 	ID           int64  `json:"id"`
@@ -53,25 +67,24 @@ func GetChannelBySlug(st store.Store) http.HandlerFunc {
 			http.Error(w, `{"error":"channel inactive"}`, http.StatusGone)
 			return
 		}
-		targets, _ := st.ListChannelTargets(ch.ID)
-		// Filtrar apenas targets ativos com status válido
+		ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
+		defer cancel()
+		entries := handlers.CollectPublicInviteEntries(ctx, st, ch.ID)
 		type publicTarget struct {
-			ID       int64  `json:"id"`
-			Name     string `json:"name"`
-			Provider string `json:"provider"`
-			Status   string `json:"status"`
+			ID        int64  `json:"id"`
+			Name      string `json:"name"`
+			Provider  string `json:"provider"`
+			Status    string `json:"status"`
+			InviteURL string `json:"invite_url,omitempty"`
 		}
-		var outTargets []publicTarget
-		for _, t := range targets {
-			if t.Status != "ok" {
-				continue
-			}
-			name := ""
-			if t.Name.Valid {
-				name = t.Name.String
-			}
+		outTargets := make([]publicTarget, 0, len(entries))
+		for _, e := range entries {
 			outTargets = append(outTargets, publicTarget{
-				ID: t.ID, Name: name, Provider: t.Provider, Status: t.Status,
+				ID:        e.ID,
+				Name:      e.Name,
+				Provider:  normalizePublicProvider(e.Provider),
+				Status:    "ok",
+				InviteURL: e.InviteURL,
 			})
 		}
 		var sl any

@@ -3,7 +3,7 @@
 //   - / e /canais/:slug → home pública (lista de canais e grupos)
 //   - /r/{shortID}      → redirect de produto com afiliado
 //   - /g/{slug}         → redirect de link público (fallback chain)
-//   - /canal/{slug}     → group picker (compatibilidade legada)
+//   - /canal/{slug}     → group picker (grupos redesign + invite Evolution + fallback channel_targets)
 //
 // Sem auth, sem API REST, sem Swagger. Isolado do admin.
 package main
@@ -15,10 +15,10 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"snatcher/backendv2/internal/db"
+	"snatcher/backendv2/internal/handlers"
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/redirect"
@@ -52,55 +52,61 @@ func main() {
 
 	st := store.New(database)
 	rd := redirect.New(database, st)
+	canalH := handlers.NewCanal(st)
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(15 * time.Second))
 
-	// ── Home: lista de canais ─────────────────────────────────────────────────
-	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-		channels, _ := st.ListChannels()
-		renderHome(w, channels)
+	// Evolution pode demorar ao buscar invite na primeira visita — timeout maior que o restante do servidor.
+	r.With(chimw.Timeout(55 * time.Second)).Get("/canal/{slug}", canalH.GroupPicker)
+
+	r.Group(func(r chi.Router) {
+		r.Use(chimw.Timeout(15 * time.Second))
+
+		// ── Home: lista de canais ─────────────────────────────────────────────
+		r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+			channels, _ := st.ListChannels()
+			renderHome(w, channels)
+		})
+
+		// ── Detalhe de canal: lista de grupos ─────────────────────────────────
+		r.Get("/canais/{id}", func(w http.ResponseWriter, req *http.Request) {
+			idStr := chi.URLParam(req, "id")
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil {
+				http.NotFound(w, req)
+				return
+			}
+			channel, err := st.GetChannel(id)
+			if err != nil {
+				http.NotFound(w, req)
+				return
+			}
+			targets, _ := st.ListChannelTargets(id)
+			renderChannel(w, channel, targets)
+		})
+
+		// ── Redirects ─────────────────────────────────────────────────────────
+		r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
+		r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st))
+		r.Get("/g/{slug}", publicLinkHandler(st))
+		r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
+			slug := chi.URLParam(req, "slug")
+			http.Redirect(w, req, "/canal/"+slug, http.StatusMovedPermanently)
+		})
+
+		// ── Health ────────────────────────────────────────────────────────────
+		r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"status":"ok"}`)
+		})
+
+		// ── API Public: Channels ───────────────────────────────────────────────
+		r.Get("/api/public/channels", publichnd.ListChannels(st))
+		r.Get("/api/public/channels/{slug}", publichnd.GetChannelBySlug(st))
 	})
-
-	// ── Detalhe de canal: lista de grupos ─────────────────────────────────────
-	r.Get("/canais/{id}", func(w http.ResponseWriter, req *http.Request) {
-		idStr := chi.URLParam(req, "id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			http.NotFound(w, req)
-			return
-		}
-		channel, err := st.GetChannel(id)
-		if err != nil {
-			http.NotFound(w, req)
-			return
-		}
-		targets, _ := st.ListChannelTargets(id)
-		renderChannel(w, channel, targets)
-	})
-
-	// ── Redirects ─────────────────────────────────────────────────────────────
-	r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st))
-	r.Get("/g/{slug}", publicLinkHandler(st))
-	r.Get("/canal/{slug}", canalHandler(st))
-	r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
-		slug := chi.URLParam(req, "slug")
-		http.Redirect(w, req, "/canal/"+slug, http.StatusMovedPermanently)
-	})
-
-	// ── Health ────────────────────────────────────────────────────────────────
-	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"ok"}`)
-	})
-
-	// ── API Public: Channels ──────────────────────────────────────────────────
-	r.Get("/api/public/channels", publichnd.ListChannels(st))
-	r.Get("/api/public/channels/{slug}", publichnd.GetChannelBySlug(st))
 
 	slog.Info("public server starting", "port", port)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
@@ -155,29 +161,6 @@ func publicLinkHandler(st store.Store) http.HandlerFunc {
 			}
 		}
 		http.Error(w, "nenhum grupo ativo disponível", http.StatusGone)
-	}
-}
-
-// ── Canal handler (/canal/{slug}) ────────────────────────────────────────────
-
-func canalHandler(st store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		slug := chi.URLParam(r, "slug")
-		channel, err := st.GetChannelBySlug(slug)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		targets, _ := st.ListChannelTargets(channel.ID)
-		// Redirecionar para primeiro grupo ativo
-		for _, t := range targets {
-			if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
-				http.Redirect(w, r, t.InviteURL.String, http.StatusFound)
-				return
-			}
-		}
-		// Sem grupo ativo — mostrar página do canal
-		renderChannel(w, channel, targets)
 	}
 }
 
@@ -291,5 +274,3 @@ func renderChannel(w http.ResponseWriter, channel interface{}, targets interface
 		"Targets": targets,
 	})
 }
-
-var _ = strings.TrimSpace
