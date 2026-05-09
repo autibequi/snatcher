@@ -270,33 +270,157 @@ export default function Composer() {
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
 
-  return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <p className="text-sm text-fg-3">Selecione produtos, canais, edite a mensagem e envie ou agende</p>
+  /** Só o cartão WhatsApp — no telefone fica sticky no topo; no desktop vai na lateral. */
+  const previewWACard = (
+    <div className="rounded-xl border border-border bg-gradient-to-b from-surface to-surface-2/80 p-3 sm:p-4 shadow-sm ring-1 ring-border/60">
+      <div className="flex items-center justify-between gap-2 mb-2 md:mb-3">
+        <p className="text-xs font-semibold text-fg uppercase tracking-wide">Preview</p>
+        <span className="text-[10px] text-fg-3 font-medium px-2 py-0.5 rounded-full bg-surface border border-border">Ao vivo</span>
+      </div>
+      <div className="rounded-2xl bg-[#0b141a] p-2 sm:p-3 shadow-inner ring-1 ring-black/20">
+        <p className="text-[11px] text-[#8696a0] mb-1.5 ml-1">Você</p>
+        <div className="bg-[#005c4b] rounded-xl max-w-[min(100%,280px)] ml-auto shadow-lg overflow-hidden ring-1 ring-white/10">
+          {(() => {
+            const curImg = productImages.length > 0 ? productImages[previewIndex % productImages.length] : productImage
+            return curImg ? (
+              <img
+                src={curImg}
+                alt="Produto"
+                className="w-full max-h-32 md:max-h-44 object-cover"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            ) : null
+          })()}
+          <div className="p-2.5 sm:p-3 sm:pt-2 max-h-[28vh] md:max-h-none overflow-y-auto">
+            <p className="text-[12px] sm:text-[13px] leading-snug text-white whitespace-pre-wrap break-words">
+              {previewText || '…'}
+            </p>
+            <p className="text-[10px] text-emerald-300/90 mt-1.5 text-right tabular-nums">agora ✓✓</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        {productImages.length > 1 && (
+          <div className="flex items-center justify-center gap-1.5 mt-2 sm:mt-3">
+            {productImages.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setPreviewIndex(i)}
+                className={`h-2 rounded-full transition-all ${i === previewIndex % productImages.length ? 'w-5 bg-accent' : 'w-2 bg-fg-3/35 hover:bg-fg-3/55'}`}
+                aria-label={`Produto ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  /** Resumo + agendar + afiliado + CTAs — em desktop na lateral; em mobile só no fim do formulário */
+  const composerMetaActions = (
+    <>
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+        <p className="text-sm font-semibold text-fg mb-3">Resumo</p>
+        <div className="space-y-2.5 text-sm">
+          <div className="flex justify-between gap-4"><span className="text-fg-2">Produtos</span><span className="text-fg font-medium tabular-nums">{productIds.length}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-fg-2">Canais</span><span className="text-fg font-medium tabular-nums">{channels.length}</span></div>
+          <div className="h-px bg-border my-1" />
+          <div className="flex justify-between gap-4"><span className="text-fg-2">Total de envios</span><span className="text-fg font-bold text-accent tabular-nums">{productIds.length * channels.length}</span></div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+        <label className="text-xs font-medium text-fg-2 block mb-1.5">Agendar para</label>
+        <input
+          type="datetime-local"
+          value={scheduledFor}
+          onChange={(e) => setScheduledFor(e.target.value)}
+          className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface-2 text-fg focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+        />
+        {scheduledFor && (
+          <button type="button" onClick={() => setScheduledFor('')}
+            className="text-xs text-fg-3 hover:text-danger mt-2">Remover agendamento</button>
+        )}
+      </div>
+
+      {missingAffiliate && (
+        <div className="rounded-xl p-4 bg-danger/10 border border-danger/35 shadow-sm">
+          <p className="text-xs font-semibold text-danger mb-1">
+            Sem código de afiliado para &quot;{realSource}&quot;
+          </p>
+          <p className="text-xs text-fg-2 mb-3 leading-relaxed">
+            Configure um programa em <strong>Afiliados</strong> antes de disparar.
+          </p>
           <button
-            className="text-sm text-fg-2 border border-border rounded-md px-3 py-1.5 disabled:opacity-50"
+            type="button"
+            onClick={() => navigate('/affiliates')}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Ir para Afiliados →
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-2 pt-1">
+        <Button
+          variant="primary"
+          className="w-full h-11 text-sm font-semibold shadow-md shadow-accent/10"
+          disabled={!text || channels.length === 0 || dispatch.isPending || missingAffiliate}
+          onClick={() => setShowConfirm(true)}
+          title={missingAffiliate ? 'Configure um programa de afiliado primeiro' : undefined}
+        >
+          {dispatch.isPending ? '⌛ Enviando...' : scheduledFor ? '📅 Agendar disparo' : '✈ Disparar agora'}
+        </Button>
+        <Button variant="ghost" className="w-full h-10 text-sm" onClick={() => navigate(-1)}>
+          Cancelar
+        </Button>
+      </div>
+    </>
+  )
+
+  const previewAsideDesktop = (
+    <>
+      {previewWACard}
+      {composerMetaActions}
+    </>
+  )
+
+  return (
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-4 md:py-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 md:mb-8">
+        <div>
+          <h1 className="text-lg md:text-xl font-semibold text-fg tracking-tight">Compor disparo</h1>
+          <p className="text-sm text-fg-3 mt-1 max-w-xl leading-relaxed">
+            Produtos, mensagem, canais — o preview ao lado atualiza em tempo real.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            className="text-sm text-fg-2 border border-border rounded-lg px-3 py-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
             disabled={!text || saveRascunho.isPending}
             onClick={() => saveRascunho.mutate()}
           >
             {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
           </button>
-          <a href="/logs?status=draft" className="text-xs text-accent hover:underline">
+          <a href="/logs?status=draft" className="text-xs text-accent hover:underline py-2 px-1">
             Ver rascunhos
           </a>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Coluna principal: etapas 1, 2, 3 */}
-        <div className="lg:col-span-2 space-y-4">
+      {/* md+: duas colunas — antes era só lg:, por isso “quebrava” cedo demais */}
+      <div className="flex flex-col md:flex-row md:items-start md:gap-8 lg:gap-10">
+        {/* Telas estreitas: só o preview fica sticky; resumo e disparar ficam após as etapas */}
+        <div className="md:hidden sticky top-0 z-20 -mx-4 px-4 py-2 mb-3 bg-bg/95 backdrop-blur-md border-b border-border/80">
+          {previewWACard}
+        </div>
+
+        {/* Coluna formulário: scroll próprio só em md+ para não competir com o preview */}
+        <div className="order-2 md:order-1 flex-1 min-w-0 md:max-h-[calc(100vh-8.25rem)] md:overflow-y-auto md:overscroll-contain md:pr-1 space-y-4 md:[scrollbar-gutter:stable]">
 
           {/* Etapa 1: Produtos */}
-          <div className="bg-surface border border-border rounded-md overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+          <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-border bg-surface-2/30">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">1</span>
                 <p className="font-medium text-fg">Produtos ({productIds.length})</p>
@@ -397,16 +521,16 @@ export default function Composer() {
           </div>
 
           {/* Etapa 2: Template */}
-          <div className="bg-surface border border-border rounded-md overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+          <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-3 flex flex-wrap gap-2 items-center justify-between border-b border-border bg-surface-2/30">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">2</span>
                 <p className="font-medium text-fg">Template da mensagem</p>
               </div>
-              <span className="text-xs text-fg-3">
-                Variáveis:{' '}
+              <span className="text-[11px] text-fg-3 flex flex-wrap items-center gap-x-1 gap-y-1">
+                Variáveis:
                 {VARIABLES.map(v => (
-                  <button key={v} type="button" onClick={() => setText(t => t + v)} className="font-mono text-accent hover:underline mr-1">{v}</button>
+                  <button key={v} type="button" onClick={() => setText(t => t + v)} className="font-mono text-[11px] text-accent hover:underline px-1 rounded bg-accent/5">{v}</button>
                 ))}
               </span>
             </div>
@@ -491,8 +615,8 @@ export default function Composer() {
           </div>
 
           {/* Etapa 3: Canais destino */}
-          <div className="bg-surface border border-border rounded-md overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+          <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-border bg-surface-2/30">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">3</span>
                 <p className="font-medium text-fg">Canais destino</p>
@@ -563,114 +687,17 @@ export default function Composer() {
             </div>
           </div>
 
+          {/* Mobile: resumo + agendar + disparar depois das etapas (fluxo natural) */}
+          <div className="md:hidden space-y-4 pb-8">
+            {composerMetaActions}
+          </div>
+
         </div>
 
-        {/* Lateral: Preview + Resumo + Ações */}
-        <div className="space-y-4">
-          {/* Preview WA */}
-          <div className="bg-surface border border-border rounded-md p-4">
-            <p className="text-xs font-medium text-fg-2 mb-3 uppercase tracking-wide">Preview WhatsApp</p>
-            <div className="bg-[#0b141a] rounded-lg p-2 min-h-32">
-              {/* "Você" sender label */}
-              <p className="text-xs text-[#8696a0] mb-1 ml-1">Você</p>
-              <div className="bg-[#005c4b] rounded-lg max-w-xs ml-auto shadow overflow-hidden">
-                {/* Single product image for currently previewed product */}
-                {(() => {
-                  const curImg = productImages.length > 0 ? productImages[previewIndex % productImages.length] : productImage
-                  return curImg ? (
-                    <img
-                      src={curImg}
-                      alt="Produto"
-                      className="w-full max-h-48 object-cover"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
-                  ) : null
-                })()}
-                <div className="p-3">
-                  <p className="text-sm text-white whitespace-pre-wrap break-words">
-                    {previewText || '...'}
-                  </p>
-                  <p className="text-xs text-green-300 mt-1 text-right opacity-60">agora ✓✓</p>
-                </div>
-              </div>
-              {/* Pagination dots — only when multiple products */}
-              {productImages.length > 1 && (
-                <div className="flex items-center justify-center gap-1.5 mt-2">
-                  {productImages.map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setPreviewIndex(i)}
-                      className={`w-1.5 h-1.5 rounded-full transition-colors ${i === previewIndex % productImages.length ? 'bg-accent' : 'bg-fg-3/40'}`}
-                      aria-label={`Produto ${i + 1}`}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Resumo */}
-          <div className="bg-surface border border-border rounded-md p-4">
-            <p className="text-sm font-medium text-fg mb-3">Resumo</p>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-fg-2">Produtos</span><span className="text-fg font-medium">{productIds.length}</span></div>
-              <div className="flex justify-between"><span className="text-fg-2">Canais</span><span className="text-fg font-medium">{channels.length}</span></div>
-              <div className="flex justify-between"><span className="text-fg-2">Total de envios</span><span className="text-fg font-bold text-accent">{productIds.length * channels.length}</span></div>
-            </div>
-          </div>
-
-          {/* Agendamento */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-fg-2">Agendar para</label>
-            <input
-              type="datetime-local"
-              value={scheduledFor}
-              onChange={(e) => setScheduledFor(e.target.value)}
-              className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-            />
-            {scheduledFor && (
-              <button type="button" onClick={() => setScheduledFor('')}
-                className="text-xs text-fg-3 hover:text-danger">× Remover agendamento</button>
-            )}
-          </div>
-
-          {/* P7: Aviso bloqueante de afiliado faltando */}
-          {missingAffiliate && (
-            <div className="rounded-md p-3 bg-danger/10 border border-danger/40">
-              <p className="text-xs font-semibold text-danger mb-1">
-                🔒 Sem código de afiliado para "{realSource}"
-              </p>
-              <p className="text-xs text-fg-2 mb-2">
-                Configure um programa em <strong>Afiliados</strong> antes de disparar.
-                Disparos sem código não geram comissão.
-              </p>
-              <button
-                type="button"
-                onClick={() => navigate('/affiliates')}
-                className="text-xs text-accent underline"
-              >
-                Ir para Afiliados →
-              </button>
-            </div>
-          )}
-
-          {/* Ações */}
-          <div className="space-y-2">
-            <Button
-              variant="primary"
-              className="w-full"
-              disabled={!text || channels.length === 0 || dispatch.isPending || missingAffiliate}
-              onClick={() => setShowConfirm(true)}
-              title={missingAffiliate ? 'Configure um programa de afiliado primeiro' : undefined}
-            >
-              {dispatch.isPending ? '⌛ Enviando...' : scheduledFor ? '📅 Agendar disparo' : '✈ Disparar agora'}
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={() => navigate(-1)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
+        {/* md+: duas colunas — breakpoint md (768px), não lg — preview + painel na lateral */}
+        <aside className="hidden md:flex flex-col order-1 md:order-2 w-full md:w-[min(100%,380px)] lg:w-[400px] shrink-0 gap-4 md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-8.25rem)] md:overflow-y-auto md:overscroll-contain md:pb-4 md:pl-6 md:ml-2 md:border-l md:border-border/70">
+          {previewAsideDesktop}
+        </aside>
       </div>
 
       {showConfirm && (
