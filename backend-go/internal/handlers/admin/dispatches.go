@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -197,6 +198,7 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		d.Status = "draft"
 		id, err := h.store.CreateDispatch(d, nil)
 		if err != nil {
+			slog.Error("salvar rascunho dispatch", "err", err)
 			writeErr(w, http.StatusInternalServerError, "erro ao salvar rascunho")
 			return
 		}
@@ -209,6 +211,7 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.store.CreateDispatch(d, targets)
 	if err != nil {
+		slog.Error("criar dispatch", "err", err)
 		writeErr(w, http.StatusInternalServerError, "erro ao criar dispatch")
 		return
 	}
