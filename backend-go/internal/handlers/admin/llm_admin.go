@@ -156,7 +156,11 @@ func (h *LLMAdminHandler) OllamaModels(w http.ResponseWriter, r *http.Request) {
 	}
 	respOA, err := http.DefaultClient.Do(reqOA)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "falha ao conectar ("+baseURL+"): "+err.Error())
+		hint := ""
+		if strings.Contains(baseURL, "vllm") || strings.Contains(strings.ToLower(err.Error()), "lookup") || strings.Contains(strings.ToLower(err.Error()), "no such host") {
+			hint = " Rede Docker: o hostname (ex. vllm) só funciona se este backend partilhar rede com o vLLM; senão usa IP:porta do host em vez de vllm."
+		}
+		writeErr(w, http.StatusBadGateway, "falha ao conectar ("+baseURL+"): "+err.Error()+"."+hint)
 		return
 	}
 	defer respOA.Body.Close()

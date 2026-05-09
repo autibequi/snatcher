@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -363,176 +362,42 @@ func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client, jobID 
 		return
 	}
 
-	processed, categorized, newTaxonomies := 0, 0, 0
+	processed, categorized, newTaxonomies, autoInspected, corrections := 0, 0, 0, 0, 0
 	var firstErr string
-	var llmCallErrors, parseErrors int
+	var llmErrors int
 	for _, row := range products {
-		// Busca contexto adicional do produto (preço, fonte, imagem)
-		fullProduct, _ := h.store.GetCatalogProduct(row.ID)
-		extraCtx := ""
-		if fullProduct.LowestPrice.Valid && fullProduct.LowestPrice.Float64 > 0 {
-			extraCtx += fmt.Sprintf("\nPreço aproximado: R$ %.2f", fullProduct.LowestPrice.Float64)
-		}
-		if fullProduct.LowestPriceSource.Valid && fullProduct.LowestPriceSource.String != "" {
-			extraCtx += "\nFonte: " + fullProduct.LowestPriceSource.String
-		}
-		if fullProduct.LowestPriceURL.Valid && fullProduct.LowestPriceURL.String != "" {
-			extraCtx += "\nURL: " + fullProduct.LowestPriceURL.String
-		}
-		if fullProduct.ImageURL.Valid && fullProduct.ImageURL.String != "" {
-			extraCtx += "\nImagem: " + fullProduct.ImageURL.String
-		}
-
-		prompt := fmt.Sprintf(`Você é um especialista em e-commerce brasileiro. Categorize o produto abaixo COM PRECISÃO. NÃO assuma que é suplemento/fitness — analise nome+contexto.
-
-DADOS:
-Nome: %s%s
-
-Responda SOMENTE em JSON (sem markdown, sem <think>...</think>, sem prefácio):
-{
-  "category": "categoria principal em pt-BR (ex: Suplementos, Eletrônicos, Jogos, Roupas, Beleza, Eletrodomésticos, Brinquedos) ou null",
-  "brand": "marca real do produto (ex: Apple, Nintendo, Growth) ou null",
-  "quantity": "tamanho/quantidade (ex: 900g, 2kg, 30 caps, 256GB) ou null",
-  "flavor": "sabor se aplicável (apenas comestíveis) ou null",
-  "new_taxonomies": [
-    {"type": "brand|category|flavor|weight", "name": "Nome", "keywords": ["palavra1", "palavra2"]}
-  ]
-}
-
-REGRAS:
-- Use a URL e a imagem como pistas — domínio amazon.com/loja-X indica plataforma, não marca
-- "talking flower" + nintendo = Brinquedo Nintendo, não CBD
-- "jogo X switch" = Jogos para Nintendo Switch, marca = publisher (ex: Nintendo)
-- Só sugira new_taxonomies se forem categorias/marcas RECORRENTES, não específicas de 1 produto
-
-JSON:`, row.CanonicalName, extraCtx)
-
-		resp, err := cli.Complete(ctx, prompt, llm.Options{
-			MaxTokens:   4000, // tokens altos pra modelos thinking terminarem reasoning + emitirem JSON
-			Temperature: 0.1,
-			Operation:   "curation",
-			JSONMode:    true,
-		})
+		stats, err := h.ProcessProductUnified(ctx, cli, row.ID, "auto_llm_unified")
 		if err != nil {
-			llmCallErrors++
+			llmErrors++
 			if firstErr == "" {
 				firstErr = err.Error()
 			}
 			continue
 		}
-
-		rawResp := resp
-		resp = strings.TrimSpace(resp)
-		// Remove <think>...</think> de modelos de reasoning (deepseek-r1, qwen3)
-		if i := strings.Index(resp, "</think>"); i >= 0 {
-			resp = strings.TrimSpace(resp[i+len("</think>"):])
-		}
-		resp = strings.TrimPrefix(resp, "```json")
-		resp = strings.TrimPrefix(resp, "```")
-		resp = strings.TrimSuffix(resp, "```")
-		resp = strings.TrimSpace(resp)
-		// Tenta extrair primeiro bloco JSON válido se houver texto extra
-		if start := strings.Index(resp, "{"); start > 0 {
-			resp = resp[start:]
-		}
-
-		var result struct {
-			Category     *string `json:"category"`
-			Brand        *string `json:"brand"`
-			Quantity     *string `json:"quantity"`
-			Flavor       *string `json:"flavor"`
-			NewTaxonomies []struct {
-				Type     string   `json:"type"`
-				Name     string   `json:"name"`
-				Keywords []string `json:"keywords"`
-			} `json:"new_taxonomies"`
-		}
-		if err := json.Unmarshal([]byte(resp), &result); err != nil {
-			parseErrors++
-			parseErrMsg := "handler parse: " + err.Error()
-			if firstErr == "" {
-				firstErr = parseErrMsg + " — resp: " + resp
-			}
-			// Loga no llm_metrics pra aparecer no /logs → tab LLM
-			llm.RecordHandlerError("curation", "", parseErrMsg, rawResp)
-			continue
-		}
-
-		p, err := h.store.GetCatalogProduct(row.ID)
-		if err != nil {
-			continue
-		}
-
-		changed := false
-		if result.Category != nil && *result.Category != "" {
-			tags := p.GetTags()
-			tags = append(tags, *result.Category)
-			p.SetTags(tags)
-			if p.CurationStatus == "pending" {
-				p.CurationStatus = "curated"
-				categorized++
-			}
-			changed = true
-			// Auto-promove categoria pra taxonomy (se ainda não existe)
-			if h.ensureTaxonomyEntry("category", *result.Category, row.CanonicalName) {
-				newTaxonomies++
-			}
-		}
-		if result.Brand != nil && *result.Brand != "" && (!p.Brand.Valid || p.Brand.String == "") {
-			p.Brand.String = *result.Brand
-			p.Brand.Valid = true
-			changed = true
-			// Auto-promove marca pra taxonomy
-			if h.ensureTaxonomyEntry("brand", *result.Brand, row.CanonicalName) {
-				newTaxonomies++
-			}
-		}
-		if result.Flavor != nil && *result.Flavor != "" {
-			// Auto-promove sabor pra taxonomy
-			if h.ensureTaxonomyEntry("flavor", *result.Flavor, row.CanonicalName) {
-				newTaxonomies++
-			}
-		}
-		if result.Quantity != nil && *result.Quantity != "" && p.Quantity == "" {
-			p.Quantity = *result.Quantity
-			changed = true
-		}
-		if result.Flavor != nil && *result.Flavor != "" {
-			tags := p.GetTags()
-			tags = append(tags, *result.Flavor)
-			p.SetTags(tags)
-			changed = true
-		}
-		if changed {
-			_ = h.store.UpdateCatalogProduct(p)
-		}
 		processed++
-		jobs.Default().Update(jobID, processed, len(products), fmt.Sprintf("processado %s", row.CanonicalName))
-
-		// Salvar propostas de novas taxonomias como pending para revisão humana
-		for _, nt := range result.NewTaxonomies {
-			if nt.Type == "" || nt.Name == "" {
-				continue
-			}
-			validTypes := map[string]bool{"brand": true, "category": true, "flavor": true, "weight": true, "color": true, "size": true, "quantity": true}
-			if !validTypes[nt.Type] {
-				continue
-			}
-			if len(nt.Keywords) == 0 {
-				nt.Keywords = []string{strings.ToLower(nt.Name)}
-			}
-			_, _ = h.store.SuggestTaxonomyCandidate(nt.Type, nt.Name, nt.Keywords, row.CanonicalName, "llm")
-			newTaxonomies++
+		if stats.Categorized {
+			categorized++
 		}
+		newTaxonomies += stats.NewTaxonomyHints
+		if stats.MarkedInspected {
+			autoInspected++
+		}
+		if stats.HadCorrection {
+			corrections++
+		}
+		jobs.Default().Update(jobID, processed, len(products), fmt.Sprintf("processado %s", row.CanonicalName))
 	}
 
 	slog.Info("AutoLLM: concluído",
 		"processed", processed,
 		"categorized", categorized,
 		"new_taxonomies", newTaxonomies,
-		"errors", llmCallErrors+parseErrors,
+		"auto_inspected", autoInspected,
+		"correções_nome_marca", corrections,
+		"errors", llmErrors,
 		"first_error", firstErr)
-	jobs.Default().Done(jobID, fmt.Sprintf("%d processados, %d categorizados, %d taxonomias novas, %d erros", processed, categorized, newTaxonomies, llmCallErrors+parseErrors))
+	jobs.Default().Done(jobID, fmt.Sprintf("%d processados, %d categorizados, %d taxonomias, %d inspecionados (auto), %d erros",
+		processed, categorized, newTaxonomies, autoInspected, llmErrors))
 }
 
 // InspectAll POST /api/curation/inspect-all
@@ -585,20 +450,13 @@ func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client, job
 		}
 	}()
 
-	type prodRow struct {
-		ID                int64    `db:"id"`
-		CanonicalName     string   `db:"canonical_name"`
-		Brand             *string  `db:"brand"`
-		Tags              string   `db:"tags"`
-		Quantity          string   `db:"quantity"`
-		LowestPrice       *float64 `db:"lowest_price"`
-		LowestPriceSource *string  `db:"lowest_price_source"`
-		ImageURL          *string  `db:"image_url"`
+	type inspectRow struct {
+		ID            int64  `db:"id"`
+		CanonicalName string `db:"canonical_name"`
 	}
-	var products []prodRow
+	var products []inspectRow
 	err := h.db.SelectContext(ctx, &products, `
-		SELECT id, canonical_name, brand, tags, quantity,
-		       lowest_price, lowest_price_source, image_url
+		SELECT id, canonical_name
 		FROM catalogproduct
 		WHERE inspected = false AND inactive = false
 		ORDER BY created_at DESC
@@ -612,77 +470,12 @@ func (h *CurationHandler) runInspectAll(ctx context.Context, cli llm.Client, job
 		return
 	}
 
-	inspected, corrected := 0, 0
+	processed, markedInspected, corrected := 0, 0, 0
 	var firstErr string
 	var llmErrors int
 
 	for _, row := range products {
-		brand := ""
-		if row.Brand != nil {
-			brand = *row.Brand
-		}
-		price := 0.0
-		if row.LowestPrice != nil {
-			price = *row.LowestPrice
-		}
-		imgURL := ""
-		if row.ImageURL != nil {
-			imgURL = *row.ImageURL
-		}
-		src := ""
-		if row.LowestPriceSource != nil {
-			src = *row.LowestPriceSource
-		}
-
-		prompt := fmt.Sprintf(`Você é um auditor de e-commerce que aprova produtos para anúncio em grupos de oferta WhatsApp/Telegram brasileiros.
-
-CRITÉRIO DE APROVAÇÃO:
-- Nome claro o suficiente para o leitor entender o que é.
-- Preço presente e realista (> R$ 0).
-- Imagem presente.
-
-VALIDAÇÃO DE MARCA (CRÍTICO — muitos falsos positivos):
-A marca atual foi detectada automaticamente por palavra-chave e pode estar ERRADA.
-Exemplos de erro: "Acer" em "Fox Racer" (racer contém "acer"), "LG" em "Leg Press", "Nike" em "Nikecomb".
-Se a marca NÃO aparece explicitamente no nome do produto ou é sub-string acidental de outra palavra, defina remove_brand=true.
-
-ready_for_dispatch: TRUE se pode ser anunciado. Seja LIBERAL — só FALSE para risco real de engano.
-
-PRODUTO:
-- Nome: %s
-- Marca atual: %s
-- Tags: %s
-- Quantidade: %s
-- Preço: R$ %.2f
-- Imagem: %s
-- Fonte: %s
-
-Responda SOMENTE em JSON:
-{
-  "ready_for_dispatch": true|false,
-  "issues": [],
-  "corrections": {
-    "canonical_name": "nome limpo, ou null",
-    "brand": "marca correta se você tem certeza, ou null",
-    "remove_brand": false,
-    "add_tags": [],
-    "quantity": null
-  },
-  "summary": "uma frase"
-}
-
-remove_brand=true limpa a marca atual (use quando é falso positivo de keyword).
-Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantity, price, imgURL, src)
-
-		// Timeout por produto — evita job travado por uma chamada LLM que não retorna
-		callCtx, callCancel := context.WithTimeout(ctx, 90*time.Second)
-		resp, err := cli.Complete(callCtx, prompt, llm.Options{
-			MaxTokens:   16000,
-			Temperature: 0.1,
-			Operation:   "inspect",
-			JSONMode:    true,
-		})
-		callCancel()
+		stats, err := h.ProcessProductUnified(ctx, cli, row.ID, "inspect_all_unified")
 		if err != nil {
 			llmErrors++
 			if firstErr == "" {
@@ -690,143 +483,23 @@ Sem markdown, sem texto extra.`, row.CanonicalName, brand, row.Tags, row.Quantit
 			}
 			continue
 		}
-
-		rawResp := resp
-		resp = strings.TrimSpace(resp)
-		if i := strings.Index(resp, "</think>"); i >= 0 {
-			resp = strings.TrimSpace(resp[i+len("</think>"):])
+		processed++
+		if stats.MarkedInspected {
+			markedInspected++
 		}
-		resp = strings.TrimPrefix(resp, "```json")
-		resp = strings.TrimPrefix(resp, "```")
-		resp = strings.TrimSuffix(resp, "```")
-		resp = strings.TrimSpace(resp)
-		if start := strings.Index(resp, "{"); start > 0 {
-			resp = resp[start:]
-		}
-
-		var result struct {
-			ReadyForDispatch bool     `json:"ready_for_dispatch"`
-			Issues           []string `json:"issues"`
-			Summary          string   `json:"summary"`
-			Corrections      struct {
-				CanonicalName *string  `json:"canonical_name"`
-				Brand         *string  `json:"brand"`
-				RemoveBrand   bool     `json:"remove_brand"`
-				AddTags       []string `json:"add_tags"`
-				Quantity      *string  `json:"quantity"`
-			} `json:"corrections"`
-		}
-		if err := json.Unmarshal([]byte(resp), &result); err != nil {
-			llmErrors++
-			if firstErr == "" {
-				firstErr = "parse: " + err.Error()
-			}
-			llm.RecordHandlerError("inspect", "", "handler parse: "+err.Error(), rawResp)
-			continue
-		}
-
-		// Aplicar correções
-		p, err := h.store.GetCatalogProduct(row.ID)
-		if err != nil {
-			slog.Error("Inspect: GetCatalogProduct failed", "id", row.ID, "err", err)
-			continue
-		}
-		hadCorrection := false
-		oldName := p.CanonicalName
-		var changes []string
-		if result.Corrections.CanonicalName != nil && *result.Corrections.CanonicalName != "" && *result.Corrections.CanonicalName != p.CanonicalName {
-			p.CanonicalName = *result.Corrections.CanonicalName
-			changes = append(changes, fmt.Sprintf("name: %q→%q", oldName, p.CanonicalName))
-			hadCorrection = true
-		}
-		if result.Corrections.RemoveBrand && p.Brand.Valid && p.Brand.String != "" {
-			// Falso positivo de keyword — limpa marca incorreta
-			changes = append(changes, "brand_cleared: "+p.Brand.String)
-			p.Brand = models.NullString{}
-			hadCorrection = true
-		} else if result.Corrections.Brand != nil && *result.Corrections.Brand != "" {
-			// Sobrescreve marca mesmo que já exista (LLM pode corrigir marca errada)
-			if p.Brand.String != *result.Corrections.Brand {
-				changes = append(changes, fmt.Sprintf("brand: %q→%q", p.Brand.String, *result.Corrections.Brand))
-				p.Brand.String = *result.Corrections.Brand
-				p.Brand.Valid = true
-				hadCorrection = true
-				h.ensureTaxonomyEntry("brand", *result.Corrections.Brand, oldName)
-			}
-		}
-		if result.Corrections.Quantity != nil && *result.Corrections.Quantity != "" && p.Quantity == "" {
-			p.Quantity = *result.Corrections.Quantity
-			changes = append(changes, "quantity="+*result.Corrections.Quantity)
-			hadCorrection = true
-		}
-		if len(result.Corrections.AddTags) > 0 {
-			tags := p.GetTags()
-			seen := map[string]bool{}
-			for _, t := range tags {
-				seen[strings.ToLower(t)] = true
-			}
-			added := []string{}
-			for _, t := range result.Corrections.AddTags {
-				if t != "" && !seen[strings.ToLower(t)] {
-					tags = append(tags, t)
-					seen[strings.ToLower(t)] = true
-					added = append(added, t)
-					hadCorrection = true
-				}
-			}
-			if len(added) > 0 {
-				p.SetTags(tags)
-				changes = append(changes, "tags+="+strings.Join(added, ","))
-				// Auto-promove cada nova tag pra taxonomy como category
-				for _, t := range added {
-					h.ensureTaxonomyEntry("category", t, oldName)
-				}
-			}
-		}
-
-		notes := result.Summary
-		if len(result.Issues) > 0 {
-			notes += " · Issues: " + strings.Join(result.Issues, "; ")
-		}
-		p.Inspected = true
-		p.InspectedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
-		p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: notes != ""}}
-
-		// Se LLM rejeitou o produto OU não tem preço → marca inativo para não ser disparado
-		hasNoPrice := !p.LowestPrice.Valid || p.LowestPrice.Float64 <= 0
-		if !result.ReadyForDispatch || hasNoPrice {
-			p.Inactive = true
-			if hasNoPrice && result.ReadyForDispatch {
-				notes += " · desativado: sem preço"
-				p.InspectionNotes = models.NullString{NullString: sql.NullString{String: notes, Valid: true}}
-			}
-		}
-
-		if updErr := h.store.UpdateCatalogProduct(p); updErr != nil {
-			slog.Error("Inspect: UpdateCatalogProduct failed", "id", row.ID, "err", updErr)
-			llm.RecordHandlerError("inspect", "db", "UpdateCatalogProduct: "+updErr.Error(), notes)
-			continue
-		}
-
-		slog.Info("Inspect: produto auditado",
-			"id", row.ID,
-			"name", oldName,
-			"ready_for_dispatch", result.ReadyForDispatch,
-			"changes", changes,
-			"issues_count", len(result.Issues))
-
-		inspected++
-		if hadCorrection {
+		if stats.HadCorrection {
 			corrected++
 		}
-		jobs.Default().Update(jobID, inspected, len(products), fmt.Sprintf("auditado %s", oldName))
+		jobs.Default().Update(jobID, processed, len(products), fmt.Sprintf("unificado %s", row.CanonicalName))
 	}
 
 	slog.Info("InspectAll: concluído",
-		"inspected", inspected,
-		"corrected", corrected,
+		"processed", processed,
+		"marked_inspected_high_conf", markedInspected,
+		"correções", corrected,
 		"errors", llmErrors,
 		"first_error", firstErr,
-		"remaining", len(products)-inspected)
-	jobs.Default().Done(jobID, fmt.Sprintf("%d auditados, %d corrigidos, %d erros, %d restantes", inspected, corrected, llmErrors, len(products)-inspected))
+		"remaining", len(products)-processed)
+	jobs.Default().Done(jobID, fmt.Sprintf("%d processados (1 LLM/produto), %d inspecionados (conf≥%.2f), %d corrigidos, %d erros",
+		processed, markedInspected, unifiedInspectConfidenceMin, corrected, llmErrors))
 }
