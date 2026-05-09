@@ -62,6 +62,49 @@ func (s *SQLStore) ListJonfreyActions(limit int, actionType string) ([]models.Jo
 	return out, err
 }
 
+// ListJonfreyActionsForWorkQueue retorna ações para timeline da fila: running + recentes (FIFO por created_at).
+func (s *SQLStore) ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAction, error) {
+	if limit <= 0 || limit > 300 {
+		limit = 120
+	}
+	q := `
+		SELECT id, action_type, target, status, reasoning,
+		       before_snapshot, after_snapshot, error_message,
+		       triggered_by, created_at, finished_at
+		FROM jonfrey_actions
+		WHERE status = 'running'
+		   OR (finished_at IS NOT NULL AND finished_at > now() - interval '72 hours')
+		ORDER BY created_at ASC
+		LIMIT $1`
+	var out []models.JonfreyAction
+	err := s.db.Select(&out, q, limit)
+	return out, err
+}
+
+// ReconcileStaleJonfreyActions marca running antigos como failed (crash / timeout / restart).
+func (s *SQLStore) ReconcileStaleJonfreyActions(staleMinutes int, message string) (int64, error) {
+	if staleMinutes <= 0 {
+		staleMinutes = 20
+	}
+	if message == "" {
+		message = "encerrado como falha: execução não finalizou a tempo ou o servidor reiniciou."
+	}
+	res, err := s.db.Exec(`
+		UPDATE jonfrey_actions
+		SET status = 'failed',
+		    error_message = $1,
+		    finished_at = NOW()
+		WHERE status = 'running'
+		  AND created_at < NOW() - ($2::bigint * INTERVAL '1 minute')`,
+		message, staleMinutes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // GetJonfreyConfig retorna a config singleton (id=1).
 func (s *SQLStore) GetJonfreyConfig() (models.JonfreyConfig, error) {
 	var c models.JonfreyConfig

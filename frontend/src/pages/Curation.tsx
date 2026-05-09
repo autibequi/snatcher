@@ -70,6 +70,7 @@ export default function Curation() {
   const autoLLMMut = useMutation({
     mutationFn: () => apiClient.post('/api/curation/auto-llm').then(r => r.data as { started: boolean; message?: string }),
     onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['work-queue'] })
       const interval = setInterval(() => qc.invalidateQueries({ queryKey: ['curation'] }), 5000)
       setTimeout(() => clearInterval(interval), 30 * 60 * 1000)
       alert(data.message ?? 'AutoLLM iniciado em background. Stats e logs serão atualizados.')

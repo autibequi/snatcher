@@ -274,6 +274,8 @@ type Store interface {
 	CreateJonfreyAction(a models.JonfreyAction) (int64, error)
 	UpdateJonfreyAction(a models.JonfreyAction) error
 	ListJonfreyActions(limit int, actionType string) ([]models.JonfreyAction, error)
+	ListJonfreyActionsForWorkQueue(limit int) ([]models.JonfreyAction, error)
+	ReconcileStaleJonfreyActions(staleMinutes int, message string) (int64, error)
 	GetJonfreyConfig() (models.JonfreyConfig, error)
 	UpdateJonfreyConfig(c models.JonfreyConfig) error
 

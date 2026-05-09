@@ -157,7 +157,10 @@ export default function Jonfrey() {
       apiClient
         .post('/api/jonfrey/run', actionType ? { action_type: actionType } : {})
         .then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-actions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
+      qc.invalidateQueries({ queryKey: ['work-queue'] })
+    },
   })
 
   const updateConfigMut = useMutation({

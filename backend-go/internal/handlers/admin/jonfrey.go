@@ -33,8 +33,20 @@ type JonfreyHandler struct {
 const (
 	jonfreyActionHardTimeout = 22 * time.Minute // teto por ação dentro de executeAction
 	jonfreyLLMOuterBudget    = 20 * time.Minute // ações que fazem muitas chamadas LLM em loop
-	jonfreyStaleRunningMin   = 90               // marca running antigo como failed ao listar
+	jonfreyStaleRunningMin   = 20               // marca running antigo como failed ao listar /api/jonfrey/actions
 )
+
+// jonfreyQueueJobKey associa executeAction ao job da fila universal (activity log).
+type jonfreyQueueJobKey struct{}
+
+func ctxWithJonfreyJobID(ctx context.Context, jobID string) context.Context {
+	return context.WithValue(ctx, jonfreyQueueJobKey{}, jobID)
+}
+
+func jonfreyJobIDFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(jonfreyQueueJobKey{}).(string)
+	return v
+}
 
 func NewJonfreyHandler(st store.Store, db *sqlx.DB) *JonfreyHandler {
 	return &JonfreyHandler{store: st, db: db}
@@ -341,7 +353,7 @@ JSON apenas:
 
 // ListActions GET /api/jonfrey/actions
 func (h *JonfreyHandler) ListActions(w http.ResponseWriter, r *http.Request) {
-	h.reconcileStaleJonfreyActions(r.Context())
+	h.reconcileStaleJonfreyActions()
 
 	actionType := r.URL.Query().Get("type")
 	limit := 100
@@ -373,31 +385,44 @@ func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 
 // RunCycle executa todas as actions habilitadas no JonfreyConfig, ordenadas por categoria.
 // Ordem: cleanup → curation → health → optimization → dispatch
+// Despacha em background com um único job na fila universal (mesmo modelo que POST /api/jonfrey/run).
 func (h *JonfreyHandler) RunCycle(ctx context.Context) {
+	_ = ctx // tick vem do scheduler; o batch usa context.Background + job próprio
 	cfg, err := h.store.GetJonfreyConfig()
 	if err != nil || !cfg.Enabled {
 		return
 	}
 
-	// Executa ações em ordem de categoria
 	order := []string{"cleanup", "curation", "health", "optimization", "dispatch"}
+	var typesToRun []string
 	for _, cat := range order {
 		for _, t := range []string(cfg.EnabledActions) {
 			def, ok := actionRegistry[t]
 			if !ok || def.Category != cat {
 				continue
 			}
-			_ = h.executeAction(ctx, def, "scheduled", "")
+			typesToRun = append(typesToRun, t)
 		}
 	}
+	if len(typesToRun) == 0 {
+		return
+	}
 
+	// Marca ciclo como “consumido” já ao despachar — evita novo tick antes do interval_minutes.
 	cfg.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
-	_ = h.store.UpdateJonfreyConfig(cfg)
+	if err := h.store.UpdateJonfreyConfig(cfg); err != nil {
+		slog.Warn("jonfrey RunCycle UpdateJonfreyConfig", "err", err)
+	}
+
+	jm := jobs.Default()
+	job, jobCtx := jm.StartKind(context.Background(), "jonfrey", fmt.Sprintf("Jonfrey agendado ×%d", len(typesToRun)))
+	go h.runJonfreyBatch(jobCtx, job.ID, "scheduled", "", typesToRun)
 }
 
 // RunAction POST /api/jonfrey/run
 // Body: { "action_type": "...", "target": "..." }
 // Se action_type vazio → executa todas as ações habilitadas na config.
+// Sempre enfileira em background + job na fila universal (ver GET /api/work-queue).
 func (h *JonfreyHandler) RunAction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ActionType string `json:"action_type"`
@@ -413,34 +438,22 @@ func (h *JonfreyHandler) RunAction(w http.ResponseWriter, r *http.Request) {
 		typesToRun = []string(cfg.EnabledActions)
 	}
 
-	// Várias ações: não bloquear o pedido HTTP (evita proxy/Chi matar antes do fim).
-	if len(typesToRun) > 1 {
-		jm := jobs.Default()
-		job, jobCtx := jm.Start(context.Background(), fmt.Sprintf("Jonfrey×%d", len(typesToRun)))
-		go h.runJonfreyBatch(jobCtx, job.ID, "manual", req.Target, typesToRun)
-		writeJSON(w, http.StatusAccepted, map[string]any{
-			"batch":      true,
-			"queued":     true,
-			"job_id":     job.ID,
-			"count":      len(typesToRun),
-			"action_ids": []int64{},
-			"message":    "execução em background; changelog atualiza aos poucos — veja também /api/jobs",
-		})
-		return
+	jm := jobs.Default()
+	jobName := fmt.Sprintf("Jonfrey×%d", len(typesToRun))
+	if len(typesToRun) == 1 {
+		jobName = "Jonfrey:" + typesToRun[0]
 	}
+	job, jobCtx := jm.StartKind(context.Background(), "jonfrey", jobName)
+	go h.runJonfreyBatch(jobCtx, job.ID, "manual", req.Target, typesToRun)
 
-	results := []int64{}
-	for _, t := range typesToRun {
-		def, ok := actionRegistry[t]
-		if !ok {
-			continue
-		}
-		id := h.executeAction(r.Context(), def, "manual", req.Target)
-		if id > 0 {
-			results = append(results, id)
-		}
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"action_ids": results, "count": len(results)})
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"queued":     true,
+		"job_id":     job.ID,
+		"batch":      len(typesToRun) > 1,
+		"count":      len(typesToRun),
+		"action_ids": []int64{},
+		"message":    "Em fila — acompanhe actividade em Tempo real → Fila de trabalhos ou GET /api/work-queue",
+	})
 }
 
 func truncJonfreyStr(s string, max int) string {
@@ -450,58 +463,57 @@ func truncJonfreyStr(s string, max int) string {
 	return s[:max] + "…"
 }
 
-func (h *JonfreyHandler) reconcileStaleJonfreyActions(ctx context.Context) {
-	if h.db == nil {
-		return
-	}
+func (h *JonfreyHandler) reconcileStaleJonfreyActions() {
 	msg := "encerrado como falha: execução não finalizou a tempo ou o servidor reiniciou (running antigo)."
-	_, err := h.db.ExecContext(ctx, `
-		UPDATE jonfrey_actions
-		SET status = 'failed',
-		    error_message = $1,
-		    finished_at = NOW()
-		WHERE status = 'running'
-		  AND created_at < NOW() - ($2::bigint * INTERVAL '1 minute')`,
-		msg, jonfreyStaleRunningMin,
-	)
+	n, err := h.store.ReconcileStaleJonfreyActions(jonfreyStaleRunningMin, msg)
 	if err != nil {
 		slog.Warn("jonfrey reconcile stale running", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("jonfrey reconciled stale running rows", "rows", n)
 	}
 }
 
 // runJonfreyBatch executa várias definições em sequência num goroutine (ver RunAction).
 func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, triggeredBy, target string, typesToRun []string) {
+	jm := jobs.Default()
 	defer func() {
 		if r := recover(); r != nil {
-			jobs.Default().Fail(jobID, fmt.Sprintf("panic no batch: %v", r))
+			jm.Fail(jobID, fmt.Sprintf("panic no batch: %v", r))
 			slog.Error("jonfrey batch panic", "job", jobID, "panic", r)
 		}
 	}()
 
-	runCtx, cancel := context.WithTimeout(parentCtx, 50*time.Minute)
+	runCtx, cancel := context.WithTimeout(ctxWithJonfreyJobID(parentCtx, jobID), 50*time.Minute)
 	defer cancel()
 
 	total := len(typesToRun)
 	done := 0
 	var ids []int64
 
+	jm.AppendActivity(jobID, fmt.Sprintf("fila: %d ação(ões) · ordem FIFO", total))
+
 	for _, t := range typesToRun {
 		def, ok := actionRegistry[t]
 		if !ok {
-			jobs.Default().Update(jobID, done, total, fmt.Sprintf("ignorado (desconhecido): %s", t))
+			jm.AppendActivity(jobID, fmt.Sprintf("tipo desconhecido ignorado: %s", t))
+			jm.Update(jobID, done, total, fmt.Sprintf("ignorado: %s", t))
 			done++
 			continue
 		}
-		jobs.Default().Update(jobID, done, total, fmt.Sprintf("a correr %s…", def.Type))
+		jm.AppendActivity(jobID, fmt.Sprintf("▶ início %s", def.Type))
+		jm.Update(jobID, done, total, fmt.Sprintf("a correr %s…", def.Type))
 		id := h.executeAction(runCtx, def, triggeredBy, target)
 		if id > 0 {
 			ids = append(ids, id)
 		}
 		done++
-		jobs.Default().Update(jobID, done, total, fmt.Sprintf("%s terminou (audit id=%d)", def.Type, id))
+		jm.AppendActivity(jobID, fmt.Sprintf("■ fim %s · audit #%d", def.Type, id))
+		jm.Update(jobID, done, total, fmt.Sprintf("%s terminou (audit #%d)", def.Type, id))
 	}
 
-	jobs.Default().Done(jobID, fmt.Sprintf("Jonfrey batch: %d/%d ações concluídas (ids=%v).", len(ids), total, ids))
+	jm.Done(jobID, fmt.Sprintf("Jonfrey: %d/%d ações concluídas (audit ids=%v).", len(ids), total, ids))
 }
 
 // executeAction roda uma ação e grava no audit log. Retorna o ID da action criada.
@@ -524,6 +536,11 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	action.ID = id
 
+	queueJob := jonfreyJobIDFromCtx(ctx)
+	if queueJob != "" {
+		jobs.Default().AppendActivity(queueJob, fmt.Sprintf("audit #%d · %s · estado running", id, def.Type))
+	}
+
 	actionCtx, cancel := context.WithTimeout(ctx, jonfreyActionHardTimeout)
 	defer cancel()
 
@@ -542,8 +559,15 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 		if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
 			slog.Error("jonfrey UpdateJonfreyAction after panic", "id", action.ID, "type", def.Type, "err", updErr)
 		}
+		if queueJob != "" {
+			jobs.Default().AppendActivity(queueJob, fmt.Sprintf("audit #%d · panic: %v", action.ID, r))
+		}
 		slog.Error("jonfrey action panic", "type", def.Type, "id", action.ID, "panic", r)
 	}()
+
+	if queueJob != "" {
+		jobs.Default().AppendActivity(queueJob, fmt.Sprintf("executando motor LLM/SQL · %s (#%d)", def.Type, id))
+	}
 
 	before, after, reasoning, runErr := def.Run(actionCtx, h)
 	action.FinishedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
@@ -571,6 +595,24 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
 		slog.Error("jonfrey UpdateJonfreyAction failed", "id", action.ID, "type", def.Type, "err", updErr)
+	}
+	if queueJob != "" {
+		if runErr != nil {
+			msg := runErr.Error()
+			if len(msg) > 280 {
+				msg = msg[:280] + "…"
+			}
+			jobs.Default().AppendActivity(queueJob, fmt.Sprintf("audit #%d · falhou: %s", id, msg))
+		} else {
+			sum := reasoning
+			if sum == "" {
+				sum = "OK"
+			}
+			if len(sum) > 240 {
+				sum = sum[:240] + "…"
+			}
+			jobs.Default().AppendActivity(queueJob, fmt.Sprintf("audit #%d · %s · %s", id, action.Status, sum))
+		}
 	}
 	return id
 }

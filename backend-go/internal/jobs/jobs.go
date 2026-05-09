@@ -5,6 +5,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,8 +20,17 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
+const maxActivityLines = 120
+
+// JobActivity linha de log append-only para UI da fila.
+type JobActivity struct {
+	At      time.Time `json:"at"`
+	Message string    `json:"message"`
+}
+
 type Job struct {
 	ID          string     `json:"id"`
+	Kind        string     `json:"kind"` // jonfrey | pipeline | curation | search_terms | …
 	Name        string     `json:"name"`
 	Status      Status     `json:"status"`
 	StartedAt   time.Time  `json:"started_at"`
@@ -30,6 +40,7 @@ type Job struct {
 	Done        int        `json:"done,omitempty"`
 	Message     string     `json:"message,omitempty"`
 	Error       string     `json:"error,omitempty"`
+	Activity    []JobActivity `json:"activity,omitempty"`
 
 	cancel context.CancelFunc `json:"-"`
 }
@@ -48,11 +59,20 @@ func Default() *Manager { return defaultManager }
 // Start cria e registra um novo job, retornando o Job e um context cancelável.
 // O caller deve chamar Done() ou Fail() ao terminar.
 func (m *Manager) Start(parentCtx context.Context, name string) (*Job, context.Context) {
+	return m.StartKind(parentCtx, "task", name)
+}
+
+// StartKind igual a Start mas com Kind para agrupar na UI (ex.: jonfrey, pipeline).
+func (m *Manager) StartKind(parentCtx context.Context, kind, name string) (*Job, context.Context) {
+	if kind == "" {
+		kind = "task"
+	}
 	m.nextID.Add(1)
 	id := fmt.Sprintf("job-%d-%d", time.Now().Unix(), m.nextID.Load())
 	ctx, cancel := context.WithCancel(parentCtx)
 	job := &Job{
 		ID:        id,
+		Kind:      kind,
 		Name:      name,
 		Status:    StatusRunning,
 		StartedAt: time.Now(),
@@ -61,7 +81,53 @@ func (m *Manager) Start(parentCtx context.Context, name string) (*Job, context.C
 	m.mu.Lock()
 	m.jobs[id] = job
 	m.mu.Unlock()
+	m.AppendActivity(id, "job iniciado")
 	return job, ctx
+}
+
+// AppendActivity adiciona linha ao histórico do job (cap maxActivityLines).
+func (m *Manager) AppendActivity(id, msg string) {
+	if msg == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok || j.Status != StatusRunning {
+		return
+	}
+	j.Activity = append(j.Activity, JobActivity{At: time.Now(), Message: msg})
+	if len(j.Activity) > maxActivityLines {
+		j.Activity = j.Activity[len(j.Activity)-maxActivityLines:]
+	}
+}
+
+// ReconcileStaleRunning marca jobs running há mais de maxAge como failed (processo morto / leak).
+func (m *Manager) ReconcileStaleRunning(maxAge time.Duration) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	fixed := 0
+	for id, j := range m.jobs {
+		if j.Status != StatusRunning {
+			continue
+		}
+		if now.Sub(j.StartedAt) < maxAge {
+			continue
+		}
+		t := now
+		j.Status = StatusFailed
+		j.CompletedAt = &t
+		j.Error = fmt.Sprintf("timeout da fila: running há mais de %v sem finalizar (servidor reiniciou ou goroutine presa)", maxAge)
+		if j.Message == "" {
+			j.Message = j.Error
+		}
+		if j.cancel != nil {
+			j.cancel()
+		}
+		fixed++
+	}
+	return fixed
 }
 
 // Update atualiza progresso/mensagem do job.
@@ -126,24 +192,31 @@ func (m *Manager) Cancel(id string) bool {
 	return true
 }
 
-// List retorna jobs ordenados por StartedAt DESC. Mantém apenas os 100 mais recentes.
+// List retorna jobs ordenados por StartedAt DESC (mais recentes primeiro).
 func (m *Manager) List() []*Job {
+	return m.listSorted(true)
+}
+
+// ListFIFO retorna jobs ordenados por StartedAt ASC — frente da fila = mais antigo ainda ativo.
+func (m *Manager) ListFIFO() []*Job {
+	return m.listSorted(false)
+}
+
+func (m *Manager) listSorted(desc bool) []*Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]*Job, 0, len(m.jobs))
 	for _, j := range m.jobs {
 		out = append(out, j)
 	}
-	// sort por StartedAt desc
-	for i := 0; i < len(out); i++ {
-		for k := i + 1; k < len(out); k++ {
-			if out[k].StartedAt.After(out[i].StartedAt) {
-				out[i], out[k] = out[k], out[i]
-			}
+	sort.Slice(out, func(i, j int) bool {
+		if desc {
+			return out[i].StartedAt.After(out[j].StartedAt)
 		}
-	}
-	if len(out) > 100 {
-		out = out[:100]
+		return out[i].StartedAt.Before(out[j].StartedAt)
+	})
+	if desc && len(out) > 150 {
+		out = out[:150]
 	}
 	return out
 }

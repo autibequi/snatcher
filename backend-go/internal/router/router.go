@@ -459,7 +459,9 @@ func Build(
 
 		// Jobs (background tasks)
 		jobsHandler := adminhnd.NewJobsHandler()
+		workQueue := adminhnd.NewWorkQueueHandler(st)
 		r.Get("/api/jobs", jobsHandler.List)
+		r.Get("/api/work-queue", workQueue.Get)
 		r.Post("/api/jobs/{id}/cancel", jobsHandler.Cancel)
 		r.Post("/api/jobs/clear", jobsHandler.Clear)
 		r.Post("/api/jobs/cancel-all", jobsHandler.CancelAll)
