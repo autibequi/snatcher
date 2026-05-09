@@ -2,7 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Input, Modal, PlatformPill, Skeleton, Switch } from '../components/ui'
+import { Badge, Button, Input, Modal, PlatformPill, Skeleton, Switch, Textarea } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -174,16 +174,13 @@ function CreateChannelModal({ open, onClose }: { open: boolean; onClose: () => v
           error={errors.name}
         />
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-fg-2">Descrição</label>
-          <textarea
-            placeholder="Descreva o foco deste canal..."
-            value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            rows={2}
-            className="w-full px-2.5 py-1.5 text-sm rounded-md border bg-surface text-fg placeholder:text-fg-3 border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-          />
-        </div>
+        <Textarea
+          label="Descrição"
+          placeholder="Descreva o foco deste canal..."
+          value={form.description}
+          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+          rows={2}
+        />
 
         <div className="border-t border-border pt-3">
           <p className="text-xs font-semibold text-fg-2 mb-3 uppercase tracking-wide">Público-alvo</p>
@@ -509,12 +506,13 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
         </div>
 
         <div className="space-y-3 mb-4">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Que audiência você quer alcançar? (opcional)</label>
-            <textarea value={intent} onChange={e => setIntent(e.target.value)} rows={2}
-              placeholder="ex: mães com filhos pequenos em SP, gamers que buscam promoções, homens 25-40 fitness..."
-              className="w-full text-sm border border-border rounded-md px-2.5 py-2 bg-surface text-fg outline-none focus:border-accent resize-none" />
-          </div>
+          <Textarea
+            label="Que audiência você quer alcançar? (opcional)"
+            value={intent}
+            onChange={e => setIntent(e.target.value)}
+            rows={2}
+            placeholder="ex: mães com filhos pequenos em SP, gamers que buscam promoções, homens 25-40 fitness..."
+          />
           <div>
             <label className="text-xs text-fg-2 block mb-1">Estratégia</label>
             <div className="flex gap-2">
@@ -528,10 +526,9 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
           </div>
         </div>
 
-        <button type="button" onClick={handleSuggest} disabled={loading}
-          className="w-full text-sm bg-accent text-white rounded-md px-4 py-2 hover:bg-accent-hover disabled:opacity-50 mb-4">
+        <Button type="button" variant="primary" className="w-full mb-4" onClick={handleSuggest} disabled={loading} loading={loading}>
           {loading ? '⏳ Consultando IA com produtos e canais atuais...' : '✨ Gerar sugestão'}
-        </button>
+        </Button>
 
         {error && <p className="text-sm text-danger mb-3">{error}</p>}
 

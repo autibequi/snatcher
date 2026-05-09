@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Button, Input } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 export default function Setup() {
@@ -47,66 +48,50 @@ export default function Setup() {
         </div>
 
         <form onSubmit={submit} className="space-y-4">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome</label>
-            <input
-              type="text"
-              autoFocus
-              required
-              placeholder="Seu nome"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </div>
+          <Input
+            label="Nome"
+            type="text"
+            autoFocus
+            required
+            placeholder="Seu nome"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          />
 
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">E-mail</label>
-            <input
-              type="email"
-              required
-              placeholder="admin@seudominio.com"
-              value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </div>
+          <Input
+            label="E-mail"
+            type="email"
+            required
+            placeholder="admin@seudominio.com"
+            value={form.email}
+            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+          />
 
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Senha</label>
-            <input
-              type="password"
-              required
-              placeholder="Mínimo 8 caracteres"
-              value={form.password}
-              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </div>
+          <Input
+            label="Senha"
+            type="password"
+            required
+            placeholder="Mínimo 8 caracteres"
+            value={form.password}
+            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+          />
 
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Confirmar senha</label>
-            <input
-              type="password"
-              required
-              placeholder="Repita a senha"
-              value={form.confirm}
-              onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-fg outline-none focus:border-accent"
-            />
-          </div>
+          <Input
+            label="Confirmar senha"
+            type="password"
+            required
+            placeholder="Repita a senha"
+            value={form.confirm}
+            onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))}
+          />
 
           {error && (
             <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{error}</p>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 transition-colors"
-          >
+          <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading}>
             {loading ? 'Criando conta...' : 'Criar conta de administrador'}
-          </button>
+          </Button>
         </form>
 
         <p className="text-xs text-center text-fg-3 mt-6">

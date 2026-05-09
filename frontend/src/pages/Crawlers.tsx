@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCard } from '../components/ui'
+import { Badge, Button, Input, Modal, Switch, Tabs, Skeleton, EmptyState, KpiCard, Textarea } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
@@ -542,18 +542,19 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
       </div>
     }>
       <div className="space-y-4">
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Termo principal *</label>
-          <input className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-            placeholder="Ex: iPhone 15 Pro"
-            value={form.query} onChange={e => setForm(f => ({...f, query: e.target.value}))} />
-        </div>
-        <div>
-          <label className="text-xs text-fg-2 block mb-1">Termos adicionais (separados por ;)</label>
-          <textarea rows={3} className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent resize-none"
-            placeholder={"iphone 15 pro\niphone 15 pro max"}
-            value={form.queries} onChange={e => setForm(f => ({...f, queries: e.target.value}))} />
-        </div>
+        <Input
+          label="Termo principal *"
+          placeholder="Ex: iPhone 15 Pro"
+          value={form.query}
+          onChange={e => setForm(f => ({ ...f, query: e.target.value }))}
+        />
+        <Textarea
+          label="Termos adicionais (separados por ;)"
+          rows={3}
+          placeholder={'iphone 15 pro\niphone 15 pro max'}
+          value={form.queries}
+          onChange={e => setForm(f => ({ ...f, queries: e.target.value }))}
+        />
         <div>
           <label className="text-xs text-fg-2 block mb-1">Fontes</label>
           <div className="flex flex-wrap gap-2">
@@ -564,16 +565,20 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
           <p className="text-xs text-fg-3 mt-1">Nenhuma selecionada = todas as fontes</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Valor mínimo (R$)</label>
-            <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="0" value={form.min_val} onChange={e => setForm(f => ({...f, min_val: e.target.value}))} />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Valor máximo (R$)</label>
-            <input type="number" className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="9999" value={form.max_val} onChange={e => setForm(f => ({...f, max_val: e.target.value}))} />
-          </div>
+          <Input
+            label="Valor mínimo (R$)"
+            type="number"
+            placeholder="0"
+            value={form.min_val}
+            onChange={e => setForm(f => ({ ...f, min_val: e.target.value }))}
+          />
+          <Input
+            label="Valor máximo (R$)"
+            type="number"
+            placeholder="9999"
+            value={form.max_val}
+            onChange={e => setForm(f => ({ ...f, max_val: e.target.value }))}
+          />
         </div>
         <div>
           <label className="text-xs text-fg-2 block mb-1">Intervalo de crawl</label>

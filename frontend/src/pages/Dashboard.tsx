@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { KpiCard } from '../components/ui'
+import { Button, KpiCard, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
@@ -134,42 +134,39 @@ export default function Dashboard() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
 
       {/* ── 1. Header ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-fg">
-            {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
-          </h1>
-          {/* Subtítulo dinâmico — renderizado com base em inboxCount + nextDispatchEta */}
-          <p className="text-sm text-fg-3 mt-0.5" id="dashboard-subtitle">
-            {renderDynamicSubtitle(
-              inboxItems.length,
-              dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              // Exclui recommendation do refresh — ela só atualiza via botão ↻ próprio
-              qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
-              qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
-              qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
-              qc.invalidateQueries({ queryKey: ['catalog'] })
-            }}
-            className="text-sm text-fg-2 border border-border rounded-md px-3 py-1.5 hover:bg-surface-2"
-          >
-            ↻ Atualizar
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/compose')}
-            className="text-sm bg-accent text-white rounded-md px-3 py-1.5 hover:bg-accent-hover flex items-center gap-1.5"
-          >
-            ✈ Novo disparo
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <>
+            {greeting}
+            {user?.name ? `, ${user.name.split(' ')[0]}` : ''}
+          </>
+        }
+        subtitle={renderDynamicSubtitle(
+          inboxItems.length,
+          dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
+        )}
+        subtitleId="dashboard-subtitle"
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() => {
+                qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
+                qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+                qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
+                qc.invalidateQueries({ queryKey: ['catalog'] })
+              }}
+            >
+              ↻ Atualizar
+            </Button>
+            <Button variant="primary" size="sm" type="button" onClick={() => navigate('/compose')}>
+              ✈ Novo disparo
+            </Button>
+          </>
+        }
+      />
 
       {/* ── 2. Recomendação operacional (cache 1h) ──────────────────────────── */}
       <RecommendationCard />

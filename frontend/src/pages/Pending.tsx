@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button } from '../components/ui'
+import { Button, PageHeader } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface PendingDispatch {
@@ -188,47 +188,48 @@ export default function Pending() {
 
   return (
     <div className="p-6 space-y-4">
-      {/* Header + ações */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-fg">Pendentes de envio</h1>
-          <p className="text-sm text-fg-3">
+      <PageHeader
+        title="Pendentes de envio"
+        subtitle={
+          <>
             <strong className="text-fg-2">Fila WA</strong> = dispatches <code className="text-xs bg-surface-2 px-1 rounded">queued</code> aguardando o worker Evolution (~15s).
             <strong className="text-fg-2"> Auto-match</strong> (quem cria esses dispatches) roda <strong className="text-fg-2">a cada 1 min</strong> se estiver ligado em Config — não confundir com o intervalo do Jonfrey (manutenção / <code className="text-xs bg-surface-2 px-1">auto_release_pending</code>).
             <strong className="text-fg-2"> Prévia</strong> = candidatos por score; <strong className="text-fg-2">aprovação manual</strong> = <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code> só sem full-auto.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-          {selected.size > 0 && (
-            <>
-              <Button variant="primary" size="sm"
-                loading={approveBatchMut.isPending}
-                onClick={() => approveBatchMut.mutate(Array.from(selected))}>
-                ✓ Aprovar {selected.size}
-              </Button>
-              <Button variant="danger" size="sm"
-                loading={rejectBatchMut.isPending}
-                onClick={() => { if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected)) }}>
-                ✕ Rejeitar {selected.size}
-              </Button>
-            </>
-          )}
-          {items.length > 0 && (
-            <>
-              <Button variant="secondary" size="sm"
-                loading={approveAllMut.isPending}
-                onClick={() => { if (confirm(`Aprovar TODOS os ${items.length} pendentes?`)) approveAllMut.mutate() }}>
-                Aprovar todos ({items.length})
-              </Button>
-              <Button variant="secondary" size="sm"
-                loading={rejectBatchMut.isPending}
-                onClick={() => { if (confirm(`Rejeitar TODOS os ${items.length} pendentes?`)) rejectBatchMut.mutate(items.map(i => i.id)) }}>
-                Rejeitar todos
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            {selected.size > 0 && (
+              <>
+                <Button variant="primary" size="sm"
+                  loading={approveBatchMut.isPending}
+                  onClick={() => approveBatchMut.mutate(Array.from(selected))}>
+                  ✓ Aprovar {selected.size}
+                </Button>
+                <Button variant="danger" size="sm"
+                  loading={rejectBatchMut.isPending}
+                  onClick={() => { if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected)) }}>
+                  ✕ Rejeitar {selected.size}
+                </Button>
+              </>
+            )}
+            {items.length > 0 && (
+              <>
+                <Button variant="secondary" size="sm"
+                  loading={approveAllMut.isPending}
+                  onClick={() => { if (confirm(`Aprovar TODOS os ${items.length} pendentes?`)) approveAllMut.mutate() }}>
+                  Aprovar todos ({items.length})
+                </Button>
+                <Button variant="secondary" size="sm"
+                  loading={rejectBatchMut.isPending}
+                  onClick={() => { if (confirm(`Rejeitar TODOS os ${items.length} pendentes?`)) rejectBatchMut.mutate(items.map(i => i.id)) }}>
+                  Rejeitar todos
+                </Button>
+              </>
+            )}
+          </>
+        }
+      />
 
       {/* Fila do WhatsApp — queued/sending */}
       <div className="border border-border rounded-md overflow-hidden bg-surface">

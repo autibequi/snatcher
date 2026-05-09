@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Tabs, Skeleton, EmptyState } from '../components/ui'
+import { Button, Input, Tabs, Skeleton, EmptyState, SegmentedControl } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useTheme } from '../lib/theme'
 
@@ -26,41 +26,28 @@ function AppearanceTab() {
       <div>
         <p className="text-sm font-medium text-fg mb-1">Tema</p>
         <p className="text-xs text-fg-3 mb-3">"Sistema" segue a preferência do seu dispositivo (dark/light automaticamente).</p>
-        <div className="flex gap-2 flex-wrap">
-          {(['system', 'light', 'dark'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTheme(t)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                theme === t
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-2 text-fg-2 hover:bg-border border border-border'
-              }`}
-            >
-              {t === 'system' ? '🖥️ Sistema' : t === 'light' ? '☀️ Claro' : '🌙 Escuro'}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={theme}
+          onChange={setTheme}
+          options={[
+            { value: 'system', label: '🖥️ Sistema' },
+            { value: 'light', label: '☀️ Claro' },
+            { value: 'dark', label: '🌙 Escuro' },
+          ]}
+        />
       </div>
 
       {/* Densidade */}
       <div>
         <p className="text-sm font-medium text-fg mb-3">Densidade</p>
-        <div className="flex gap-2">
-          {(['compact', 'comfy'] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDensity(d)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                density === d
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-2 text-fg-2 hover:bg-border border border-border'
-              }`}
-            >
-              {d === 'compact' ? 'Compacto' : 'Confortável'}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={density}
+          onChange={setDensity}
+          options={[
+            { value: 'compact', label: 'Compacto' },
+            { value: 'comfy', label: 'Confortável' },
+          ]}
+        />
       </div>
 
       {/* Acento */}
