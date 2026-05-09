@@ -26,16 +26,16 @@ type composePreviewRequest struct {
 	ProductID *int64 `json:"product_id"`
 	ChannelID *int64 `json:"channel_id"`
 	// Campos manuais (usados quando product_id não é fornecido)
-	Title         string  `json:"title"`
-	Marketplace   string  `json:"marketplace"`
-	Price         float64 `json:"price"`
-	PriceOrig     float64 `json:"price_original"`
-	Drop          float64 `json:"drop"`
-	Category      string  `json:"category"`
-	Brand         string  `json:"brand"`
+	Title       string  `json:"title"`
+	Marketplace string  `json:"marketplace"`
+	Price       float64 `json:"price"`
+	PriceOrig   float64 `json:"price_original"`
+	Drop        float64 `json:"drop"`
+	Category    string  `json:"category"`
+	Brand       string  `json:"brand"`
 	// Tom da mensagem e contexto customizado
-	Tone          string  `json:"tone"`
-	CustomContext string  `json:"custom_context"`
+	Tone          string `json:"tone"`
+	CustomContext string `json:"custom_context"`
 }
 
 // Preview godoc
@@ -55,18 +55,34 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	// Tenta CatalogProduct primeiro (ID do frontend), depois CatalogVariant (legado).
 	if req.ProductID != nil {
 		if p, err := h.store.GetCatalogProduct(*req.ProductID); err == nil {
-			if req.Title == "" { req.Title = p.CanonicalName }
-			if req.Price == 0 && p.LowestPrice.Valid { req.Price = p.LowestPrice.Float64 }
-			if req.Marketplace == "" && p.LowestPriceSource.Valid { req.Marketplace = p.LowestPriceSource.String }
-			if req.Brand == "" && p.Brand.Valid { req.Brand = p.Brand.String }
+			if req.Title == "" {
+				req.Title = p.CanonicalName
+			}
+			if req.Price == 0 && p.LowestPrice.Valid {
+				req.Price = p.LowestPrice.Float64
+			}
+			if req.Marketplace == "" && p.LowestPriceSource.Valid {
+				req.Marketplace = p.LowestPriceSource.String
+			}
+			if req.Brand == "" && p.Brand.Valid {
+				req.Brand = p.Brand.String
+			}
 			if req.Category == "" {
 				tags := p.GetTags()
-				if len(tags) > 0 { req.Category = tags[0] }
+				if len(tags) > 0 {
+					req.Category = tags[0]
+				}
 			}
 		} else if variant, err := h.store.GetCatalogVariant(*req.ProductID); err == nil {
-			if req.Title == "" { req.Title = variant.Title }
-			if req.Price == 0 { req.Price = variant.Price }
-			if req.Marketplace == "" { req.Marketplace = variant.Source }
+			if req.Title == "" {
+				req.Title = variant.Title
+			}
+			if req.Price == 0 {
+				req.Price = variant.Price
+			}
+			if req.Marketplace == "" {
+				req.Marketplace = variant.Source
+			}
 		}
 	}
 
@@ -124,7 +140,9 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 		return nil
 	}
 	provider := cfg.LLMProvider.String
-	if provider == "" { provider = "openrouter" }
+	if provider == "" {
+		provider = "openrouter"
+	}
 	apiKey := cfg.LLMApiKey.String
 	model := cfg.LLMModel.String
 
@@ -135,12 +153,14 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 			nullString(cfg.LLMBaseURL),
 		)
 		baseURL = normalizeLLMBaseURL(baseURL)
-		if baseURL == "" { return nil }
+		if baseURL == "" {
+			return nil
+		}
 		m := firstNonEmptyTrimmed(nullString(cfg.LLMOllamaModel), nullString(cfg.LLMModel))
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		cli := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningEnabled)
+		cli := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningOllama)
 		if m != "" {
 			return &modelOverrideClient{inner: cli, model: m}
 		}
@@ -151,20 +171,24 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 			nullString(cfg.LLMBaseURL),
 		)
 		baseURL = normalizeLLMBaseURL(baseURL)
-		if baseURL == "" { return nil }
+		if baseURL == "" {
+			return nil
+		}
 		m := firstNonEmptyTrimmed(nullString(cfg.LLMVLLMModel), nullString(cfg.LLMModel))
 		vk := firstNonEmptyTrimmed(nullString(cfg.LLMVLLMApiKey), nullString(cfg.LLMApiKey))
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		cli := llm.NewOpenAICompat(baseURL, vk).WithReasoning(cfg.LLMReasoningEnabled)
+		cli := llm.NewOpenAICompat(baseURL, vk).WithReasoning(cfg.LLMReasoningVllm)
 		if m != "" {
 			return &modelOverrideClient{inner: cli, model: m}
 		}
 		return cli
 	case "openrouter":
-		if apiKey == "" { return nil }
-		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningEnabled)
+		if apiKey == "" {
+			return nil
+		}
+		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningOpenrouter)
 		if fb := strings.TrimSpace(nullString(cfg.LLMOpenRouterFallbackModel)); fb != "" {
 			cli = cli.WithOpenRouterFallback(fb)
 		}
@@ -175,7 +199,17 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 	default:
 		fallback := normalizeLLMBaseURL(cfg.LLMBaseURL.String)
 		if fallback != "" {
-			return llm.NewOpenAICompat(fallback, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
+			u := strings.ToLower(fallback)
+			var re bool
+			switch {
+			case strings.Contains(u, "openrouter.ai"):
+				re = cfg.LLMReasoningOpenrouter
+			case strings.Contains(u, "vllm"):
+				re = cfg.LLMReasoningVllm
+			default:
+				re = cfg.LLMReasoningOllama
+			}
+			return llm.NewOpenAICompat(fallback, apiKey).WithReasoning(re)
 		}
 		return nil
 	}

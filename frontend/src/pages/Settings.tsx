@@ -295,7 +295,11 @@ function LLMTab() {
     mutationFn: () => {
       // Coerce string-encoded booleans dos campos com checkbox antes de enviar pro backend.
       const payload: Record<string, unknown> = { ...config, ...form }
-      const boolFields = ['llm_reasoning_enabled']
+      const boolFields = [
+        'llm_reasoning_ollama',
+        'llm_reasoning_vllm',
+        'llm_reasoning_openrouter',
+      ]
       for (const k of boolFields) {
         if (payload[k] === 'true') payload[k] = true
         else if (payload[k] === 'false') payload[k] = false
@@ -387,27 +391,52 @@ function LLMTab() {
         />
       )}
 
-      <div className="border border-border rounded-md p-3 space-y-2">
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-fg">Habilitar reasoning (chain-of-thought)</p>
-            <p className="text-xs text-fg-3 mt-0.5">
-              Modelos como deepseek-v4, gpt-5 e r1 fazem raciocínio interno antes da resposta.
-              Desligado por padrão — evita truncar o JSON quando max_tokens aperta.
-              Ligue só se sentir falta de qualidade nas respostas.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            className="accent-accent w-4 h-4 flex-shrink-0"
-            checked={
-              form.llm_reasoning_enabled !== undefined
-                ? form.llm_reasoning_enabled === 'true'
-                : !!config?.llm_reasoning_enabled
-            }
-            onChange={e => set('llm_reasoning_enabled', String(e.target.checked))}
-          />
-        </label>
+      <div className="border border-border rounded-md p-3 space-y-4">
+        <div>
+          <p className="text-sm font-medium text-fg">Reasoning (chain-of-thought) por provider</p>
+          <p className="text-xs text-fg-3 mt-1">
+            Modelos como deepseek-v4, gpt-5 e r1 fazem raciocínio interno antes da resposta.
+            Por padrão fica desligado — evita truncar o JSON quando max_tokens aperta.
+            Ative só para o backend que você usar (cada um é salvo separado).
+          </p>
+        </div>
+        {[
+          {
+            key: 'llm_reasoning_ollama',
+            title: 'Ollama',
+            hint: 'URLs self-hosted compatíveis OpenAI (ex.: ollama:11434/v1).',
+          },
+          {
+            key: 'llm_reasoning_vllm',
+            title: 'vLLM',
+            hint: 'Servidor cuja URL inclui vllm (hostname ou path).',
+          },
+          {
+            key: 'llm_reasoning_openrouter',
+            title: 'OpenRouter',
+            hint: 'API openrouter.ai e URLs que apontem para ela.',
+          },
+        ].map(({ key, title, hint }) => (
+          <label
+            key={key}
+            className="flex items-start justify-between gap-3 cursor-pointer border-t border-border pt-3 first:border-t-0 first:pt-0"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-fg">{title}</p>
+              <p className="text-xs text-fg-3 mt-0.5">{hint}</p>
+            </div>
+            <input
+              type="checkbox"
+              className="accent-accent w-4 h-4 flex-shrink-0 mt-0.5"
+              checked={
+                form[key] !== undefined
+                  ? form[key] === 'true'
+                  : !!(config as Record<string, unknown>)?.[key]
+              }
+              onChange={e => set(key, String(e.target.checked))}
+            />
+          </label>
+        ))}
       </div>
 
       <div className="border border-accent/30 bg-accent/5 rounded-md p-3 flex items-start gap-3">

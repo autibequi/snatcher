@@ -11,11 +11,11 @@ import (
 
 // Source represents a marketplace data source (e.g., Mercado Livre, Amazon).
 type Source struct {
-	ID         string      `db:"id" json:"id"`
-	Name       string      `db:"name" json:"name"`
-	Category   string      `db:"category" json:"category"`
-	Enabled    bool        `db:"enabled" json:"enabled"`
-	ConfigJSON NullString  `db:"config_json" json:"config_json,omitempty"`
+	ID         string     `db:"id" json:"id"`
+	Name       string     `db:"name" json:"name"`
+	Category   string     `db:"category" json:"category"`
+	Enabled    bool       `db:"enabled" json:"enabled"`
+	ConfigJSON NullString `db:"config_json" json:"config_json,omitempty"`
 }
 
 // Affiliate represents affiliate tracking information for a source.
@@ -29,34 +29,34 @@ type Affiliate struct {
 }
 
 type Group struct {
-	ID              int64          `db:"id" json:"id"`
-	Name            string         `db:"name" json:"name"`
-	Description     string         `db:"description" json:"description"`
-	SearchPrompt    string         `db:"search_prompt" json:"search_prompt"`
-	MinVal          float64        `db:"min_val" json:"min_val"`
-	MaxVal          float64        `db:"max_val" json:"max_val"`
+	ID              int64      `db:"id" json:"id"`
+	Name            string     `db:"name" json:"name"`
+	Description     string     `db:"description" json:"description"`
+	SearchPrompt    string     `db:"search_prompt" json:"search_prompt"`
+	MinVal          float64    `db:"min_val" json:"min_val"`
+	MaxVal          float64    `db:"max_val" json:"max_val"`
 	WhatsappGroupID NullString `db:"whatsapp_group_id" json:"whatsapp_group_id,omitempty"`
 	WAGroupStatus   NullString `db:"wa_group_status" json:"wa_group_status,omitempty"`
 	TelegramChatID  NullString `db:"telegram_chat_id" json:"telegram_chat_id,omitempty"`
 	TGGroupStatus   NullString `db:"tg_group_status" json:"tg_group_status,omitempty"`
 	MessageTemplate NullString `db:"message_template" json:"message_template,omitempty"`
-	Active          bool           `db:"active" json:"active"`
-	ScanInterval    int            `db:"scan_interval" json:"scan_interval"`
-	CreatedAt       time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time      `db:"updated_at" json:"updated_at"`
+	Active          bool       `db:"active" json:"active"`
+	ScanInterval    int        `db:"scan_interval" json:"scan_interval"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 type Product struct {
-	ID        int64          `db:"id" json:"id"`
-	GroupID   int64          `db:"group_id" json:"group_id"`
-	Title     string         `db:"title" json:"title"`
-	Price     float64        `db:"price" json:"price"`
-	URL       string         `db:"url" json:"url"`
+	ID        int64      `db:"id" json:"id"`
+	GroupID   int64      `db:"group_id" json:"group_id"`
+	Title     string     `db:"title" json:"title"`
+	Price     float64    `db:"price" json:"price"`
+	URL       string     `db:"url" json:"url"`
 	ImageURL  NullString `db:"image_url" json:"image_url,omitempty"`
-	Source    string         `db:"source" json:"source"`
+	Source    string     `db:"source" json:"source"`
 	ShortID   NullString `db:"short_id" json:"short_id,omitempty"`
 	FamilyKey NullString `db:"family_key" json:"family_key,omitempty"`
-	FoundAt   time.Time      `db:"found_at" json:"found_at"`
+	FoundAt   time.Time  `db:"found_at" json:"found_at"`
 	SentAt    NullTime   `db:"sent_at" json:"sent_at,omitempty"`
 }
 
@@ -70,12 +70,12 @@ type ClickLog struct {
 }
 
 type ScanJob struct {
-	ID            int64          `db:"id" json:"id"`
-	GroupID       int64          `db:"group_id" json:"group_id"`
-	StartedAt     time.Time      `db:"started_at" json:"started_at"`
+	ID            int64      `db:"id" json:"id"`
+	GroupID       int64      `db:"group_id" json:"group_id"`
+	StartedAt     time.Time  `db:"started_at" json:"started_at"`
 	FinishedAt    NullTime   `db:"finished_at" json:"finished_at,omitempty"`
-	ProductsFound int            `db:"products_found" json:"products_found"`
-	Status        string         `db:"status" json:"status"`
+	ProductsFound int        `db:"products_found" json:"products_found"`
+	Status        string     `db:"status" json:"status"`
 	ErrorMsg      NullString `db:"error_msg" json:"error_msg,omitempty"`
 }
 
@@ -118,19 +118,20 @@ type AppConfig struct {
 	AppDomain NullString `db:"app_domain" json:"app_domain,omitempty"`
 
 	// Auto match
-	AutoMatchEnabled    bool    `db:"auto_match_enabled" json:"auto_match_enabled"`
-	AutoMatchThreshold  float64 `db:"auto_match_threshold" json:"auto_match_threshold"`
-	AutoMatchMaxPerRun  int     `db:"auto_match_max_per_run" json:"auto_match_max_per_run"`
+	AutoMatchEnabled   bool    `db:"auto_match_enabled" json:"auto_match_enabled"`
+	AutoMatchThreshold float64 `db:"auto_match_threshold" json:"auto_match_threshold"`
+	AutoMatchMaxPerRun int     `db:"auto_match_max_per_run" json:"auto_match_max_per_run"`
 
 	// Automation mode — migration 0096
-	FullAutoMode           bool   `db:"full_auto_mode" json:"full_auto_mode"`
-	NotifyApprovalWebhook  string `db:"notify_approval_webhook" json:"notify_approval_webhook"`
-	AutoCurateLLM          bool   `db:"auto_curate_llm" json:"auto_curate_llm"`
+	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`
+	NotifyApprovalWebhook string `db:"notify_approval_webhook" json:"notify_approval_webhook"`
+	AutoCurateLLM         bool   `db:"auto_curate_llm" json:"auto_curate_llm"`
 
-	// LLM reasoning — migration 0098
-	// Default false: desliga chain-of-thought no provider (deepseek-v4, gpt-5, r1).
-	// Evita "response truncated" em chamadas com max_tokens apertado pra JSON.
-	LLMReasoningEnabled bool `db:"llm_reasoning_enabled" json:"llm_reasoning_enabled"`
+	// LLM reasoning por provider — migration 0118 (antes: llm_reasoning_enabled único).
+	// Default false: desliga chain-of-thought (deepseek-v4, gpt-5, r1).
+	LLMReasoningOllama     bool `db:"llm_reasoning_ollama" json:"llm_reasoning_ollama"`
+	LLMReasoningVllm       bool `db:"llm_reasoning_vllm" json:"llm_reasoning_vllm"`
+	LLMReasoningOpenrouter bool `db:"llm_reasoning_openrouter" json:"llm_reasoning_openrouter"`
 }
 
 type AutoMatchLog struct {
@@ -147,41 +148,41 @@ type AutoMatchLog struct {
 	GroupNames  string `db:"group_names" json:"group_names,omitempty"` // CSV dos grupos que receberam o disparo
 
 	// migration 0113 — breakdown e false positive tracking
-	ScoreBreakdown        []byte        `db:"score_breakdown" json:"-"` // JSONB raw
+	ScoreBreakdown        []byte         `db:"score_breakdown" json:"-"` // JSONB raw
 	MatchReasons          pq.StringArray `db:"match_reasons" json:"match_reasons,omitempty"`
-	FalsePositive         *bool         `db:"false_positive" json:"false_positive,omitempty"`
-	FalsePositiveReason   string        `db:"false_positive_reason" json:"false_positive_reason,omitempty"`
-	FalsePositiveMarkedAt NullTime      `db:"false_positive_marked_at" json:"false_positive_marked_at,omitempty"`
+	FalsePositive         *bool          `db:"false_positive" json:"false_positive,omitempty"`
+	FalsePositiveReason   string         `db:"false_positive_reason" json:"false_positive_reason,omitempty"`
+	FalsePositiveMarkedAt NullTime       `db:"false_positive_marked_at" json:"false_positive_marked_at,omitempty"`
 }
 
 type WAAccount struct {
-	ID          int64          `db:"id" json:"id"`
-	Name        string         `db:"name" json:"name"`
-	Provider    string         `db:"provider" json:"provider"`
+	ID          int64      `db:"id" json:"id"`
+	Name        string     `db:"name" json:"name"`
+	Provider    string     `db:"provider" json:"provider"`
 	BaseURL     NullString `db:"base_url" json:"base_url,omitempty"`
 	APIKey      NullString `db:"api_key" json:"api_key,omitempty"`
 	Instance    NullString `db:"instance" json:"instance,omitempty"`
 	GroupPrefix NullString `db:"group_prefix" json:"group_prefix,omitempty"`
-	Status      string         `db:"status" json:"status"`
-	Active      bool           `db:"active" json:"active"`
-	Role        string         `db:"role" json:"role"`
-	DailyLimit  int            `db:"daily_limit" json:"daily_limit"`
-	SentToday   int            `db:"sent_today" json:"sent_today"`
-	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
+	Status      string     `db:"status" json:"status"`
+	Active      bool       `db:"active" json:"active"`
+	Role        string     `db:"role" json:"role"`
+	DailyLimit  int        `db:"daily_limit" json:"daily_limit"`
+	SentToday   int        `db:"sent_today" json:"sent_today"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
 }
 
 type TGAccount struct {
-	ID           int64          `db:"id" json:"id"`
-	Name         string         `db:"name" json:"name"`
+	ID           int64      `db:"id" json:"id"`
+	Name         string     `db:"name" json:"name"`
 	BotToken     NullString `db:"bot_token" json:"bot_token,omitempty"`
 	BotUsername  NullString `db:"bot_username" json:"bot_username,omitempty"`
 	GroupPrefix  NullString `db:"group_prefix" json:"group_prefix,omitempty"`
 	LastUpdateID NullInt64  `db:"last_update_id" json:"last_update_id,omitempty"`
-	Active       bool           `db:"active" json:"active"`
-	Role         string         `db:"role" json:"role"`
-	DailyLimit   int            `db:"daily_limit" json:"daily_limit"`
-	SentToday    int            `db:"sent_today" json:"sent_today"`
-	CreatedAt    time.Time      `db:"created_at" json:"created_at"`
+	Active       bool       `db:"active" json:"active"`
+	Role         string     `db:"role" json:"role"`
+	DailyLimit   int        `db:"daily_limit" json:"daily_limit"`
+	SentToday    int        `db:"sent_today" json:"sent_today"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 }
 
 type SearchTerm struct {
@@ -223,7 +224,9 @@ var srcAlias = map[string]string{
 
 func normSource(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
-	if a, ok := srcAlias[s]; ok { return a }
+	if a, ok := srcAlias[s]; ok {
+		return a
+	}
 	return s
 }
 
@@ -258,27 +261,27 @@ func (s *SearchTerm) GetSources() []string {
 }
 
 type CrawlResult struct {
-	ID               int64          `db:"id" json:"id"`
-	SearchTermID     int64          `db:"search_term_id" json:"search_term_id"`
-	Title            string         `db:"title" json:"title"`
-	Price            float64        `db:"price" json:"price"`
-	URL              string         `db:"url" json:"url"`
+	ID               int64      `db:"id" json:"id"`
+	SearchTermID     int64      `db:"search_term_id" json:"search_term_id"`
+	Title            string     `db:"title" json:"title"`
+	Price            float64    `db:"price" json:"price"`
+	URL              string     `db:"url" json:"url"`
 	ImageURL         NullString `db:"image_url" json:"image_url,omitempty"`
-	Source           string         `db:"source" json:"source"`
+	Source           string     `db:"source" json:"source"`
 	SourceSubID      NullString `db:"source_subid" json:"source_subid,omitempty"`
-	CrawledAt        time.Time      `db:"crawled_at" json:"crawled_at"`
+	CrawledAt        time.Time  `db:"crawled_at" json:"crawled_at"`
 	CatalogVariantID NullInt64  `db:"catalog_variant_id" json:"catalog_variant_id,omitempty"`
 	// Metadata (migration 0105): JSON livre — description, rating, reviews_count, seller, free_shipping, installments, etc.
-	Metadata         []byte         `db:"metadata" json:"-"`
+	Metadata []byte `db:"metadata" json:"-"`
 }
 
 // CrawlMetadata é a estrutura recomendada pra Metadata. Os scrapers preenchem só
 // os campos que conseguem extrair — todo o resto é opcional.
 type CrawlMetadata struct {
 	Description   string  `json:"description,omitempty"`
-	Rating        float64 `json:"rating,omitempty"`         // 0..5
+	Rating        float64 `json:"rating,omitempty"` // 0..5
 	ReviewsCount  int     `json:"reviews_count,omitempty"`
-	Seller        string  `json:"seller,omitempty"`         // "Loja Oficial Samsung"
+	Seller        string  `json:"seller,omitempty"` // "Loja Oficial Samsung"
 	OfficialStore bool    `json:"official_store,omitempty"`
 	FreeShipping  bool    `json:"free_shipping,omitempty"`
 	Installments  string  `json:"installments,omitempty"`   // "12x R$ 50 sem juros"
@@ -286,17 +289,17 @@ type CrawlMetadata struct {
 }
 
 type CatalogProduct struct {
-	ID                int64           `db:"id" json:"id"`
-	CanonicalName     string          `db:"canonical_name" json:"canonical_name"`
+	ID                int64       `db:"id" json:"id"`
+	CanonicalName     string      `db:"canonical_name" json:"canonical_name"`
 	Brand             NullString  `db:"brand" json:"brand,omitempty"`
 	Weight            NullString  `db:"weight" json:"weight,omitempty"`
 	ImageURL          NullString  `db:"image_url" json:"image_url,omitempty"`
 	LowestPrice       NullFloat64 `db:"lowest_price" json:"lowest_price,omitempty"`
 	LowestPriceURL    NullString  `db:"lowest_price_url" json:"lowest_price_url,omitempty"`
 	LowestPriceSource NullString  `db:"lowest_price_source" json:"lowest_price_source,omitempty"`
-	Tags              string          `db:"tags" json:"tags"`
-	CreatedAt         time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt         time.Time       `db:"updated_at" json:"updated_at"`
+	Tags              string      `db:"tags" json:"tags"`
+	CreatedAt         time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt         time.Time   `db:"updated_at" json:"updated_at"`
 	// migration 0084
 	CurationStatus string `db:"curation_status" json:"curation_status"`
 	// migration 0091 — purge 404/3-strikes
@@ -309,7 +312,7 @@ type CatalogProduct struct {
 	InspectedAt     NullTime   `db:"inspected_at" json:"inspected_at,omitempty"`
 	InspectionNotes NullString `db:"inspection_notes" json:"inspection_notes,omitempty"`
 	// migration 0112 — atributos estruturados (cor, tamanho, voltagem, etc)
-	Attributes      []byte     `db:"attributes" json:"-"` // JSONB raw
+	Attributes []byte `db:"attributes" json:"-"` // JSONB raw
 }
 
 func (p *CatalogProduct) GetTags() []string {
@@ -321,24 +324,24 @@ func (p *CatalogProduct) GetTags() []string {
 // MarshalJSON serializa Tags como []string (em vez de string JSON) para a resposta HTTP.
 func (p CatalogProduct) MarshalJSON() ([]byte, error) {
 	type shadow struct {
-		ID                  int64       `json:"id"`
-		CanonicalName       string      `json:"canonical_name"`
-		Brand               NullString  `json:"brand,omitempty"`
-		Weight              NullString  `json:"weight,omitempty"`
-		ImageURL            NullString  `json:"image_url,omitempty"`
-		LowestPrice         NullFloat64 `json:"lowest_price,omitempty"`
-		LowestPriceURL      NullString  `json:"lowest_price_url,omitempty"`
-		LowestPriceSource   NullString  `json:"lowest_price_source,omitempty"`
-		Tags                []string    `json:"tags"`
-		CreatedAt           time.Time   `json:"created_at"`
-		UpdatedAt           time.Time   `json:"updated_at"`
-		CurationStatus      string      `json:"curation_status"`
-		ConsecutiveFailures int         `json:"consecutive_failures"`
-		Inactive            bool        `json:"inactive"`
-		Quantity            string      `json:"quantity"`
-		Inspected           bool        `json:"inspected"`
-		InspectedAt         NullTime    `json:"inspected_at,omitempty"`
-		InspectionNotes     NullString  `json:"inspection_notes,omitempty"`
+		ID                  int64           `json:"id"`
+		CanonicalName       string          `json:"canonical_name"`
+		Brand               NullString      `json:"brand,omitempty"`
+		Weight              NullString      `json:"weight,omitempty"`
+		ImageURL            NullString      `json:"image_url,omitempty"`
+		LowestPrice         NullFloat64     `json:"lowest_price,omitempty"`
+		LowestPriceURL      NullString      `json:"lowest_price_url,omitempty"`
+		LowestPriceSource   NullString      `json:"lowest_price_source,omitempty"`
+		Tags                []string        `json:"tags"`
+		CreatedAt           time.Time       `json:"created_at"`
+		UpdatedAt           time.Time       `json:"updated_at"`
+		CurationStatus      string          `json:"curation_status"`
+		ConsecutiveFailures int             `json:"consecutive_failures"`
+		Inactive            bool            `json:"inactive"`
+		Quantity            string          `json:"quantity"`
+		Inspected           bool            `json:"inspected"`
+		InspectedAt         NullTime        `json:"inspected_at,omitempty"`
+		InspectionNotes     NullString      `json:"inspection_notes,omitempty"`
 		Attributes          json.RawMessage `json:"attributes,omitempty"`
 	}
 	return json.Marshal(shadow{
@@ -369,22 +372,22 @@ func (p *CatalogProduct) AddTag(tag string) {
 }
 
 type CatalogVariant struct {
-	ID               int64          `db:"id" json:"id"`
-	CatalogProductID int64          `db:"catalog_product_id" json:"catalog_product_id"`
-	Title            string         `db:"title" json:"title"`
+	ID               int64      `db:"id" json:"id"`
+	CatalogProductID int64      `db:"catalog_product_id" json:"catalog_product_id"`
+	Title            string     `db:"title" json:"title"`
 	VariantLabel     NullString `db:"variant_label" json:"variant_label,omitempty"`
-	Price            float64        `db:"price" json:"price"`
-	URL              string         `db:"url" json:"url"`
+	Price            float64    `db:"price" json:"price"`
+	URL              string     `db:"url" json:"url"`
 	ShortID          NullString `db:"short_id" json:"short_id,omitempty"`
 	ImageURL         NullString `db:"image_url" json:"image_url,omitempty"`
-	Source           string         `db:"source" json:"source"`
-	FirstSeenAt      time.Time      `db:"first_seen_at" json:"first_seen_at"`
-	LastSeenAt       time.Time      `db:"last_seen_at" json:"last_seen_at"`
+	Source           string     `db:"source" json:"source"`
+	FirstSeenAt      time.Time  `db:"first_seen_at" json:"first_seen_at"`
+	LastSeenAt       time.Time  `db:"last_seen_at" json:"last_seen_at"`
 	// Match metadata (migration 0104) — confidence do merge no momento da criação.
-	MatchConfidence  NullFloat64 `db:"match_confidence" json:"match_confidence,omitempty"`
-	MatchMethod      NullString  `db:"match_method" json:"match_method,omitempty"`
+	MatchConfidence NullFloat64 `db:"match_confidence" json:"match_confidence,omitempty"`
+	MatchMethod     NullString  `db:"match_method" json:"match_method,omitempty"`
 	// Metadata enriquecido (migration 0105) — descrição, rating, vendedor, frete, etc.
-	Metadata         []byte      `db:"metadata" json:"-"`
+	Metadata []byte `db:"metadata" json:"-"`
 }
 
 type PriceHistoryV2 struct {
@@ -395,15 +398,15 @@ type PriceHistoryV2 struct {
 }
 
 type VariantStats struct {
-	P25    float64 `json:"p25"`
-	P50    float64 `json:"p50"`
-	P75    float64 `json:"p75"`
-	Mean   float64 `json:"mean"`
-	Current float64 `json:"current"`
-	Score  *float64 `json:"score"` // null if insufficient data or no variance
-	Count  int     `json:"count"`
-	Window string  `json:"window"`
-	Reason *string `json:"reason,omitempty"` // reason score is null (e.g., "insufficient_data", "no_variance")
+	P25     float64  `json:"p25"`
+	P50     float64  `json:"p50"`
+	P75     float64  `json:"p75"`
+	Mean    float64  `json:"mean"`
+	Current float64  `json:"current"`
+	Score   *float64 `json:"score"` // null if insufficient data or no variance
+	Count   int      `json:"count"`
+	Window  string   `json:"window"`
+	Reason  *string  `json:"reason,omitempty"` // reason score is null (e.g., "insufficient_data", "no_variance")
 }
 
 type GroupingKeyword struct {
@@ -427,13 +430,13 @@ type Audience struct {
 	// Se todos forem 0, usa defaults (Category 0.30, Brand 0.20, Drop 0.20, Price 0.15, History 0.15).
 	Weights AudienceWeights `json:"weights"`
 	// migration 0112 — taxonomy IDs para filtros estruturados
-	IncludeCategoryIDs    []int64               `json:"include_category_ids,omitempty"`
-	ExcludeCategoryIDs    []int64               `json:"exclude_category_ids,omitempty"`
-	IncludeSubcategoryIDs []int64               `json:"include_subcategory_ids,omitempty"`
-	IncludeBrandIDs       []int64               `json:"include_brand_ids,omitempty"`
-	ExcludeBrandIDs       []int64               `json:"exclude_brand_ids,omitempty"`
-	RequiredAttributes    map[string][]int64   `json:"required_attributes,omitempty"` // chaves: "color","size","voltage","capacity"
-	PreferredAttributes   map[string][]int64   `json:"preferred_attributes,omitempty"`
+	IncludeCategoryIDs    []int64            `json:"include_category_ids,omitempty"`
+	ExcludeCategoryIDs    []int64            `json:"exclude_category_ids,omitempty"`
+	IncludeSubcategoryIDs []int64            `json:"include_subcategory_ids,omitempty"`
+	IncludeBrandIDs       []int64            `json:"include_brand_ids,omitempty"`
+	ExcludeBrandIDs       []int64            `json:"exclude_brand_ids,omitempty"`
+	RequiredAttributes    map[string][]int64 `json:"required_attributes,omitempty"` // chaves: "color","size","voltage","capacity"
+	PreferredAttributes   map[string][]int64 `json:"preferred_attributes,omitempty"`
 }
 
 type AudienceWeights struct {
@@ -484,13 +487,13 @@ func (c *Channel) MarshalAudience() error {
 }
 
 type ChannelTarget struct {
-	ID        int64          `db:"id" json:"id"`
-	ChannelID int64          `db:"channel_id" json:"channel_id"`
-	Provider  string         `db:"provider" json:"provider"`
-	ChatID    string         `db:"chat_id" json:"chat_id"`
+	ID        int64      `db:"id" json:"id"`
+	ChannelID int64      `db:"channel_id" json:"channel_id"`
+	Provider  string     `db:"provider" json:"provider"`
+	ChatID    string     `db:"chat_id" json:"chat_id"`
 	Name      NullString `db:"name" json:"name,omitempty"`
 	InviteURL NullString `db:"invite_url" json:"invite_url,omitempty"`
-	Status    string         `db:"status" json:"status"`
+	Status    string     `db:"status" json:"status"`
 }
 
 type ChannelTargetAccount struct {
@@ -503,27 +506,27 @@ type ChannelTargetAccount struct {
 }
 
 type ChannelRule struct {
-	ID            int64           `db:"id" json:"id"`
-	ChannelID     int64           `db:"channel_id" json:"channel_id"`
-	MatchType     string          `db:"match_type" json:"match_type"`
+	ID            int64       `db:"id" json:"id"`
+	ChannelID     int64       `db:"channel_id" json:"channel_id"`
+	MatchType     string      `db:"match_type" json:"match_type"`
 	MatchValue    NullString  `db:"match_value" json:"match_value,omitempty"`
 	MaxPrice      NullFloat64 `db:"max_price" json:"max_price,omitempty"`
-	NotifyNew     bool            `db:"notify_new" json:"notify_new"`
-	NotifyDrop    bool            `db:"notify_drop" json:"notify_drop"`
-	NotifyLowest  bool            `db:"notify_lowest" json:"notify_lowest"`
-	DropThreshold float64         `db:"drop_threshold" json:"drop_threshold"`
-	Active        bool            `db:"active" json:"active"`
+	NotifyNew     bool        `db:"notify_new" json:"notify_new"`
+	NotifyDrop    bool        `db:"notify_drop" json:"notify_drop"`
+	NotifyLowest  bool        `db:"notify_lowest" json:"notify_lowest"`
+	DropThreshold float64     `db:"drop_threshold" json:"drop_threshold"`
+	Active        bool        `db:"active" json:"active"`
 }
 
 type ChannelAutomation struct {
-	ID            int64     `db:"id" json:"id"`
-	ChannelID     int64     `db:"channel_id" json:"channel_id"`
-	Enabled       bool      `db:"enabled" json:"enabled"`
+	ID        int64 `db:"id" json:"id"`
+	ChannelID int64 `db:"channel_id" json:"channel_id"`
+	Enabled   bool  `db:"enabled" json:"enabled"`
 
-	AutoMatchEnabled bool         `db:"auto_match_enabled" json:"auto_match_enabled"`
-	Threshold        NullFloat64  `db:"threshold" json:"threshold,omitempty"`
-	MaxPerRun        NullInt64    `db:"max_per_run" json:"max_per_run,omitempty"`
-	CooldownHours    int          `db:"cooldown_hours" json:"cooldown_hours"`
+	AutoMatchEnabled bool        `db:"auto_match_enabled" json:"auto_match_enabled"`
+	Threshold        NullFloat64 `db:"threshold" json:"threshold,omitempty"`
+	MaxPerRun        NullInt64   `db:"max_per_run" json:"max_per_run,omitempty"`
+	CooldownHours    int         `db:"cooldown_hours" json:"cooldown_hours"`
 
 	EventsEnabled bool    `db:"events_enabled" json:"events_enabled"`
 	NotifyNew     bool    `db:"notify_new" json:"notify_new"`
@@ -552,15 +555,15 @@ type SentMessageV2 struct {
 }
 
 type CrawlLog struct {
-	ID            int64          `db:"id" json:"id"`
-	SearchTermID  int64          `db:"search_term_id" json:"search_term_id"`
-	StartedAt     time.Time      `db:"started_at" json:"started_at"`
-	FinishedAt    NullTime   `db:"finished_at" json:"finished_at,omitempty"`
-	Status        string         `db:"status" json:"status"`
-	MLCount       int            `db:"ml_count" json:"ml_count"`
-	AmzCount      int            `db:"amz_count" json:"amz_count"`
-	SourceCounts  NullString `db:"source_counts" json:"source_counts,omitempty"`
-	ErrorMsg      NullString `db:"error_msg" json:"error_msg,omitempty"`
+	ID           int64      `db:"id" json:"id"`
+	SearchTermID int64      `db:"search_term_id" json:"search_term_id"`
+	StartedAt    time.Time  `db:"started_at" json:"started_at"`
+	FinishedAt   NullTime   `db:"finished_at" json:"finished_at,omitempty"`
+	Status       string     `db:"status" json:"status"`
+	MLCount      int        `db:"ml_count" json:"ml_count"`
+	AmzCount     int        `db:"amz_count" json:"amz_count"`
+	SourceCounts NullString `db:"source_counts" json:"source_counts,omitempty"`
+	ErrorMsg     NullString `db:"error_msg" json:"error_msg,omitempty"`
 }
 
 // GetSourceCounts parses the SourceCounts JSON and returns a map of source ID -> count.
@@ -603,15 +606,15 @@ func (cl *CrawlLog) SetSourceCounts(counts map[string]int) error {
 }
 
 type BroadcastMessage struct {
-	ID         int64          `db:"id" json:"id"`
-	Text       string         `db:"text" json:"text"`
+	ID         int64      `db:"id" json:"id"`
+	Text       string     `db:"text" json:"text"`
 	ImageURL   NullString `db:"image_url" json:"image_url,omitempty"`
-	ChannelIDs string         `db:"channel_ids" json:"channel_ids"`
-	Status     string         `db:"status" json:"status"`
-	SentCount  int            `db:"sent_count" json:"sent_count"`
+	ChannelIDs string     `db:"channel_ids" json:"channel_ids"`
+	Status     string     `db:"status" json:"status"`
+	SentCount  int        `db:"sent_count" json:"sent_count"`
 	SentAt     NullTime   `db:"sent_at" json:"sent_at,omitempty"`
 	ErrorMsg   NullString `db:"error_msg" json:"error_msg,omitempty"`
-	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
 }
 
 // RedesignGroup é o destino físico (WA/TG) do ReDesign — tabela groups.
@@ -759,47 +762,46 @@ type SpyMessage struct {
 }
 
 type TelegramChat struct {
-	ChatID          string         `db:"chat_id" json:"chat_id"`
-	Type            string         `db:"type" json:"type"`
-	Title           string         `db:"title" json:"title"`
+	ChatID          string     `db:"chat_id" json:"chat_id"`
+	Type            string     `db:"type" json:"type"`
+	Title           string     `db:"title" json:"title"`
 	Username        NullString `db:"username" json:"username,omitempty"`
 	MemberCount     NullInt64  `db:"member_count" json:"member_count,omitempty"`
-	IsAdmin         bool           `db:"is_admin" json:"is_admin"`
-	DiscoveredAt    time.Time      `db:"discovered_at" json:"discovered_at"`
-	LastSeenAt      time.Time      `db:"last_seen_at" json:"last_seen_at"`
+	IsAdmin         bool       `db:"is_admin" json:"is_admin"`
+	DiscoveredAt    time.Time  `db:"discovered_at" json:"discovered_at"`
+	LastSeenAt      time.Time  `db:"last_seen_at" json:"last_seen_at"`
 	LinkedGroupID   NullInt64  `db:"linked_group_id" json:"linked_group_id,omitempty"`
 	LinkedChannelID NullInt64  `db:"linked_channel_id" json:"linked_channel_id,omitempty"`
 }
 
-
 // ChannelHistoryEntry representa um disparo associado a um grupo de um canal.
 type ChannelHistoryEntry struct {
-	DispatchID  int64     `db:"dispatch_id"  json:"dispatch_id"`
-	GroupID     int64     `db:"group_id"     json:"group_id"`
-	GroupName   string    `db:"group_name"   json:"group_name"`
-	Status      string    `db:"status"       json:"status"`
-	DeliveredAt NullTime  `db:"delivered_at" json:"delivered_at,omitempty"`
-	MessageText string    `db:"message_text" json:"message_text"`
-	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+	DispatchID  int64       `db:"dispatch_id"  json:"dispatch_id"`
+	GroupID     int64       `db:"group_id"     json:"group_id"`
+	GroupName   string      `db:"group_name"   json:"group_name"`
+	Status      string      `db:"status"       json:"status"`
+	DeliveredAt NullTime    `db:"delivered_at" json:"delivered_at,omitempty"`
+	MessageText string      `db:"message_text" json:"message_text"`
+	CreatedAt   time.Time   `db:"created_at"   json:"created_at"`
 	Score       NullFloat64 `db:"score"      json:"score,omitempty"`
 }
 
 // AffiliateConversion representa uma conversão de afiliado (tabela affiliate_conversions).
 type AffiliateConversion struct {
-	ID              int64      `db:"id" json:"id"`
-	ProgramID       int64      `db:"program_id" json:"program_id"`
-	ClickID         NullInt64  `db:"click_id" json:"click_id,omitempty"`
-	ExternalOrderID NullString `db:"external_order_id" json:"external_order_id,omitempty"`
+	ID              int64       `db:"id" json:"id"`
+	ProgramID       int64       `db:"program_id" json:"program_id"`
+	ClickID         NullInt64   `db:"click_id" json:"click_id,omitempty"`
+	ExternalOrderID NullString  `db:"external_order_id" json:"external_order_id,omitempty"`
 	Revenue         NullFloat64 `db:"revenue" json:"revenue,omitempty"`
-	Status          string     `db:"status" json:"status"`
-	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	Status          string      `db:"status" json:"status"`
+	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
 }
 
 // Taxonomy é categoria ou marca de produto, usada para autocomplete em audience
 // e para detecção pelo crawler/categorizador.
 type Taxonomy struct {
 	ID             int64          `db:"id" json:"id"`
-	Type           string         `db:"type" json:"type"`     // 'category' | 'brand'
+	Type           string         `db:"type" json:"type"` // 'category' | 'brand'
 	Name           string         `db:"name" json:"name"`
 	Slug           string         `db:"slug" json:"slug"`
 	Keywords       pq.StringArray `db:"keywords" json:"keywords"`
@@ -812,7 +814,6 @@ type Taxonomy struct {
 	SampleText     NullString     `db:"sample_text" json:"sample_text,omitempty"`
 	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
 }
-
 
 // JonfreyAction é uma ação tomada pelo assistente Jonfrey, com auditoria
 // completa (estado antes/depois, reasoning).
@@ -866,25 +867,25 @@ type JonfreyConfig struct {
 // Ad é um anúncio recorrente customizado (texto+imagem) PAGO por um cliente,
 // que dispara num schedule até atingir active_until. Diferente de Dispatch (one-shot).
 type Ad struct {
-	ID                int64          `db:"id" json:"id"`
-	Name              string         `db:"name" json:"name"`
-	MessageText       string         `db:"message_text" json:"message_text"`
-	ImageURL          NullString     `db:"image_url" json:"image_url,omitempty"`
-	ChannelIDs        pq.Int64Array  `db:"channel_ids" json:"channel_ids"`
-	GroupIDs          pq.Int64Array  `db:"group_ids" json:"group_ids"`
-	ScheduleCron      string         `db:"schedule_cron" json:"schedule_cron"`
-	ActiveUntil       NullTime       `db:"active_until" json:"active_until,omitempty"`
-	Enabled           bool           `db:"enabled" json:"enabled"`
-	LastDispatchedAt  NullTime       `db:"last_dispatched_at" json:"last_dispatched_at,omitempty"`
-	DispatchCount     int            `db:"dispatch_count" json:"dispatch_count"`
-	CreatedAt         time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt         time.Time      `db:"updated_at" json:"updated_at"`
+	ID               int64         `db:"id" json:"id"`
+	Name             string        `db:"name" json:"name"`
+	MessageText      string        `db:"message_text" json:"message_text"`
+	ImageURL         NullString    `db:"image_url" json:"image_url,omitempty"`
+	ChannelIDs       pq.Int64Array `db:"channel_ids" json:"channel_ids"`
+	GroupIDs         pq.Int64Array `db:"group_ids" json:"group_ids"`
+	ScheduleCron     string        `db:"schedule_cron" json:"schedule_cron"`
+	ActiveUntil      NullTime      `db:"active_until" json:"active_until,omitempty"`
+	Enabled          bool          `db:"enabled" json:"enabled"`
+	LastDispatchedAt NullTime      `db:"last_dispatched_at" json:"last_dispatched_at,omitempty"`
+	DispatchCount    int           `db:"dispatch_count" json:"dispatch_count"`
+	CreatedAt        time.Time     `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time     `db:"updated_at" json:"updated_at"`
 	// Billing & tracking (migration 0107)
-	ClientName        string         `db:"client_name" json:"client_name"`
-	PaidAmount        float64        `db:"paid_amount" json:"paid_amount"`
-	ShortID           NullString     `db:"short_id" json:"short_id,omitempty"`
-	ClickCount        int            `db:"click_count" json:"click_count"`
-	TargetURL         string         `db:"target_url" json:"target_url"`
+	ClientName string     `db:"client_name" json:"client_name"`
+	PaidAmount float64    `db:"paid_amount" json:"paid_amount"`
+	ShortID    NullString `db:"short_id" json:"short_id,omitempty"`
+	ClickCount int        `db:"click_count" json:"click_count"`
+	TargetURL  string     `db:"target_url" json:"target_url"`
 }
 
 // AdActive retorna true se o anúncio está dentro da janela de ativação.
@@ -900,16 +901,16 @@ func (a Ad) IsActiveNow() bool {
 
 // migration 0112 — TaxonomyPattern: padrões de matching para detection/enrichment
 type TaxonomyPattern struct {
-	ID         int64      `db:"id" json:"id"`
-	TaxonomyID int64      `db:"taxonomy_id" json:"taxonomy_id"`
-	Kind       string     `db:"kind" json:"kind"` // exact_keyword, contains_keyword, word_boundary, regex, exclude_regex, exclude_keyword
-	Value      string     `db:"value" json:"value"`
-	Weight     float64    `db:"weight" json:"weight"`
-	Locale     string     `db:"locale" json:"locale"`
-	Source     string     `db:"source" json:"source"` // seed, manual, llm, crawler
-	Active     bool       `db:"active" json:"active"`
-	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt  time.Time  `db:"updated_at" json:"updated_at"`
+	ID         int64     `db:"id" json:"id"`
+	TaxonomyID int64     `db:"taxonomy_id" json:"taxonomy_id"`
+	Kind       string    `db:"kind" json:"kind"` // exact_keyword, contains_keyword, word_boundary, regex, exclude_regex, exclude_keyword
+	Value      string    `db:"value" json:"value"`
+	Weight     float64   `db:"weight" json:"weight"`
+	Locale     string    `db:"locale" json:"locale"`
+	Source     string    `db:"source" json:"source"` // seed, manual, llm, crawler
+	Active     bool      `db:"active" json:"active"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // migration 0112 — CatalogProductTaxonomy: linking products to taxonomies com roles
