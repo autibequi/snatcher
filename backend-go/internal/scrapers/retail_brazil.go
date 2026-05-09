@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -139,12 +140,11 @@ func fetchRetailSearch(ctx context.Context, client *http.Client, pageURL string)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("http %d", resp.StatusCode)
 	}
-	var b strings.Builder
-	_, err = b.ReadFrom(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	return b.String(), nil
+	return string(body), nil
 }
 
 // --- Kabum -------------------------------------------------------------------
