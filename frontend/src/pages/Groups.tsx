@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, EmptyState, Skeleton, Input } from '../components/ui'
+import { Badge, Button, EmptyState, Skeleton, Input, Spinner } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -466,6 +466,13 @@ export default function Groups() {
   )
   const modalUnlinked = modalFiltered.filter(g => !linkedJIDs.has(g.id))
 
+  /** Lista vazia + fetch inicial ou refetch (polling Evolution): mostrar loading, não o aviso de “ainda não retornou”. */
+  const waModalLoadingEmpty =
+    !!importAccountId &&
+    importAccount?.status === 'connected' &&
+    waGroupOptions.length === 0 &&
+    (waGroupsLoading || waGroupsFetching)
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -600,8 +607,19 @@ export default function Groups() {
                   )}
                 </div>
 
-                {waGroupsLoading && waGroupOptions.length === 0 ? (
-                  <p className="text-xs text-fg-3 py-6 text-center">Carregando grupos…</p>
+                {waModalLoadingEmpty ? (
+                  <div
+                    className="border border-border rounded-md p-8 bg-surface-2 flex flex-col items-center justify-center gap-3 min-h-[140px]"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <Spinner size="md" />
+                    <p className="text-sm text-fg font-medium">Buscando grupos na Evolution…</p>
+                    <p className="text-[11px] text-fg-3 text-center max-w-sm leading-snug">
+                      Aguarde alguns segundos após conectar o WhatsApp. A lista atualiza automaticamente.
+                    </p>
+                  </div>
                 ) : waGroupOptions.length === 0 ? (
                   <div className="border border-border rounded-md p-4 bg-surface-2 text-center">
                     <p className="text-xs text-fg-3">Evolution ainda não retornou grupos desta conta.</p>
