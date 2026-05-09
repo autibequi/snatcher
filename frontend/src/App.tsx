@@ -96,6 +96,7 @@ const Jonfrey = lazy(() => import('./pages/Jonfrey'))
 const Ads = lazy(() => import('./pages/Ads'))
 const Setup = lazy(() => import('./pages/Setup'))
 const Manual = lazy(() => import('./pages/Manual'))
+const ManualTutorialPage = lazy(() => import('./pages/ManualTutorialPage'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
 function SetupGuard({ children }: { children: ReactNode }) {
@@ -152,6 +153,7 @@ export default function App() {
               <Route path="taxonomy" element={<Taxonomy />} />
               <Route path="curation" element={<Curation />} />
               <Route path="manual" element={<Manual />} />
+              <Route path="manual/:slug" element={<ManualTutorialPage />} />
               <Route path="_dev/atoms" element={<DevAtoms />} />
               <Route path="*" element={<NotFound />} />
             </Route>

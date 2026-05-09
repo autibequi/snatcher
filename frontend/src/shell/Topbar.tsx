@@ -4,12 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { WorkQueueBadge } from '../components/WorkQueueBadge'
 import { HelpManualButton } from './HelpManualButton'
+import { manualTutorialTitle } from '../content/tutorials'
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/match': 'Match',
   '/automations': 'Automações',
-  '/automations/channels': 'Automações — Por canal',
+  '/automations/channels': 'Canais',
   '/automations/jonfrey': 'Jonfrey',
   '/compose': 'Compor',
   '/logs': 'Logs',
@@ -31,6 +32,11 @@ const PAGE_TITLES: Record<string, string> = {
 
 function pageTitle(pathname: string): string {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname]
+  const manualSub = /^\/manual\/([^/]+)$/.exec(pathname)
+  if (manualSub) {
+    const t = manualTutorialTitle(manualSub[1])
+    if (t) return t
+  }
   const parts = pathname.split('/').filter(Boolean)
   if (parts.length === 0) return 'Dashboard'
   const prefix = '/' + parts[0]

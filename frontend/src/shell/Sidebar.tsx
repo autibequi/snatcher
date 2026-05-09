@@ -1,10 +1,8 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 
 interface SidebarProps {
   onClose?: () => void
-  /** Abre o manual operacional em modal (mesmo conteúdo que /manual). */
-  onOpenManual?: () => void
 }
 
 interface NavItem {
@@ -70,8 +68,16 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-export function Sidebar({ onClose, onOpenManual }: SidebarProps) {
+function navItemLooksActive(item: NavItem, pathname: string, navLinkActive: boolean): boolean {
+  if (item.to === '/manual') {
+    return pathname === '/manual' || pathname.startsWith('/manual/')
+  }
+  return navLinkActive
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
 
   const displayName = user?.name ?? ''
@@ -123,39 +129,24 @@ export function Sidebar({ onClose, onOpenManual }: SidebarProps) {
             <p className="px-2 py-1 text-xs font-medium text-fg-3 uppercase tracking-wider">
               {group.label}
             </p>
-            {group.items.map(item =>
-              item.to === '/manual' && onOpenManual ? (
-                <button
-                  key={item.to}
-                  type="button"
-                  onClick={() => {
-                    onOpenManual()
-                    onClose?.()
-                  }}
-                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors text-fg-2 hover:bg-surface-2 hover:text-fg text-left"
-                >
-                  <span className="w-5 text-center text-base leading-none">{item.icon}</span>
-                  {item.label}
-                </button>
-              ) : (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                      isActive
-                        ? 'bg-accent/10 text-accent font-medium'
-                        : 'text-fg-2 hover:bg-surface-2 hover:text-fg'
-                    }`
-                  }
-                >
-                  <span className="w-5 text-center text-base leading-none">{item.icon}</span>
-                  {item.label}
-                </NavLink>
-              ),
-            )}
+            {group.items.map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                    navItemLooksActive(item, location.pathname, isActive)
+                      ? 'bg-accent/10 text-accent font-medium'
+                      : 'text-fg-2 hover:bg-surface-2 hover:text-fg'
+                  }`
+                }
+              >
+                <span className="w-5 text-center text-base leading-none">{item.icon}</span>
+                {item.label}
+              </NavLink>
+            ))}
           </div>
         ))}
       </nav>

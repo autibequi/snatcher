@@ -31,7 +31,7 @@ export function AppShell() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} onOpenManual={openManual} />
+        <Sidebar onClose={() => setSidebarOpen(false)} />
       </aside>
 
       {/* Main content */}

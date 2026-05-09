@@ -90,8 +90,8 @@ export function OperationalManualContent() {
             <strong className="text-fg">Configurações</strong>: preferências da conta, LLM e integrações permitidas ao seu papel.
           </li>
           <li>
-            Este texto é o mesmo da entrada <strong className="text-fg">Manual</strong> no menu (Sistema) e do botão de ajuda
-            na barra superior — uma única fonte, sempre alinhada.
+            O índice de tutoriais está em <strong className="text-fg">Manual</strong> no menu (Sistema); o mesmo conteúdo pode ser
+            aberto pelo ícone de ajuda na barra superior — uma única fonte, sempre alinhada.
           </li>
         </ul>
       </section>

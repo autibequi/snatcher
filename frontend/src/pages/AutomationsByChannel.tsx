@@ -35,7 +35,7 @@ export default function AutomationsByChannel() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 py-3 border-b border-border flex items-center justify-between">
-        <p className="text-sm text-fg-3">Configuração e monitor por canal</p>
+        <p className="text-sm text-fg-3">Configuração e monitor</p>
         <div className="flex items-center gap-2">
           <button
             type="button"
