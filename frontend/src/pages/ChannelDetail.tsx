@@ -106,14 +106,16 @@ function ChannelHistory({ channelId }: { channelId: string }) {
     <div className="space-y-5">
       {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
 
-      {/* Próximos (na fila de score) */}
+      {/* Prévia do auto-match (ainda não são dispatches criados) */}
       <div className="border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-          <p className="text-sm font-medium text-fg">Próximos disparos · na fila</p>
-          <p className="text-xs text-fg-3">Produtos com score suficiente pra disparar no próximo ciclo</p>
+          <p className="text-sm font-medium text-fg">Próximos disparos · prévia do match</p>
+          <p className="text-xs text-fg-3">
+            Candidatos com score ≥ threshold para o próximo ciclo (não é a fila WA/TG nem pendentes de aprovação).
+          </p>
         </div>
         {queueItems.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila agora.</p>
+          <p className="px-4 py-4 text-sm text-fg-3">Nenhum candidato elegível na prévia agora.</p>
         ) : (
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border">
@@ -263,13 +265,13 @@ function ChannelQueue({ channelId }: { channelId: string }) {
       {/* Próximos ciclo */}
       <div className="border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-          <p className="text-sm font-medium text-fg">Próximos disparos · próximo ciclo de auto-match</p>
+          <p className="text-sm font-medium text-fg">Próximos disparos · prévia do match</p>
           <p className="text-xs text-fg-3">
-            Produtos do catálogo com score ≥ threshold que ainda não foram disparados.
-            {queueItems.length === 0 && ' Se vazio, provavelmente todos estão em cooldown — rode "reset_stale_cooldown" no Jonfrey.'}
+            Candidatos elegíveis para o próximo ciclo (prévia — não são dispatches criados).
+            {queueItems.length === 0 && ' Se vazio, pode ser cooldown ou score abaixo do threshold.'}
           </p>
         </div>
-        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum produto na fila (todos em cooldown ou sem score suficiente).</p> : (
+        {queueItems.length === 0 ? <p className="px-4 py-4 text-sm text-fg-3">Nenhum candidato elegível na prévia.</p> : (
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border"><th className="text-left px-4 py-2 text-xs text-fg-2 font-medium">Produto</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Score</th><th className="px-4 py-2 text-xs text-fg-2 font-medium">Preço</th></tr></thead>
             <tbody>

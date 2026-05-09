@@ -159,7 +159,9 @@ export default function Pending() {
         <div>
           <h1 className="text-xl font-semibold text-fg">Pendentes de envio</h1>
           <p className="text-sm text-fg-3">
-            Dispatches criados pelo auto-match, aguardando aprovação. Quando aprovados, entram na fila do worker WA/TG (respeita rotação de contas e throttle).
+            Apenas dispatches em <strong className="text-fg-2">pending_approval</strong> (precisam de clique em aprovar).
+            Não lista candidatos do catálogo — estes aparecem na <strong className="text-fg-2">prévia do match</strong> em cada canal / Automations.
+            Depois de aprovados, entram na fila do worker WA/TG.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
@@ -220,10 +222,14 @@ export default function Pending() {
       {isLoading ? (
         <p className="text-sm text-fg-3">Carregando…</p>
       ) : items.length === 0 ? (
-        <div className="border border-border rounded-md p-12 text-center bg-surface">
+        <div className="border border-border rounded-md p-12 text-center bg-surface space-y-2">
           <p className="text-3xl mb-2">✨</p>
-          <p className="text-sm text-fg">Sem pendentes</p>
-          <p className="text-xs text-fg-3 mt-1">Todos os disparos já foram aprovados ou enviados.</p>
+          <p className="text-sm text-fg">Sem dispatches aguardando aprovação</p>
+          <p className="text-xs text-fg-3 mt-1 max-w-md mx-auto">
+            {fullAutoMode
+              ? 'Com full-auto, novos dispatches não ficam aqui — são liberados para o worker automaticamente. Para ver o que o próximo ciclo pode escolher, abra o canal em Automations ou a página do canal (bloco «prévia do match»).'
+              : 'Todos os disparos neste estado já foram aprovados, rejeitados ou enviados.'}
+          </p>
         </div>
       ) : (
         <div className="bg-surface border border-border rounded-md overflow-hidden">

@@ -545,7 +545,7 @@ export function Drawer({ row, onClose }: DrawerProps) {
           {drawerTab === 'next' && (
             <div>
               <p className="text-xs text-fg-2 font-medium uppercase tracking-wide mb-3">
-                Proximos produtos na fila
+                Candidatos ao próximo ciclo (prévia)
                 {channelPreview && (
                   <span className="ml-1 normal-case font-normal text-fg-3">
                     (score ≥ {channelPreview.threshold} · max {channelPreview.max_per_run}/ciclo)
@@ -558,10 +558,10 @@ export function Drawer({ row, onClose }: DrawerProps) {
                 <div className="rounded-lg border border-warning/50 bg-warning/10 p-4 flex items-start gap-3">
                   <span className="text-warning text-base mt-0.5">⚠</span>
                   <div>
-                    <p className="text-sm font-medium text-fg">Nenhum produto na fila</p>
+                    <p className="text-sm font-medium text-fg">Nenhum candidato elegível na prévia</p>
                     <p className="text-xs text-fg-3 mt-1">
-                      Nenhum produto do catalogo atende ao threshold e filtros configurados para este canal.
-                      Verifique o threshold, tipo de filtro e categorias/marcas ou adicione mais produtos ao catalogo.
+                      Nenhum produto do catálogo atende ao threshold e filtros deste canal nos dados analisados.
+                      Isso não é a fila de dispatches — só indica o que o próximo auto-match poderia escolher.
                     </p>
                   </div>
                 </div>
@@ -575,7 +575,7 @@ export function Drawer({ row, onClose }: DrawerProps) {
                           <span className="flex items-center gap-1">Score <TooltipIcon content="Afinidade produto-canal (0–100). Combina match de categorias (+30), marcas (+20), desconto (+20), faixa de preço (+15) e histórico (+15). Produto só é disparado se score ≥ threshold configurado." side="bottom" /></span>
                         </th>
                         <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Preco</th>
-                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Status</th>
+                        <th className="text-left px-3 py-2 text-xs text-fg-2 font-medium">Prévia</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -596,9 +596,9 @@ export function Drawer({ row, onClose }: DrawerProps) {
                           </td>
                           <td className="px-3 py-2">
                             {item.already_sent ? (
-                              <span className="text-xs text-fg-3 italic">em cooldown</span>
+                              <span className="text-xs text-fg-3 italic">cooldown</span>
                             ) : (
-                              <span className="text-xs text-success font-medium">na fila</span>
+                              <span className="text-xs text-success font-medium">elegível</span>
                             )}
                           </td>
                         </tr>
@@ -955,17 +955,21 @@ export function TabOverview() {
       <div className="bg-surface border border-border rounded-md overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-fg">A enviar · próximos</p>
+            <p className="text-sm font-medium text-fg">Dispatches aguardando aprovação</p>
             {!fullAutoMode && (
               <span className="text-[10px] bg-warning/10 text-warning border border-warning/30 rounded px-1.5 py-0.5">
-                aguardando aprovação — <a href="/" className="underline">aprovar</a>
+                modo manual — <a href="/automations/pending" className="underline">aprovar</a>
               </span>
             )}
           </div>
           <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
         </div>
         {pendingList.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo aguardando.</p>
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">
+            {fullAutoMode
+              ? 'Nenhum em pending_approval — full-auto libera para a fila do worker automaticamente. Candidatos ao próximo ciclo aparecem na prévia por canal (Automations → canal / página do canal).'
+              : 'Nenhum disparo aguardando aprovação manual.'}
+          </p>
         ) : (
           <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
             {pendingList.map(d => (
@@ -1017,7 +1021,7 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
     staleTime: 30_000,
   })
 
-  // Preview global para indicar quais canais têm produtos na fila
+  // Preview global (mesma fonte que /api/automations/:id/preview por canal): candidatos ao match, não dispatches
   const { data: globalPreview } = useQuery<{ items: GlobalPreviewItem[] }>({
     queryKey: ['auto-match', 'preview'],
     queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data),
@@ -1104,11 +1108,11 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                 <td className="px-4 py-3 text-sm text-fg-2">
                   {a?.enabled && a?.auto_match_enabled ? (
                     channelsWithQueue.has(row.channel_id) ? (
-                      <span className="text-xs text-success">na fila ✓</span>
+                      <span className="text-xs text-success" title="Há pelo menos um produto elegível na prévia do próximo ciclo">candidatos ✓</span>
                     ) : (
                       <span className="inline-flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1 text-xs text-warning font-medium" title="Nenhum produto na fila — todos em cooldown ou sem score suficiente">
-                          ⚠ sem fila
+                        <span className="inline-flex items-center gap-1 text-xs text-warning font-medium" title="Prévia sem elegíveis (cooldown ou abaixo do threshold). Não confundir com fila do worker nem com pendentes de aprovação.">
+                          ⚠ sem candidatos
                         </span>
                         {a?.updated_at && (
                           <span className="text-[10px] text-fg-3">

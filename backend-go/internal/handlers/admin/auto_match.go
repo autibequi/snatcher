@@ -59,6 +59,7 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 }
 
 // Preview retorna os produtos que seriam disparados no próximo ciclo, respeitando configs por canal.
+// Usa a mesma construção por canal que GET /api/automations/:id/preview (evita divergência com a listagem por canal).
 // GET /api/auto-match/preview
 func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.store.GetConfig()
@@ -70,7 +71,6 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	automations, _ := h.store.ListChannelAutomations(true) // enabled=true
 	now := time.Now()
 
-	// Filtrar por auto_match_enabled e paused_until
 	autoByChannelID := make(map[int64]models.ChannelAutomation, len(automations))
 	for _, a := range automations {
 		if !a.AutoMatchEnabled {
@@ -91,18 +91,6 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Carregar canais ativos
-	channelsByID := make(map[int64]models.Channel, len(autoByChannelID))
-	for cID := range autoByChannelID {
-		ch, err := h.store.GetChannel(cID)
-		if err == nil {
-			channelsByID[cID] = ch
-		}
-	}
-
-	products, _ := h.store.ListCatalogProducts(20, 0, true)
-	recentLogs, _ := h.store.ListAutoMatchLogs(500)
-
 	type previewItem struct {
 		ProductID   int64   `json:"product_id"`
 		ChannelID   int64   `json:"channel_id"`
@@ -112,100 +100,21 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		AlreadySent bool    `json:"already_sent"`
 	}
 
-	sentByChannel := make(map[int64]int, len(autoByChannelID))
 	var items []previewItem
-
-	channels := make([]models.Channel, 0, len(channelsByID))
-	for _, ch := range channelsByID {
-		channels = append(channels, ch)
-	}
-
-	for _, p := range products {
-		inp := match.ProductInput{Name: p.CanonicalName}
-		if p.Brand.Valid {
-			inp.Brand = p.Brand.String
+	for channelID := range autoByChannelID {
+		rows, _, _, chName, err := BuildChannelAutomationPreview(h.store, channelID)
+		if err != nil {
+			continue
 		}
-		if p.LowestPrice.Valid {
-			inp.Price = p.LowestPrice.Float64
-		}
-		if tags := p.GetTags(); len(tags) > 0 {
-			inp.Category = tags[0]
-		}
-		price := 0.0
-		if p.LowestPrice.Valid {
-			price = p.LowestPrice.Float64
-		}
-
-		scores := match.RankChannels(inp, channels)
-		for _, s := range scores {
-			auto, ok := autoByChannelID[s.ChannelID]
-			if !ok {
-				continue
-			}
-
-			threshold := cfg.AutoMatchThreshold
-			if auto.Threshold.Valid {
-				threshold = auto.Threshold.Float64
-			}
-			if threshold <= 0 {
-				threshold = 50
-			}
-
-			maxPerRun := cfg.AutoMatchMaxPerRun
-			if auto.MaxPerRun.Valid {
-				maxPerRun = int(auto.MaxPerRun.Int64)
-			}
-			if maxPerRun <= 0 {
-				maxPerRun = 3
-			}
-
-			cooldownHours := 6
-			if auto.CooldownHours > 0 {
-				cooldownHours = auto.CooldownHours
-			}
-
-			matchValue := ""
-			if auto.MatchValue.Valid {
-				matchValue = auto.MatchValue.String
-			}
-			maxPrice := 0.0
-			if auto.MaxPrice.Valid {
-				maxPrice = auto.MaxPrice.Float64
-			}
-
-			if !match.MatchesChannelFilter(inp, price, auto.MatchType, matchValue, maxPrice) {
-				continue
-			}
-			if s.Value < threshold {
-				continue // threshold é por canal — não pode break
-			}
-			if sentByChannel[s.ChannelID] >= maxPerRun {
-				continue
-			}
-
-			cutoff := now.Add(-time.Duration(cooldownHours) * time.Hour)
-			alreadySent := false
-			for _, l := range recentLogs {
-				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
-					alreadySent = true
-					break
-				}
-			}
-
+		for _, row := range rows {
 			items = append(items, previewItem{
-				ProductID:   p.ID,
-				ChannelID:   s.ChannelID,
-				ProductName: p.CanonicalName,
-				ChannelName: s.ChannelName,
-				Score:       s.Value,
-				AlreadySent: alreadySent,
+				ProductID:   row.ProductID,
+				ChannelID:   channelID,
+				ProductName: row.ProductName,
+				ChannelName: chName,
+				Score:       row.Score,
+				AlreadySent: row.AlreadySent,
 			})
-			if !alreadySent {
-				sentByChannel[s.ChannelID]++
-			}
-		}
-		if len(items) >= 50 {
-			break
 		}
 	}
 
@@ -213,6 +122,10 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		items = []previewItem{}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Score > items[j].Score })
+	if len(items) > 100 {
+		items = items[:100]
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":       items,
 		"threshold":   cfg.AutoMatchThreshold,
