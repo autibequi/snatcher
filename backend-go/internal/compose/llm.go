@@ -124,6 +124,8 @@ func buildDirectPrompt(p ProductInput, _ string) string {
 	priceInfo := ""
 	if p.Price > 0 {
 		priceInfo = fmt.Sprintf(" · preço atual R$ %.2f", p.Price)
+	} else {
+		priceInfo = "\n⚠️ Preço não consta no cadastro — não invente valores nem escreva \"R$ --\"; omita linhas de preço ou diga só que o valor está no link."
 	}
 	brand := ""
 	if p.Brand != "" {

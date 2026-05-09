@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -36,6 +37,53 @@ type composePreviewRequest struct {
 	// Tom da mensagem e contexto customizado
 	Tone          string `json:"tone"`
 	CustomContext string `json:"custom_context"`
+}
+
+// hydrateComposePricesFromCatalog preenche price / price_original / drop quando lowest_price do produto
+// está vazio mas há variantes com preço (ou metadata com original_price).
+func hydrateComposePricesFromCatalog(st store.Store, productID int64, req *composePreviewRequest, p models.CatalogProduct) {
+	variants, err := st.ListVariantsByProduct(productID)
+	if err != nil {
+		variants = nil
+	}
+
+	if req.Price <= 0 && p.LowestPrice.Valid && p.LowestPrice.Float64 > 0 {
+		req.Price = p.LowestPrice.Float64
+	}
+	if req.Price <= 0 && len(variants) > 0 {
+		var min float64
+		for _, v := range variants {
+			if v.Price <= 0 {
+				continue
+			}
+			if min == 0 || v.Price < min {
+				min = v.Price
+			}
+		}
+		if min > 0 {
+			req.Price = min
+		}
+	}
+
+	if req.PriceOrig <= 0 && len(variants) > 0 {
+		var maxOrig float64
+		for _, v := range variants {
+			var meta models.CrawlMetadata
+			if len(v.Metadata) > 0 {
+				_ = json.Unmarshal(v.Metadata, &meta)
+			}
+			if meta.OriginalPrice > v.Price && meta.OriginalPrice > maxOrig {
+				maxOrig = meta.OriginalPrice
+			}
+		}
+		if maxOrig > 0 && req.Price > 0 && maxOrig > req.Price {
+			req.PriceOrig = maxOrig
+		}
+	}
+
+	if req.Drop <= 0 && req.PriceOrig > 0 && req.Price > 0 && req.PriceOrig > req.Price {
+		req.Drop = (req.PriceOrig - req.Price) / req.PriceOrig * 100
+	}
 }
 
 // Preview godoc
@@ -73,6 +121,7 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 					req.Category = tags[0]
 				}
 			}
+			hydrateComposePricesFromCatalog(h.store, *req.ProductID, &req, p)
 		} else if variant, err := h.store.GetCatalogVariant(*req.ProductID); err == nil {
 			if req.Title == "" {
 				req.Title = variant.Title
@@ -82,6 +131,9 @@ func (h *ComposeHandler) Preview(w http.ResponseWriter, r *http.Request) {
 			}
 			if req.Marketplace == "" {
 				req.Marketplace = variant.Source
+			}
+			if cp, err := h.store.GetCatalogProduct(variant.CatalogProductID); err == nil {
+				hydrateComposePricesFromCatalog(h.store, variant.CatalogProductID, &req, cp)
 			}
 		}
 	}

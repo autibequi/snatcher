@@ -25,6 +25,42 @@ interface DispatchResponse {
   id: number
 }
 
+/** Resposta GET /api/catalog/:id — produto + variantes (preço quando lowest_price do pai está vazio). */
+interface CatalogRow {
+  product: Record<string, unknown>
+  variants: Array<{ price?: number; url?: string; source?: string; image_url?: unknown }>
+}
+
+function nullStr(v: unknown): string {
+  return typeof v === 'string' ? v : ((v as { String?: string })?.String ?? (v as { string?: string })?.string ?? '')
+}
+
+/** Menor preço do produto ou, se inválido, mínimo nas variantes; URL/fonte alinhados à variante escolhida. */
+function resolveCatalogPricing(
+  product: Record<string, unknown> | null | undefined,
+  variants: CatalogRow['variants'],
+): { price: number; url: string; source: string } {
+  const lp = product?.lowest_price as number | { Float64?: number } | undefined
+  let price = typeof lp === 'number' ? lp : (lp?.Float64 ?? 0)
+  let url = nullStr(product?.lowest_price_url)
+  let source = nullStr(product?.lowest_price_source)
+  if (price > 0) {
+    return { price, url, source }
+  }
+  let best: (typeof variants)[0] | undefined
+  for (const v of variants) {
+    const pr = typeof v.price === 'number' ? v.price : 0
+    if (pr <= 0) continue
+    if (!best || pr < (best.price ?? 0)) best = v
+  }
+  if (best && typeof best.price === 'number' && best.price > 0) {
+    price = best.price
+    if (!url && best.url) url = best.url
+    if (!source && best.source) source = best.source
+  }
+  return { price, url, source }
+}
+
 export default function Composer() {
   const [params, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -68,29 +104,36 @@ export default function Composer() {
   const [tone, setTone] = React.useState('promocional')
   const [customContext, setCustomContext] = React.useState('')
 
-  // Extrair campos NullString do Go (pode vir como {String:"...",Valid:true} ou string direta)
-  const nullStr = (v: any): string => (typeof v === 'string' ? v : v?.String || v?.string || '')
-
-  // Buscar dados de TODOS os produtos
-  const { data: productsData = [] } = useQuery({
+  // Buscar dados de TODOS os produtos (inclui variantes para preço quando lowest_price está NULL)
+  const { data: catalogRows = [] } = useQuery<CatalogRow[]>({
     queryKey: ['catalog-multi', productIds],
     queryFn: async () => {
       const results = await Promise.all(
-        productIds.map(id => apiClient.get(`/api/catalog/${id}`).then(r => r.data?.product ?? r.data).catch(() => null))
+        productIds.map((id) =>
+          apiClient
+            .get(`/api/catalog/${id}`)
+            .then((r) => {
+              const d = r.data as { product?: Record<string, unknown>; variants?: CatalogRow['variants'] }
+              const product = d?.product ?? (r.data as Record<string, unknown>)
+              const variants = Array.isArray(d?.variants) ? d!.variants! : []
+              return product && typeof product === 'object' ? { product, variants } : null
+            })
+            .catch(() => null),
+        ),
       )
-      return results.filter(Boolean)
+      return results.filter((x): x is CatalogRow => x != null)
     },
     enabled: productIds.length > 0,
     staleTime: 5 * 60_000,
     retry: 2,
   })
 
-  // Produto principal (primeiro)
-  const productData = productsData[0] ?? null
+  const productData = (catalogRows[0]?.product ?? null) as Record<string, unknown> | null
+  const variantsPrimary = catalogRows[0]?.variants ?? []
 
   // Imagens de todos os produtos para mosaico
-  const productImages: string[] = productsData
-    .map((p: any) => nullStr(p?.image_url))
+  const productImages: string[] = catalogRows
+    .map((row) => nullStr(row.product?.image_url))
     .filter(Boolean)
 
   // Imagem final: manual > foto crawleada do produto principal
@@ -99,15 +142,14 @@ export default function Composer() {
     || nullStr(rawImg)
     || (productImages[0] ?? null)
 
-  // Dados reais do produto para substituição de variáveis
-  const realProductName = nullStr(productData?.canonical_name) || productData?.canonical_name || ''
-  // lowest_price vem como número direto (NullFloat64 marshala como float ou omitido)
-  const realPrice = typeof productData?.lowest_price === 'number'
-    ? productData.lowest_price
-    : (productData?.lowest_price?.Float64 ?? 0)
+  const realProductName =
+    (nullStr(productData?.canonical_name) || (productData?.canonical_name as string)) ?? ''
+
+  const { price: realPrice, url: realUrl, source: realSource } = React.useMemo(
+    () => resolveCatalogPricing(productData, variantsPrimary),
+    [productData, variantsPrimary],
+  )
   const realPriceStr = realPrice > 0 ? `R$ ${Number(realPrice).toFixed(2)}` : 'R$ --'
-  const realUrl = nullStr(productData?.lowest_price_url) || ''
-  const realSource = nullStr(productData?.lowest_price_source) || ''
 
   // Template default genérico com variáveis — só preenche se vazio e sem draft
   const DEFAULT_TEMPLATE = `🔥 OFERTA RELÂMPAGO
@@ -153,48 +195,6 @@ export default function Composer() {
   /** Override opcional via ?affiliateLink= — senão usa shortlink gerado ou URL do produto (API exige affiliate_link não vazio ou HasAffiliate no produto). */
   const affiliateLinkFromQuery = params.get('affiliateLink') ?? ''
 
-  const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
-    mutationFn: (targets) => {
-      const link = affiliateUrl || realUrl || ''
-      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || realUrl || ''
-      // Se "de" e "por" forem iguais (sem preço original real), inflar "de" em 15% e calcular desconto
-      const dePrice = realPrice > 0 ? realPrice * 1.15 : 0
-      const deStr = dePrice > 0 ? `R$ ${dePrice.toFixed(2)}` : 'R$ --'
-      const porStr = realPrice > 0 ? realPriceStr : 'R$ --'
-      const descontoPct = dePrice > 0 && realPrice > 0
-        ? Math.round((1 - realPrice / dePrice) * 100)
-        : 0
-      const descontoStr = descontoPct > 0 ? `-${descontoPct}%` : (realSource || '')
-      // Substituir todas as variáveis com dados reais do produto
-      let finalText = text
-        .replace(/\{produto\}/g, realProductName || 'Produto')
-        .replace(/\{de\}/g, deStr)
-        .replace(/\{por\}/g, porStr)
-        .replace(/\{desconto\}/g, descontoStr)
-        .replace(/\{link\}/g, link)
-      if (link && !finalText.includes(link)) finalText = finalText + '\n\n' + link
-      return apiClient
-        .post<DispatchResponse>('/api/dispatches', {
-          product_id: productIds[0] ?? undefined,
-          message: { text: finalText, media_url: productImage || undefined },
-          affiliate_link: resolvedAffiliateLink,
-          scheduled_for: scheduledFor || undefined,
-          targets,
-        } as DispatchPayload & { scheduled_for?: string })
-        .then((r) => r.data)
-    },
-    onSuccess: (data) => navigate(`/logs?dispatchId=${data.id}`),
-    onError: (err: any) => {
-      const status = err?.response?.status
-      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
-      if (status === 422) {
-        alert(`⚠️ ${detail}\n\nVá em "Afiliados" para configurar o programa do marketplace deste produto.`)
-      } else {
-        alert(`Erro ao disparar (HTTP ${status ?? '?'}): ${detail}`)
-      }
-    },
-  })
-
   const saveRascunho = useMutation({
     mutationFn: () =>
       apiClient
@@ -229,6 +229,68 @@ export default function Composer() {
     staleTime: Infinity,
   })
 
+  /** Preços / desconto alinhados ao disparo (15% no "de" quando não há original real). */
+  const composePricing = React.useMemo(() => {
+    const dePrice = realPrice > 0 ? realPrice * 1.15 : 0
+    const deStr = dePrice > 0 ? `R$ ${dePrice.toFixed(2)}` : 'R$ --'
+    const porStr = realPrice > 0 ? realPriceStr : 'R$ --'
+    const descontoPct =
+      dePrice > 0 && realPrice > 0 ? Math.round((1 - realPrice / dePrice) * 100) : 0
+    const descontoStr = descontoPct > 0 ? `-${descontoPct}%` : realSource || ''
+    return { deStr, porStr, descontoStr, descontoPct }
+  }, [realPrice, realPriceStr, realSource])
+
+  /** Variáveis {…} + correção de textos da IA que copiam "R$ --". */
+  const applyComposeVariables = React.useCallback(
+    (raw: string, linkResolved: string) => {
+      const { deStr, porStr, descontoStr, descontoPct } = composePricing
+      let t = raw
+        .replace(/\{produto\}/g, realProductName || 'Produto')
+        .replace(/\{de\}/g, deStr)
+        .replace(/\{por\}/g, porStr)
+        .replace(/\{desconto\}/g, descontoStr)
+        .replace(/\{link\}/g, linkResolved)
+      if (realPrice > 0) {
+        t = t.replace(/💰\s*De\s+R\$\s*--\s*por\s+R\$\s*--/gi, `💰 De ~${deStr}~ por *${porStr}*`)
+        t = t.replace(/De\s+R\$\s*--/gi, `De ~${deStr}~`)
+        t = t.replace(/por\s+R\$\s*--/gi, `por *${porStr}*`)
+        if (descontoPct > 0) {
+          t = t.replace(/🏷️\s+OFF\b/gi, `🏷️ ${descontoStr} OFF`)
+        }
+      }
+      return t
+    },
+    [composePricing, realProductName, realPrice],
+  )
+
+  const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
+    mutationFn: (targets) => {
+      const link = affiliateUrl || realUrl || ''
+      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || realUrl || ''
+      let finalText = applyComposeVariables(text, link)
+      if (link && !finalText.includes(link)) finalText = `${finalText}\n\n${link}`
+      return apiClient
+        .post<DispatchResponse>('/api/dispatches', {
+          product_id: productIds[0] ?? undefined,
+          message: { text: finalText, media_url: productImage || undefined },
+          affiliate_link: resolvedAffiliateLink,
+          scheduled_for: scheduledFor || undefined,
+          targets,
+        } as DispatchPayload & { scheduled_for?: string })
+        .then((r) => r.data)
+    },
+    onSuccess: (data) => navigate(`/logs?dispatchId=${data.id}`),
+    onError: (err: any) => {
+      const status = err?.response?.status
+      const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+      if (status === 422) {
+        alert(`⚠️ ${detail}\n\nVá em "Afiliados" para configurar o programa do marketplace deste produto.`)
+      } else {
+        alert(`Erro ao disparar (HTTP ${status ?? '?'}): ${detail}`)
+      }
+    },
+  })
+
   const rewriteMut = useMutation({
     mutationFn: () =>
       apiClient
@@ -239,7 +301,9 @@ export default function Composer() {
         })
         .then((r) => r.data),
     onSuccess: (data: { text?: string }) => {
-      if (data?.text) setText(data.text)
+      if (!data?.text) return
+      const link = affiliateUrl || realUrl || ''
+      setText(applyComposeVariables(data.text, link))
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.error ?? err?.message ?? 'Erro desconhecido na IA'
@@ -256,19 +320,8 @@ export default function Composer() {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  // Preview WA com dados reais do produto — "de" inflado 15% para simular preço original
-  const previewDePrice = realPrice > 0 ? realPrice * 1.15 : 0
-  const previewDeStr = previewDePrice > 0 ? `R$ ${previewDePrice.toFixed(2)}` : 'R$ --'
-  const previewDescontoPct = previewDePrice > 0 && realPrice > 0
-    ? Math.round((1 - realPrice / previewDePrice) * 100)
-    : 0
-  const previewDescontoStr = previewDescontoPct > 0 ? `-${previewDescontoPct}%` : '--%'
-  const previewText = previewLines
-    .replace(/{produto}/g, realProductName || 'Produto')
-    .replace(/{de}/g, previewDeStr)
-    .replace(/{por}/g, realPrice > 0 ? realPriceStr : 'R$ --')
-    .replace(/{desconto}/g, previewDescontoStr)
-    .replace(/{link}/g, affiliateUrl || realUrl || 'https://link.produto')
+  const previewLink = affiliateUrl || realUrl || 'https://link.produto'
+  const previewText = applyComposeVariables(previewLines, previewLink)
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
 
