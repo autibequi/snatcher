@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, EmptyState, Skeleton, Input, Spinner } from '../components/ui'
@@ -407,6 +407,8 @@ export default function Groups() {
   const groups = useMemo(() => dedupeGroupsByPhysicalJid(groupsRaw), [groupsRaw])
 
   const qc = useQueryClient()
+  /** Durante POST /api/groups: pausa polling do modal e cancela GET em voo (menos contenção com Evolution/axios). */
+  const waImportPollSuspendedRef = useRef(false)
 
   const activeWA = waAccounts.filter(a => a.active)
   const connectedWA = waAccounts.filter(a => a.status === 'connected').length
@@ -430,6 +432,7 @@ export default function Groups() {
           .catch(() => []),
       enabled: showImport && !!importAccountId && importAccount?.status === 'connected',
       refetchInterval: (q) => {
+        if (waImportPollSuspendedRef.current) return false
         const data = q.state.data as WAGroupOption[] | undefined
         return data && data.length > 0 ? 60_000 : 15_000
       },
@@ -442,14 +445,33 @@ export default function Groups() {
 
   const importOneMut = useMutation({
     mutationFn: (opt: WAGroupOption) =>
-      apiClient.post('/api/groups', {
-        name: opt.name,
-        platform: 'whatsapp',
-        wa_account_id: Number(importAccountId),
-        jid: opt.id,
-        member_count: opt.size,
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
+      apiClient.post(
+        '/api/groups',
+        {
+          name: opt.name,
+          platform: 'whatsapp',
+          wa_account_id: Number(importAccountId),
+          jid: opt.id,
+          member_count: opt.size,
+        },
+        { timeout: 60_000 },
+      ),
+    retry: (count, err: any) =>
+      count < 2 && /timeout|ECONNABORTED|Network Error/i.test(String(err?.message ?? err?.code ?? '')),
+    retryDelay: 800,
+    onMutate: () => {
+      waImportPollSuspendedRef.current = true
+      void qc.cancelQueries({ queryKey: ['wa-groups-import-modal', importAccountId], exact: true })
+    },
+    onSettled: () => {
+      waImportPollSuspendedRef.current = false
+    },
+    onSuccess: () => {
+      // Deixa o mutation settled / UI respirar antes do GET pesado de /api/groups (enriquecido).
+      queueMicrotask(() => {
+        void qc.invalidateQueries({ queryKey: ['groups'] })
+      })
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? err?.message ?? 'Erro ao importar'),
   })
 
