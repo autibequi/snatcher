@@ -18,7 +18,13 @@ import (
 // calcula score com todos os canais e dispara para os grupos dos canais com score >= threshold.
 func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	cfg, err := st.GetConfig()
-	if err != nil || !cfg.AutoMatchEnabled {
+	if err != nil {
+		return
+	}
+	if cfg.AutoMatchEnabled {
+		_ = st.TouchAutoMatchWorkerRun(time.Now())
+	}
+	if !cfg.AutoMatchEnabled {
 		return
 	}
 
@@ -42,7 +48,6 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	}
 
 	// Filtrar por auto_match_enabled e paused_until
-	now := time.Now()
 	active := make([]models.ChannelAutomation, 0, len(automations))
 	for _, a := range automations {
 		if !a.AutoMatchEnabled {
@@ -267,6 +272,16 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)
 			sentByChannel[s.ChannelID]++
 		}
+	}
+
+	nDisp := 0
+	for _, v := range sentByChannel {
+		nDisp += v
+	}
+	if nDisp == 0 {
+		slog.Info("auto match: cycle finished — no dispatches (threshold, cooldown, saturated groups, filters or missing offer URL)")
+	} else {
+		slog.Info("auto match: cycle finished", "dispatches_created", nDisp)
 	}
 }
 

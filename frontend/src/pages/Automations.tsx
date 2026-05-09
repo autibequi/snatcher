@@ -411,19 +411,10 @@ export function TabOverview() {
     return rankMap
   }, [previewCandidates])
 
-  const previewSendEstimate = (p: GlobalPreviewItem): string => {
-    if (!enabled) return 'auto-match pausado'
-    if (nextAutoMatchMs == null) {
-      return 'próximo tick indisponível (precisa de ao menos um ciclo nos logs)'
-    }
+  const previewQueueLabel = (p: GlobalPreviewItem): string => {
+    if (!enabled) return '—'
     const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 1
-    const cycles = Math.floor((rank - 1) / maxPerRunEffective)
-    const estMs = nextAutoMatchMs + cycles * intervalSecAm * 1000
-    const lot =
-      cycles === 0
-        ? `${rank}º na fila do canal · até ${maxPerRunEffective} envios/ciclo`
-        : `${rank}º na fila · ~${cycles + 1}º ciclo (${maxPerRunEffective} envios/ciclo)`
-    return `${fmtWhen(estMs)} · ${lot}`
+    return `${rank}º na fila · até ${maxPerRunEffective} por canal/ciclo`
   }
 
   const logsSorted = React.useMemo(
@@ -580,19 +571,12 @@ export function TabOverview() {
         ) : null}
       </div>
 
-      {/* ── KPI + controles num grid único ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ── KPI + controles num grid único (countdown só na linha do tempo abaixo) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
 
         {/* Disparos 24h */}
         <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
           tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h." />
-
-        {/* Próx. ciclo */}
-        <div className="bg-surface border border-border rounded-md p-4 shadow-card flex flex-col gap-1">
-          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Próx. ciclo</p>
-          <p className="text-lg font-bold text-fg leading-none">{autoMatchCountLabel}</p>
-          <p className="text-[10px] text-fg-3">{data?.interval_seconds != null ? `a cada ${Math.max(1, Math.floor(data.interval_seconds / 60))} min` : '—'}</p>
-        </div>
 
         {/* Auto-pilot — toggle único que controla auto-match + full_auto_mode */}
         <div className={`bg-surface border rounded-md p-4 shadow-card transition-colors ${fullyEnabled && fullAutoMode ? 'border-success/40' : fullyEnabled ? 'border-warning/40' : 'border-border'}`}>
@@ -674,7 +658,7 @@ export function TabOverview() {
             <span className="text-fg-3 uppercase tracking-wide font-medium">Próximo ciclo auto-match</span>
             <p className="text-sm font-semibold text-fg mt-0.5">{autoMatchCountLabel}</p>
             <p className="text-[10px] text-fg-3 mt-0.5">
-              Tick previsto (último log + intervalo). O worker pode não criar dispatch se fila ou grupos estiverem saturados.
+              Baseado no último ciclo do worker ou último disparo registrado. Mesmo com countdown, um ciclo pode não criar envio (grupos saturados, cooldown, sem URL de oferta).
             </p>
           </div>
           <div className="rounded border border-border bg-surface-2/40 px-3 py-2">
@@ -692,6 +676,7 @@ export function TabOverview() {
           <p className="text-[10px] text-fg-3 mt-0.5">
             Até <strong className="text-fg-2">{maxPerRunEffective}</strong> por canal por ciclo · intervalo{' '}
             <strong className="text-fg-2">{intervalSecAm}s</strong>. <a href="/automations/channels" className="text-accent hover:underline">Canais</a>
+            {' '}— a lista encolhe quando o produto entra em cooldown (houve tentativa registrada), mesmo que o WhatsApp ainda não tenha entregue.
           </p>
         </div>
         {nextCyclePreview?.auto_match_master_enabled === false ? (
@@ -717,9 +702,9 @@ export function TabOverview() {
                     <strong className="text-fg-3 font-normal">Canal:</strong> {p.channel_name}
                   </p>
                 </div>
-                <div className="text-right shrink-0 min-w-[120px]">
-                  <p className="text-[10px] text-fg-3 uppercase tracking-wide">Estimativa</p>
-                  <p className="text-xs text-fg font-medium leading-snug">{previewSendEstimate(p)}</p>
+                <div className="text-right shrink-0 min-w-[100px]">
+                  <p className="text-[10px] text-fg-3 uppercase tracking-wide">Posição</p>
+                  <p className="text-xs text-fg font-medium leading-snug">{previewQueueLabel(p)}</p>
                 </div>
               </div>
             ))}

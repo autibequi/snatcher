@@ -39,11 +39,18 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		logs = []models.AutoMatchLog{}
 	}
 
-	// last_run_at: MAX(created_at) dos logs como proxy do último ciclo.
+	// last_run_at: mais recente entre (último log de dispatch) e (último tick do worker).
+	// Sem o tick, ciclos sem dispatch não avançavam o countdown na UI.
 	var lastRunAt *time.Time
 	for _, l := range logs {
 		if lastRunAt == nil || l.CreatedAt.After(*lastRunAt) {
 			t := l.CreatedAt
+			lastRunAt = &t
+		}
+	}
+	if cfg.AutoMatchLastWorkerRunAt.Valid {
+		t := cfg.AutoMatchLastWorkerRunAt.Time
+		if lastRunAt == nil || t.After(*lastRunAt) {
 			lastRunAt = &t
 		}
 	}
