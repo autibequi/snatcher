@@ -125,31 +125,41 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 	}
 	provider := cfg.LLMProvider.String
 	if provider == "" { provider = "openrouter" }
-	apiKey  := cfg.LLMApiKey.String
-	baseURL := cfg.LLMBaseURL.String
-	model   := cfg.LLMModel.String
+	apiKey := cfg.LLMApiKey.String
+	model := cfg.LLMModel.String
 
 	switch strings.ToLower(provider) {
 	case "ollama":
-		if baseURL == "" { return nil } // URL obrigatória para Ollama — configure em Configurações → LLM/IA
-		// Garantir sufixo /v1 para compatibilidade OpenAI
+		baseURL := firstNonEmptyTrimmed(
+			nullString(cfg.LLMOllamaBaseURL),
+			nullString(cfg.LLMBaseURL),
+		)
+		baseURL = normalizeLLMBaseURL(baseURL)
+		if baseURL == "" { return nil }
+		m := firstNonEmptyTrimmed(nullString(cfg.LLMOllamaModel), nullString(cfg.LLMModel))
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
 		cli := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningEnabled)
-		if model != "" {
-			return &modelOverrideClient{inner: cli, model: model}
+		if m != "" {
+			return &modelOverrideClient{inner: cli, model: m}
 		}
 		return cli
 	case "vllm":
+		baseURL := firstNonEmptyTrimmed(
+			nullString(cfg.LLMVLLMBaseURL),
+			nullString(cfg.LLMBaseURL),
+		)
+		baseURL = normalizeLLMBaseURL(baseURL)
 		if baseURL == "" { return nil }
+		m := firstNonEmptyTrimmed(nullString(cfg.LLMVLLMModel), nullString(cfg.LLMModel))
+		vk := firstNonEmptyTrimmed(nullString(cfg.LLMVLLMApiKey), nullString(cfg.LLMApiKey))
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		// API key opcional (Coolify/proxy às vezes exige Bearer; vLLM costuma ignorar)
-		cli := llm.NewOpenAICompat(baseURL, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
-		if model != "" {
-			return &modelOverrideClient{inner: cli, model: model}
+		cli := llm.NewOpenAICompat(baseURL, vk).WithReasoning(cfg.LLMReasoningEnabled)
+		if m != "" {
+			return &modelOverrideClient{inner: cli, model: m}
 		}
 		return cli
 	case "openrouter":
@@ -160,8 +170,9 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 		}
 		return cli
 	default:
-		if baseURL != "" {
-			return llm.NewOpenAICompat(baseURL, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
+		fallback := normalizeLLMBaseURL(cfg.LLMBaseURL.String)
+		if fallback != "" {
+			return llm.NewOpenAICompat(fallback, apiKey).WithReasoning(cfg.LLMReasoningEnabled)
 		}
 		return nil
 	}

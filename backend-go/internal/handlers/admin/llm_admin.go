@@ -130,7 +130,7 @@ func (h *LLMAdminHandler) Usage(w http.ResponseWriter, r *http.Request) {
 // Lista modelos: primeiro OpenAI-compatível GET …/v1/models (vLLM, Ollama com /v1, LM Studio),
 // senão fallback para API nativa Ollama GET …/api/tags.
 func (h *LLMAdminHandler) OllamaModels(w http.ResponseWriter, r *http.Request) {
-	baseURL := strings.TrimSpace(r.URL.Query().Get("base_url"))
+	baseURL := normalizeLLMBaseURL(r.URL.Query().Get("base_url"))
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}

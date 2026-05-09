@@ -104,6 +104,12 @@ type AppConfig struct {
 	LLMApiKey   NullString `db:"llm_api_key" json:"llm_api_key,omitempty"`
 	LLMBaseURL  NullString `db:"llm_base_url" json:"llm_base_url,omitempty"`
 	LLMModel    NullString `db:"llm_model" json:"llm_model,omitempty"`
+	// Self-hosted separado (migration 0115) — não partilha URL/modelo entre Ollama e vLLM.
+	LLMOllamaBaseURL NullString `db:"llm_ollama_base_url" json:"llm_ollama_base_url,omitempty"`
+	LLMOllamaModel   NullString `db:"llm_ollama_model" json:"llm_ollama_model,omitempty"`
+	LLMVLLMBaseURL   NullString `db:"llm_vllm_base_url" json:"llm_vllm_base_url,omitempty"`
+	LLMVLLMModel     NullString `db:"llm_vllm_model" json:"llm_vllm_model,omitempty"`
+	LLMVLLMApiKey    NullString `db:"llm_vllm_api_key" json:"llm_vllm_api_key,omitempty"`
 
 	// White-label
 	AppName   NullString `db:"app_name" json:"app_name,omitempty"`

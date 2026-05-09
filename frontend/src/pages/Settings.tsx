@@ -358,22 +358,22 @@ function LLMTab() {
       {provider === 'ollama' && (
         <SelfHostedModelsConfig
           variant="ollama"
-          baseURL={form.llm_base_url ?? get('llm_base_url')}
-          model={form.llm_model ?? get('llm_model')}
-          onBaseURLChange={v => set('llm_base_url', v)}
-          onModelChange={v => set('llm_model', v)}
+          baseURL={form.llm_ollama_base_url ?? get('llm_ollama_base_url')}
+          model={form.llm_ollama_model ?? get('llm_ollama_model')}
+          onBaseURLChange={v => set('llm_ollama_base_url', v)}
+          onModelChange={v => set('llm_ollama_model', v)}
         />
       )}
 
       {provider === 'vllm' && (
         <SelfHostedModelsConfig
           variant="vllm"
-          baseURL={form.llm_base_url ?? get('llm_base_url')}
-          model={form.llm_model ?? get('llm_model')}
-          apiKey={form.llm_api_key ?? get('llm_api_key')}
-          onBaseURLChange={v => set('llm_base_url', v)}
-          onModelChange={v => set('llm_model', v)}
-          onApiKeyChange={v => set('llm_api_key', v)}
+          baseURL={form.llm_vllm_base_url ?? get('llm_vllm_base_url')}
+          model={form.llm_vllm_model ?? get('llm_vllm_model')}
+          apiKey={form.llm_vllm_api_key ?? get('llm_vllm_api_key')}
+          onBaseURLChange={v => set('llm_vllm_base_url', v)}
+          onModelChange={v => set('llm_vllm_model', v)}
+          onApiKeyChange={v => set('llm_vllm_api_key', v)}
         />
       )}
 
@@ -930,10 +930,18 @@ function SelfHostedModelsConfig({
       )}
       <Input
         label={variant === 'ollama' ? 'URL base do Ollama' : 'URL base do servidor (OpenAI-compat)'}
-        placeholder={variant === 'ollama' ? 'http://localhost:11434' : 'http://host:8000 ou …/v1'}
+        placeholder={variant === 'ollama' ? 'http://localhost:11434' : 'http://vllm:8000'}
         value={baseURL}
         onChange={e => onBaseURLChange(e.target.value)}
       />
+      {variant === 'vllm' && (
+        <p className="text-xs text-fg-3">
+          A lista de modelos é pedida pelo backend do Snatcher (não pelo browser). Use hostname/IP que esse processo alcance — por exemplo{' '}
+          <code className="bg-surface-2 px-1 rounded">http://vllm:8000</code> na mesma rede Docker.{' '}
+          <code className="bg-surface-2 px-1 rounded">localhost</code> aqui é o próprio host/container do Snatcher. Se omitires{' '}
+          <code className="bg-surface-2 px-1 rounded">http://</code>, o servidor assume HTTP.
+        </p>
+      )}
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-fg-2">Modelo</label>
@@ -1001,8 +1009,8 @@ function SelfHostedModelsConfig({
         {models.length > 0
           ? `${models.length} modelo${models.length !== 1 ? 's' : ''} disponíve${models.length !== 1 ? 'is' : 'l'} no servidor.`
           : variant === 'ollama'
-            ? 'Certifique-se que o Ollama está rodando.'
-            : 'Confira URL, firewall e se o processo vLLM está ouvindo na porta correta.'}
+            ? 'Certifique-se que o Ollama está rodando e que o backend Snatcher consegue abrir essa URL.'
+            : 'Confira DNS/rede Docker, porta e se o vLLM já terminou de carregar o modelo.'}
       </p>
     </div>
   )
