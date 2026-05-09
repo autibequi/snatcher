@@ -103,7 +103,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           <SearchBar />
         </div>
 
-        {/* Fila universal FIFO (jobs + Jonfrey) */}
+        {/* Fila universal FIFO (jobs persistidos + Jonfrey) */}
         <WorkQueueBadge />
 
         {/* Accounts badge */}

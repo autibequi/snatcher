@@ -71,7 +71,7 @@ function fmtShort(s: string): string {
   })
 }
 
-/** Badge + painel: fila única FIFO — jobs em memória + auditoria Jonfrey (GET /api/work-queue). */
+/** Badge + painel: fila FIFO unificada — jobs persistidos (PostgreSQL) + auditoria Jonfrey (GET /api/work-queue). */
 export function WorkQueueBadge() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -114,7 +114,7 @@ export function WorkQueueBadge() {
   }, [])
 
   const runningJobRows = items.filter(isJobRow).filter(j => j.status === 'running')
-  const memoryJobs = items.filter(isJobRow)
+  const jobRows = items.filter(isJobRow)
 
   const cancelOne = (id: string) => {
     apiClient.post(`/api/jobs/${id}/cancel`).then(() => {
@@ -152,7 +152,7 @@ export function WorkQueueBadge() {
             ? 'bg-accent/10 text-accent hover:bg-accent/20'
             : 'bg-surface-2 text-fg-3 hover:text-fg'
         }`}
-        title="Fila universal (FIFO): jobs + Jonfrey"
+        title="Fila universal (FIFO): jobs no PostgreSQL + Jonfrey"
       >
         {activeRunningCount > 0 && (
           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
@@ -169,7 +169,7 @@ export function WorkQueueBadge() {
           <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2 flex-shrink-0">
             <div>
               <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Fila universal</p>
-              <p className="text-[10px] text-fg-3 mt-0.5">FIFO · jobs em memória + auditoria Jonfrey</p>
+              <p className="text-[10px] text-fg-3 mt-0.5">FIFO · jobs persistidos + auditoria Jonfrey</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {runningJobRows.length > 0 && (
@@ -177,7 +177,7 @@ export function WorkQueueBadge() {
                   cancelar jobs
                 </button>
               )}
-              {memoryJobs.some(j => j.status !== 'running') && (
+              {jobRows.some(j => j.status !== 'running') && (
                 <button type="button" onClick={clearFinished} className="text-xs text-fg-3 hover:text-fg whitespace-nowrap">
                   limpar jobs OK
                 </button>
