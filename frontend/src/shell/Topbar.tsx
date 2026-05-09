@@ -4,44 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import { WorkQueueBadge } from '../components/WorkQueueBadge'
 import { HelpManualButton } from './HelpManualButton'
-import { manualTutorialTitle } from '../content/tutorials'
-
-const PAGE_TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/match': 'Match',
-  '/automations': 'Automações',
-  '/automations/channels': 'Canais',
-  '/automations/jonfrey': 'Jonfrey',
-  '/compose': 'Compor',
-  '/logs': 'Logs',
-  '/catalog': 'Catálogo',
-  '/crawlers': 'Crawlers',
-  '/channels': 'Canais',
-  '/links': 'Links',
-  '/ads': 'Anúncios pagos',
-  '/groups': 'Grupos',
-  '/accounts': 'Contas',
-  '/affiliates': 'Afiliados',
-  '/clusters': 'Clusters',
-  '/analytics': 'Analytics',
-  '/settings': 'Configurações',
-  '/taxonomy': 'Taxonomia',
-  '/curation': 'Curadoria',
-  '/manual': 'Manual',
-}
-
-function pageTitle(pathname: string): string {
-  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname]
-  const manualSub = /^\/manual\/([^/]+)$/.exec(pathname)
-  if (manualSub) {
-    const t = manualTutorialTitle(manualSub[1])
-    if (t) return t
-  }
-  const parts = pathname.split('/').filter(Boolean)
-  if (parts.length === 0) return 'Dashboard'
-  const prefix = '/' + parts[0]
-  return PAGE_TITLES[prefix] ?? ''
-}
+import { usePageTitle } from '../contexts/PageTitleContext'
+import { pageTitleFromPath } from './pageTitleFromPath'
 
 interface WAAccount {
   id: number
@@ -81,51 +45,44 @@ interface TopbarProps {
 
 export function Topbar({ onMenuClick, onOpenManual }: TopbarProps) {
   const location = useLocation()
-  const title = pageTitle(location.pathname)
+  const { override } = usePageTitle()
+  const baseTitle = pageTitleFromPath(location.pathname)
+  const title = override ?? baseTitle
 
   return (
-    <>
-      <header className="flex items-center h-14 px-4 bg-surface border-b border-border flex-shrink-0 gap-3">
-        {/* Hamburger mobile */}
-        <button
-          type="button"
-          onClick={onMenuClick}
-          className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded"
-          aria-label="Abrir menu"
-        >
-          ☰
-        </button>
+    <header className="flex items-center h-14 px-3 sm:px-4 bg-surface border-b border-border flex-shrink-0 gap-2 sm:gap-3">
+      {/* Hamburger mobile */}
+      <button
+        type="button"
+        onClick={onMenuClick}
+        className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded shrink-0"
+        aria-label="Abrir menu"
+      >
+        ☰
+      </button>
 
-        {/* Título da página — desktop */}
-        {title && (
-          <h1 className="text-sm font-semibold text-fg flex-shrink-0 hidden md:block">{title}</h1>
-        )}
+      {/* Título da rota + busca — uma linha */}
+      <div className="flex-1 flex items-center gap-2 sm:gap-3 min-w-0">
+        {title ? (
+          <h1 className="text-sm font-semibold text-fg truncate shrink-0 max-w-[38vw] xs:max-w-[42vw] sm:max-w-[200px] md:max-w-[240px]">
+            {title}
+          </h1>
+        ) : null}
+        <SearchBar />
+      </div>
 
-        {/* Search bar */}
-        <div className="flex-1">
-          <SearchBar />
-        </div>
+      {/* Fila universal FIFO (jobs persistidos + Jonfrey) */}
+      <WorkQueueBadge />
 
-        {/* Fila universal FIFO (jobs persistidos + Jonfrey) */}
-        <WorkQueueBadge />
+      {/* Accounts badge */}
+      <AccountsBadge />
 
-        {/* Accounts badge */}
-        <AccountsBadge />
+      {/* Badge de aprovações pendentes */}
+      <PendingApprovalsBadge />
 
-        {/* Badge de aprovações pendentes */}
-        <PendingApprovalsBadge />
-
-        {/* Manual operacional (mesmo conteúdo da página /manual) */}
-        <HelpManualButton onOpenManual={onOpenManual} />
-      </header>
-
-      {/* Título da página — mobile (linha separada abaixo do topbar) */}
-      {title && (
-        <div className="md:hidden px-4 py-2 bg-surface border-b border-border flex-shrink-0">
-          <h1 className="text-base font-semibold text-fg">{title}</h1>
-        </div>
-      )}
-    </>
+      {/* Manual operacional (mesmo conteúdo da página /manual) */}
+      <HelpManualButton onOpenManual={onOpenManual} />
+    </header>
   )
 }
 

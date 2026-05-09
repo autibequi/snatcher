@@ -1,7 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
-import { KpiCard, Skeleton, Switch, Badge, TooltipIcon, Button, PageHeader } from '../components/ui'
+import { KpiCard, Skeleton, Switch, Badge, TooltipIcon, Button } from '../components/ui'
 import { ChannelDetailInner } from './ChannelDetail'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -528,63 +528,57 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader
-        title="Automações"
-        help
-        subtitle={
-          <a href="#timeline" className="text-accent hover:underline text-sm">
-            Ir para linha do tempo
-          </a>
-        }
-        actions={
-          !fullAutoMode && pendingList.length > 0 ? (
-            <>
-              {selected.size > 0 && (
-                <>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    loading={approveBatchMut.isPending}
-                    onClick={() => approveBatchMut.mutate(Array.from(selected))}
-                  >
-                    ✓ Aprovar {selected.size}
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    loading={rejectBatchMut.isPending}
-                    onClick={() => {
-                      if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected))
-                    }}
-                  >
-                    ✕ Rejeitar {selected.size}
-                  </Button>
-                </>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={approveAllMut.isPending}
-                onClick={() => {
-                  if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
-                }}
-              >
-                Aprovar todos ({pendingList.length})
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={rejectBatchMut.isPending}
-                onClick={() => {
-                  if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
-                }}
-              >
-                Rejeitar todos
-              </Button>
-            </>
-          ) : null
-        }
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <a href="#timeline" className="text-accent hover:underline text-sm">
+          Ir para linha do tempo
+        </a>
+        {!fullAutoMode && pendingList.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            {selected.size > 0 && (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={approveBatchMut.isPending}
+                  onClick={() => approveBatchMut.mutate(Array.from(selected))}
+                >
+                  ✓ Aprovar {selected.size}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={rejectBatchMut.isPending}
+                  onClick={() => {
+                    if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected))
+                  }}
+                >
+                  ✕ Rejeitar {selected.size}
+                </Button>
+              </>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={approveAllMut.isPending}
+              onClick={() => {
+                if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
+              }}
+            >
+              Aprovar todos ({pendingList.length})
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={rejectBatchMut.isPending}
+              onClick={() => {
+                if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
+              }}
+            >
+              Rejeitar todos
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       {/* ── KPI + controles num grid único ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

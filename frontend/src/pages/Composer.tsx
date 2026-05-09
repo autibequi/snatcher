@@ -1,7 +1,7 @@
 import React from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Button, Spinner, PlatformPill, TutorialHelpButton } from '../components/ui'
+import { Button, Spinner, PlatformPill } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 interface Channel {
@@ -386,26 +386,18 @@ export default function Composer() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-4 md:py-6">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 md:mb-8">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg md:text-xl font-semibold text-fg tracking-tight">Compor disparo</h1>
-            <TutorialHelpButton />
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            className="text-sm text-fg-2 border border-border rounded-lg px-3 py-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
-            disabled={!text || saveRascunho.isPending}
-            onClick={() => saveRascunho.mutate()}
-          >
-            {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
-          </button>
-          <a href="/logs?status=draft" className="text-xs text-accent hover:underline py-2 px-1">
-            Ver rascunhos
-          </a>
-        </div>
+      <div className="flex flex-wrap justify-end gap-2 mb-6 md:mb-8">
+        <button
+          type="button"
+          className="text-sm text-fg-2 border border-border rounded-lg px-3 py-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
+          disabled={!text || saveRascunho.isPending}
+          onClick={() => saveRascunho.mutate()}
+        >
+          {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
+        </button>
+        <a href="/logs?status=draft" className="text-xs text-accent hover:underline py-2 px-1">
+          Ver rascunhos
+        </a>
       </div>
 
       {/* md+: duas colunas — antes era só lg:, por isso “quebrava” cedo demais */}

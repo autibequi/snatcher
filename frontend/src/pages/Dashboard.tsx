@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Button, KpiCard, PageHeader } from '../components/ui'
+import { Button, KpiCard } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
@@ -63,9 +63,6 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const qc = useQueryClient()
-
-  const hora = new Date().getHours()
-  const greeting = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
 
   const { data: kpis } = useQuery<KPIs>({
     queryKey: ['dashboard', 'kpis'],
@@ -133,41 +130,33 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
 
-      {/* ── 1. Header ───────────────────────────────────────────────────────── */}
-      <PageHeader
-        title={
-          <>
-            {greeting}
-            {user?.name ? `, ${user.name.split(' ')[0]}` : ''}
-          </>
-        }
-        help
-        subtitle={renderDynamicSubtitle(
-          inboxItems.length,
-          dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
-        )}
-        subtitleId="dashboard-subtitle"
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => {
-                qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
-                qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
-                qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
-                qc.invalidateQueries({ queryKey: ['catalog'] })
-              }}
-            >
-              ↻ Atualizar
-            </Button>
-            <Button variant="primary" size="sm" type="button" onClick={() => navigate('/compose')}>
-              ✈ Novo disparo
-            </Button>
-          </>
-        }
-      />
+      {/* ── 1. Linha de contexto + ações (título = Topbar "Dashboard") ───────── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p id="dashboard-subtitle" className="text-sm text-fg-3">
+          {renderDynamicSubtitle(
+            inboxItems.length,
+            dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined,
+          )}
+        </p>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            onClick={() => {
+              qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
+              qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+              qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
+              qc.invalidateQueries({ queryKey: ['catalog'] })
+            }}
+          >
+            ↻ Atualizar
+          </Button>
+          <Button variant="primary" size="sm" type="button" onClick={() => navigate('/compose')}>
+            ✈ Novo disparo
+          </Button>
+        </div>
+      </div>
 
       {/* ── 2. Inbox | dica LLM (2 colunas) ─────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

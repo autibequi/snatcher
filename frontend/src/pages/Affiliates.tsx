@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, KpiCard, Skeleton, TutorialHelpButton } from '../components/ui'
+import { Badge, Button, KpiCard, Skeleton } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 
 // ---------------------------------------------------------------------------
@@ -337,12 +337,6 @@ export default function Affiliates() {
 
   return (
     <div className="p-6 max-w-6xl">
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <h1 className="text-lg font-semibold text-fg">Afiliados</h1>
-        <TutorialHelpButton />
-      </div>
-
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <KpiCard

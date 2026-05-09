@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, KpiCard, TutorialHelpButton } from '../components/ui'
+import { Button, Input, KpiCard } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import TagInput from '../components/TagInput'
 
@@ -84,11 +84,6 @@ export default function Curation() {
 
   return (
     <div className="p-6">
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <h1 className="text-lg font-semibold text-fg">Triagem</h1>
-        <TutorialHelpButton />
-      </div>
-
       <JonfreyCurationCard />
 
       {/* Stats */}
