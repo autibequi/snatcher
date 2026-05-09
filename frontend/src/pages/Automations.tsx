@@ -942,13 +942,12 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
         <thead>
           <tr className="bg-surface-2 border-b border-border">
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Canal</th>
-            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Master</th>
+            <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Ativo</th>
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Auto Match</th>
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Eventos</th>
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Threshold</th>
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Ultima run</th>
             <th className="text-left px-4 py-3 text-xs text-fg-2 font-medium">Runs 24h</th>
-            <th className="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
@@ -960,14 +959,8 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                 className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
                 onClick={() => onOpenDrawer(row)}
               >
-                <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="text-sm font-medium text-fg hover:text-accent text-left"
-                    onClick={() => onOpenDrawer(row)}
-                  >
-                    {row.channel_name}
-                  </button>
+                <td className="px-4 py-3">
+                  <span className="text-sm font-medium text-fg">{row.channel_name}</span>
                 </td>
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <MasterToggle row={row} />
@@ -1011,15 +1004,6 @@ export function TabChannels({ onOpenDrawer }: { onOpenDrawer: (row: ChannelRow) 
                       </span>
                     )
                   ) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenDrawer(row)}
-                    className="text-xs text-accent hover:underline"
-                  >
-                    Configurar &rarr;
-                  </button>
                 </td>
               </tr>
             )
