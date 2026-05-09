@@ -1,7 +1,5 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '../lib/apiClient'
 
 interface SidebarProps {
   onClose?: () => void
@@ -65,20 +63,14 @@ const navGroups: NavGroup[] = [
       { to: '/affiliates', label: 'Afiliados', icon: '💰' },
       { to: '/taxonomy', label: 'Taxonomia', icon: '🏷️' },
       { to: '/settings', label: 'Configurações', icon: '⚙️' },
+      { to: '/manual', label: 'Manual', icon: '📖' },
     ],
   },
 ]
 
 export function Sidebar({ onClose }: SidebarProps) {
+  const navigate = useNavigate()
   const { user } = useAuth()
-
-  const { data: brand } = useQuery({
-    queryKey: ['brand'],
-    queryFn: () => apiClient.get('/api/brand').then(r => r.data).catch(() => ({})),
-    staleTime: 60_000,
-  })
-
-  const appName = brand?.app_name || 'Snatcher'
 
   const displayName = user?.name ?? ''
   const displayEmail = user?.email ?? ''
@@ -91,16 +83,31 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Logo / Header */}
-      <div className="flex items-center justify-between h-14 px-3 border-b border-border flex-shrink-0">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-fg leading-tight truncate">{appName}</p>
-          <p className="text-xs text-fg-3 leading-tight">{brand?.app_domain ?? 'workspace'}</p>
-        </div>
+      {/* Topo compacto: avatar + utilizador (clique → configurações); ✕ só mobile */}
+      <div className="flex items-center gap-2 px-2 py-2 border-b border-border flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/settings')
+            onClose?.()
+          }}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-md py-1 px-1 -mx-1 hover:bg-surface-2 transition-colors"
+        >
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+            <span className="text-xs font-semibold text-accent leading-none">{initials || 'RC'}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-fg leading-tight truncate">{displayName || 'Conta'}</p>
+            <p className="text-[10px] text-fg-3 leading-tight truncate">
+              {roleLabel}
+              {displayEmail ? ` · ${displayEmail}` : ''}
+            </p>
+          </div>
+        </button>
         <button
           type="button"
           onClick={onClose}
-          className="lg:hidden text-fg-3 hover:text-fg p-1 rounded flex-shrink-0"
+          className="lg:hidden text-fg-3 hover:text-fg p-1.5 rounded flex-shrink-0"
           aria-label="Fechar menu"
         >
           ✕
@@ -108,7 +115,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       </div>
 
       {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
+      <nav className="flex-1 overflow-y-auto py-2 px-2 min-h-0">
         {navGroups.map(group => (
           <div key={group.label} className="mb-4">
             <p className="px-2 py-1 text-xs font-medium text-fg-3 uppercase tracking-wider">
@@ -135,23 +142,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           </div>
         ))}
       </nav>
-
-      {/* Footer — user card */}
-      <div className="px-3 py-3 border-t border-border flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          {/* Avatar circular com iniciais */}
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-            <span className="text-xs font-semibold text-accent leading-none">{initials || 'RC'}</span>
-          </div>
-          {/* Nome + role */}
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-fg leading-tight truncate">{displayName}</p>
-            <p className="text-xs text-fg-3 leading-tight truncate">
-              {roleLabel} · {displayEmail}
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -2,8 +2,8 @@ import { useRef, useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
-import { useAuth } from '../lib/auth'
 import { WorkQueueBadge } from '../components/WorkQueueBadge'
+import { HelpManualButton } from './HelpManualButton'
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
@@ -26,6 +26,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/settings': 'Configurações',
   '/taxonomy': 'Taxonomia',
   '/curation': 'Curadoria',
+  '/manual': 'Manual',
 }
 
 function pageTitle(pathname: string): string {
@@ -72,12 +73,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick }: TopbarProps) {
-  const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuth()
-
-  const initials = (user?.name ?? 'U')
-    .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('')
   const title = pageTitle(location.pathname)
 
   return (
@@ -112,15 +108,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         {/* Badge de aprovações pendentes */}
         <PendingApprovalsBadge />
 
-        {/* Avatar com inicial do usuário */}
-        <button
-          type="button"
-          onClick={() => navigate('/settings')}
-          className="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center hover:bg-accent/30 transition-colors flex-shrink-0"
-          title={user?.name ?? 'Configurações'}
-        >
-          {initials || 'U'}
-        </button>
+        {/* Manual operacional (mesmo conteúdo da página /manual) */}
+        <HelpManualButton />
       </header>
 
       {/* Título da página — mobile (linha separada abaixo do topbar) */}

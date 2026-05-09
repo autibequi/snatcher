@@ -95,6 +95,7 @@ const AutomationsByChannel = lazy(() => import('./pages/AutomationsByChannel'))
 const Jonfrey = lazy(() => import('./pages/Jonfrey'))
 const Ads = lazy(() => import('./pages/Ads'))
 const Setup = lazy(() => import('./pages/Setup'))
+const Manual = lazy(() => import('./pages/Manual'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
 function SetupGuard({ children }: { children: ReactNode }) {
@@ -150,6 +151,7 @@ export default function App() {
               <Route path="settings/*" element={<Settings />} />
               <Route path="taxonomy" element={<Taxonomy />} />
               <Route path="curation" element={<Curation />} />
+              <Route path="manual" element={<Manual />} />
               <Route path="_dev/atoms" element={<DevAtoms />} />
               <Route path="*" element={<NotFound />} />
             </Route>
