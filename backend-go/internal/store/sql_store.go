@@ -1595,11 +1595,11 @@ func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgra
 	var out []models.AffiliateProgram
 	if active == nil {
 		return out, s.db.Select(&out,
-			`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+			`SELECT id, short_id, name, marketplace, credentials, active, rules, postback, created_at
 			 FROM affiliate_programs ORDER BY name`)
 	}
 	return out, s.db.Select(&out,
-		`SELECT id, short_id, name, marketplace, active, rules, postback, created_at
+		`SELECT id, short_id, name, marketplace, credentials, active, rules, postback, created_at
 		 FROM affiliate_programs WHERE active = $1 ORDER BY name`, *active)
 }
 

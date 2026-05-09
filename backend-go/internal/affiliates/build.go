@@ -15,16 +15,42 @@ import (
 // ou quando o programa encontrado não tem credenciais configuradas.
 var ErrNoAffiliate = errors.New("nenhum código de afiliado configurado para este marketplace")
 
+// CanonicalAffiliateMarketplace unifica rótulos do catálogo/crawler (ex.: amz, ml) com o marketplace
+// gravado nos programas na UI (ex.: amazon, mercadolivre).
+func CanonicalAffiliateMarketplace(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "amz", "amazon", "amazon.com", "amazon.com.br":
+		return "amazon"
+	case "ml", "mercadolivre", "mercado_livre", "mercado livre":
+		return "mercadolivre"
+	case "magalu", "magazine_luiza", "magazineluiza":
+		return "magalu"
+	case "ali", "aliexpress":
+		return "aliexpress"
+	case "americanas", "americanas.com":
+		return "americanas"
+	case "casasbahia", "casas_bahia", "casas bahia":
+		return "casasbahia"
+	default:
+		return s
+	}
+}
+
 // HasAffiliate verifica se há programa ativo com credenciais para o marketplace.
 // Retorna true só quando o link seria efetivamente reescrito com tag/affiliate_id.
 func HasAffiliate(marketplace string, programs []models.AffiliateProgram) bool {
+	want := CanonicalAffiliateMarketplace(marketplace)
 	for _, p := range programs {
-		if !strings.EqualFold(p.Marketplace, marketplace) {
+		if !p.Active {
+			continue
+		}
+		if CanonicalAffiliateMarketplace(p.Marketplace) != want {
 			continue
 		}
 		var creds map[string]string
 		_ = json.Unmarshal(p.Credentials, &creds)
-		switch strings.ToLower(marketplace) {
+		switch want {
 		case "amazon":
 			if creds["tag"] != "" {
 				return true
@@ -55,12 +81,17 @@ func BuildLinkStrict(productURL, marketplace string, programs []models.Affiliate
 // Retorna o URL com o tag/ID do programa de maior prioridade que cobre o marketplace.
 // Determinístico: mesma entrada → mesma saída.
 func BuildLink(productURL, marketplace string, programs []models.AffiliateProgram) (affiliateURL, programName string, err error) {
-	// Filtrar por marketplace
+	want := CanonicalAffiliateMarketplace(marketplace)
+	// Filtrar por marketplace (canonical)
 	var candidates []models.AffiliateProgram
 	for _, p := range programs {
-		if strings.EqualFold(p.Marketplace, marketplace) {
-			candidates = append(candidates, p)
+		if !p.Active {
+			continue
 		}
+		if CanonicalAffiliateMarketplace(p.Marketplace) != want {
+			continue
+		}
+		candidates = append(candidates, p)
 	}
 	if len(candidates) == 0 {
 		return productURL, "", nil // sem afiliado, retorna URL original
@@ -77,7 +108,7 @@ func BuildLink(productURL, marketplace string, programs []models.AffiliateProgra
 	var creds map[string]string
 	_ = json.Unmarshal(best.Credentials, &creds)
 
-	switch strings.ToLower(marketplace) {
+	switch want {
 	case "amazon":
 		tag := creds["tag"]
 		if tag == "" {
