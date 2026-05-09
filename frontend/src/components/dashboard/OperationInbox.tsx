@@ -167,12 +167,12 @@ export function OperationInbox({ externalDismissed, onDismiss }: OperationInboxP
           />
         </div>
       ) : (
-        <div>
-          {items.slice(0, 4).map((item, idx) => (
+        <div className="max-h-[min(60vh,24rem)] overflow-y-auto overflow-x-hidden overscroll-contain">
+          {items.map((item, idx) => (
             <InboxItemRow
               key={item.id}
               item={item}
-              isLast={idx === Math.min(items.length, 4) - 1}
+              isLast={idx === items.length - 1}
               onDismiss={handleDismiss}
             />
           ))}
