@@ -1,11 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 /** Persistido após "Entendi", abrir manual ou clicar no botão de ajuda. */
 export const MANUAL_HELP_HINT_STORAGE_KEY = 'snatcher.manual.helpHintDismissed'
 
-export function HelpManualButton() {
-  const navigate = useNavigate()
+export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void }) {
   const [showHint, setShowHint] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -30,7 +28,7 @@ export function HelpManualButton() {
 
   const openManual = () => {
     dismiss()
-    navigate('/manual')
+    onOpenManual()
   }
 
   useEffect(() => {

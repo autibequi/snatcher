@@ -7,9 +7,11 @@ interface ModalProps {
   title: string
   children: React.ReactNode
   footer?: React.ReactNode
+  /** Largura do painel (Tailwind), ex.: max-w-3xl */
+  panelClassName?: string
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, panelClassName = 'max-w-lg' }: ModalProps) {
   if (!open) return null
 
   return createPortal(
@@ -20,7 +22,9 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         onClick={onClose}
       />
       {/* Panel */}
-      <div className="relative bg-surface border border-border rounded-md shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+      <div
+        className={`relative bg-surface border border-border rounded-md shadow-xl w-full mx-4 max-h-[90vh] flex flex-col ${panelClassName}`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <h2 className="text-sm font-semibold text-fg">{title}</h2>

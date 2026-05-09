@@ -3,9 +3,13 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
+import { ManualModal } from '../components/ManualModal'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [manualOpen, setManualOpen] = React.useState(false)
+
+  const openManual = React.useCallback(() => setManualOpen(true), [])
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
@@ -27,17 +31,18 @@ export function AppShell() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar onClose={() => setSidebarOpen(false)} onOpenManual={openManual} />
       </aside>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        <Topbar onMenuClick={() => setSidebarOpen(true)} onOpenManual={openManual} />
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
       <ApiErrorToast />
+      <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
     </div>
   )
 }

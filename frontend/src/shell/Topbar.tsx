@@ -70,9 +70,10 @@ async function fetchAccountsStats(): Promise<AccountsStats> {
 
 interface TopbarProps {
   onMenuClick: () => void
+  onOpenManual: () => void
 }
 
-export function Topbar({ onMenuClick }: TopbarProps) {
+export function Topbar({ onMenuClick, onOpenManual }: TopbarProps) {
   const location = useLocation()
   const title = pageTitle(location.pathname)
 
@@ -109,7 +110,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         <PendingApprovalsBadge />
 
         {/* Manual operacional (mesmo conteúdo da página /manual) */}
-        <HelpManualButton />
+        <HelpManualButton onOpenManual={onOpenManual} />
       </header>
 
       {/* Título da página — mobile (linha separada abaixo do topbar) */}
