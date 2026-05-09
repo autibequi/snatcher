@@ -35,26 +35,50 @@ function nullStr(v: unknown): string {
   return typeof v === 'string' ? v : ((v as { String?: string })?.String ?? (v as { string?: string })?.string ?? '')
 }
 
+/** Extrai número de preço de campos JSON da API (número, string BR/US, NullFloat64 antigo). */
+function coerceMoney(v: unknown): number {
+  if (v == null) return 0
+  if (typeof v === 'number' && Number.isFinite(v)) return v > 0 ? v : 0
+  if (typeof v === 'string') {
+    const t = v.trim().replace(/\s/g, '').replace(/R\$/gi, '')
+    if (!t) return 0
+    const n = /\d,\d{1,2}$/.test(t)
+      ? parseFloat(t.replace(/\./g, '').replace(',', '.'))
+      : parseFloat(t.replace(/,/g, ''))
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+  if (typeof v === 'object') {
+    const o = v as { Float64?: number; Valid?: boolean }
+    if (typeof o.Float64 === 'number' && Number.isFinite(o.Float64) && o.Valid !== false) {
+      return o.Float64 > 0 ? o.Float64 : 0
+    }
+  }
+  return 0
+}
+
 /** Menor preço do produto ou, se inválido, mínimo nas variantes; URL/fonte alinhados à variante escolhida. */
 function resolveCatalogPricing(
   product: Record<string, unknown> | null | undefined,
   variants: CatalogRow['variants'],
 ): { price: number; url: string; source: string } {
-  const lp = product?.lowest_price as number | { Float64?: number } | undefined
-  let price = typeof lp === 'number' ? lp : (lp?.Float64 ?? 0)
+  let price = coerceMoney(product?.lowest_price)
   let url = nullStr(product?.lowest_price_url)
   let source = nullStr(product?.lowest_price_source)
   if (price > 0) {
     return { price, url, source }
   }
   let best: (typeof variants)[0] | undefined
+  let bestPrice = 0
   for (const v of variants) {
-    const pr = typeof v.price === 'number' ? v.price : 0
+    const pr = coerceMoney(v?.price as unknown)
     if (pr <= 0) continue
-    if (!best || pr < (best.price ?? 0)) best = v
+    if (!best || pr < bestPrice) {
+      best = v
+      bestPrice = pr
+    }
   }
-  if (best && typeof best.price === 'number' && best.price > 0) {
-    price = best.price
+  if (best && bestPrice > 0) {
+    price = bestPrice
     if (!url && best.url) url = best.url
     if (!source && best.source) source = best.source
   }
@@ -240,7 +264,7 @@ export default function Composer() {
     return { deStr, porStr, descontoStr, descontoPct }
   }, [realPrice, realPriceStr, realSource])
 
-  /** Variáveis {…} + correção de textos da IA que copiam "R$ --". */
+  /** Variáveis {…} + correção de textos da IA que copiam "R$ --" / tiram placeholders antes do catálogo carregar. */
   const applyComposeVariables = React.useCallback(
     (raw: string, linkResolved: string) => {
       const { deStr, porStr, descontoStr, descontoPct } = composePricing
@@ -251,17 +275,46 @@ export default function Composer() {
         .replace(/\{desconto\}/g, descontoStr)
         .replace(/\{link\}/g, linkResolved)
       if (realPrice > 0) {
-        t = t.replace(/💰\s*De\s+R\$\s*--\s*por\s+R\$\s*--/gi, `💰 De ~${deStr}~ por *${porStr}*`)
+        const priceBlock = `💰 De ~${deStr}~ por *${porStr}*`
+        const variants = [
+          /💰\s*De\s+R\$\s*--\s*por\s+R\$\s*--/gi,
+          /💰\s*De\s*~\s*R\$\s*--\s*~\s*por\s*\*?\s*R\$\s*--/gi,
+          /💰\s*De\s*~\s*R\$\s*--\s*por\s+R\$\s*--/gi,
+          /De\s+R\$\s*--\s*por\s+R\$\s*--/gi,
+          /De\s*~\s*R\$\s*--\s*~\s*por\s*\*?\s*R\$\s*--/gi,
+        ]
+        for (const re of variants) {
+          t = t.replace(re, priceBlock)
+        }
         t = t.replace(/De\s+R\$\s*--/gi, `De ~${deStr}~`)
         t = t.replace(/por\s+R\$\s*--/gi, `por *${porStr}*`)
         if (descontoPct > 0) {
+          t = t.replace(/🏷️\s*\d*\s*OFF\b/gi, `🏷️ ${descontoStr} OFF`)
           t = t.replace(/🏷️\s+OFF\b/gi, `🏷️ ${descontoStr} OFF`)
         }
+      }
+      if (linkResolved && !t.includes(linkResolved)) {
+        t = t.replace(/👉\s*$/gm, `👉 ${linkResolved}`)
       }
       return t
     },
     [composePricing, realProductName, realPrice],
   )
+
+  /** Catálogo / shortlink podem chegar depois do texto (IA, rascunho): reaplica variáveis e corrige “R$ --”. */
+  React.useEffect(() => {
+    setText((prev) => {
+      if (!prev.trim()) return prev
+      const hasVars = /\{produto\}|\{de\}|\{por\}|\{desconto\}|\{link\}/.test(prev)
+      const hasStalePrice = /R\$\s*--/.test(prev)
+      const preferredLink = affiliateUrl || realUrl || ''
+      const needsLinkFix =
+        !!preferredLink && /👉/.test(prev) && !prev.includes(preferredLink)
+      if (!hasVars && !hasStalePrice && !needsLinkFix) return prev
+      const next = applyComposeVariables(prev, preferredLink)
+      return next !== prev ? next : prev
+    })
+  }, [realPrice, realUrl, affiliateUrl, applyComposeVariables])
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
