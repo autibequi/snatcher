@@ -154,3 +154,25 @@ func extractPriority(rules []byte) int {
 	_ = json.Unmarshal(rules, &r)
 	return r.Priority
 }
+
+// DestinationLooksAffiliateReady indica se destURL já contém rastreamento aplicado por BuildLink
+// (tag Amazon, wrapper ML ou aff= genérico). Nesse caso redirects não devem sobrescrever com a tabela legada affiliates.
+func DestinationLooksAffiliateReady(destURL, marketplace string) bool {
+	want := CanonicalAffiliateMarketplace(marketplace)
+	u, err := url.Parse(destURL)
+	if err != nil {
+		return false
+	}
+
+	switch want {
+	case "amazon":
+		return u.Query().Get("tag") != ""
+	case "mercadolivre":
+		if strings.Contains(strings.ToLower(destURL), "click.mlcdn.com.br") {
+			return true
+		}
+		return strings.Contains(destURL, "matt_tool=")
+	default:
+		return u.Query().Get("aff") != ""
+	}
+}
