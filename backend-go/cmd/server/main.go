@@ -23,6 +23,7 @@ import (
 	"snatcher/backendv2/internal/adapters"
 	"snatcher/backendv2/internal/config"
 	appdb "snatcher/backendv2/internal/db"
+	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/observability"
 	"snatcher/backendv2/internal/pipeline"
@@ -66,6 +67,15 @@ func main() {
 
 	// Store
 	st := store.New(db)
+
+	// Fila de jobs em background: persistida em PostgreSQL (sobrevive a restart; órfãos running → failed).
+	jp := store.NewJobPersistence(db)
+	jobs.Default().SetPersistence(jp)
+	if n, err := jp.MarkOrphanRunningAsFailed("processo anterior terminou — servidor reiniciou"); err != nil {
+		slog.Warn("background_jobs: reconcile orphan running", "err", err)
+	} else if n > 0 {
+		slog.Info("background_jobs: marked orphan running as failed", "n", n)
+	}
 
 	// Pré-configura AppConfig com variáveis de ambiente se ainda não configurado
 	bootstrapConfig(st)

@@ -12,7 +12,7 @@ import (
 	"snatcher/backendv2/internal/store"
 )
 
-// WorkQueueHandler expõe GET /api/work-queue — visão unificada FIFO de jobs em memória + auditoria Jonfrey.
+// WorkQueueHandler expõe GET /api/work-queue — visão unificada FIFO de jobs (persistidos em background_jobs quando configurado) + auditoria Jonfrey.
 type WorkQueueHandler struct {
 	Store store.Store
 }
