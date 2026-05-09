@@ -15,10 +15,11 @@ RUN go version && go env GOVERSION GOPATH
 
 # Um RUN por binário: no Coolify/Docker legacy o log mostra qual etapa falhou.
 # -buildvcs=false: contexto de build costuma não ter .git completo → Go 1.18+ falha ao stampar VCS.
+# -p 1: menos paralelismo de pacotes (com GOMAXPROCS=1 reduz pico de RAM em VPS pequenos).
 # -v: imprime pacotes compilados — ajuda a ver onde parou se o build falhar.
-RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o backendv2 ./cmd/server
-RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o seed ./cmd/seed
-RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -v -o public ./cmd/public
+RUN go build -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o backendv2 ./cmd/server
+RUN go build -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o seed ./cmd/seed
+RUN go build -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o public ./cmd/public
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget

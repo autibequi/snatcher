@@ -1,10 +1,10 @@
 # Build stage: roda na arch do host (x86) — npm gera HTML/JS/CSS estatico
-FROM --platform=$BUILDPLATFORM node:20-alpine AS build
+# Sem BuildKit: não usar --mount nem $BUILDPLATFORM (Coolify avisa quando BuildKit está off).
+FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY package.json .
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 COPY . .
 RUN npm run build

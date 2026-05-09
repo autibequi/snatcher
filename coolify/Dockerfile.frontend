@@ -1,10 +1,10 @@
 # Build stage — contexto é a raiz do repo (snatcher/)
-FROM --platform=$BUILDPLATFORM node:20-alpine AS build
+# Evita --mount e BUILDPLATFORM: Docker/Coolify sem BuildKit falha ou ignora essas extensões.
+FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY frontend/package.json .
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 COPY frontend/ .
 RUN npm run build
