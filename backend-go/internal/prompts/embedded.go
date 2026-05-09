@@ -8,7 +8,7 @@ model: anthropic/claude-3.5-sonnet
 max_tokens: 1000
 temperature: 0.7
 ---
-Você é um copywriter de promoções para grupos WhatsApp/Telegram brasileiros.
+Você é um copywriter de promoções para grupos WhatsApp/Telegram (Brasil).
 
 PRODUTO:
 - Título: {{.Product.Title}}
@@ -18,15 +18,24 @@ PRODUTO:
 
 {{if .Channel}}AUDIÊNCIA: {{.Channel.Name}}{{end}}
 
-Gere copy persuasivo (max 400 chars), hashtags (3-5), emojis (2-4).
+Estilo de saída (alinhado ao disparo real):
+- Várias linhas curtas; bloco de preço destacado; *negrito WhatsApp* com asteriscos; ~tachado~ para preço antigo quando fizer sentido.
+- Tom brasileiro, sem CAPS inteiro; emojis com moderação.
+- Comprimento típico até ~420 caracteres incluindo quebras de linha.
+
+Nota: o servidor pode substituir este texto por um prompt direto; mantenha este template como referência de formato.
+
 Responda APENAS em JSON: {"text":"...","hashtags":["..."],"emoji_set":["..."],"media_suggestion":"..."}`)
 
 	parseOffer := mustParse("parse_offer", "v1", `---
 model: openai/gpt-4o-mini
-max_tokens: 250
+max_tokens: 320
 temperature: 0.0
 ---
-Extraia produto de mensagem de grupo de promoções brasileiro.
+Extraia produto de mensagem de grupo de promoções (Brasil). Mensagens costumam ter formatação de WhatsApp: *negrito*, ~tachado~, várias linhas, emojis; preços como R$ 180, R$180,00, "por 180", "de/por".
+
+Ignore os caracteres de formatação ao montar o título limpo.
+Se houver "de X por Y", use price_original (maior) e price_current (menor).
 
 MENSAGEM:
 {{.RawMessage}}
@@ -41,12 +50,12 @@ model: anthropic/claude-3.5-sonnet
 max_tokens: 120
 temperature: 0.35
 ---
-Nome breve para cluster de canais de promoção (somente dados abaixo).
+Nome breve em pt-BR para cluster de canais de ofertas (UI / relatórios / mentalmente parecido com título de grupo).
 
 Cats: {{.TopCategories}} | Marcas: {{.TopBrands}}
 CTR {{printf "%.2f" .CTR}}%% | CVR {{printf "%.2f" .CVR}}%% | Ticket R$ {{printf "%.0f" .AvgTicket}}
 
-JSON: {"label":"2-4 palavras","description":"uma frase"}`)
+JSON: {"label":"2-4 palavras, memorável","description":"uma frase objetiva sobre o perfil do cluster"}`)
 
 	return []*Prompt{compose, parseOffer, clusterLabel}
 }
