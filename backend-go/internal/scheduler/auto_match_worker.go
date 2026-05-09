@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
@@ -76,6 +77,10 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	for _, ch := range channelsByID {
 		channels = append(channels, ch)
 	}
+
+	// Ordenar por melhor score elegível (threshold + filtro do canal), não só por updated_at do catálogo.
+	// Sem isto, os primeiros 100 produtos por data faziam outros SKUs consumirem max_per_run antes dos matches da prévia (ex.: Orfeu score 58).
+	products = sortProductsByBestAutoMatchScore(cfg, products, channels, automationsByChannelID)
 
 	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal (avaliado por canal com cooldown próprio)
 	recentLogs, _ := st.ListAutoMatchLogs(500)
@@ -262,6 +267,72 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			sentByChannel[s.ChannelID]++
 		}
 	}
+}
+
+// sortProductsByBestAutoMatchScore replica a prioridade «melhor score primeiro» da prévia por canal,
+// mantendo empates estáveis por updated_at DESC.
+func sortProductsByBestAutoMatchScore(cfg models.AppConfig, products []models.CatalogProduct, channels []models.Channel, autoBy map[int64]models.ChannelAutomation) []models.CatalogProduct {
+	type ranked struct {
+		p    models.CatalogProduct
+		best float64
+	}
+	outRank := make([]ranked, 0, len(products))
+	for _, p := range products {
+		input := match.ProductInput{
+			Name:     p.CanonicalName,
+			Category: firstTag(p),
+			Price:    nullFloat(p.LowestPrice),
+		}
+		if p.Brand.Valid {
+			input.Brand = p.Brand.String
+		}
+		price := nullFloat(p.LowestPrice)
+		scores := match.RankChannels(input, channels)
+		best := -1.0
+		for _, s := range scores {
+			auto, ok := autoBy[s.ChannelID]
+			if !ok {
+				continue
+			}
+			threshold := cfg.AutoMatchThreshold
+			if auto.Threshold.Valid {
+				threshold = auto.Threshold.Float64
+			}
+			if threshold <= 0 {
+				threshold = 50
+			}
+			matchValue := ""
+			if auto.MatchValue.Valid {
+				matchValue = auto.MatchValue.String
+			}
+			maxPrice := 0.0
+			if auto.MaxPrice.Valid {
+				maxPrice = auto.MaxPrice.Float64
+			}
+			if !match.MatchesChannelFilter(input, price, auto.MatchType, matchValue, maxPrice) {
+				continue
+			}
+			if s.Value < threshold {
+				continue
+			}
+			if s.Value > best {
+				best = s.Value
+			}
+		}
+		outRank = append(outRank, ranked{p: p, best: best})
+	}
+	sort.SliceStable(outRank, func(i, j int) bool {
+		if outRank[i].best != outRank[j].best {
+			return outRank[i].best > outRank[j].best
+		}
+		// Sem canal elegível neste lote: mantém ordem por frescor de scrape
+		return outRank[i].p.UpdatedAt.After(outRank[j].p.UpdatedAt)
+	})
+	out := make([]models.CatalogProduct, len(outRank))
+	for i := range outRank {
+		out[i] = outRank[i].p
+	}
+	return out
 }
 
 func firstTag(p models.CatalogProduct) string {

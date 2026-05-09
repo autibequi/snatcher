@@ -190,9 +190,9 @@ export default function Pending() {
         <div>
           <h1 className="text-xl font-semibold text-fg">Pendentes de envio</h1>
           <p className="text-sm text-fg-3">
-            <strong className="text-fg-2">Fila WA</strong> = já liberados e aguardando o worker Evolution (mesmo com full-auto).
-            <strong className="text-fg-2"> Aprovação manual</strong> = <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code>.
-            <strong className="text-fg-2"> Próximo ciclo</strong> = prévia do auto-match (o Jonfrey orquestra; envio físico é o worker WA).
+            <strong className="text-fg-2">Fila WA</strong> = dispatches <code className="text-xs bg-surface-2 px-1 rounded">queued</code> aguardando o worker Evolution (~15s).
+            <strong className="text-fg-2"> Auto-match</strong> (quem cria esses dispatches) roda <strong className="text-fg-2">a cada 1 min</strong> se estiver ligado em Config — não confundir com o intervalo do Jonfrey (manutenção / <code className="text-xs bg-surface-2 px-1">auto_release_pending</code>).
+            <strong className="text-fg-2"> Prévia</strong> = candidatos por score; <strong className="text-fg-2">aprovação manual</strong> = <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code> só sem full-auto.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
@@ -239,7 +239,14 @@ export default function Pending() {
         {loadQueue ? (
           <p className="px-4 py-8 text-sm text-fg-3 text-center">Carregando fila…</p>
         ) : sendQueue.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-fg-3 text-center">Nenhum dispatch na fila do worker.</p>
+          <div className="px-4 py-8 text-sm text-fg-3 text-center space-y-2">
+            <p>Nenhum dispatch na fila do worker.</p>
+            <p className="text-xs max-w-md mx-auto">
+              Se a prévia mostra candidatos mas aqui continua vazio: cooldown por canal, <code className="text-[10px]">max_per_run</code> no último ciclo,
+              produto sem URL/preço válidos para afiliado, ou <strong className="text-fg-2">auto-match desligado</strong> na config global.
+              O worker percorre só os 100 produtos ativos mais recentes no catálogo e agora prioriza por score (como a prévia).
+            </p>
+          </div>
         ) : (
           <div className="max-h-[360px] overflow-y-auto divide-y divide-border">
             {sendQueue.map(row => (
@@ -269,7 +276,7 @@ export default function Pending() {
           <div>
             <p className="text-sm font-medium text-fg">Próximos candidatos (prévia do próximo ciclo)</p>
             <p className="text-xs text-fg-3 mt-0.5">
-              Produtos que o auto-match consideraria agora (por canal). Não é compromisso de envio — depende do ciclo, cooldown e limites.
+              Ordenado por score (como na Automations). Criar dispatch na base é o job <strong className="text-fg-2">auto-match a cada 1 min</strong>; esta lista não reflete o horário do Jonfrey.
             </p>
           </div>
           <a href="/automations" className="text-xs text-accent hover:underline whitespace-nowrap">Automations →</a>
