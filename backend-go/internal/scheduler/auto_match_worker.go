@@ -19,10 +19,13 @@ import (
 func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	cfg, err := st.GetConfig()
 	if err != nil {
+		slog.Error("auto match: get config", "err", err)
 		return
 	}
 	if cfg.AutoMatchEnabled {
-		_ = st.TouchAutoMatchWorkerRun(time.Now())
+		if err := st.TouchAutoMatchWorkerRun(time.Now()); err != nil {
+			slog.Warn("auto match: touch worker run", "err", err)
+		}
 	}
 	if !cfg.AutoMatchEnabled {
 		return
@@ -46,6 +49,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		return
 	}
 	if len(automations) == 0 {
+		slog.Warn("auto match: nenhuma automação de canal habilitada (enabled=true)")
 		return
 	}
 
@@ -61,6 +65,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		active = append(active, a)
 	}
 	if len(active) == 0 {
+		slog.Warn("auto match: nenhum canal com auto_match_enabled ou todos pausados (paused_until)")
 		return
 	}
 
@@ -77,6 +82,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		automationsByChannelID[a.ChannelID] = a
 	}
 	if len(channelsByID) == 0 {
+		slog.Warn("auto match: nenhum canal carregado após GetChannel")
 		return
 	}
 
@@ -91,16 +97,28 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	products = sortProductsByBestAutoMatchScore(cfg, products, channels, automationsByChannelID)
 
 	// Carregar logs recentes para evitar re-dispatch do mesmo produto/canal (avaliado por canal com cooldown próprio)
-	recentLogs, _ := st.ListAutoMatchLogs(500)
+	recentLogs, recentErr := st.ListAutoMatchLogs(500)
+	if recentErr != nil {
+		slog.Warn("auto match: list recent logs", "err", recentErr)
+		recentLogs = nil
+	}
 
 	// Backpressure: não criar novos dispatches se grupo já tem fila grande pendente.
 	// Default: limit de 10 targets pending+sending por grupo. Acima disso, skip.
 	const maxPendingPerGroup = 10
 	pendingByGroup := make(map[int64]int)
-	if cs, err := st.CountPendingTargetsByGroup(); err == nil {
+	if cs, err := st.CountPendingTargetsByGroup(); err != nil {
+		slog.Warn("auto match: count pending targets by group", "err", err)
+	} else {
 		for _, c := range cs {
 			pendingByGroup[c.GroupID] = c.Count
 		}
+	}
+
+	affiliatePrograms, affErr := st.ListAffiliatePrograms(nil)
+	if affErr != nil {
+		slog.Error("auto match: list affiliate programs", "err", affErr)
+		affiliatePrograms = nil
 	}
 
 	sentByChannel := make(map[int64]int, len(channelsByID))
@@ -117,7 +135,11 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		scores := match.RankChannels(input, channels)
 
 		// Carregar taxonomias do produto para scoring detalhado
-		productTaxonomies, _ := st.ListProductTaxonomies(p.ID)
+		productTaxonomies, taxErr := st.ListProductTaxonomies(p.ID)
+		if taxErr != nil {
+			slog.Warn("auto match: list product taxonomies", "product_id", p.ID, "err", taxErr)
+			productTaxonomies = nil
+		}
 		productAttrs := parseProductAttributes(p)
 
 		for _, s := range scores {
@@ -183,7 +205,12 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 
 			// Buscar grupos do canal
 			groups, err := st.ListRedesignGroups(s.ChannelID, "", "active")
-			if err != nil || len(groups) == 0 {
+			if err != nil {
+				slog.Warn("auto match: list groups", "channel_id", s.ChannelID, "channel", s.ChannelName, "product_id", p.ID, "err", err)
+				continue
+			}
+			if len(groups) == 0 {
+				slog.Warn("auto match: canal sem grupos ativos", "channel_id", s.ChannelID, "channel", s.ChannelName, "product_id", p.ID)
 				continue
 			}
 
@@ -205,7 +232,11 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			if p.ImageURL.Valid && p.ImageURL.String != "" {
 				msgMap["media_url"] = p.ImageURL.String
 			}
-			msgBytes, _ := json.Marshal(msgMap)
+			msgBytes, jerr := json.Marshal(msgMap)
+			if jerr != nil {
+				slog.Error("auto match: marshal message JSON", "product_id", p.ID, "channel_id", s.ChannelID, "err", jerr)
+				continue
+			}
 
 			if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
 				continue
@@ -214,17 +245,25 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			if p.LowestPriceSource.Valid {
 				src = p.LowestPriceSource.String
 			}
-			programs, _ := st.ListAffiliatePrograms(nil)
 			// Affiliate link quando configurado; caso contrário usa URL original (não bloqueia o dispatch)
 			affiliateLink := p.LowestPriceURL.String
 			linkToShorten := affiliateLink
-			if affiliates.HasAffiliate(src, programs) {
-				builtLink, _, _ := affiliates.BuildLink(p.LowestPriceURL.String, src, programs)
+			if affiliates.HasAffiliate(src, affiliatePrograms) {
+				builtLink, _, blErr := affiliates.BuildLink(p.LowestPriceURL.String, src, affiliatePrograms)
+				if blErr != nil {
+					slog.Warn("auto match: build affiliate link", "product_id", p.ID, "marketplace", src, "err", blErr)
+				}
 				affiliateLink = builtLink
 				linkToShorten = builtLink
 			}
 			// Encurtar
-			if shortID, err := st.GetOrCreateShortLink(linkToShorten, src); err == nil {
+			if shortID, err := st.GetOrCreateShortLink(linkToShorten, src); err != nil {
+				urlSample := linkToShorten
+				if len(urlSample) > 120 {
+					urlSample = urlSample[:120] + "…"
+				}
+				slog.Warn("auto match: short link", "product_id", p.ID, "channel_id", s.ChannelID, "url_sample", urlSample, "err", err)
+			} else {
 				domain := "beta.autibequi.com"
 				if cfg.AppDomain.Valid && cfg.AppDomain.String != "" {
 					domain = cfg.AppDomain.String
@@ -261,14 +300,23 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				DispatchID: dispatchID,
 				Score:      s.Value,
 			})
+			if err != nil {
+				slog.Warn("auto match: create auto-match log", "dispatch_id", dispatchID, "product_id", p.ID, "channel_id", s.ChannelID, "err", err)
+			}
 			if err == nil && logID > 0 {
 				// Calcular score detalhado com breakdown e persisti-lo
 				ch := channelsByID[s.ChannelID]
-				// Query cliques nos últimos 30 dias para calcular history score
-				clicksLast30d, _ := st.CountChannelClicksLast30d(s.ChannelID)
+				clicksLast30d, clkErr := st.CountChannelClicksLast30d(s.ChannelID)
+				if clkErr != nil {
+					slog.Warn("auto match: count channel clicks 30d", "channel_id", s.ChannelID, "err", clkErr)
+				}
 				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, clicksLast30d, match.Weights{})
-				breakdownJSON, _ := json.Marshal(detailedResult.Breakdown)
-				_ = st.UpdateAutoMatchScoreBreakdown(logID, breakdownJSON, detailedResult.Reasons)
+				breakdownJSON, brErr := json.Marshal(detailedResult.Breakdown)
+				if brErr != nil {
+					slog.Warn("auto match: marshal score breakdown", "log_id", logID, "err", brErr)
+				} else if upErr := st.UpdateAutoMatchScoreBreakdown(logID, breakdownJSON, detailedResult.Reasons); upErr != nil {
+					slog.Warn("auto match: update score breakdown", "log_id", logID, "err", upErr)
+				}
 			}
 
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)

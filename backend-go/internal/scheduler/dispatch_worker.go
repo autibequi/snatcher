@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -26,8 +27,16 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 	}
 	slog.Info("dispatch worker: processing", "targets", len(targets))
 
-	cfg, _ := st.GetConfig()
-	waAccounts, _ := st.ListWAAccounts()
+	cfg, err := st.GetConfig()
+	if err != nil {
+		slog.Error("dispatch worker: get config", "err", err)
+		return
+	}
+	waAccounts, err := st.ListWAAccounts()
+	if err != nil {
+		slog.Warn("dispatch worker: list WA accounts", "err", err)
+		waAccounts = nil
+	}
 
 	// Rate limit por grupo: default 3 mensagens/hora por grupo (anti-spam, evita ban WA).
 	// Conta dispatches já entregues nas últimas 60min para o grupo. Se >= limit, pula este target neste ciclo.
@@ -42,7 +51,9 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 	}
 	// Usa método helper se disponível, senão conta via store
 	var counts []groupCount
-	if cs, err := st.CountRecentDeliveriesByGroup(60); err == nil {
+	if cs, err := st.CountRecentDeliveriesByGroup(60); err != nil {
+		slog.Warn("dispatch worker: count recent deliveries by group", "err", err)
+	} else {
 		counts = make([]groupCount, len(cs))
 		for i, c := range cs {
 			counts[i] = groupCount{GroupID: c.GroupID, Count: c.Count}
@@ -54,7 +65,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 
 	for _, t := range targets {
 		if deliveredByGroup[t.GroupID] >= maxPerGroupPerHour {
-			slog.Debug("rate limit por grupo: pulando target", "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID])
+			slog.Warn("dispatch worker: rate limit por grupo, target adiado", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID], "limit", maxPerGroupPerHour)
 			continue // deixa pending — próximo ciclo tenta de novo
 		}
 		processTarget(ctx, st, t, cfg, waAccounts)
@@ -140,13 +151,21 @@ func mergeEvolutionFromConfig(cfg models.AppConfig, acc *models.WAAccount) (base
 func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount) {
 	dispatch, err := st.GetDispatch(t.DispatchID)
 	if err != nil {
+		slog.Error("dispatch worker: dispatch não encontrado", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "dispatch não encontrado")
 		checkAllFinished(st, t.DispatchID)
 		return
 	}
 
 	group, err := st.GetRedesignGroup(t.GroupID)
-	if err != nil || !group.JID.Valid || group.JID.String == "" {
+	if err != nil {
+		slog.Error("dispatch worker: grupo não encontrado", "target_id", t.ID, "group_id", t.GroupID, "err", err)
+		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo não encontrado")
+		checkAllFinished(st, t.DispatchID)
+		return
+	}
+	if !group.JID.Valid || group.JID.String == "" {
+		slog.Error("dispatch worker: grupo sem JID (WhatsApp)", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo sem JID configurado")
 		checkAllFinished(st, t.DispatchID)
 		return
@@ -154,7 +173,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 
 	baseURL, apiKey, instance, accountID, credErr := resolveEvolutionCredentials(st, cfg, waAccounts, t, group)
 	if credErr != nil {
-		slog.Warn("dispatch worker: credenciais Evolution", "target_id", t.ID, "group_id", t.GroupID, "err", credErr)
+		slog.Error("dispatch worker: credenciais Evolution", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID, "err", credErr)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", credErr.Error())
 		checkAllFinished(st, t.DispatchID)
 		return
@@ -165,7 +184,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 
 	if accountID > 0 {
 		if err := st.CheckAndIncrementWA(accountID); err != nil {
-			slog.Warn("throttle blocked dispatch send", "account", accountID, "target_id", t.ID, "err", err)
+			slog.Error("dispatch worker: throttle conta WA", "account", accountID, "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 			_ = st.UpdateDispatchTargetStatus(t.ID, "failed", fmt.Sprintf("throttle: %v", err))
 			checkAllFinished(st, t.DispatchID)
 			return
@@ -176,7 +195,12 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		Text     string `json:"text"`
 		MediaURL string `json:"media_url"`
 	}
-	_ = json.Unmarshal(dispatch.Message, &msg)
+	if err := json.Unmarshal(dispatch.Message, &msg); err != nil {
+		slog.Error("dispatch worker: payload message JSON inválido", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
+		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "message JSON inválido")
+		checkAllFinished(st, t.DispatchID)
+		return
+	}
 	text := msg.Text
 
 	if strings.Contains(text, "{link}") {
@@ -198,7 +222,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		errMsg = sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, text)
 	}
 	if errMsg != "" {
-		slog.Warn("dispatch worker: send failed", "target_id", t.ID, "group", jid, "err", errMsg)
+		slog.Error("dispatch worker: envio Evolution falhou", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_jid", jid, "has_media", msg.MediaURL != "", "err", errMsg)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", errMsg)
 	} else {
 		slog.Info("dispatch worker: sent", "target_id", t.ID, "group", jid)
@@ -223,13 +247,13 @@ func sendEvolutionMedia(ctx context.Context, baseURL, apiKey, instance, jid, med
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		// Timeout ou erro de rede → tentar só texto
-		slog.Warn("sendMedia falhou, fallback para texto", "err", err)
+		slog.Warn("dispatch worker: sendMedia rede/timeout, fallback texto", "jid", jid, "err", err)
 		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		// HTTP error → fallback para texto
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		slog.Warn("dispatch worker: sendMedia HTTP erro, fallback texto", "status", resp.StatusCode, "jid", jid, "body", string(snippet))
 		return sendEvolutionMessage(ctx, baseURL, apiKey, instance, jid, caption)
 	}
 	return ""
@@ -249,28 +273,37 @@ func sendEvolutionMessage(ctx context.Context, baseURL, apiKey, instance, jid, t
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err.Error()
+		return fmt.Sprintf("sendText network: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Sprintf("evolution status %d", resp.StatusCode)
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Sprintf("evolution sendText status %d body=%s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 	return ""
 }
 
 func checkAllFinished(st store.Store, dispatchID int64) {
 	done, err := st.AllDispatchTargetsFinished(dispatchID)
-	if err == nil && done {
-		// Verificar se pelo menos 1 target foi entregue; senão marcar como failed
-		hasDelivered, _ := st.HasDeliveredTarget(dispatchID)
-		finalStatus := "completed"
-		if !hasDelivered {
-			finalStatus = "failed"
-			slog.Warn("dispatch worker: todos os targets falharam", "dispatch_id", dispatchID)
-		} else {
-			slog.Info("dispatch worker: dispatch completed", "dispatch_id", dispatchID)
-		}
-		_ = st.UpdateDispatchStatus(dispatchID, finalStatus)
+	if err != nil {
+		slog.Warn("dispatch worker: AllDispatchTargetsFinished", "dispatch_id", dispatchID, "err", err)
+		return
 	}
+	if !done {
+		return
+	}
+	// Verificar se pelo menos 1 target foi entregue; senão marcar como failed
+	hasDelivered, delivErr := st.HasDeliveredTarget(dispatchID)
+	if delivErr != nil {
+		slog.Warn("dispatch worker: HasDeliveredTarget", "dispatch_id", dispatchID, "err", delivErr)
+	}
+	finalStatus := "completed"
+	if !hasDelivered {
+		finalStatus = "failed"
+		slog.Error("dispatch worker: dispatch sem nenhuma entrega bem-sucedida", "dispatch_id", dispatchID)
+	} else {
+		slog.Info("dispatch worker: dispatch completed", "dispatch_id", dispatchID)
+	}
+	_ = st.UpdateDispatchStatus(dispatchID, finalStatus)
 }
