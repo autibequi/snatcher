@@ -146,6 +146,7 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 	apiKey := cfg.LLMApiKey.String
 	model := cfg.LLMModel.String
 
+	var cli llm.Client
 	switch strings.ToLower(provider) {
 	case "ollama":
 		baseURL := firstNonEmptyTrimmed(
@@ -160,11 +161,12 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		cli := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningOllama)
+		c := llm.NewOpenAICompat(baseURL, "").WithReasoning(cfg.LLMReasoningOllama)
 		if m != "" {
-			return &modelOverrideClient{inner: cli, model: m}
+			cli = &modelOverrideClient{inner: c, model: m}
+		} else {
+			cli = c
 		}
-		return cli
 	case "vllm":
 		baseURL := firstNonEmptyTrimmed(
 			nullString(cfg.LLMVLLMBaseURL),
@@ -179,23 +181,25 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 		if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		cli := llm.NewOpenAICompat(baseURL, vk).WithReasoning(cfg.LLMReasoningVllm)
+		c := llm.NewOpenAICompat(baseURL, vk).WithReasoning(cfg.LLMReasoningVllm)
 		if m != "" {
-			return &modelOverrideClient{inner: cli, model: m}
+			cli = &modelOverrideClient{inner: c, model: m}
+		} else {
+			cli = c
 		}
-		return cli
 	case "openrouter":
 		if apiKey == "" {
 			return nil
 		}
-		cli := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningOpenrouter)
+		c := llm.NewOpenAICompat("https://openrouter.ai/api/v1", apiKey).WithReasoning(cfg.LLMReasoningOpenrouter)
 		if fb := strings.TrimSpace(nullString(cfg.LLMOpenRouterFallbackModel)); fb != "" {
-			cli = cli.WithOpenRouterFallback(fb)
+			c = c.WithOpenRouterFallback(fb)
 		}
 		if model != "" {
-			return &modelOverrideClient{inner: cli, model: model}
+			cli = &modelOverrideClient{inner: c, model: model}
+		} else {
+			cli = c
 		}
-		return cli
 	default:
 		fallback := normalizeLLMBaseURL(cfg.LLMBaseURL.String)
 		if fallback != "" {
@@ -209,10 +213,33 @@ func (h *ComposeHandler) buildDynamicLLMClient() llm.Client {
 			default:
 				re = cfg.LLMReasoningOllama
 			}
-			return llm.NewOpenAICompat(fallback, apiKey).WithReasoning(re)
+			cli = llm.NewOpenAICompat(fallback, apiKey).WithReasoning(re)
 		}
-		return nil
 	}
+	return wrapLLMTemperature(cli, cfg)
+}
+
+// wrapLLMTemperature aplica temperatura global quando configurada em appconfig (sobrescreve o YAML de cada prompt).
+func wrapLLMTemperature(inner llm.Client, cfg models.AppConfig) llm.Client {
+	if inner == nil || !cfg.LLMTemperature.Valid {
+		return inner
+	}
+	t := cfg.LLMTemperature.Float64
+	if t < 0 || t > 2 {
+		return inner
+	}
+	return &temperatureOverrideClient{inner: inner, temp: t}
+}
+
+// temperatureOverrideClient força opts.Temperature em toda chamada (OpenAI-compat).
+type temperatureOverrideClient struct {
+	inner llm.Client
+	temp  float64
+}
+
+func (t *temperatureOverrideClient) Complete(ctx context.Context, prompt string, opts llm.Options) (string, error) {
+	opts.Temperature = t.temp
+	return t.inner.Complete(ctx, prompt, opts)
 }
 
 // modelOverrideClient injeta o model em cada chamada sem mudar a interface.

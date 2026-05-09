@@ -1,7 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
-import { KpiCard, Skeleton, Switch, Badge, TooltipIcon } from '../components/ui'
+import { KpiCard, Skeleton, Switch, Badge, TooltipIcon, Button, PageHeader } from '../components/ui'
 import { ChannelDetailInner } from './ChannelDetail'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -63,6 +63,23 @@ interface AutoMatchStatus {
   interval_seconds: number
 }
 
+interface PendingDispatchFull {
+  id: number
+  status: string
+  composed_by: string
+  affiliate_link: string
+  channel_id?: number
+  channel_name?: string
+  product_name?: string
+  product_image?: string
+  price?: number
+  source?: string
+  brand?: string
+  score?: number
+  message_text: string
+  created_at: string
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(s: string): string {
@@ -73,24 +90,34 @@ function fmtScore(s: number): string {
   return s.toFixed(0)
 }
 
-// Countdown atualiza a cada 1s
-function useCountdown(lastRunAt: string | null, intervalSeconds: number): string {
-  const [remaining, setRemaining] = React.useState<number | null>(null)
+/** Próximo tick do auto-match estritamente no futuro (last_run + k×interval). */
+function computeNextAutoMatchTickMs(lastRunISO: string | null | undefined, intervalSeconds: number): number | null {
+  if (lastRunISO == null || intervalSeconds <= 0) return null
+  const intervalMs = intervalSeconds * 1000
+  let t = new Date(lastRunISO).getTime()
+  if (!Number.isFinite(t)) return null
+  const now = Date.now()
+  while (t <= now) {
+    t += intervalMs
+  }
+  return t
+}
 
-  React.useEffect(() => {
-    function tick() {
-      if (!lastRunAt) { setRemaining(null); return }
-      const next = new Date(lastRunAt).getTime() + intervalSeconds * 1000
-      setRemaining(Math.max(0, Math.round((next - Date.now()) / 1000)))
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [lastRunAt, intervalSeconds])
+function fmtWhen(ts: number): string {
+  return new Date(ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
 
-  if (remaining === null) return '—'
-  if (remaining <= 0) return 'executando...'
-  return `${remaining}s`
+const SOURCE_LABEL: Record<string, string> = {
+  amz: 'Amazon',
+  amazon: 'Amazon',
+  ml: 'Mercado Livre',
+  mercadolivre: 'Mercado Livre',
+  magalu: 'Magalu',
+  shopee: 'Shopee',
+  aliexpress: 'AliExpress',
+  casasbahia: 'Casas Bahia',
+  kabum: 'Kabum',
+  americanas: 'Americanas',
 }
 
 // ── Toggle inline de master switch ──────────────────────────────────────────
@@ -156,23 +183,6 @@ export function Drawer({ row, onClose }: DrawerProps) {
 
 // ── Aba Visao Geral ──────────────────────────────────────────────────────────
 
-interface JonfreyActionLite {
-  id: number
-  action_type: string
-  status: string
-  reasoning?: string | null
-  triggered_by: string
-  created_at: string
-}
-
-const JONFREY_STATUS_COLORS: Record<string, string> = {
-  pending: 'text-fg-3 border-fg-3/30 bg-fg-3/5',
-  running: 'text-accent border-accent/30 bg-accent/5',
-  success: 'text-success border-success/30 bg-success/10',
-  failed:  'text-danger border-danger/30 bg-danger/10',
-  skipped: 'text-warning border-warning/30 bg-warning/10',
-}
-
 function relativeFromNow(s: string): string {
   const ms = Date.now() - new Date(s).getTime()
   const m = Math.floor(ms / 60000)
@@ -185,15 +195,16 @@ function relativeFromNow(s: string): string {
 
 export function TabOverview() {
   const qc = useQueryClient()
+  const [selected, setSelected] = React.useState<Set<number>>(new Set())
 
-  const { data, isLoading } = useQuery<AutoMatchStatus>({
+  const { data } = useQuery<AutoMatchStatus>({
     queryKey: ['auto-match'],
     queryFn: () => apiClient.get('/api/auto-match').then(r => r.data),
     refetchInterval: 30_000,
     staleTime: 15_000,
   })
 
-  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean }>({
+  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean } & Record<string, unknown>>({
     queryKey: ['config'],
     queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
     staleTime: 60_000,
@@ -201,8 +212,24 @@ export function TabOverview() {
   const fullAutoMode = !!appConfig?.full_auto_mode
 
   const toggleFullAuto = useMutation({
-    mutationFn: (v: boolean) => apiClient.put('/api/config', { ...appConfig, full_auto_mode: v }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+    mutationFn: async (v: boolean) => {
+      try {
+        await apiClient.put('/api/config', { ...appConfig, full_auto_mode: v })
+      } catch {
+        /* ignore */
+      }
+      if (v) {
+        try {
+          await apiClient.post('/api/jonfrey/run', { action_type: 'enable_full_auto' })
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+    },
   })
 
   const approveAllMut = useMutation({
@@ -210,29 +237,55 @@ export function TabOverview() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['auto-match'] })
       qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
     },
   })
 
-  // Lista completa de pendentes (com score/canal/produto)
-  interface PendingDispatch {
-    id: number; status: string; composed_by: string; affiliate_link: string;
-    channel_id?: number; channel_name?: string; product_name?: string;
-    score?: number; created_at: string;
-  }
-  const { data: pendingList = [] } = useQuery<PendingDispatch[]>({
+  const approveBatchMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      try {
+        return await apiClient.post('/api/dispatches/approve-batch', { ids })
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          await Promise.allSettled(ids.map(id => apiClient.post(`/api/dispatches/${id}/approve`)))
+          return { data: { approved: ids.length } }
+        }
+        throw err
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      qc.invalidateQueries({ queryKey: ['auto-match'] })
+      setSelected(new Set())
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao aprovar'),
+  })
+
+  const rejectMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/dispatches/${id}/reject`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] }),
+  })
+
+  const rejectBatchMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await Promise.allSettled(ids.map(id => apiClient.post(`/api/dispatches/${id}/reject`)))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      setSelected(new Set())
+    },
+  })
+
+  const { data: pendingList = [], isLoading: pendingLoading } = useQuery<PendingDispatchFull[]>({
     queryKey: ['dispatches', 'pending-approval'],
-    queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    queryFn: () => apiClient.get('/api/dispatches/pending-approval').then(r => (Array.isArray(r.data) ? r.data : []) as PendingDispatchFull[]).catch(() => []),
     refetchInterval: 15_000,
   })
   const pendingCount = pendingList.length
 
-  // Mantém o toggle global sync com Jonfrey: ligar/desligar aqui afeta ambos.
   const toggleMut = useMutation({
     mutationFn: async (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) => {
-      const tasks: Promise<unknown>[] = [
-        apiClient.post('/api/auto-match/toggle', payload),
-      ]
-      // Espelha enabled também no Jonfrey
+      const tasks: Promise<unknown>[] = [apiClient.post('/api/auto-match/toggle', payload)]
       if (payload.enabled !== undefined) {
         tasks.push(apiClient.put('/api/jonfrey/config', { enabled: payload.enabled }).catch(() => null))
       }
@@ -242,27 +295,35 @@ export function TabOverview() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['auto-match'] })
       qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+      qc.invalidateQueries({ queryKey: ['auto-match', 'preview'] })
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
-  // Lê config do Jonfrey para mostrar status sincronizado e últimas ações
   const { data: jonfreyConfig } = useQuery<{ enabled: boolean; interval_minutes: number; last_run_at?: string | null }>({
     queryKey: ['jonfrey-config'],
     queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
     refetchInterval: 30_000,
   })
 
-  const { data: jonfreyActions = [] } = useQuery<JonfreyActionLite[]>({
-    queryKey: ['jonfrey-actions-recent'],
-    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => (Array.isArray(r.data) ? r.data : []).slice(0, 20)).catch(() => []),
-    refetchInterval: 15_000,
+  const { data: nextCyclePreview } = useQuery<{
+    items: GlobalPreviewItem[]
+    auto_match_master_enabled?: boolean
+    max_per_run?: number
+  }>({
+    queryKey: ['auto-match', 'preview'],
+    queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data).catch(() => ({ items: [] })),
+    refetchInterval: 60_000,
   })
+
+  const previewCandidates = React.useMemo(
+    () => (nextCyclePreview?.items ?? []).filter(i => !i.already_sent).slice(0, 30),
+    [nextCyclePreview],
+  )
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
   const [localMaxPerRun, setLocalMaxPerRun] = React.useState<number | null>(null)
 
-  // Inicializar locais quando data chegar
   React.useEffect(() => {
     if (data) {
       if (localThreshold === null) setLocalThreshold(data.threshold)
@@ -272,36 +333,170 @@ export function TabOverview() {
 
   const enabled = data?.enabled ?? false
   const threshold = localThreshold ?? data?.threshold ?? 50
-  const maxPerRun = localMaxPerRun ?? data?.max_per_run ?? 3
+  const maxPerRunCfg = localMaxPerRun ?? data?.max_per_run ?? 3
   const logs = data?.logs ?? []
 
-  // Calcular KPI: disparos 24h
   const now = Date.now()
   const h24ago = now - 24 * 3600 * 1000
   const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
   const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
-  void jonfreyActions
 
-  // Countdown pro próximo ciclo
-  const nextRunMs = data?.last_run_at && data?.interval_seconds
-    ? new Date(data.last_run_at).getTime() + data.interval_seconds * 1000
-    : null
-  const [nextRunSecs, setNextRunSecs] = React.useState<number | null>(null)
+  const nextAutoMatchMs = React.useMemo(
+    () =>
+      data?.interval_seconds != null ? computeNextAutoMatchTickMs(data.last_run_at ?? null, data.interval_seconds) : null,
+    [data?.last_run_at, data?.interval_seconds],
+  )
+
+  const [amSecs, setAmSecs] = React.useState<number | null>(null)
   React.useEffect(() => {
     const tick = () => {
-      if (nextRunMs) setNextRunSecs(Math.max(0, Math.round((nextRunMs - Date.now()) / 1000)))
+      if (nextAutoMatchMs == null) {
+        setAmSecs(null)
+        return
+      }
+      setAmSecs(Math.max(0, Math.round((nextAutoMatchMs - Date.now()) / 1000)))
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [nextRunMs])
-  const countdownLabel = nextRunSecs === null ? '—' : nextRunSecs === 0 ? 'executando…' : `${nextRunSecs}s`
+  }, [nextAutoMatchMs])
 
-  // Separa logs: últimos 30min = "a enviar neste ciclo", anteriores = "já enviados"
-  const cutoffRecent = Date.now() - 30 * 60_000
-  const logsRecent = logs.filter(l => new Date(l.created_at).getTime() > cutoffRecent)
-  const logsOlder  = logs.filter(l => new Date(l.created_at).getTime() <= cutoffRecent)
+  const jonfreyIntervalMs = Math.max(1, jonfreyConfig?.interval_minutes ?? 60) * 60 * 1000
+  const [jfSecs, setJfSecs] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    const tick = () => {
+      if (!jonfreyConfig?.enabled) {
+        setJfSecs(null)
+        return
+      }
+      const base = jonfreyConfig.last_run_at ? new Date(jonfreyConfig.last_run_at).getTime() : 0
+      const next = base > 0 ? base + jonfreyIntervalMs : Date.now() + jonfreyIntervalMs
+      setJfSecs(Math.max(0, Math.round((next - Date.now()) / 1000)))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [jonfreyConfig?.enabled, jonfreyConfig?.last_run_at, jonfreyIntervalMs])
+
+  const autoMatchCountLabel =
+    amSecs === null
+      ? enabled && data?.last_run_at == null
+        ? 'sem log de ciclo ainda'
+        : '—'
+      : amSecs === 0
+        ? 'agora ou em segundos'
+        : `${amSecs}s`
+
+  const jonfreyCountLabel =
+    jfSecs === null ? '—' : jfSecs === 0 ? 'janela liberada…' : `${jfSecs}s`
+
+  const maxPerRunEffective = Math.max(1, nextCyclePreview?.max_per_run ?? data?.max_per_run ?? 3)
+  const intervalSecAm = data?.interval_seconds ?? 60
+
+  const previewRankInChannel = React.useMemo(() => {
+    const byChannel = new Map<number, GlobalPreviewItem[]>()
+    for (const i of previewCandidates) {
+      const arr = byChannel.get(i.channel_id) ?? []
+      arr.push(i)
+      byChannel.set(i.channel_id, arr)
+    }
+    const rankMap = new Map<string, number>()
+    for (const [, arr] of byChannel) {
+      arr.sort((a, b) => b.score - a.score || a.product_id - b.product_id)
+      arr.forEach((item, idx) => {
+        rankMap.set(`${item.channel_id}-${item.product_id}`, idx + 1)
+      })
+    }
+    return rankMap
+  }, [previewCandidates])
+
+  const previewSendEstimate = (p: GlobalPreviewItem): string => {
+    if (!enabled) return 'auto-match pausado'
+    if (nextAutoMatchMs == null) {
+      return 'próximo tick indisponível (precisa de ao menos um ciclo nos logs)'
+    }
+    const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 1
+    const cycles = Math.floor((rank - 1) / maxPerRunEffective)
+    const estMs = nextAutoMatchMs + cycles * intervalSecAm * 1000
+    const lot =
+      cycles === 0
+        ? `${rank}º na fila do canal · até ${maxPerRunEffective} envios/ciclo`
+        : `${rank}º na fila · ~${cycles + 1}º ciclo (${maxPerRunEffective} envios/ciclo)`
+    return `${fmtWhen(estMs)} · ${lot}`
+  }
+
+  const logsSorted = React.useMemo(
+    () => [...logs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [logs],
+  )
+
+  type SortKey = 'channel' | 'source' | 'price' | 'score' | 'created_at'
+  const [sortKey, setSortKey] = React.useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc')
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else {
+      setSortKey(k)
+      setSortDir(k === 'created_at' ? 'desc' : 'asc')
+    }
+  }
+
+  const sortedPending = React.useMemo(() => {
+    const sorted = [...pendingList]
+    sorted.sort((a, b) => {
+      let av: any
+      let bv: any
+      switch (sortKey) {
+        case 'channel':
+          av = a.channel_name ?? ''
+          bv = b.channel_name ?? ''
+          break
+        case 'source':
+          av = a.source ?? ''
+          bv = b.source ?? ''
+          break
+        case 'price':
+          av = a.price ?? 0
+          bv = b.price ?? 0
+          break
+        case 'score':
+          av = a.score ?? 0
+          bv = b.score ?? 0
+          break
+        case 'created_at':
+          av = new Date(a.created_at).getTime()
+          bv = new Date(b.created_at).getTime()
+          break
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return sorted
+  }, [pendingList, sortKey, sortDir])
+
+  const SortHeader = ({ k, label, align }: { k: SortKey; label: string; align?: string }) => (
+    <th
+      className={`px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide cursor-pointer select-none hover:text-fg ${align ?? 'text-left'}`}
+      onClick={() => toggleSort(k)}
+    >
+      {label}
+      {sortKey === k ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+    </th>
+  )
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    if (selected.size === pendingList.length) setSelected(new Set())
+    else setSelected(new Set(pendingList.map(i => i.id)))
+  }
 
   const renderLogRow = (log: AutoMatchLog) => {
     const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
@@ -333,6 +528,67 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
+      <PageHeader
+        title="Automações"
+        subtitle={
+          <>
+            Um só lugar para <strong className="text-fg-2">piloto</strong>, <strong className="text-fg-2">próximos envios</strong>,{' '}
+            <strong className="text-fg-2">aprovação manual</strong> e <strong className="text-fg-2">histórico</strong>. A linha do tempo está{' '}
+            <a href="#timeline" className="text-accent hover:underline">
+              abaixo
+            </a>
+            .
+          </>
+        }
+        actions={
+          !fullAutoMode && pendingList.length > 0 ? (
+            <>
+              {selected.size > 0 && (
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={approveBatchMut.isPending}
+                    onClick={() => approveBatchMut.mutate(Array.from(selected))}
+                  >
+                    ✓ Aprovar {selected.size}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    loading={rejectBatchMut.isPending}
+                    onClick={() => {
+                      if (confirm(`Rejeitar ${selected.size} dispatches selecionados?`)) rejectBatchMut.mutate(Array.from(selected))
+                    }}
+                  >
+                    ✕ Rejeitar {selected.size}
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={approveAllMut.isPending}
+                onClick={() => {
+                  if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
+                }}
+              >
+                Aprovar todos ({pendingList.length})
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={rejectBatchMut.isPending}
+                onClick={() => {
+                  if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
+                }}
+              >
+                Rejeitar todos
+              </Button>
+            </>
+          ) : null
+        }
+      />
 
       <div className="rounded-lg border border-border bg-surface-2/30 px-4 py-3 text-xs text-fg-2 leading-relaxed space-y-2">
         <p className="font-semibold text-fg text-sm">Dois caminhos de automação</p>
@@ -359,7 +615,7 @@ export function TabOverview() {
         {/* Próx. ciclo */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card flex flex-col gap-1">
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Próx. ciclo</p>
-          <p className="text-lg font-bold text-fg leading-none">{countdownLabel}</p>
+          <p className="text-lg font-bold text-fg leading-none">{autoMatchCountLabel}</p>
           <p className="text-[10px] text-fg-3">{data?.interval_seconds != null ? `a cada ${Math.max(1, Math.floor(data.interval_seconds / 60))} min` : '—'}</p>
         </div>
 
@@ -410,85 +666,228 @@ export function TabOverview() {
               <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Max/ciclo</p>
               <TooltipIcon content="Máximo de produtos disparados por canal por ciclo. Evita spam: mesmo com 100 produtos elegíveis, só esse número sai por vez." side="top" />
             </div>
-            <input type="number" min={1} max={20} value={maxPerRun}
+            <input type="number" min={1} max={20} value={maxPerRunCfg}
               onChange={e => setLocalMaxPerRun(Number(e.target.value))}
-              onBlur={() => toggleMut.mutate({ max_per_run: maxPerRun })}
+              onBlur={() => toggleMut.mutate({ max_per_run: maxPerRunCfg })}
               className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
           </div>
         </div>
       </div>
 
-      {/* Últimos 30 min — antes sumiam da UI porque só renderizávamos o bloco &gt;30min */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+      {/* Timeline unificada: próximos + aprovação + histórico */}
+      <div id="timeline" className="bg-surface border border-border rounded-md overflow-hidden scroll-mt-20">
+        <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-fg">Disparos recentes (últimos 30 min)</p>
-            <p className="text-[10px] text-fg-3 mt-0.5">Registros recentes do auto-match (a visão geral antiga só listava entradas com mais de 30 min).</p>
+            <p className="text-sm font-medium text-fg">Linha do tempo de envios</p>
+            <p className="text-[10px] text-fg-3 mt-0.5 max-w-xl">
+              Do topo para baixo: <strong className="text-fg-2">próximos</strong> (prévia do auto-match),{' '}
+              <strong className="text-fg-2">sua fila</strong> se full-auto estiver desligado, depois{' '}
+              <strong className="text-fg-2">histórico</strong> do que já disparou.
+            </p>
           </div>
-          <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
+          <button
+            type="button"
+            onClick={() => {
+              qc.invalidateQueries({ queryKey: ['auto-match'] })
+              qc.invalidateQueries({ queryKey: ['auto-match', 'preview'] })
+              qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+            }}
+            className="text-xs text-fg-3 hover:text-fg"
+          >
+            ↻ atualizar
+          </button>
         </div>
-        {logsRecent.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo automático nesta janela.</p>
-        ) : (
-          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
-            {logsRecent.map(renderLogRow)}
-          </div>
-        )}
-      </div>
 
-      {/* Dispatches aguardando aprovação manual (pending_approval) */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-fg">Dispatches aguardando aprovação</p>
-            {!fullAutoMode && (
-              <span className="text-[10px] bg-warning/10 text-warning border border-warning/30 rounded px-1.5 py-0.5">
-                modo manual — <a href="/automations/pending" className="underline">aprovar</a>
-              </span>
-            )}
+        {/* Agenda compacta */}
+        <div className="px-4 py-3 border-b border-border bg-surface-2/25 grid sm:grid-cols-2 gap-3 text-xs text-fg-2">
+          <div className="rounded border border-border bg-surface-2/40 px-3 py-2">
+            <span className="text-fg-3 uppercase tracking-wide font-medium">Próximo ciclo auto-match</span>
+            <p className="text-sm font-semibold text-fg mt-0.5">{autoMatchCountLabel}</p>
+            <p className="text-[10px] text-fg-3 mt-0.5">
+              Tick previsto (último log + intervalo). O worker pode não criar dispatch se fila ou grupos estiverem saturados.
+            </p>
           </div>
-          <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['auto-match'] })} className="text-xs text-fg-3 hover:text-fg">↻</button>
+          <div className="rounded border border-border bg-surface-2/40 px-3 py-2">
+            <span className="text-fg-3 uppercase tracking-wide font-medium">Próxima janela Jonfrey (piloto)</span>
+            <p className="text-sm font-semibold text-fg mt-0.5">{jonfreyConfig?.enabled === false ? 'piloto off' : jonfreyCountLabel}</p>
+            <p className="text-[10px] text-fg-3 mt-0.5">
+              Manutenção agendada ({jonfreyConfig?.interval_minutes ?? 60} min). Não substitui o envio ao WhatsApp.
+            </p>
+          </div>
         </div>
-        {pendingList.length === 0 ? (
+
+        {/* Próximos candidatos */}
+        <div className="px-4 py-2 border-b border-border bg-surface-2/20">
+          <p className="text-xs font-medium text-fg">1 · Próximos (prévia elegível)</p>
+          <p className="text-[10px] text-fg-3 mt-0.5">
+            Até <strong className="text-fg-2">{maxPerRunEffective}</strong> por canal por ciclo · intervalo{' '}
+            <strong className="text-fg-2">{intervalSecAm}s</strong>. <a href="/automations/channels" className="text-accent hover:underline">Canais</a>
+          </p>
+        </div>
+        {nextCyclePreview?.auto_match_master_enabled === false ? (
+          <p className="px-4 py-6 text-sm text-center text-warning">Auto-match global desligado — ligue o Auto-pilot nos KPI acima.</p>
+        ) : previewCandidates.length === 0 ? (
           <p className="px-4 py-6 text-sm text-fg-3 text-center">
-            {fullAutoMode
-              ? 'Nenhum em pending_approval — full-auto libera para a fila do worker automaticamente. Candidatos ao próximo ciclo aparecem na prévia por canal (Automations → canal / página do canal).'
-              : 'Nenhum disparo aguardando aprovação manual.'}
+            Nenhum candidato na prévia (canais pausados, filtros, cooldown ou sem URL de oferta).
           </p>
         ) : (
-          <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
-            {pendingList.map(d => (
-              <div key={d.id} className="px-4 py-2.5 flex items-start gap-3">
-                {d.score !== undefined && d.score !== null && (
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${d.score >= 70 ? 'bg-success/10 text-success' : d.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
-                    {d.score.toFixed(0)}
-                  </span>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-fg truncate">{d.product_name || `Dispatch #${d.id}`}</p>
-                  {d.channel_name && <p className="text-[10px] text-fg-3">canal: {d.channel_name}</p>}
+          <div className="max-h-[280px] overflow-y-auto divide-y divide-border">
+            {previewCandidates.map(p => (
+              <div key={`${p.channel_id}-${p.product_id}`} className="px-4 py-2.5 flex flex-wrap items-center gap-3">
+                <span
+                  className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                    p.score >= 70 ? 'bg-success/10 text-success' : 'bg-surface-2 text-fg-3'
+                  }`}
+                >
+                  {p.score.toFixed(0)}
+                </span>
+                <div className="flex-1 min-w-[140px]">
+                  <p className="text-sm text-fg truncate">{p.product_name}</p>
+                  <p className="text-[10px] text-fg-2">
+                    <strong className="text-fg-3 font-normal">Canal:</strong> {p.channel_name}
+                  </p>
                 </div>
-                <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                  <Badge variant="warning" size="sm">{d.status}</Badge>
-                  <span className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(d.created_at)}</span>
+                <div className="text-right shrink-0 min-w-[120px]">
+                  <p className="text-[10px] text-fg-3 uppercase tracking-wide">Estimativa</p>
+                  <p className="text-xs text-fg font-medium leading-snug">{previewSendEstimate(p)}</p>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
 
-      {/* Disparos: Já enviados (histórico) */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <p className="text-sm font-medium text-fg">Já disparados · histórico</p>
-          <a href="/logs" className="text-xs text-accent hover:underline">Ver todos →</a>
+        {/* Aprovação manual */}
+        {!fullAutoMode && (
+          <>
+            <div className="px-4 py-2 border-t border-b border-border bg-warning/5">
+              <p className="text-xs font-medium text-fg">2 · Aguardando aprovação manual</p>
+              <p className="text-[10px] text-fg-3 mt-0.5">
+                <code className="text-[10px] bg-surface-2 px-1 rounded">pending_approval</code> — aprove para entrar na fila do worker.
+              </p>
+            </div>
+            {pendingLoading ? (
+              <p className="px-4 py-6 text-sm text-fg-3">Carregando…</p>
+            ) : pendingList.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum dispatch aguardando aprovação.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface-2 border-b border-border">
+                      <th className="w-10 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selected.size === pendingList.length && pendingList.length > 0}
+                          onChange={toggleAll}
+                          className="accent-accent"
+                        />
+                      </th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide">Produto</th>
+                      <SortHeader k="channel" label="Canal" />
+                      <SortHeader k="source" label="Loja" />
+                      <SortHeader k="price" label="Preço" align="text-right" />
+                      <SortHeader k="score" label="Score" align="text-center" />
+                      <SortHeader k="created_at" label="Quando" align="text-right" />
+                      <th className="px-3 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedPending.map(d => {
+                      const isSel = selected.has(d.id)
+                      return (
+                        <tr
+                          key={d.id}
+                          className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${
+                            isSel ? 'bg-accent/5' : ''
+                          }`}
+                          onClick={() => toggleSelect(d.id)}
+                        >
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isSel}
+                              onChange={() => toggleSelect(d.id)}
+                              onClick={e => e.stopPropagation()}
+                              className="accent-accent"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              {d.product_image && (
+                                <img
+                                  src={d.product_image}
+                                  alt=""
+                                  className="w-10 h-10 object-cover rounded border border-border flex-shrink-0"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs text-fg truncate max-w-[240px]" title={d.product_name ?? ''}>
+                                  {d.product_name || `Dispatch #${d.id}`}
+                                </p>
+                                {d.brand && <p className="text-[10px] text-fg-3">{d.brand}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-fg-2">{d.channel_name ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-xs text-fg-2">{d.source ? SOURCE_LABEL[d.source] ?? d.source : '—'}</td>
+                          <td className="px-3 py-2.5 text-right text-xs text-fg whitespace-nowrap">
+                            {d.price && d.price > 0 ? `R$ ${d.price.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            {d.score != null ? (
+                              <span
+                                className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                                  d.score >= 70
+                                    ? 'bg-success/10 text-success'
+                                    : d.score >= 50
+                                      ? 'bg-warning/10 text-warning'
+                                      : 'bg-surface-2 text-fg-3'
+                                }`}
+                              >
+                                {d.score.toFixed(0)}
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-xs text-fg-3 whitespace-nowrap">{relativeFromNow(d.created_at)}</td>
+                          <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              title="Rejeitar"
+                              disabled={rejectMut.isPending}
+                              onClick={() => {
+                                if (confirm('Rejeitar este dispatch?')) rejectMut.mutate(d.id)
+                              }}
+                              className="text-xs px-2 py-1 rounded border border-danger/30 text-danger hover:bg-danger/10"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Histórico */}
+        <div className="px-4 py-2 border-t border-border bg-surface-2/20">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-fg">3 · Histórico · auto-match</p>
+            <a href="/logs" className="text-[10px] text-accent hover:underline">
+              Logs completos →
+            </a>
+          </div>
         </div>
-        {logsOlder.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo anterior.</p>
+        {logsSorted.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-fg-3 text-center">Nenhum disparo registrado nos logs recentes do auto-match.</p>
         ) : (
-          <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
-            {logsOlder.slice(0, 20).map(renderLogRow)}
+          <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
+            {logsSorted.slice(0, 50).map(renderLogRow)}
           </div>
         )}
       </div>

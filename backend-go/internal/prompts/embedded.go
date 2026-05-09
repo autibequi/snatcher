@@ -48,14 +48,19 @@ Responda JSON: {"is_offer":bool,"title":"...","marketplace":"...","price_current
 	clusterLabel := mustParse("cluster_label", "v1", `---
 model: anthropic/claude-3.5-sonnet
 max_tokens: 120
-temperature: 0.35
+temperature: 0.2
 ---
 Nome breve em pt-BR para cluster de canais de ofertas (UI / relatórios / mentalmente parecido com título de grupo).
 
 Cats: {{.TopCategories}} | Marcas: {{.TopBrands}}
 CTR {{printf "%.2f" .CTR}}%% | CVR {{printf "%.2f" .CVR}}%% | Ticket R$ {{printf "%.0f" .AvgTicket}}
 
-JSON: {"label":"2-4 palavras, memorável","description":"uma frase objetiva sobre o perfil do cluster"}`)
+REGRAS DE SAÍDA (obrigatório):
+- Responda APENAS um objeto JSON válido, sem markdown, sem cercas de código, sem rótulo "**JSON**", sem texto antes ou depois.
+- O primeiro caractere não-espaço da resposta deve ser "{" e o último "}".
+- Campos exatos: "label" (string, 2–4 palavras memoráveis em pt-BR) e "description" (string, uma frase objetiva sobre o perfil do cluster).
+
+{"label":"...","description":"..."}`)
 
 	return []*Prompt{compose, parseOffer, clusterLabel}
 }

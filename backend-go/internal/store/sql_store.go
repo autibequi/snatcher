@@ -70,6 +70,7 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			llm_reasoning_ollama=:llm_reasoning_ollama,
 			llm_reasoning_vllm=:llm_reasoning_vllm,
 			llm_reasoning_openrouter=:llm_reasoning_openrouter,
+			llm_temperature=:llm_temperature,
 			app_name=:app_name, app_domain=:app_domain,
 			auto_match_enabled=:auto_match_enabled,
 			auto_match_threshold=:auto_match_threshold,

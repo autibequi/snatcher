@@ -98,7 +98,7 @@ export default function Jonfrey() {
         </p>
       </div>
 
-      {/* Estado do Full-auto (sincronizado com /automations/pending) */}
+      {/* Estado do Full-auto (sincronizado com /automations) */}
       <FullAutoStatusCard />
 
       {/* Painel de controle */}
@@ -299,7 +299,7 @@ function FullAutoStatusCard() {
         </p>
         <p className="text-xs text-fg-3 mt-0.5">
           Quando ligado, dispatches criados pelo auto-match são liberados automaticamente pela action <strong>auto_release_pending</strong> sem precisar de aprovação humana.
-          Sincronizado com o toggle em <a href="/automations/pending" className="text-accent hover:underline">Fila de envio</a>.
+          Sincronizado com o Auto-pilot em <a href="/automations" className="text-accent hover:underline">Automações</a>.
         </p>
       </div>
       <button type="button"

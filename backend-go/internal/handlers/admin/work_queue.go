@@ -22,8 +22,8 @@ func NewWorkQueueHandler(st store.Store) *WorkQueueHandler {
 }
 
 const (
-	jobStaleMaxAge      = 21 * time.Minute // alinha com reclamação “running >21min”
-	jonfreyStaleMinutes = 20
+	jobStaleMaxAge = 21 * time.Minute // jobs em memória — ver jobs.ReconcileStaleRunning
+	// Jonfrey: usar jonfreyStaleRunningMin de jonfrey.go (pacote admin); deve ficar > jonfreyActionHardTimeout.
 )
 
 type unifiedRow struct {
@@ -38,7 +38,7 @@ func (h *WorkQueueHandler) Get(w http.ResponseWriter, r *http.Request) {
 	msg := "encerrado como falha: execução não finalizou a tempo ou o servidor reiniciou (running antigo)."
 	jfFixed := int64(0)
 	if h.Store != nil {
-		if n, err := h.Store.ReconcileStaleJonfreyActions(jonfreyStaleMinutes, msg); err != nil {
+		if n, err := h.Store.ReconcileStaleJonfreyActions(jonfreyStaleRunningMin, msg); err != nil {
 			slog.Warn("work-queue reconcile jonfrey", "err", err)
 		} else {
 			jfFixed = n

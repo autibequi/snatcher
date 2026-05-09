@@ -291,6 +291,13 @@ function LLMTab() {
         if (payload[k] === 'true') payload[k] = true
         else if (payload[k] === 'false') payload[k] = false
       }
+      const rawTemp = payload.llm_temperature
+      if (rawTemp === '' || rawTemp === undefined || rawTemp === null) {
+        payload.llm_temperature = null
+      } else if (typeof rawTemp === 'string') {
+        const n = Number(rawTemp)
+        payload.llm_temperature = Number.isFinite(n) ? n : null
+      }
       return apiClient.put('/api/config', payload).then(r => r.data)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['config'] }); setForm({}) },
@@ -424,6 +431,33 @@ function LLMTab() {
             />
           </label>
         ))}
+      </div>
+
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <div>
+          <p className="text-sm font-medium text-fg">Temperatura global (opcional)</p>
+          <p className="text-xs text-fg-3 mt-0.5">
+            Quando preenchida (0–2), substitui a temperatura definida em cada prompt embutido (compose, clusters, etc.).
+            Valores mais baixos (~0,1–0,3) reduzem criatividade e tendência a markdown ou texto extra em saídas JSON.
+            Deixe em branco para usar o padrão de cada operação.
+          </p>
+        </div>
+        <Input
+          label="Temperatura"
+          type="number"
+          min={0}
+          max={2}
+          step={0.05}
+          placeholder="ex.: 0.2 — vazio = padrão do prompt"
+          value={
+            form.llm_temperature !== undefined
+              ? form.llm_temperature
+              : typeof (config as Record<string, unknown>)?.llm_temperature === 'number'
+                ? String((config as Record<string, unknown>).llm_temperature)
+                : ''
+          }
+          onChange={e => set('llm_temperature', e.target.value)}
+        />
       </div>
 
       <div className="border border-accent/30 bg-accent/5 rounded-md p-3 flex items-start gap-3">

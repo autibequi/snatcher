@@ -66,16 +66,16 @@ func (l *Labeler) Label(ctx context.Context, input RenderInput) ClusterLabel {
 		Operation:   "cluster_label",
 		MaxTokens:   p.MaxTokens,
 		Temperature: p.Temperature,
+		JSONMode:    true,
 	})
 	if err != nil {
 		return fallback
 	}
 
 	resp = strings.TrimSpace(resp)
-	resp = strings.TrimPrefix(resp, "```json")
-	resp = strings.TrimPrefix(resp, "```")
-	resp = strings.TrimSuffix(resp, "```")
-	resp = strings.TrimSpace(resp)
+	if alt := llm.ExtractJSONObject(resp); alt != "" {
+		resp = alt
+	}
 
 	var label ClusterLabel
 	if err := json.Unmarshal([]byte(resp), &label); err != nil {

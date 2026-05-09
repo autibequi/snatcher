@@ -134,6 +134,9 @@ type AppConfig struct {
 	LLMReasoningOllama     bool `db:"llm_reasoning_ollama" json:"llm_reasoning_ollama"`
 	LLMReasoningVllm       bool `db:"llm_reasoning_vllm" json:"llm_reasoning_vllm"`
 	LLMReasoningOpenrouter bool `db:"llm_reasoning_openrouter" json:"llm_reasoning_openrouter"`
+
+	// Opcional — quando definido, sobrescreve a temperatura indicada em cada prompt YAML (0–2).
+	LLMTemperature NullFloat64 `db:"llm_temperature" json:"llm_temperature,omitempty"`
 }
 
 type AutoMatchLog struct {

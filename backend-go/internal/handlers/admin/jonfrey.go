@@ -34,7 +34,10 @@ type JonfreyHandler struct {
 const (
 	jonfreyActionHardTimeout = 22 * time.Minute // teto por ação dentro de executeAction
 	jonfreyLLMOuterBudget    = 20 * time.Minute // ações que fazem muitas chamadas LLM em loop
-	jonfreyStaleRunningMin   = 20               // marca running antigo como failed ao listar /api/jonfrey/actions
+	// jonfreyStaleRunningMin (minutos) deve ser maior que o teto por ação (~22m): antes era 20m —
+	// GET /api/jonfrey/actions e /api/work-queue reconciliavam qualquer "running" antes do deadline da ação,
+	// gravando falha genérica enquanto executeAction ainda era legítimo.
+	jonfreyStaleRunningMin = 35
 )
 
 // jonfreyQueueJobKey associa executeAction ao job da fila universal (activity log).
