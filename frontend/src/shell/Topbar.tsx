@@ -10,7 +10,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/match': 'Match',
   '/automations': 'Automações',
   '/automations/channels': 'Automações — Por canal',
-  '/automations/jonfrey': 'Jonfrey — Assistente AI',
+  '/automations/jonfrey': 'Jonfrey',
   '/compose': 'Compor',
   '/logs': 'Logs',
   '/catalog': 'Catálogo',
