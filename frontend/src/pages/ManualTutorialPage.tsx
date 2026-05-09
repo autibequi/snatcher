@@ -1,18 +1,13 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { OperationalManualContent } from '../content/operationalManual'
+import { renderTutorialBody } from '../content/tutorialBodies'
 import { MANUAL_TUTORIALS } from '../content/tutorials'
 
 export default function ManualTutorialPage() {
   const { slug } = useParams<{ slug: string }>()
   const def = slug ? MANUAL_TUTORIALS.find(t => t.slug === slug) : undefined
-  if (!slug || !def) return <Navigate to="/manual" replace />
+  const body = slug ? renderTutorialBody(slug) : null
 
-  let body: React.ReactNode = null
-  if (slug === 'operacional') {
-    body = <OperationalManualContent />
-  }
-
-  if (!body) return <Navigate to="/manual" replace />
+  if (!slug || !def || !body) return <Navigate to="/manual" replace />
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -24,6 +19,13 @@ export default function ManualTutorialPage() {
         <p className="text-sm text-fg-3 mt-1">{def.description}</p>
       </header>
       {body}
+      {def.path ? (
+        <p className="mt-10 pt-6 border-t border-border">
+          <Link to={def.path} className="text-sm font-medium text-accent hover:underline">
+            Ir para esta página no app →
+          </Link>
+        </p>
+      ) : null}
     </div>
   )
 }
