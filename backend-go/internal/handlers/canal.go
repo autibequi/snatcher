@@ -10,6 +10,8 @@ import (
 
 	"snatcher/backendv2/internal/invitelinks"
 	"snatcher/backendv2/internal/store"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type CanalHandler struct {
@@ -20,36 +22,27 @@ func NewCanal(st store.Store) *CanalHandler {
 	return &CanalHandler{store: st}
 }
 
-func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	ch, err := h.store.GetChannelBySlug(slug)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
+// PublicInviteEntry is one join destination shown on /canal/{slug} (WhatsApp or Telegram invite).
+type PublicInviteEntry struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	InviteURL string `json:"invite_url"`
+	Provider  string `json:"provider"`
+}
 
-	type pickerEntry struct {
-		Name      string
-		InviteURL string
-		Provider  string
-	}
-	var withInvite []pickerEntry
+// CollectPublicInviteEntries mirrors the HTML picker: redesign groups first, then legacy channel_targets.
+func CollectPublicInviteEntries(ctx context.Context, st store.Store, channelID int64) []PublicInviteEntry {
+	var out []PublicInviteEntry
 
-	// 1) Grupos modernos (tabela groups / RedesignGroup) — fonte primária
-	groups, _ := h.store.ListRedesignGroups(ch.ID, "", "active")
-
-	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
-	defer cancel()
-
+	groups, _ := st.ListRedesignGroups(channelID, "", "active")
 	for _, g := range groups {
 		invite := ""
 		if g.InviteLink.Valid {
 			invite = strings.TrimSpace(g.InviteLink.String)
 		}
-		// Sem invite persistido: tenta buscar na Evolution na hora (persiste no banco para próximas visitas).
 		if invite == "" && g.Platform == "whatsapp" && g.Status == "active" &&
 			g.JID.Valid && strings.TrimSpace(g.JID.String) != "" && g.WAAccountID.Valid {
-			if link, err := h.store.FetchAndPersistWhatsAppInvite(ctx, g.ID); err == nil && link != "" {
+			if link, err := st.FetchAndPersistWhatsAppInvite(ctx, g.ID); err == nil && link != "" {
 				invite = link
 			}
 		}
@@ -64,30 +57,46 @@ func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
 		if g.Platform == "whatsapp" {
 			u = invitelinks.NormalizeWhatsAppInvite(u)
 		}
-		withInvite = append(withInvite, pickerEntry{
-			Name:      name,
-			InviteURL: u,
-			Provider:  g.Platform,
+		out = append(out, PublicInviteEntry{
+			ID: g.ID, Name: name, InviteURL: u, Provider: g.Platform,
 		})
 	}
 
-	// 2) Fallback legacy: channel_targets (compat com setups antigos)
-	if len(withInvite) == 0 {
-		targets, _ := h.store.ListChannelTargets(ch.ID)
+	if len(out) == 0 {
+		targets, _ := st.ListChannelTargets(channelID)
 		for _, t := range targets {
 			if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
 				name := t.ChatID
 				if t.Name.Valid && t.Name.String != "" {
 					name = t.Name.String
 				}
-				withInvite = append(withInvite, pickerEntry{
-					Name:      name,
-					InviteURL: t.InviteURL.String,
-					Provider:  t.Provider,
+				out = append(out, PublicInviteEntry{
+					ID: t.ID, Name: name, InviteURL: t.InviteURL.String, Provider: t.Provider,
 				})
 			}
 		}
 	}
+	return out
+}
+
+func (h *CanalHandler) GroupPicker(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if slug == "" {
+		slug = chi.URLParam(r, "slug")
+	}
+	ch, err := h.store.GetChannelBySlug(slug)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !ch.Active {
+		http.Error(w, "channel inactive", http.StatusGone)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
+	defer cancel()
+	withInvite := CollectPublicInviteEntries(ctx, h.store, ch.ID)
 
 	channelName := html.EscapeString(ch.Name)
 	channelDesc := html.EscapeString(ch.Description)
