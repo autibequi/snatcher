@@ -53,6 +53,10 @@ interface GlobalPreviewItem {
   channel_name: string
   score: number
   already_sent: boolean
+  /** Prévia alinhada ao worker (GET /api/auto-match/preview) */
+  dispatch_rank?: number
+  max_per_run?: number
+  in_this_cycle?: boolean
 }
 
 interface AutoMatchStatus {
@@ -347,16 +351,17 @@ export function TabOverview() {
     items: GlobalPreviewItem[]
     auto_match_master_enabled?: boolean
     max_per_run?: number
+    worker_aligned?: boolean
   }>({
     queryKey: ['auto-match', 'preview'],
     queryFn: () => apiClient.get('/api/auto-match/preview').then(r => r.data).catch(() => ({ items: [] })),
     refetchInterval: 60_000,
   })
 
-  const previewCandidates = React.useMemo(
-    () => (nextCyclePreview?.items ?? []).filter((i) => !i.already_sent),
-    [nextCyclePreview],
-  )
+  const previewCandidates = React.useMemo(() => {
+    const raw = nextCyclePreview?.items ?? []
+    return raw.filter((i) => !i.already_sent)
+  }, [nextCyclePreview])
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
   const [localMaxPerRun, setLocalMaxPerRun] = React.useState<number | null>(null)
@@ -428,7 +433,10 @@ export function TabOverview() {
   const maxPerRunEffective = Math.max(1, nextCyclePreview?.max_per_run ?? data?.max_per_run ?? 3)
   const intervalSecAm = data?.interval_seconds ?? 60
 
+  const workerPreview = nextCyclePreview?.worker_aligned === true
+
   const previewRankInChannel = React.useMemo(() => {
+    if (workerPreview) return new Map<string, number>()
     const byChannel = new Map<number, GlobalPreviewItem[]>()
     for (const i of previewCandidates) {
       const arr = byChannel.get(i.channel_id) ?? []
@@ -443,10 +451,14 @@ export function TabOverview() {
       })
     }
     return rankMap
-  }, [previewCandidates])
+  }, [previewCandidates, workerPreview])
 
   const previewQueueLabel = (p: GlobalPreviewItem): string => {
     if (!enabled) return '—'
+    if (workerPreview && p.dispatch_rank != null) {
+      const mpr = p.max_per_run ?? maxPerRunEffective
+      return `${p.dispatch_rank}º no canal · máx ${mpr}/ciclo`
+    }
     const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 1
     return `${rank}º no canal · máx ${maxPerRunEffective}/ciclo`
   }
@@ -454,15 +466,19 @@ export function TabOverview() {
   const isInThisAutoMatchCycle = React.useCallback(
     (p: GlobalPreviewItem): boolean => {
       if (!enabled) return false
+      if (workerPreview && p.in_this_cycle !== undefined) return p.in_this_cycle
       const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 999
       return rank <= maxPerRunEffective
     },
-    [enabled, previewRankInChannel, maxPerRunEffective],
+    [enabled, previewRankInChannel, maxPerRunEffective, workerPreview],
   )
 
-  /** Neste ciclo primeiro; depois restantes (mesma ordem por canal/rank). */
+  /** Com worker_aligned, a API já devolve a ordem global do próximo ciclo. */
   const previewRowsSorted = React.useMemo(() => {
     const arr = [...previewCandidates]
+    if (workerPreview) {
+      return arr
+    }
     arr.sort((a, b) => {
       const ia = isInThisAutoMatchCycle(a)
       const ib = isInThisAutoMatchCycle(b)
@@ -473,7 +489,7 @@ export function TabOverview() {
       return ra - rb
     })
     return arr
-  }, [previewCandidates, previewRankInChannel, isInThisAutoMatchCycle])
+  }, [previewCandidates, previewRankInChannel, isInThisAutoMatchCycle, workerPreview])
 
   const logsSorted = React.useMemo(
     () => [...logs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),

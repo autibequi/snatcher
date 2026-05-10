@@ -203,6 +203,33 @@ func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
 	return out, err
 }
 
+func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+		       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
+		       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
+		       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
+		       COALESCE(p.canonical_name, '') as product_name,
+		       COALESCE(c.name, '') as channel_name,
+		       COALESCE(
+		           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+		            FROM dispatch_targets dt
+		            JOIN groups g ON g.id = dt.group_id
+		            WHERE dt.dispatch_id = l.dispatch_id),
+		           ''
+		       ) AS group_names
+		FROM auto_match_logs l
+		LEFT JOIN catalogproduct p ON p.id = l.product_id
+		LEFT JOIN channel c ON c.id = l.channel_id
+		WHERE l.created_at >= $1
+		ORDER BY l.created_at DESC LIMIT $2`, since, limit)
+	return out, err
+}
+
 // GetHistoricalCTRForGroup calcula CTR = SUM(click_count) / COUNT(dispatches) para o
 // grupo no contexto da categoria do produto (match via tags JSONB do catalog product).
 // Retorna nil se o número de dispatches qualificados for menor que minDispatches.

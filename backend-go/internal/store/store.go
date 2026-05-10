@@ -253,6 +253,8 @@ type Store interface {
 	// Auto Match
 	CreateAutoMatchLog(log models.AutoMatchLog) (int64, error)
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
+	// ListAutoMatchLogsSince retorna logs com created_at >= since, mais recentes primeiro.
+	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)
 
 	// Match — CTR histórico
 	// GetHistoricalCTRForGroup calcula CTR = clicks/dispatches para o grupo no contexto

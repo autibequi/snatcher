@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -34,7 +34,7 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar config")
 		return
 	}
-	logs, _ := h.store.ListAutoMatchLogs(50)
+	logs, _ := h.store.ListAutoMatchLogsSince(time.Now().Add(-24*time.Hour), 500)
 	if logs == nil {
 		logs = []models.AutoMatchLog{}
 	}
@@ -65,8 +65,7 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Preview retorna os produtos que seriam disparados no próximo ciclo, respeitando configs por canal.
-// Usa a mesma construção por canal que GET /api/automations/:id/preview (evita divergência com a listagem por canal).
+// Preview retorna a simulação do próximo ciclo — mesma ordem e regras que RunAutoMatchWorker (dry-run).
 // GET /api/auto-match/preview
 func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.store.GetConfig()
@@ -78,74 +77,59 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	if !cfg.AutoMatchEnabled {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"items":                     []any{},
+			"planned":                   []any{},
 			"threshold":                 cfg.AutoMatchThreshold,
 			"max_per_run":               cfg.AutoMatchMaxPerRun,
 			"auto_match_master_enabled": false,
+			"worker_aligned":            true,
 		})
 		return
 	}
 
-	automations, _ := h.store.ListChannelAutomations(true) // enabled=true
-	now := time.Now()
-
-	autoByChannelID := make(map[int64]models.ChannelAutomation, len(automations))
-	for _, a := range automations {
-		if !a.AutoMatchEnabled {
-			continue
-		}
-		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
-			continue
-		}
-		autoByChannelID[a.ChannelID] = a
-	}
-
-	if len(autoByChannelID) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"items":                     []any{},
-			"threshold":                 cfg.AutoMatchThreshold,
-			"max_per_run":               cfg.AutoMatchMaxPerRun,
-			"auto_match_master_enabled": true,
-		})
+	ctx := r.Context()
+	planned, err := scheduler.SimulateAutoMatchCycle(ctx, h.store, time.Now())
+	if err != nil {
+		slog.Error("auto-match preview: simulate", "err", err)
+		writeErr(w, http.StatusInternalServerError, "erro ao simular próximo ciclo")
 		return
+	}
+	if planned == nil {
+		planned = []scheduler.AutoMatchPlannedRow{}
 	}
 
 	type previewItem struct {
-		ProductID   int64   `json:"product_id"`
-		ChannelID   int64   `json:"channel_id"`
-		ProductName string  `json:"product_name"`
-		ChannelName string  `json:"channel_name"`
-		Score       float64 `json:"score"`
-		AlreadySent bool    `json:"already_sent"`
+		ProductID    int64   `json:"product_id"`
+		ChannelID    int64   `json:"channel_id"`
+		ProductName  string  `json:"product_name"`
+		ChannelName  string  `json:"channel_name"`
+		Score        float64 `json:"score"`
+		AlreadySent  bool    `json:"already_sent"`
+		DispatchRank int     `json:"dispatch_rank,omitempty"`
+		MaxPerRun    int     `json:"max_per_run,omitempty"`
+		InThisCycle  bool    `json:"in_this_cycle,omitempty"`
 	}
-
-	var items []previewItem
-	for channelID := range autoByChannelID {
-		rows, _, _, chName, err := BuildChannelAutomationPreview(h.store, channelID)
-		if err != nil {
-			continue
-		}
-		for _, row := range rows {
-			items = append(items, previewItem{
-				ProductID:   row.ProductID,
-				ChannelID:   channelID,
-				ProductName: row.ProductName,
-				ChannelName: chName,
-				Score:       row.Score,
-				AlreadySent: row.AlreadySent,
-			})
-		}
+	items := make([]previewItem, 0, len(planned))
+	for _, row := range planned {
+		items = append(items, previewItem{
+			ProductID:    row.ProductID,
+			ChannelID:    row.ChannelID,
+			ProductName:  row.ProductName,
+			ChannelName:  row.ChannelName,
+			Score:        row.Score,
+			AlreadySent:  false,
+			DispatchRank: row.DispatchRank,
+			MaxPerRun:    row.MaxPerRun,
+			InThisCycle:  row.InThisCycle,
+		})
 	}
-
-	if items == nil {
-		items = []previewItem{}
-	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Score > items[j].Score })
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":                     items,
+		"planned":                   planned,
 		"threshold":                 cfg.AutoMatchThreshold,
 		"max_per_run":               cfg.AutoMatchMaxPerRun,
 		"auto_match_master_enabled": true,
+		"worker_aligned":            true,
 	})
 }
 
