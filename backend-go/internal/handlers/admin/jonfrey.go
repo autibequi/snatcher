@@ -1265,9 +1265,11 @@ JSON apenas:
 		len(compactApproved), apprJSON,
 		len(compactPending), pendJSON)
 
-	ctxC, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// Saída pode ser grande (decisões + grupos); modelos thinking consomem max_tokens no reasoning —
+	// 1700 era pouco e gerava finish_reason=length sem JSON em content.
+	ctxC, cancel := context.WithTimeout(ctx, 120*time.Second)
 	resp, err := cli.Complete(ctxC, prompt, llm.Options{
-		MaxTokens:   1700,
+		MaxTokens:   8192,
 		Temperature: 0.1,
 		Operation:   "jonfrey_maintain_taxonomy",
 		JSONMode:    true,

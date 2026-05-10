@@ -160,6 +160,19 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 			}
 		}
 
+		// Modelos thinking (OpenRouter etc.) podem encher completion só com reasoning e não deixar JSON.
+		if strings.Contains(errStr, "only reasoning, no JSON found") && opts.MaxTokens > 0 && opts.MaxTokens < 32000 {
+			retryOpts := opts
+			retryOpts.MaxTokens = opts.MaxTokens * 2
+			if retryOpts.MaxTokens > 16384 {
+				retryOpts.MaxTokens = 16384
+			}
+			retryOpts.Operation = opts.Operation + "_retry_reasoning_budget"
+			if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
+				return out2, nil
+			}
+		}
+
 		// Retry em falhas transientes de modelos free (429, 504, content null, abort)
 		// Até 5 tentativas mas SOMENTE para openrouter/free — outros modelos não precisam.
 		if isTransientError(errStr) {

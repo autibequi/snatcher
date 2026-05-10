@@ -644,8 +644,14 @@ export function TabOverview() {
           : log.score >= 50
             ? 'bg-warning/10 text-warning'
             : 'bg-surface-2 text-fg-3'
+    const originRaw = (log.composed_by ?? '').trim()
+    const showOriginTag = originRaw !== '' && originRaw !== 'auto-match'
     return (
-      <div key={`${log.id}-${log.dispatch_id}`} className="px-3 py-2 flex items-center gap-3 border-b border-border/80 last:border-0">
+      <a
+        key={`${log.id}-${log.dispatch_id}`}
+        href={`/logs?dispatchId=${log.dispatch_id}`}
+        className="px-3 py-2 flex items-center gap-3 border-b border-border/80 last:border-0 hover:bg-surface-2/40 transition-colors no-underline text-inherit cursor-pointer"
+      >
         <span title={log.score < 0 ? 'Dispatch sem linha em auto_match_logs (score indisponível)' : undefined} className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${scoreClass}`}>
           {scoreLabel}
         </span>
@@ -654,20 +660,19 @@ export function TabOverview() {
             {log.product_name || `Produto #${log.product_id}`}
           </p>
           <p className="text-[10px] text-fg-3 truncate">{log.channel_name ?? '—'}</p>
-          <p className="text-[10px] text-fg-3 mt-0.5">
-            <span className="inline-block rounded px-1 py-0.5 bg-surface-2 border border-border/60 text-fg-2">
-              {dispatchOriginLabel(log.composed_by)}
-            </span>
-          </p>
+          {showOriginTag && (
+            <p className="text-[10px] text-fg-3 mt-0.5">
+              <span className="inline-block rounded px-1 py-0.5 bg-surface-2 border border-border/60 text-fg-2">
+                {dispatchOriginLabel(log.composed_by)}
+              </span>
+            </p>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className="text-[10px] font-medium text-success">Enviado</p>
           <p className="text-[10px] text-fg-3 whitespace-nowrap">{relativeFromNow(log.created_at)}</p>
-          <a href={`/logs?dispatchId=${log.dispatch_id}`} className="text-[10px] text-accent hover:underline">
-            rastrear
-          </a>
         </div>
-      </div>
+      </a>
     )
   }
 
@@ -785,7 +790,7 @@ export function TabOverview() {
       />
 
       {!fullAutoMode && pendingList.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           {selected.size > 0 && (
             <>
               <Button
@@ -809,34 +814,34 @@ export function TabOverview() {
             </>
           )}
           <Button
-            variant="secondary"
+            variant="ghost"
             size="sm"
             loading={approveAllMut.isPending}
             onClick={() => {
               if (confirm(`Aprovar TODOS os ${pendingList.length} pendentes?`)) approveAllMut.mutate()
             }}
           >
-            Aprovar todos ({pendingList.length})
+            Todos · aprovar
           </Button>
           <Button
-            variant="secondary"
+            variant="ghost"
             size="sm"
             loading={rejectBatchMut.isPending}
             onClick={() => {
               if (confirm(`Rejeitar TODOS os ${pendingList.length} pendentes?`)) rejectBatchMut.mutate(pendingList.map(i => i.id))
             }}
           >
-            Rejeitar todos
+            Todos · rejeitar
           </Button>
         </div>
       ) : null}
 
       {/* ── KPI + thresholds ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 max-w-4xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 w-full max-w-6xl">
 
         {/* Disparos 24h */}
-        <KpiCard label="Dispatches 24h" value={dispatches24h} subtitle="auto-match"
-          tooltip="Número só de dispatches criados pelo worker (composed_by=auto-match) nas últimas 24h. A timeline abaixo lista qualquer disparo não-rascunho na mesma janela (manual incluído); origem aparece na linha." />
+        <KpiCard label="Dispatches 24h" value={dispatches24h}
+          tooltip="Dispatches criados pelo worker (auto-match) nas últimas 24h, excluindo rascunho. A timeline abaixo inclui qualquer origem na mesma janela." />
 
         {/* Score mínimo + Max/ciclo juntos */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">
@@ -889,7 +894,7 @@ export function TabOverview() {
           </div>
         </div>
 
-        <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3 max-w-4xl">
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3 sm:col-span-2 xl:col-span-1">
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Curadoria por script (batch)</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -938,24 +943,24 @@ export function TabOverview() {
 
       {/* Linha do tempo: envio WA + próximos (prévia) + enviados */}
       <div className="bg-surface border border-border rounded-lg shadow-card overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-fg">Quem entra na próxima janela · o que já foi disparado</p>
+        <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-fg">Próxima janela · já disparado</p>
             <p className="text-[11px] text-fg-3 mt-1 max-w-3xl leading-relaxed">
-              <strong className="text-fg-2">Auto-match</strong> é o ciclo que pode criar disparos;{' '}
-              <strong className="text-fg-2">Jonfrey</strong> é outro relógio (manutenção do piloto). Nem todo ciclo gera envio — cooldown, URL, grupos e aprovação manual contam.
+              Ciclo de match vs Jonfrey; cooldown e aprovação podem impedir envio.
             </p>
           </div>
           <button
             type="button"
+            title="Recarregar prévia e timeline"
             onClick={() => {
               qc.invalidateQueries({ queryKey: ['auto-match'] })
               qc.invalidateQueries({ queryKey: ['auto-match', 'preview'] })
               qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
             }}
-            className="text-xs text-fg-3 hover:text-fg shrink-0"
+            className="text-fg-3 hover:text-fg shrink-0 rounded-md border border-border/80 px-2 py-1 text-xs hover:bg-surface-2"
           >
-            ↻ atualizar
+            ↻
           </button>
         </div>
 
@@ -976,21 +981,18 @@ export function TabOverview() {
           </div>
         </div>
 
-        <div className="px-4 py-3 border-b border-border bg-whatsapp/8 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-fg">Envio da fila (WhatsApp)</p>
-            <p className="text-[11px] text-fg-3 mt-0.5 leading-snug max-w-2xl">
-              O servidor já corre o worker de envio periodicamente (~15s). Depois de aprovar ou libertar itens na fila, force aqui um envio em lote sem esperar o próximo ciclo.
-            </p>
-          </div>
+        <div className="px-4 py-2.5 border-b border-border bg-whatsapp/8 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-fg-2 min-w-0">
+            Worker de envio ~15s — use só se quiser desbloquear antes do próximo ciclo.
+          </p>
           <Button
-            variant="primary"
-            size="md"
+            variant="secondary"
+            size="sm"
             className="shrink-0"
             loading={processQueueMut.isPending}
             onClick={() => processQueueMut.mutate()}
           >
-            Processar fila agora
+            Processar fila
           </Button>
         </div>
 
@@ -1043,8 +1045,8 @@ export function TabOverview() {
 
           <div className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-surface-2 border-y border-border text-xs mt-0">
             <span className="font-semibold text-fg">Últimos disparos (24h)</span>
-            <a href="/logs" className="text-[10px] text-accent hover:underline font-normal">
-              Logs completos →
+            <a href="/logs?tab=dispatches" className="text-[11px] text-accent hover:underline font-medium">
+              Ver no Logs
             </a>
           </div>
           {logsSorted.length === 0 ? (
@@ -1055,11 +1057,7 @@ export function TabOverview() {
             <div>
               {logsSorted.length > TIMELINE_LOG_CAP && (
                 <p className="px-4 py-2 text-[11px] text-fg-3 bg-surface-2/30 border-b border-border/60">
-                  Mostrando os {TIMELINE_LOG_CAP} mais recentes de {logsSorted.length} registros —{' '}
-                  <a href="/logs?tab=dispatches" className="text-accent hover:underline">
-                    ver todos nos logs
-                  </a>
-                  .
+                  Primeiros {TIMELINE_LOG_CAP} de {logsSorted.length} — o resto está na página Logs (link acima).
                 </p>
               )}
               {logsSorted.slice(0, TIMELINE_LOG_CAP).map(renderLogRow)}
