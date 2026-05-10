@@ -88,6 +88,9 @@ type AppConfig struct {
 	GlobalInterval int        `db:"global_interval" json:"global_interval"`
 	SendStartHour  int        `db:"send_start_hour" json:"send_start_hour"`
 	SendEndHour    int        `db:"send_end_hour" json:"send_end_hour"`
+	// Janela de envio dos disparos (RunDispatchWorker) — horas locais em dispatch_send_timezone (IANA).
+	DispatchSendWindowEnabled bool   `db:"dispatch_send_window_enabled" json:"dispatch_send_window_enabled"`
+	DispatchSendTimezone      string `db:"dispatch_send_timezone" json:"dispatch_send_timezone"`
 	MLClientID     NullString `db:"ml_client_id" json:"ml_client_id,omitempty"`
 	MLClientSecret NullString `db:"ml_client_secret" json:"ml_client_secret,omitempty"`
 	WAGroupPrefix  NullString `db:"wa_group_prefix" json:"wa_group_prefix,omitempty"`

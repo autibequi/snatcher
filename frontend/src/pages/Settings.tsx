@@ -618,6 +618,10 @@ interface AppConfig {
   global_interval?: number
   send_start_hour?: number
   send_end_hour?: number
+  /** Quando false, disparos WhatsApp podem sair 24h */
+  dispatch_send_window_enabled?: boolean
+  /** IANA, ex. America/Sao_Paulo */
+  dispatch_send_timezone?: string
   interval_between_groups?: number
   interval_between_channels?: number
   daily_limit_per_account?: number
@@ -693,6 +697,31 @@ function GeneralTab() {
               value={merged.send_end_hour ?? 22}
               onChange={e => updateField('send_end_hour', Number(e.target.value))}
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+            />
+          </div>
+        </div>
+        <div className="border-t border-border pt-4 space-y-3">
+          <p className="text-xs text-fg-2 leading-relaxed">
+            <strong className="text-fg">Disparos WhatsApp (Evolution):</strong> fora desta janela horária os envios
+            ficam na fila até abrir o período — evita mensagens de madrugada ou muito cedo.
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(merged.dispatch_send_window_enabled ?? true) as boolean}
+              onChange={e => updateField('dispatch_send_window_enabled', e.target.checked)}
+              className="accent-accent"
+            />
+            <span className="text-sm text-fg">Respeitar janela de envio nos disparos</span>
+          </label>
+          <div>
+            <label className="text-xs text-fg-2 block mb-1">Fuso horário (IANA)</label>
+            <input
+              type="text"
+              value={(merged.dispatch_send_timezone as string) ?? 'America/Sao_Paulo'}
+              onChange={e => updateField('dispatch_send_timezone', e.target.value)}
+              className="w-full max-w-md text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg font-mono"
+              placeholder="America/Sao_Paulo"
             />
           </div>
         </div>

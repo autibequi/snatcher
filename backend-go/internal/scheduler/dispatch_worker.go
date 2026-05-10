@@ -15,10 +15,44 @@ import (
 	"snatcher/backendv2/internal/store"
 )
 
+// inDispatchSendWindow retorna true se o envio via Evolution pode ocorrer agora,
+// usando send_start_hour/send_end_hour da AppConfig no fuso dispatch_send_timezone (IANA).
+// Com dispatch_send_window_enabled=false, sempre true (envio 24h).
+func inDispatchSendWindow(cfg models.AppConfig, now time.Time) bool {
+	if !cfg.DispatchSendWindowEnabled {
+		return true
+	}
+	tzName := strings.TrimSpace(cfg.DispatchSendTimezone)
+	if tzName == "" {
+		tzName = "America/Sao_Paulo"
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		slog.Warn("dispatch send window: timezone inválido, usando UTC", "tz", tzName, "err", err)
+		loc = time.UTC
+	}
+	h := now.In(loc).Hour()
+	start, end := cfg.SendStartHour, cfg.SendEndHour
+	// Mesma semântica que pipeline.inSendWindow: [start, end)
+	return h >= start && h < end
+}
+
 // RunDispatchWorker processa dispatch_targets pendentes chamando a Evolution API.
 // Deve ser chamado periodicamente pelo scheduler.
 // Retorna quantos targets foram lidos da fila neste ciclo (0 = fila vazia ou erro ao listar).
 func RunDispatchWorker(ctx context.Context, st store.Store) int {
+	cfg, err := st.GetConfig()
+	if err != nil {
+		slog.Error("dispatch worker: get config", "err", err)
+		return 0
+	}
+	if !inDispatchSendWindow(cfg, time.Now()) {
+		slog.Debug("dispatch worker: fora da janela de envio — fila mantida para depois",
+			"tz", cfg.DispatchSendTimezone,
+			"start_h", cfg.SendStartHour, "end_h", cfg.SendEndHour)
+		return 0
+	}
+
 	targets, err := st.ListPendingDispatchTargets(20)
 	if err != nil {
 		slog.Error("dispatch worker: list pending", "err", err)
@@ -29,12 +63,6 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 	}
 	n := len(targets)
 	slog.Info("dispatch worker: processing", "targets", n)
-
-	cfg, err := st.GetConfig()
-	if err != nil {
-		slog.Error("dispatch worker: get config", "err", err)
-		return n
-	}
 	waAccounts, err := st.ListWAAccounts()
 	if err != nil {
 		slog.Warn("dispatch worker: list WA accounts", "err", err)

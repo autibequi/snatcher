@@ -62,6 +62,8 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			wa_provider=:wa_provider, wa_base_url=:wa_base_url, wa_api_key=:wa_api_key,
 			wa_instance=:wa_instance, global_interval=:global_interval,
 			send_start_hour=:send_start_hour, send_end_hour=:send_end_hour,
+			dispatch_send_window_enabled=:dispatch_send_window_enabled,
+			dispatch_send_timezone=:dispatch_send_timezone,
 			ml_client_id=:ml_client_id, ml_client_secret=:ml_client_secret,
 			wa_group_prefix=:wa_group_prefix, alert_phone=:alert_phone,
 			use_short_links=:use_short_links, tg_enabled=:tg_enabled,
