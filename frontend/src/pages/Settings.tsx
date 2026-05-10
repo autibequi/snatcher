@@ -470,7 +470,7 @@ function LLMTab() {
       <div className="border border-accent/30 bg-accent/5 rounded-md p-3 flex items-start gap-3">
         <span className="text-base leading-none mt-0.5">🤵</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-fg">Automações com IA são geridas pelo Jonfrey</p>
+          <p className="text-sm font-medium text-fg">Fluxos com IA (Jonfrey) são configurados em Auto disparos</p>
           <p className="text-xs text-fg-3 mt-0.5">
             Auto-curadoria, ajuste de thresholds, auditoria de produtos e outras ações zero-touch ficam em{' '}
             <a href="/automations/jonfrey" className="text-accent hover:underline font-medium">Jonfrey</a>.

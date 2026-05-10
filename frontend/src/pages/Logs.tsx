@@ -540,7 +540,7 @@ export default function Logs() {
   const [items, setItems] = React.useState<Dispatch[]>([])
   const [selected, setSelected] = React.useState<Dispatch | null>(null)
 
-  /** Links tipo /logs?dispatchId=N (Composer, Automações, AutoMatch) abrem o painel deste disparo. */
+  /** Links tipo /logs?dispatchId=N (Composer, Auto disparos, AutoMatch) abrem o painel deste disparo. */
   const dispatchIdOpenRaw = params.get('dispatchId')
   const dispatchIdOpen = dispatchIdOpenRaw ? Number.parseInt(dispatchIdOpenRaw, 10) : NaN
   const { data: dispatchFromUrl } = useQuery({

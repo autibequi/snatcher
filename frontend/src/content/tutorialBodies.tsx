@@ -46,7 +46,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="2 · Canais e grupos">
         <Ul>
           <li>
-            Em <strong className="text-fg">Canais</strong> (Automações → Canais), crie ou escolha um canal e defina audiência/limites quando fizer sentido.
+            Em <strong className="text-fg">Canais</strong> (Auto disparos → Canais), crie ou escolha um canal e defina audiência/limites quando fizer sentido.
           </li>
           <li>
             Em <strong className="text-fg">Grupos</strong>, importe grupos da conta e associe-os ao canal — sem destino não há disparo.
@@ -61,10 +61,10 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li>Se usar marketplace, confira <strong className="text-fg">Afiliados</strong> para o link curto comissionar certo.</li>
         </Ul>
       </Sec>
-      <Sec title="4 · Automações (opcional)">
+      <Sec title="4 · Auto disparos (opcional)">
         <Ul>
           <li>
-            Em <strong className="text-fg">Automações</strong> e <strong className="text-fg">Jonfrey</strong> ative fluxos quando já dominares o envio manual.
+            Em <strong className="text-fg">Auto disparos</strong> e <strong className="text-fg">Jonfrey</strong> ative fluxos quando já dominares o envio manual.
           </li>
           <li>Threshold, cooldown e aprovações aparecem nestas telas — comece conservador.</li>
         </Ul>
@@ -81,7 +81,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li>
             O <strong className="text-fg">Dashboard</strong> resume fila de trabalho, contas conectadas e sinais rápidos para o dia.
           </li>
-          <li>Use como ponto de entrada: identifique pendências antes de ir a Automações ou Composer.</li>
+          <li>Use como ponto de entrada: identifique pendências antes de ir a Auto disparos ou Composer.</li>
         </Ul>
       </Sec>
       <Sec title="Boas práticas">
@@ -375,10 +375,10 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
             Há tabs separadas para <strong className="text-fg">Crawlers</strong>, <strong className="text-fg">Jonfrey</strong>, <strong className="text-fg">Matches</strong>, etc.
           </li>
           <li>
-            Na tab <strong className="text-fg">Jonfrey</strong>, a auditoria do assistente é a mesma que em <strong className="text-fg">Automações → Jonfrey</strong>.
+            Na tab <strong className="text-fg">Jonfrey</strong>, a auditoria do assistente é a mesma que em <strong className="text-fg">Auto disparos → Jonfrey</strong>.
           </li>
           <li>
-            Atalhos <code className="text-xs bg-surface-2 px-1 rounded">/logs?dispatchId=…</code> (ex.: a partir de Automações ou após compor) abrem o detalhe desse disparo.
+            Atalhos <code className="text-xs bg-surface-2 px-1 rounded">/logs?dispatchId=…</code> (ex.: a partir de Auto disparos ou após compor) abrem o detalhe desse disparo.
           </li>
         </Ul>
       </Sec>

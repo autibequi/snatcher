@@ -4,7 +4,7 @@ import React from 'react'
 export const OPERATIONAL_MANUAL_META = {
   title: 'Manual operacional',
   description:
-    'Do zero ao dia a dia: o que é o sistema, conceitos, primeiro envio, automações e resolução de problemas.',
+    'Do zero ao dia a dia: o que é o sistema, conceitos, primeiro envio, auto disparos e resolução de problemas.',
 } as const
 
 /**
@@ -62,7 +62,7 @@ export function OperationalManualContent() {
           </li>
           <li>
             O <strong className="text-fg">Dashboard</strong> resume o estado geral — começa por lá para ver se contas, filas ou alertas precisam de
-            atenção antes de afunilar em Crawlers ou Automações.
+            atenção antes de afunilar em Crawlers ou Auto disparos.
           </li>
         </ul>
       </section>
@@ -110,14 +110,14 @@ export function OperationalManualContent() {
             <strong className="text-fg">Catálogo</strong> — confirma que apareceram produtos. Se estiver vazio, volta ao passo anterior.
           </li>
           <li>
-            <strong className="text-fg">Automações → Canais</strong> — cria/edita um canal e associa audiência. Em <strong className="text-fg">Grupos</strong>, importa
+            <strong className="text-fg">Auto disparos → Canais</strong> — cria/edita um canal e associa audiência. Em <strong className="text-fg">Grupos</strong>, importa
             grupos da conta e vincula ao canal.
           </li>
           <li>
             <strong className="text-fg">Compor disparo</strong> — envia um teste manual a um grupo pequeno antes de ligar automações em escala.
           </li>
           <li>
-            Só depois: <strong className="text-fg">Automações</strong>, <strong className="text-fg">Jonfrey</strong> (IA) ou campanhas pagas — começa com limites
+            Só depois: <strong className="text-fg">Auto disparos</strong>, <strong className="text-fg">Jonfrey</strong> (IA) ou campanhas pagas — começa com limites
             conservadores (threshold, cooldown).
           </li>
         </ol>
@@ -132,7 +132,7 @@ export function OperationalManualContent() {
             <code className="text-xs bg-surface-2 px-1 rounded">WORKING</code> consoante o provedor — o importante é a sessão ativa para envio.
           </li>
           <li>
-            Em <strong className="text-fg">Automações → Canais</strong>, configure cada canal (grupos de destino, limites e, se usar, auto-match).
+            Em <strong className="text-fg">Auto disparos → Canais</strong>, configure cada canal (grupos de destino, limites e, se usar, auto-match).
           </li>
           <li>
             Em <strong className="text-fg">Grupos</strong>, importe grupos da conta WA e associe-os aos canais quando necessário.
@@ -156,10 +156,10 @@ export function OperationalManualContent() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-base font-semibold text-fg border-b border-border pb-2">7. Automações</h2>
+        <h2 className="text-base font-semibold text-fg border-b border-border pb-2">7. Auto disparos</h2>
         <ul className="list-disc pl-5 space-y-2">
           <li>
-            <strong className="text-fg">Automações</strong>: visão geral do auto-match, filas e histórico recente.
+            <strong className="text-fg">Auto disparos</strong>: visão geral do auto-match, filas e histórico recente.
           </li>
           <li>
             <strong className="text-fg">Por canal</strong>: threshold, máximo de disparos por ciclo e cooldown por canal.
@@ -168,7 +168,7 @@ export function OperationalManualContent() {
             <strong className="text-fg">Jonfrey</strong>: fluxos assistidos pela IA quando estiverem ativos para o teu workspace.
           </li>
           <li>
-            Disparos que exigem aprovação aparecem no indicador de pendentes na barra superior e na área de automações.
+            Disparos que exigem aprovação aparecem no indicador de pendentes na barra superior e na área de Auto disparos.
           </li>
         </ul>
       </section>

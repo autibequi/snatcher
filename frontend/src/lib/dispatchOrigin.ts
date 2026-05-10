@@ -1,4 +1,4 @@
-/** Rótulo PT-BR para `dispatches.composed_by` (Logs, Automações, export CSV). */
+/** Rótulo PT-BR para `dispatches.composed_by` (Logs, Auto disparos, export CSV). */
 export function dispatchOriginLabel(composedBy?: string): string {
   const v = (composedBy ?? '').trim()
   if (!v) return '—'

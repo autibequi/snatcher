@@ -51,7 +51,7 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
   },
   {
     slug: 'automations',
-    title: 'Automações',
+    title: 'Auto disparos',
     description: 'Piloto, prévia do match, aprovações e linha do tempo de disparos.',
     icon: '⚡',
     path: '/automations',

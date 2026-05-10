@@ -26,9 +26,9 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Automações',
+    label: 'Auto disparos',
     items: [
-      { to: '/automations', label: 'Automações', icon: '⚡' },
+      { to: '/automations', label: 'Visão geral', icon: '⚡' },
       { to: '/automations/channels', label: 'Canais', icon: '📢' },
       { to: '/automations/jonfrey', label: 'Jonfrey', icon: '🤵' },
     ],

@@ -678,7 +678,7 @@ export function TabOverview() {
 
   return (
     <div className="px-4 py-4 sm:p-6 space-y-5">
-      <h1 className="text-xl font-semibold text-fg">Automações</h1>
+      <h1 className="text-xl font-semibold text-fg">Auto disparos</h1>
       <FullAutoStatusBanner
         placement="automations"
         trailing={

@@ -6,9 +6,9 @@ import { apiClient } from '../lib/apiClient'
 /** Onde o banner aparece — define o texto “o que muda aqui” + links de contexto. */
 export type FullAutoBannerPlacement =
   | 'default'
-  /** Visão geral / KPI de automações (`/automations`) */
+  /** Visão geral / KPI de Auto disparos (`/automations`) */
   | 'automations'
-  /** Lista de automações por canal (`/automations/channels`) */
+  /** Lista por canal (`/automations/channels`) */
   | 'automations_channels'
   /** Página Jonfrey */
   | 'jonfrey'
@@ -32,11 +32,11 @@ function useJonfreyQueueBusy(): boolean {
 }
 
 export interface FullAutoStatusBannerProps {
-  /** jonfrey: link → Automações | automações: só texto (toggle no KPI) | default: links combinados */
+  /** jonfrey: link → Auto disparos | automations: só texto (toggle no KPI) | default: links combinados */
   placement?: FullAutoBannerPlacement
-  /** Por defeito: automações = sem toggle Full-auto; resto = com toggle */
+  /** Por defeito: página automations overview = sem toggle Full-auto; resto = com toggle */
   showToggle?: boolean
-  /** Conteúdo à direita (ex.: toggle Auto-pilot na página Automações). Quando definido em `automations`, substitui o espaço onde antes só havia texto. */
+  /** Conteúdo à direita (ex.: toggle Auto-pilot em Auto disparos). Quando definido em `automations`, substitui o espaço onde antes só havia texto. */
   trailing?: React.ReactNode
   /**
    * Em viewport &lt; sm: substitui `trailing` por este bloco (ex.só toggles compactos).
@@ -149,7 +149,7 @@ export function FullAutoStatusBanner({
       <span>
         Estado alinhado com{' '}
         <Link to="/automations" className="text-accent hover:underline font-medium">
-          Automações
+          Auto disparos
         </Link>{' '}
         e com o toggle acima.
       </span>
@@ -157,7 +157,7 @@ export function FullAutoStatusBanner({
       <span>
         Sincronizado com{' '}
         <Link to="/automations" className="text-accent hover:underline font-medium">
-          Automações
+          Auto disparos
         </Link>{' '}
         e{' '}
         <Link to="/automations/jonfrey" className="text-accent hover:underline font-medium">

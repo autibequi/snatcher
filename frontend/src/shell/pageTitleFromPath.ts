@@ -15,6 +15,7 @@ export function pageTitleFromPath(pathname: string): string {
   }
 
   const rules: [RegExp, string][] = [
+    [/^\/automations$/, 'Auto disparos'],
     [/^\/automations\/channels(?:\/|$)/, 'Canais'],
     [/^\/automations\/jonfrey(?:\/|$)/, 'Jonfrey'],
     [/^\/automations\/pending(?:\/|$)/, 'Pendências'],

@@ -153,7 +153,7 @@ function ChannelHistory({ channelId }: { channelId: string }) {
                 : 'Na fila do worker de entrega WA/TG — enviando automaticamente'}
             </p>
           </div>
-            <a href="/automations" className="text-xs text-accent hover:underline">Aprovar em Automações →</a>
+            <a href="/automations" className="text-xs text-accent hover:underline">Aprovar em Auto disparos →</a>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -335,7 +335,7 @@ export interface ChannelDetailInnerProps {
   channelId: string
   embedded?: boolean
   onClose?: () => void
-  /** Se true (ex.: drawer em Automações), permite editar limites/filtros aqui; na rota /channels/:id fica só leitura + link. */
+  /** Se true (ex.: drawer em Auto disparos), permite editar limites/filtros aqui; na rota /channels/:id fica só leitura + link. */
   editAutomation?: boolean
 }
 
@@ -880,7 +880,7 @@ export function ChannelDetailInner({ channelId, embedded, onClose, editAutomatio
                 <>
                   <p className="text-xs text-fg-3">
                     Produtos que não passam neste filtro nem entram na pontuação. Edite em{' '}
-                    <Link to="/automations/channels" className="text-accent hover:underline">Automações → Canais</Link>
+                    <Link to="/automations/channels" className="text-accent hover:underline">Auto disparos → Canais</Link>
                     {' '}(drawer do canal) ou use o atalho abaixo.
                   </p>
                   {!automationRow ? (
@@ -903,7 +903,7 @@ export function ChannelDetailInner({ channelId, embedded, onClose, editAutomatio
                     to="/automations/channels"
                     className="inline-flex text-sm font-medium text-accent hover:underline"
                   >
-                    Abrir Automações →
+                    Abrir Auto disparos →
                   </Link>
                 </>
               )}
@@ -1400,14 +1400,14 @@ export function ChannelDetailInner({ channelId, embedded, onClose, editAutomatio
                     <p className="text-sm font-semibold text-fg">Resumo da automação</p>
                     <p className="text-xs text-fg-3 mt-1">
                       Threshold, limites por ciclo do worker, cooldown, eventos e notificações são configurados na página{' '}
-                      <strong className="text-fg-2">Automações</strong> (abra um canal pelo drawer ou use o link).
+                      <strong className="text-fg-2">Auto disparos</strong> (abra um canal pelo drawer ou use o link).
                     </p>
                   </div>
                   <Link
                     to="/automations/channels"
                     className="shrink-0 text-sm font-medium text-accent hover:underline"
                   >
-                    Ir para Automações →
+                    Ir para Auto disparos →
                   </Link>
                 </div>
 
@@ -1417,7 +1417,7 @@ export function ChannelDetailInner({ channelId, embedded, onClose, editAutomatio
                   <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     <dt className="text-fg-2 flex items-center gap-1">
                       Automação ativa
-                      <TooltipIcon content="Interruptor principal do canal na lista de Automações." />
+                      <TooltipIcon content="Interruptor principal do canal na lista de Auto disparos." />
                     </dt>
                     <dd className="text-fg">{automationRow.enabled ? 'Sim' : 'Não'}</dd>
 
