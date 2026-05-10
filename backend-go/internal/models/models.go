@@ -229,6 +229,7 @@ type SearchTerm struct {
 	Sources       string    `db:"sources" json:"sources"`
 	Category      string    `db:"category" json:"category"`
 	Active        bool      `db:"active" json:"active"`
+	InboxMuted    bool      `db:"inbox_muted" json:"inbox_muted"`
 	CrawlInterval int       `db:"crawl_interval" json:"crawl_interval"`
 	LastCrawledAt NullTime  `db:"last_crawled_at" json:"last_crawled_at,omitempty"`
 	ResultCount   int       `db:"result_count" json:"result_count"`

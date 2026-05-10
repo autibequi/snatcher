@@ -25,6 +25,8 @@ interface SearchTerm {
   queries?: string
   sources?: string
   active: boolean
+  /** Silencia alertas do inbox do dashboard (Precisa de você) sem desativar o crawler */
+  inbox_muted?: boolean
   crawl_interval: number
   last_crawled_at?: string
   result_count: number
@@ -83,6 +85,7 @@ interface MarketplaceFormData {
   max_val: string
   crawl_interval: number
   active: boolean
+  inbox_muted: boolean
 }
 
 const defaultMarketplaceForm: MarketplaceFormData = {
@@ -93,6 +96,7 @@ const defaultMarketplaceForm: MarketplaceFormData = {
   max_val: '',
   crawl_interval: 60,
   active: true,
+  inbox_muted: false,
 }
 
 function CreateMarketplaceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -489,6 +493,7 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
       crawl_interval: term.crawl_interval ?? 60,
       sources: srcs,
       active: term.active ?? true,
+      inbox_muted: term.inbox_muted ?? false,
     })
   }, [term])
 
@@ -510,9 +515,14 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
         sources: form.sources.length > 0 ? form.sources.join(',') : 'all',
         category: term!.category || 'ecommerce',
         active: form.active,
+        inbox_muted: form.inbox_muted,
       }).then(r => r.data)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['search-terms'] }); onClose() },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['search-terms'] })
+      qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+      onClose()
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
 
@@ -595,6 +605,15 @@ function EditTermModal({ term, onClose }: { term: SearchTerm | null; onClose: ()
           </button>
           <span className="text-sm text-fg">Crawler ativo</span>
         </div>
+        <div className="flex items-start gap-3 rounded-md border border-border bg-surface-2/40 px-3 py-2">
+          <Switch checked={form.inbox_muted} onChange={v => setForm(f => ({ ...f, inbox_muted: v }))} />
+          <div>
+            <p className="text-sm text-fg">Silenciar alertas no dashboard</p>
+            <p className="text-xs text-fg-3 mt-0.5">
+              O crawler continua na lista; só deixa de aparecer em &quot;Precisa de você&quot; (útil para termos pausados ou com falha conhecida).
+            </p>
+          </div>
+        </div>
       </div>
     </Modal>
   )
@@ -625,9 +644,13 @@ function MarketplacesTab({ onNew, onSuggest }: { onNew: () => void; onSuggest: (
         category: term.category || 'ecommerce',
         crawl_interval: term.crawl_interval ?? 30,
         active,
+        inbox_muted: term.inbox_muted ?? false,
       }).then(r => r.data)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['search-terms'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['search-terms'] })
+      qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao atualizar'),
   })
 

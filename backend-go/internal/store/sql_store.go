@@ -547,9 +547,9 @@ func (s *SQLStore) GetSearchTerm(id int64) (models.SearchTerm, error) {
 func (s *SQLStore) CreateSearchTerm(t models.SearchTerm) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(`
-		INSERT INTO searchterm (query, queries, min_val, max_val, sources, category, active, crawl_interval)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval,
+		INSERT INTO searchterm (query, queries, min_val, max_val, sources, category, active, crawl_interval, inbox_muted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval, t.InboxMuted,
 	).Scan(&id)
 	return id, err
 }
@@ -557,9 +557,9 @@ func (s *SQLStore) CreateSearchTerm(t models.SearchTerm) (int64, error) {
 func (s *SQLStore) UpdateSearchTerm(t models.SearchTerm) error {
 	_, err := s.db.Exec(`
 		UPDATE searchterm SET query=$1, queries=$2, min_val=$3, max_val=$4,
-			sources=$5, category=$6, active=$7, crawl_interval=$8
-		WHERE id = $9`,
-		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval, t.ID,
+			sources=$5, category=$6, active=$7, crawl_interval=$8, inbox_muted=$9
+		WHERE id = $10`,
+		t.Query, t.Queries, t.MinVal, t.MaxVal, t.Sources, t.Category, t.Active, t.CrawlInterval, t.InboxMuted, t.ID,
 	)
 	return err
 }

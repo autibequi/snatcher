@@ -25,6 +25,7 @@ type searchTermRequest struct {
 	Sources       string   `json:"sources"`
 	Category      string   `json:"category"           validate:"omitempty,oneof=ecommerce cdkey"`
 	Active        *bool    `json:"active"`
+	InboxMuted    *bool    `json:"inbox_muted"`
 	CrawlInterval int      `json:"crawl_interval"`
 }
 
@@ -55,6 +56,9 @@ func (req searchTermRequest) toModel() models.SearchTerm {
 		t.Active = *req.Active
 	} else {
 		t.Active = true
+	}
+	if req.InboxMuted != nil {
+		t.InboxMuted = *req.InboxMuted
 	}
 	return t
 }
@@ -145,6 +149,11 @@ func (h *SearchTermsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	existing, err := h.store.GetSearchTerm(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
 	var req searchTermRequest
 	if err := decodeAndValidate(r, &req); err != nil {
 		writeValidationErr(w, err)
@@ -152,6 +161,9 @@ func (h *SearchTermsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	t := req.toModel()
 	t.ID = id
+	if req.InboxMuted == nil {
+		t.InboxMuted = existing.InboxMuted
+	}
 	if err := h.store.UpdateSearchTerm(t); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

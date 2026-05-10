@@ -235,6 +235,7 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 	// H1: erros consecutivos (≥2 das últimas 3 execuções falharam) → critico
 	// H2: overdue (não executa há >2× o intervalo esperado) → atencao
 	// H3: rodou mas sem resultados → atencao
+	// Ignora: crawlers desativados (não entram no ciclo) e os marcados inbox_muted (lista “problemáticos” sem ruído no dashboard).
 	terms, _ := h.store.ListSearchTerms()
 
 	type consRow struct {
@@ -264,7 +265,7 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	for _, t := range terms {
-		if !t.Active {
+		if !t.Active || t.InboxMuted {
 			continue
 		}
 		interval := t.CrawlInterval
