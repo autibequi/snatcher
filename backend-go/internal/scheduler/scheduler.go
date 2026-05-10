@@ -92,6 +92,18 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Anúncios recorrentes (schedule_cron em tabela ads)
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(1*time.Minute),
+			gocron.NewTask(func() { RunAdsWorker(ctx, sc.storeRef) }),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Job semanal de clusters (segunda-feira 03:00 UTC)
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
