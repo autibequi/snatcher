@@ -121,6 +121,13 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		affiliatePrograms = nil
 	}
 
+	missingOfferURL := 0
+	for _, p := range products {
+		if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
+			missingOfferURL++
+		}
+	}
+
 	sentByChannel := make(map[int64]int, len(channelsByID))
 	for _, p := range products {
 		input := match.ProductInput{
@@ -329,7 +336,11 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 		nDisp += v
 	}
 	if nDisp == 0 {
-		slog.Info("auto match: cycle finished — no dispatches (threshold, cooldown, saturated groups, filters or missing offer URL)")
+		slog.Info("auto match: cycle finished — no dispatches",
+			"products_evaluated", len(products),
+			"products_missing_offer_url", missingOfferURL,
+			"also_blocks", "score<threshold, cooldown, channel filters, group queue saturation, no active WA groups",
+		)
 	} else {
 		slog.Info("auto match: cycle finished", "dispatches_created", nDisp)
 	}
