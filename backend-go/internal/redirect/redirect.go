@@ -18,6 +18,8 @@ import (
 const (
 	productTTL = 1 * time.Hour
 	configTTL  = 5 * time.Minute
+	// ProductRedirectCacheMaxAge — TTL para Cache-Control / CDN-Cache-Control em redirects de produto (/r/, /v/).
+	ProductRedirectCacheMaxAge = 7 * 24 * 3600 // 7 dias
 )
 
 type productEntry struct {
@@ -40,6 +42,14 @@ type Redirector struct {
 
 func New(db *sqlx.DB, st store.Store) *Redirector {
 	return &Redirector{db: db, store: st}
+}
+
+// SetProductRedirectCacheHeaders — TTL alinhado à CDN (ex.: Cloudflare respeita CDN-Cache-Control na edge).
+// Nota: cache de redirect na edge reduz round-trips ao origin e pode afetar contagens de clique se a CDN servir a resposta em cache.
+func SetProductRedirectCacheHeaders(h http.Header) {
+	v := fmt.Sprintf("public, max-age=%d", ProductRedirectCacheMaxAge)
+	h.Set("Cache-Control", v)
+	h.Set("CDN-Cache-Control", v)
 }
 
 func (rd *Redirector) Prewarm() {
@@ -104,8 +114,7 @@ func (rd *Redirector) Handler() http.HandlerFunc {
 		go rd.logClick(r, shortID)
 
 		h := w.Header()
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-		h.Set("CDN-Cache-Control", "public, max-age=31536000")
+		SetProductRedirectCacheHeaders(h)
 		h.Set("Location", dest)
 		w.WriteHeader(http.StatusMovedPermanently)
 	}

@@ -18,7 +18,9 @@ export function GtmLoader() {
         const id = r.data?.gtm_container_id?.trim()
         if (cancelled || !id) return
         injectGoogleTagManager(id)
-        setGtmReady(true)
+        if (typeof window !== 'undefined' && window.__snatcherGtmLoaded === id) {
+          setGtmReady(true)
+        }
       })
       .catch(() => {})
     return () => {
