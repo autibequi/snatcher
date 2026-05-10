@@ -38,6 +38,11 @@ export interface FullAutoStatusBannerProps {
   showToggle?: boolean
   /** Conteúdo à direita (ex.: toggle Auto-pilot na página Automações). Quando definido em `automations`, substitui o espaço onde antes só havia texto. */
   trailing?: React.ReactNode
+  /**
+   * Em viewport &lt; sm: substitui `trailing` por este bloco (ex.só toggles compactos).
+   * Sem isto, em mobile esconde-se o texto do banner mas `trailing` grande ainda aparecia — má UX.
+   */
+  trailingCompact?: React.ReactNode
   /** Se omitido, calcula-se pela fila de trabalho (Jonfrey em execução) */
   queueBusy?: boolean
   className?: string
@@ -51,6 +56,7 @@ export function FullAutoStatusBanner({
   placement = 'default',
   showToggle,
   trailing,
+  trailingCompact,
   queueBusy: queueBusyProp,
   className = '',
 }: FullAutoStatusBannerProps) {
@@ -161,14 +167,19 @@ export function FullAutoStatusBanner({
       </span>
     )
 
+  const mobileSummary = fullAutoMode ? 'Full-auto ligado' : 'Full-auto desligado'
+
   return (
     <div
-      className={`flex items-start gap-3 border rounded-md p-4 ${
+      className={`flex flex-row flex-wrap sm:flex-nowrap items-center sm:items-start gap-2 sm:gap-3 border rounded-md p-2 sm:p-4 ${
         fullAutoMode ? 'border-success/40 bg-success/5' : 'border-warning/40 bg-warning/5'
       } ${className}`}
+      title={mobileSummary}
     >
-      <span className="text-base leading-none mt-0.5">{fullAutoMode ? '✅' : '⚠️'}</span>
-      <div className="flex-1 min-w-0">
+      <span className="hidden sm:inline-block text-base leading-none mt-0.5 shrink-0" aria-hidden>
+        {fullAutoMode ? '✅' : '⚠️'}
+      </span>
+      <div className="hidden sm:block flex-1 min-w-0">
         <p className={`text-sm font-semibold ${fullAutoMode ? 'text-success' : 'text-fg'}`}>
           Full-auto: {fullAutoMode ? 'ATIVO' : 'desligado (modo manual)'}
         </p>
@@ -179,20 +190,34 @@ export function FullAutoStatusBanner({
         </p>
         <p className="text-xs text-fg-3 mt-1">{syncLine}</p>
       </div>
-      {trailing ? <div className="flex-shrink-0 flex flex-col items-end gap-2">{trailing}</div> : null}
+      {trailing ? (
+        <>
+          <div
+            className={`flex-shrink-0 flex flex-col items-end gap-2 min-w-0 ${trailingCompact ? 'hidden sm:flex' : 'flex'} ${!trailingCompact ? 'max-sm:w-full max-sm:items-stretch' : ''}`}
+          >
+            {trailing}
+          </div>
+          {trailingCompact ? (
+            <div className="flex sm:hidden flex-shrink-0 items-center justify-end gap-2 ml-auto w-full sm:w-auto">
+              {trailingCompact}
+            </div>
+          ) : null}
+        </>
+      ) : null}
       {showToggleResolved ? (
         <button
           type="button"
           disabled={toggleMut.isPending || queueBusy}
-          title={queueBusy ? 'Aguarde a fila Jonfrey terminar' : undefined}
+          title={queueBusy ? 'Aguarde a fila Jonfrey terminar' : mobileSummary}
+          aria-label={mobileSummary}
           onClick={() => toggleMut.mutate(!fullAutoMode)}
-          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${
+          className={`relative rounded-full transition-colors flex-shrink-0 mt-0 sm:mt-0.5 w-9 h-5 sm:w-11 sm:h-6 ${
             fullAutoMode ? 'bg-success' : 'bg-border'
           } disabled:opacity-50`}
         >
           <span
-            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-              fullAutoMode ? 'translate-x-5' : 'translate-x-0'
+            className={`absolute top-0.5 left-0.5 bg-white rounded-full shadow transition-transform w-4 h-4 sm:w-5 sm:h-5 ${
+              fullAutoMode ? 'translate-x-4 sm:translate-x-5' : 'translate-x-0'
             }`}
           />
         </button>

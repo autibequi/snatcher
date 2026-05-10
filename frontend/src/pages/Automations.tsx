@@ -563,6 +563,12 @@ export function TabOverview() {
     else setSelected(new Set(pendingList.map(i => i.id)))
   }
 
+  const flipPilotMaster = React.useCallback(async () => {
+    const next = !fullyEnabled
+    await toggleMut.mutateAsync({ enabled: next })
+    if (next) await toggleFullAuto.mutateAsync(true)
+  }, [fullyEnabled, toggleMut, toggleFullAuto])
+
   const renderLogRow = (log: AutoMatchLog) => {
     const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
     const groupsTitle = groups.length > 0 ? groups.join(', ') : undefined
@@ -611,11 +617,14 @@ export function TabOverview() {
                 <button
                   type="button"
                   disabled={toggleMut.isPending || toggleFullAuto.isPending}
-                  onClick={async () => {
-                    const next = !fullyEnabled
-                    await toggleMut.mutateAsync({ enabled: next })
-                    if (next) await toggleFullAuto.mutateAsync(true)
-                  }}
+                  onClick={() => flipPilotMaster()}
+                  aria-label={
+                    fullyEnabled && fullAutoMode
+                      ? 'Auto-pilot ativo — enviando'
+                      : fullyEnabled
+                        ? 'Auto-pilot ativo — aguardando aprovação'
+                        : 'Auto-pilot pausado'
+                  }
                   className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
                 >
                   <span
@@ -634,6 +643,40 @@ export function TabOverview() {
                 </button>
               )}
             </div>
+          </div>
+        }
+        trailingCompact={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={toggleMut.isPending || toggleFullAuto.isPending}
+              onClick={() => flipPilotMaster()}
+              aria-label={
+                fullyEnabled && fullAutoMode
+                  ? 'Auto-pilot ativo'
+                  : fullyEnabled
+                    ? 'Auto-pilot — aguardando aprovação'
+                    : 'Auto-pilot pausado'
+              }
+              title="Auto-pilot (match + Jonfrey)"
+              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+              />
+            </button>
+            {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
+              <button
+                type="button"
+                disabled={approveAllMut.isPending}
+                onClick={() => approveAllMut.mutate()}
+                title={approveAllMut.isPending ? 'Enviando…' : `Enviar ${pendingCount} dispatches pendentes`}
+                aria-label={approveAllMut.isPending ? 'Enviando pendentes' : `Enviar ${pendingCount} pendentes`}
+                className="min-h-[2rem] min-w-[2rem] rounded-full bg-accent text-white text-xs font-semibold px-2 py-1 hover:bg-accent/90 disabled:opacity-50 shadow-sm"
+              >
+                {approveAllMut.isPending ? '…' : pendingCount > 99 ? '99+' : pendingCount}
+              </button>
+            )}
           </div>
         }
       />
