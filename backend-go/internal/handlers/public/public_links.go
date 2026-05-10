@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/invitelinks"
+	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -98,6 +99,10 @@ func (h *PublicLinksResolver) Resolve(w http.ResponseWriter, r *http.Request) {
 	url := invite
 	if group.Platform == "whatsapp" {
 		url = invitelinks.NormalizeWhatsAppInvite(url)
+	}
+
+	if redirect.WriteHTMLRedirectWithGTM(w, redirect.GTMContainerID(h.store), url) {
+		return
 	}
 	http.Redirect(w, r, url, http.StatusFound)
 }

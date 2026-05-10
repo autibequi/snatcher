@@ -18,6 +18,7 @@ import (
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
@@ -513,7 +514,45 @@ func (h *DispatchHandler) ApproveBatch(w http.ResponseWriter, r *http.Request) {
 // Executa uma passagem imediata do mesmo worker que o cron (~15s): envia até N targets
 // pending na Evolution. Não cria dispatches novos — só drena a fila já em "queued".
 func (h *DispatchHandler) ProcessQueueNow(w http.ResponseWriter, r *http.Request) {
+	var pendQueuedJoin int
+	var pendApproval int
+	_ = h.db.Get(&pendQueuedJoin, `
+		SELECT COUNT(*) FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		WHERE dt.status = 'pending' AND d.status IN ('queued', 'sending')
+		  AND (d.scheduled_for IS NULL OR d.scheduled_for <= now())`)
+	_ = h.db.Get(&pendApproval, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
+	cfg, cfgErr := h.store.GetConfig()
+	fullAuto := cfgErr == nil && cfg.FullAutoMode
+	sendWin := true
+	if cfgErr == nil {
+		sendWin = scheduler.InDispatchSendWindow(cfg, time.Now())
+	}
+	// #region agent log
+	debugagent.Write("H1", "dispatches.go:ProcessQueueNow", "queue_snapshot_pre_tick", map[string]any{
+		"pending_targets_join_queued_sending": pendQueuedJoin,
+		"dispatches_pending_approval":          pendApproval,
+		"full_auto_mode":                       fullAuto,
+		"in_dispatch_send_window":              sendWin,
+		"cfg_err":                              cfgErr != nil,
+	}, "")
+	// #endregion
+
 	n := scheduler.RunDispatchWorker(r.Context(), h.store)
+
+	// #region agent log
+	debugagent.Write("H4", "dispatches.go:ProcessQueueNow", "after_run_dispatch_worker", map[string]any{
+		"batch_size": n,
+	}, "")
+	// #endregion
+
+	slog.Info("[dbg_dispatch] process-queue-now",
+		"batch_size", n,
+		"pending_join", pendQueuedJoin,
+		"pending_approval_rows", pendApproval,
+		"full_auto", fullAuto,
+		"send_window_ok", sendWin)
+
 	msg := "tick de envio executado"
 	if n == 0 {
 		msg = "fila de envio vazia: não há dispatch_targets pending ligados a dispatches em status queued/sending (ou agendados para o futuro). Aprovar pending_approval → queued antes; este endpoint não cria envios, só drena a fila"

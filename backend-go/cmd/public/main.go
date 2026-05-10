@@ -156,7 +156,11 @@ func publicLinkHandler(st store.Store) http.HandlerFunc {
 		targets, _ := st.ListChannelTargets(link.ChannelID)
 		for _, t := range targets {
 			if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
-				http.Redirect(w, r, t.InviteURL.String, http.StatusFound)
+				dest := t.InviteURL.String
+				if redirect.WriteHTMLRedirectWithGTM(w, redirect.GTMContainerID(st), dest) {
+					return
+				}
+				http.Redirect(w, r, dest, http.StatusFound)
 				return
 			}
 		}

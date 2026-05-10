@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
@@ -37,6 +38,11 @@ func inDispatchSendWindow(cfg models.AppConfig, now time.Time) bool {
 	return h >= start && h < end
 }
 
+// InDispatchSendWindow exportado para handlers/admin e diagnóstico (mesma regra do worker).
+func InDispatchSendWindow(cfg models.AppConfig, now time.Time) bool {
+	return inDispatchSendWindow(cfg, now)
+}
+
 // RunDispatchWorker processa dispatch_targets pendentes chamando a Evolution API.
 // Deve ser chamado periodicamente pelo scheduler.
 // Retorna quantos targets foram lidos da fila neste ciclo (0 = fila vazia ou erro ao listar).
@@ -46,7 +52,17 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		slog.Error("dispatch worker: get config", "err", err)
 		return 0
 	}
-	if !inDispatchSendWindow(cfg, time.Now()) {
+	winOK := inDispatchSendWindow(cfg, time.Now())
+	// #region agent log
+	debugagent.Write("H2", "dispatch_worker.go:RunDispatchWorker", "pre_tick", map[string]any{
+		"in_send_window":           winOK,
+		"dispatch_window_enabled": cfg.DispatchSendWindowEnabled,
+		"send_tz":                 cfg.DispatchSendTimezone,
+		"send_start_h":            cfg.SendStartHour,
+		"send_end_h":              cfg.SendEndHour,
+	}, "")
+	// #endregion
+	if !winOK {
 		slog.Info("dispatch worker: fora da janela de envio — mensagens ficam na fila até o horário permitido",
 			"tz", cfg.DispatchSendTimezone,
 			"start_h", cfg.SendStartHour, "end_h", cfg.SendEndHour)
@@ -58,7 +74,13 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		slog.Error("dispatch worker: list pending", "err", err)
 		return 0
 	}
+	// #region agent log
+	debugagent.Write("H1", "dispatch_worker.go:RunDispatchWorker", "pending_targets_fetched", map[string]any{
+		"count": len(targets),
+	}, "")
+	// #endregion
 	if len(targets) == 0 {
+		slog.Info("[dbg_dispatch] worker tick: nenhum dispatch_target pending ligado a dispatch queued/sending (ou agendado futuro)")
 		return 0
 	}
 	n := len(targets)

@@ -113,6 +113,12 @@ func (rd *Redirector) Handler() http.HandlerFunc {
 		// Log assíncrono — não bloqueia o 301
 		go rd.logClick(r, shortID)
 
+		// Com GTM configurado: HTML estático (Tag Assistant + dataLayer) + redirect via JS;
+		// sem GTM: 301 com cache de edge (comportamento anterior).
+		if WriteHTMLRedirectWithGTM(w, GTMContainerID(rd.store), dest) {
+			return
+		}
+
 		h := w.Header()
 		SetProductRedirectCacheHeaders(h)
 		h.Set("Location", dest)

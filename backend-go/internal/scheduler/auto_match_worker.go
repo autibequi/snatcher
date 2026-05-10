@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
+	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -32,6 +33,15 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	}
 
 	now := time.Now()
+
+	// #region agent log
+	debugagent.Write("H3", "auto_match_worker.go:RunAutoMatchWorker", "cycle_start", map[string]any{
+		"full_auto_mode":          cfg.FullAutoMode,
+		"auto_match_threshold":    cfg.AutoMatchThreshold,
+		"auto_match_only_curated": cfg.AutoMatchOnlyCurated,
+		"auto_match_max_per_run":  cfg.AutoMatchMaxPerRun,
+	}, "")
+	// #endregion
 
 	products, err := st.ListCatalogProducts(100, 0, false) // false = só ativos (inactive=false)
 	if err != nil {
@@ -129,6 +139,19 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 	}
 
 	sentByChannel := make(map[int64]int, len(channelsByID))
+	skip := struct {
+		NoAutoForScore     int
+		ChannelFilter      int
+		BelowThreshold     int
+		MaxPerRunSat       int
+		Cooldown           int
+		ListGroupsErr      int
+		NoActiveGroups     int
+		AllGroupsSaturated int
+		MarshalErr         int
+		MissingOfferURL    int
+		CreateDispatchErr  int
+	}{}
 	for _, p := range products {
 		input := match.ProductInput{
 			Name:     p.CanonicalName,
@@ -153,6 +176,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			// Resolver threshold/maxPerRun/cooldown específicos do canal
 			auto, ok := automationsByChannelID[s.ChannelID]
 			if !ok {
+				skip.NoAutoForScore++
 				continue
 			}
 
@@ -187,13 +211,16 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				maxPrice = auto.MaxPrice.Float64
 			}
 			if !match.MatchesChannelFilter(input, nullFloat(p.LowestPrice), auto.MatchType, matchValue, maxPrice) {
+				skip.ChannelFilter++
 				continue
 			}
 
 			if s.Value < threshold {
+				skip.BelowThreshold++
 				continue // threshold é por canal — não pode break, outros canais podem ter threshold menor
 			}
 			if sentByChannel[s.ChannelID] >= maxPerRun {
+				skip.MaxPerRunSat++
 				continue // canal saturado neste ciclo, mas outros canais ainda podem receber
 			}
 
@@ -207,16 +234,19 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				}
 			}
 			if alreadySent {
+				skip.Cooldown++
 				continue
 			}
 
 			// Buscar grupos do canal
 			groups, err := st.ListRedesignGroups(s.ChannelID, "", "active")
 			if err != nil {
+				skip.ListGroupsErr++
 				slog.Warn("auto match: list groups", "channel_id", s.ChannelID, "channel", s.ChannelName, "product_id", p.ID, "err", err)
 				continue
 			}
 			if len(groups) == 0 {
+				skip.NoActiveGroups++
 				slog.Warn("auto match: canal sem grupos ativos", "channel_id", s.ChannelID, "channel", s.ChannelName, "product_id", p.ID)
 				continue
 			}
@@ -231,6 +261,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 				pendingByGroup[g.ID]++ // counta o que vamos criar
 			}
 			if len(targets) == 0 {
+				skip.AllGroupsSaturated++
 				continue // todos os grupos saturados, skip este produto/canal
 			}
 
@@ -241,11 +272,13 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			}
 			msgBytes, jerr := json.Marshal(msgMap)
 			if jerr != nil {
+				skip.MarshalErr++
 				slog.Error("auto match: marshal message JSON", "product_id", p.ID, "channel_id", s.ChannelID, "err", jerr)
 				continue
 			}
 
 			if !p.LowestPriceURL.Valid || p.LowestPriceURL.String == "" {
+				skip.MissingOfferURL++
 				continue
 			}
 			src := ""
@@ -297,6 +330,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 
 			dispatchID, err := st.CreateDispatch(d, targets)
 			if err != nil {
+				skip.CreateDispatchErr++
 				slog.Error("auto match: create dispatch", "err", err)
 				continue
 			}
@@ -340,7 +374,25 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 			"products_evaluated", len(products),
 			"products_missing_offer_url", missingOfferURL,
 			"also_blocks", "score<threshold, cooldown, channel filters, group queue saturation, no active WA groups",
+			"skip_no_auto", skip.NoAutoForScore,
+			"skip_channel_filter", skip.ChannelFilter,
+			"skip_below_threshold", skip.BelowThreshold,
+			"skip_max_per_run", skip.MaxPerRunSat,
+			"skip_cooldown", skip.Cooldown,
+			"skip_list_groups_err", skip.ListGroupsErr,
+			"skip_no_groups", skip.NoActiveGroups,
+			"skip_groups_saturated", skip.AllGroupsSaturated,
+			"skip_marshal", skip.MarshalErr,
+			"skip_missing_url_inner", skip.MissingOfferURL,
+			"skip_create_dispatch", skip.CreateDispatchErr,
 		)
+		// #region agent log
+		debugagent.Write("H3", "auto_match_worker.go:RunAutoMatchWorker", "cycle_no_dispatches", map[string]any{
+			"products_evaluated":       len(products),
+			"missing_offer_url_precalc": missingOfferURL,
+			"skip":                     skip,
+		}, "")
+		// #endregion
 	} else {
 		slog.Info("auto match: cycle finished", "dispatches_created", nDisp)
 	}
