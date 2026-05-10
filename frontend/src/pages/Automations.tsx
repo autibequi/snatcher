@@ -356,12 +356,18 @@ export function TabOverview() {
       curation_heuristic_interval_seconds: number
       curation_heuristic_batch_size: number
     }>) => {
-      const tasks: Promise<unknown>[] = [apiClient.post('/api/auto-match/toggle', payload)]
+      const r = await apiClient.post('/api/auto-match/toggle', payload)
       if (payload.enabled !== undefined) {
-        tasks.push(apiClient.put('/api/jonfrey/config', { enabled: payload.enabled }).catch(() => null))
+        try {
+          await apiClient.put('/api/jonfrey/config', { enabled: payload.enabled })
+        } catch (err: any) {
+          const msg = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+          alert(
+            `Auto-match foi salvo, mas o Jonfrey não sincronizou (${msg}). O interruptor mostra o auto-match; ligue o Jonfrey em Configurações ou tente de novo.`,
+          )
+        }
       }
-      const [r] = await Promise.all(tasks)
-      return (r as any)?.data
+      return r.data
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['auto-match'] })
@@ -427,7 +433,10 @@ export function TabOverview() {
   const h24ago = now - 24 * 3600 * 1000
   const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
-  const fullyEnabled = enabled && (jonfreyConfig?.enabled ?? false)
+  /** Jonfrey (curadoria / fila) — precisa estar on para o “pipeline” completo. */
+  const jonfreyOn = jonfreyConfig?.enabled ?? false
+  /** Match + Jonfrey ok — usado para aprovações / estado “operacional”. */
+  const pipelineReady = enabled && jonfreyOn
 
   const nextAutoMatchMs = React.useMemo(
     () =>
@@ -609,10 +618,10 @@ export function TabOverview() {
   }
 
   const flipPilotMaster = React.useCallback(async () => {
-    const next = !fullyEnabled
+    const next = !enabled
     await toggleMut.mutateAsync({ enabled: next })
     if (next) await toggleFullAuto.mutateAsync(true)
-  }, [fullyEnabled, toggleMut, toggleFullAuto])
+  }, [enabled, toggleMut, toggleFullAuto])
 
   const renderLogRow = (log: AutoMatchLog) => {
     const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
@@ -656,16 +665,36 @@ export function TabOverview() {
           <div className="flex flex-col items-end gap-2">
             <div
               className={`rounded-md border p-3 shadow-card transition-colors min-w-[14rem] ${
-                fullyEnabled && fullAutoMode ? 'border-success/40 bg-surface' : fullyEnabled ? 'border-warning/40 bg-surface' : 'border-border bg-surface'
+                !enabled
+                  ? 'border-border bg-surface'
+                  : !pipelineReady
+                    ? 'border-warning/40 bg-surface'
+                    : fullAutoMode
+                      ? 'border-success/40 bg-surface'
+                      : 'border-warning/40 bg-surface'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 text-right">
                   <p className="text-[10px] text-fg-3 font-medium uppercase tracking-wide">Auto-pilot</p>
                   <p
-                    className={`text-xs font-semibold mt-0.5 leading-snug ${fullyEnabled && fullAutoMode ? 'text-success' : fullyEnabled ? 'text-warning' : 'text-fg-2'}`}
+                    className={`text-xs font-semibold mt-0.5 leading-snug ${
+                      !enabled
+                        ? 'text-fg-2'
+                        : !pipelineReady
+                          ? 'text-warning'
+                          : fullAutoMode
+                            ? 'text-success'
+                            : 'text-warning'
+                    }`}
                   >
-                    {fullyEnabled && fullAutoMode ? 'Ativo · enviando' : fullyEnabled ? 'Ativo · aguardando aprovação' : 'Pausado'}
+                    {!enabled
+                      ? 'Pausado'
+                      : !pipelineReady
+                        ? 'Match ligado · Jonfrey pausado'
+                        : fullAutoMode
+                          ? 'Ativo · enviando'
+                          : 'Ativo · aguardando aprovação'}
                   </p>
                 </div>
                 <button
@@ -673,20 +702,23 @@ export function TabOverview() {
                   disabled={toggleMut.isPending || toggleFullAuto.isPending}
                   onClick={() => flipPilotMaster()}
                   aria-label={
-                    fullyEnabled && fullAutoMode
-                      ? 'Auto-pilot ativo — enviando'
-                      : fullyEnabled
-                        ? 'Auto-pilot ativo — aguardando aprovação'
-                        : 'Auto-pilot pausado'
+                    !enabled
+                      ? 'Auto-pilot pausado'
+                      : !pipelineReady
+                        ? 'Auto-match ligado — Jonfrey pausado'
+                        : fullAutoMode
+                          ? 'Auto-pilot ativo — enviando'
+                          : 'Auto-pilot ativo — aguardando aprovação'
                   }
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
+                  title="Liga/desliga o master do auto-match (GET /api/auto-match enabled). Tenta sincronizar o Jonfrey no mesmo clique."
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${enabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
                 >
                   <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`}
                   />
                 </button>
               </div>
-              {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
+              {pipelineReady && (pendingCount ?? 0) > 0 && !fullAutoMode && (
                 <button
                   type="button"
                   disabled={approveAllMut.isPending}
@@ -706,20 +738,22 @@ export function TabOverview() {
               disabled={toggleMut.isPending || toggleFullAuto.isPending}
               onClick={() => flipPilotMaster()}
               aria-label={
-                fullyEnabled && fullAutoMode
-                  ? 'Auto-pilot ativo'
-                  : fullyEnabled
-                    ? 'Auto-pilot — aguardando aprovação'
-                    : 'Auto-pilot pausado'
+                !enabled
+                  ? 'Auto-pilot pausado'
+                  : !pipelineReady
+                    ? 'Auto-match ligado — Jonfrey pausado'
+                    : fullAutoMode
+                      ? 'Auto-pilot ativo'
+                      : 'Auto-pilot — aguardando aprovação'
               }
-              title="Auto-pilot (match + Jonfrey)"
-              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${fullyEnabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
+              title="Auto-pilot (master auto-match; sincroniza Jonfrey quando possível)"
+              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${enabled ? 'bg-accent' : 'bg-border'} disabled:opacity-50`}
             >
               <span
-                className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${fullyEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+                className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`}
               />
             </button>
-            {fullyEnabled && (pendingCount ?? 0) > 0 && !fullAutoMode && (
+            {pipelineReady && (pendingCount ?? 0) > 0 && !fullAutoMode && (
               <button
                 type="button"
                 disabled={approveAllMut.isPending}
