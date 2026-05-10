@@ -90,7 +90,7 @@ func main() {
 
 		// ── Redirects ─────────────────────────────────────────────────────────
 		r.With(middleware.RateLimit(120.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-		r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st))
+		r.With(middleware.RateLimit(120.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st, rd))
 		r.Get("/g/{slug}", publicLinkHandler(st))
 		r.Get("/join/{slug}", func(w http.ResponseWriter, req *http.Request) {
 			slug := chi.URLParam(req, "slug")
