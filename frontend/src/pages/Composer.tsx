@@ -175,7 +175,7 @@ export default function Composer() {
   )
   const realPriceStr = realPrice > 0 ? `R$ ${Number(realPrice).toFixed(2)}` : 'R$ --'
 
-  // Template default genérico com variáveis — só preenche se vazio e sem draft
+  // Boilerplate WhatsApp: negrito/itálico com *…* ; preços e link são variáveis ou substituídos ao vivo
   const DEFAULT_TEMPLATE = `🔥 OFERTA RELÂMPAGO
 
 *{produto}*
@@ -648,7 +648,7 @@ export default function Composer() {
                   onChange={e => setText(e.target.value)}
                   rows={6}
                   className="w-full resize-none text-sm text-fg bg-transparent outline-none placeholder:text-fg-3"
-                  placeholder={'🔥 OFERTA RELÂMPAGO\n\n*{produto}*\n\nDe ~{de}~ por *{por}*\n{desconto} OFF\n{link}'}
+                  placeholder={`🔥 OFERTA RELÂMPAGO\n\n*{produto}*\n\n💰 De ~{de}~ por *{por}*\n🏷️ {desconto} OFF\n\n👉 {link}`}
                 />
               )}
               {/* Imagem do produto — em cima */}
