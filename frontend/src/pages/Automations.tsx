@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
+import { dispatchOriginLabel } from '../lib/dispatchOrigin'
 import { KpiCard, Skeleton, Switch, Badge, TooltipIcon, Button } from '../components/ui'
 import { FullAutoStatusBanner } from '../components/FullAutoStatusBanner'
 import { ChannelDetailInner } from './ChannelDetail'
@@ -45,6 +46,8 @@ interface AutoMatchLog {
   product_name?: string
   channel_name?: string
   group_names?: string // CSV dos grupos que receberam
+  /** dispatches.composed_by — manual, auto-match, api, … */
+  composed_by?: string
 }
 
 interface GlobalPreviewItem {
@@ -651,6 +654,11 @@ export function TabOverview() {
             {log.product_name || `Produto #${log.product_id}`}
           </p>
           <p className="text-[10px] text-fg-3 truncate">{log.channel_name ?? '—'}</p>
+          <p className="text-[10px] text-fg-3 mt-0.5">
+            <span className="inline-block rounded px-1 py-0.5 bg-surface-2 border border-border/60 text-fg-2">
+              {dispatchOriginLabel(log.composed_by)}
+            </span>
+          </p>
         </div>
         <div className="text-right shrink-0">
           <p className="text-[10px] font-medium text-success">Enviado</p>
@@ -828,7 +836,7 @@ export function TabOverview() {
 
         {/* Disparos 24h */}
         <KpiCard label="Dispatches 24h" value={dispatches24h} subtitle="auto-match"
-          tooltip="Contagem: composed_by=auto-match nas últimas 24h. Timeline: mesma janela pela data do dispatch; inclui linha em auto_match_logs mesmo se o rótulo no dispatch estiver inconsistente. Até 25 linhas (resto em Logs)." />
+          tooltip="Número só de dispatches criados pelo worker (composed_by=auto-match) nas últimas 24h. A timeline abaixo lista qualquer disparo não-rascunho na mesma janela (manual incluído); origem aparece na linha." />
 
         {/* Score mínimo + Max/ciclo juntos */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">
@@ -1034,13 +1042,15 @@ export function TabOverview() {
           )}
 
           <div className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-surface-2 border-y border-border text-xs mt-0">
-            <span className="font-semibold text-fg">Últimos disparos criados pelo auto-match</span>
+            <span className="font-semibold text-fg">Últimos disparos (24h)</span>
             <a href="/logs" className="text-[10px] text-accent hover:underline font-normal">
               Logs completos →
             </a>
           </div>
           {logsSorted.length === 0 ? (
-            <p className="px-4 py-5 text-sm text-fg-3 text-center">Nenhum registro recente — quando o ciclo gerar dispatch, aparece aqui.</p>
+            <p className="px-4 py-5 text-sm text-fg-3 text-center">
+              Nenhum disparo fora de rascunho nas últimas 24h. Depois de atualizar o servidor, reinicie o backend para carregar a query nova. Na página Logs, confira se os dispatches estão dentro da janela de 24h.
+            </p>
           ) : (
             <div>
               {logsSorted.length > TIMELINE_LOG_CAP && (

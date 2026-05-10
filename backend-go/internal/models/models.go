@@ -179,6 +179,8 @@ type AutoMatchLog struct {
 	ProductName string `db:"product_name" json:"product_name,omitempty"`
 	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
 	GroupNames  string `db:"group_names" json:"group_names,omitempty"` // CSV dos grupos que receberam o disparo
+	// Timeline Automações / GET auto-match — origem do dispatch (manual vs auto-match)
+	ComposedBy string `db:"composed_by" json:"composed_by,omitempty"`
 
 	// migration 0113 — breakdown e false positive tracking
 	ScoreBreakdown        []byte         `db:"score_breakdown" json:"-"` // JSONB raw

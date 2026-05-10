@@ -5,6 +5,7 @@ import { Tooltip } from '../components/ui'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { dispatchOriginLabel } from '../lib/dispatchOrigin'
 import { useWSEvent } from '../lib/useWS'
 import {
   JonfreyActionCard,
@@ -83,20 +84,6 @@ export const DISPATCH_STATUS_TOOLTIP: Record<string, string> = {
   completed: 'Concluído — todos os grupos receberam a mensagem com sucesso.',
   failed: 'Falhou — um ou mais grupos não receberam. Veja esta aba com filtro Falhou.',
   cancelled: 'Cancelado — disparo interrompido manualmente antes da entrega.',
-}
-
-/** Valor legível para CSV/colunas; vazio = sem dado no servidor. */
-function dispatchOriginLabel(composedBy?: string): string {
-  const v = (composedBy ?? '').trim()
-  if (!v) return ''
-  const map: Record<string, string> = {
-    'auto-match': 'Auto-match',
-    auto: 'Auto (legado)',
-    manual: 'Manual',
-    api: 'API',
-    'scheduled-ad': 'Anúncio agendado',
-  }
-  return map[v] ?? v
 }
 
 function DispatchOriginBadge({ composedBy }: { composedBy?: string }) {

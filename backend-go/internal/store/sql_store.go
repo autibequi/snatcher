@@ -272,11 +272,10 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 		limit = 200
 	}
 	var out []models.AutoMatchLog
-	// Driver = dispatches na janela (mesma base conceitual que CountAutoMatchDispatchesSince).
-	// LEFT JOIN ao auto_match_logs mais recente por dispatch — não depende de composed_by na tabela
-	// de logs nem de INNER JOIN que falhava quando composed_by no dispatch estava errado/'manual'.
-	// Incluir também qualquer dispatch que tenha linha em auto_match_logs (ligação explícita ao auto-match).
-	// Score NULL/no log → -1 na UI (sem breakdown).
+	// Driver = dispatches na janela com pelo menos um destino (envio real). Inclui manual (Composer),
+	// auto-match, API, etc. — antes filtrávamos só auto-match / aml e a timeline ficava vazia quando
+	// o pipeline gravava composed_by=manual. LEFT JOIN ao último auto_match_logs por dispatch.
+	// Score sem log → -1 na UI.
 	err := s.db.Select(&out, `
 		SELECT
 			COALESCE(l.id, -d.id) AS id,
@@ -298,7 +297,8 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 				 JOIN groups g ON g.id = dt.group_id
 				 WHERE dt.dispatch_id = d.id),
 				''
-			) AS group_names
+			) AS group_names,
+			COALESCE(d.composed_by, '') AS composed_by
 		FROM dispatches d
 		LEFT JOIN LATERAL (
 			SELECT l.*
@@ -318,10 +318,7 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 		) ch ON true
 		LEFT JOIN channel c ON c.id = COALESCE(ch.channel_id, l.channel_id)
 		WHERE d.created_at >= $1
-		  AND (
-				d.composed_by IN ('auto-match', 'auto')
-				OR EXISTS (SELECT 1 FROM auto_match_logs aml WHERE aml.dispatch_id = d.id)
-			)
+		  AND d.status <> 'draft'
 		ORDER BY d.created_at DESC
 		LIMIT $2`, since, limit)
 	return out, err
