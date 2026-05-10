@@ -272,11 +272,14 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 		limit = 200
 	}
 	var out []models.AutoMatchLog
-	// União: logs normais + dispatches auto-match sem entrada em auto_match_logs (ex.: falha ao inserir log).
+	// União: logs com dispatch auto-match + órfãos (sem linha em auto_match_logs).
+	// IMPORTANTE: janela temporal e ordenação usam dispatches.created_at — alinha com o KPI
+	// "Dispatches 24h". Filtrar só por auto_match_logs.created_at deixa a timeline vazia se essas
+	// datas divergirem (migração, bulk, clock).
 	// Score -1 marca órfão na UI (sem breakdown).
 	err := s.db.Select(&out, `
 		WITH unioned AS (
-			SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+			SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, d.created_at,
 			       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
 			       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
 			       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
@@ -290,9 +293,11 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 			           ''
 			       ) AS group_names
 			FROM auto_match_logs l
+			INNER JOIN dispatches d ON d.id = l.dispatch_id
+			    AND d.composed_by IN ('auto-match', 'auto')
 			LEFT JOIN catalogproduct p ON p.id = l.product_id
 			LEFT JOIN channel c ON c.id = l.channel_id
-			WHERE l.created_at >= $1
+			WHERE d.created_at >= $1
 
 			UNION ALL
 
@@ -327,7 +332,7 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 				LIMIT 1
 			) ch ON true
 			LEFT JOIN channel c2 ON c2.id = ch.channel_id
-			WHERE d.composed_by = 'auto-match'
+			WHERE d.composed_by IN ('auto-match', 'auto')
 			  AND d.created_at >= $1
 			  AND NOT EXISTS (SELECT 1 FROM auto_match_logs l2 WHERE l2.dispatch_id = d.id)
 		)

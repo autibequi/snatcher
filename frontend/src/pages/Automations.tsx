@@ -828,7 +828,7 @@ export function TabOverview() {
 
         {/* Disparos 24h */}
         <KpiCard label="Dispatches 24h" value={dispatches24h} subtitle="auto-match"
-          tooltip="Contagem no servidor: dispatches com origem auto-match (composed_by=auto-match) criados nas últimas 24h. Não depende só da tabela auto_match_logs — por isso pode ser maior que o número de linhas na timeline abaixo se houve falha ao gravar log." />
+          tooltip="Contagem: dispatches composed_by=auto-match criados nas últimas 24h. A timeline usa a mesma janela (data do dispatch); mostramos os 25 mais recentes (link para ver todos nos Logs)." />
 
         {/* Score mínimo + Max/ciclo juntos */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">
