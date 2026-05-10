@@ -38,6 +38,7 @@ function nullStr(v: unknown): string {
 /** Extrai número de preço de campos JSON da API (número, string BR/US, NullFloat64 antigo). */
 function coerceMoney(v: unknown): number {
   if (v == null) return 0
+  if (typeof v === 'bigint') return Number(v) > 0 ? Number(v) : 0
   if (typeof v === 'number' && Number.isFinite(v)) return v > 0 ? v : 0
   if (typeof v === 'string') {
     const t = v.trim().replace(/\s/g, '').replace(/R\$/gi, '')
@@ -65,10 +66,20 @@ function resolveCatalogPricing(
   let url = nullStr(product?.lowest_price_url)
   let source = nullStr(product?.lowest_price_source)
   if (price > 0) {
+    if (!url || !source) {
+      for (const v of variants) {
+        const pr = coerceMoney(v?.price as unknown)
+        if (Math.abs(pr - price) < 0.009) {
+          if (!url && v.url) url = typeof v.url === 'string' ? v.url : ''
+          if (!source && v.source) source = v.source
+          if (url && source) break
+        }
+      }
+    }
     return { price, url, source }
   }
   let best: (typeof variants)[0] | undefined
-  let bestPrice = 0
+  let bestPrice = Number.POSITIVE_INFINITY
   for (const v of variants) {
     const pr = coerceMoney(v?.price as unknown)
     if (pr <= 0) continue
@@ -77,12 +88,58 @@ function resolveCatalogPricing(
       bestPrice = pr
     }
   }
-  if (best && bestPrice > 0) {
+  if (best && bestPrice > 0 && Number.isFinite(bestPrice)) {
     price = bestPrice
     if (!url && best.url) url = best.url
     if (!source && best.source) source = best.source
   }
   return { price, url, source }
+}
+
+/** Primeira URL útil no catálogo (pai ou qualquer variante) — shortlink / texto precisam disso mesmo quando o “melhor preço” veio sem URL. */
+function collectAnyProductUrl(rows: CatalogRow[]): string {
+  for (const row of rows) {
+    const u = nullStr(row.product?.lowest_price_url)
+    if (u) return u
+    for (const v of row.variants ?? []) {
+      const s = typeof v.url === 'string' ? v.url.trim() : ''
+      if (s) return s
+    }
+  }
+  return ''
+}
+
+/** Escolhe a melhor oferta entre vários GET /catalog/:id (multi‑produto): menor preço > 0; depois completa URL em falta. */
+function resolveOfferAcrossCatalog(rows: CatalogRow[]): { price: number; url: string; source: string } {
+  if (rows.length === 0) return { price: 0, url: '', source: '' }
+  let best = { price: 0, url: '', source: '' }
+  for (const row of rows) {
+    const r = resolveCatalogPricing(row.product, row.variants ?? [])
+    if (r.price <= 0) continue
+    if (best.price === 0 || r.price < best.price) {
+      best = { ...r }
+    }
+  }
+  if (best.price > 0 && !best.url) {
+    best = { ...best, url: collectAnyProductUrl(rows) }
+  }
+  if (best.price > 0 && !best.source) {
+    for (const row of rows) {
+      const s = nullStr(row.product?.lowest_price_source)
+      if (s) {
+        best = { ...best, source: s }
+        break
+      }
+      for (const v of row.variants ?? []) {
+        if (v.source) {
+          best = { ...best, source: v.source }
+          break
+        }
+      }
+      if (best.source) break
+    }
+  }
+  return best
 }
 
 export default function Composer() {
@@ -153,7 +210,6 @@ export default function Composer() {
   })
 
   const productData = (catalogRows[0]?.product ?? null) as Record<string, unknown> | null
-  const variantsPrimary = catalogRows[0]?.variants ?? []
 
   // Imagens de todos os produtos para mosaico
   const productImages: string[] = catalogRows
@@ -166,14 +222,27 @@ export default function Composer() {
     || nullStr(rawImg)
     || (productImages[0] ?? null)
 
-  const realProductName =
-    (nullStr(productData?.canonical_name) || (productData?.canonical_name as string)) ?? ''
+  const realProductName = React.useMemo(() => {
+    for (const row of catalogRows) {
+      const p = row.product
+      const n = (nullStr(p?.canonical_name) || (p?.canonical_name as string) || '').trim()
+      if (n) return n
+    }
+    return ''
+  }, [catalogRows])
 
   const { price: realPrice, url: realUrl, source: realSource } = React.useMemo(
-    () => resolveCatalogPricing(productData, variantsPrimary),
-    [productData, variantsPrimary],
+    () => resolveOfferAcrossCatalog(catalogRows),
+    [catalogRows],
   )
   const realPriceStr = realPrice > 0 ? `R$ ${Number(realPrice).toFixed(2)}` : 'R$ --'
+
+  const fallbackCatalogUrl = React.useMemo(
+    () => collectAnyProductUrl(catalogRows),
+    [catalogRows],
+  )
+  /** URL para shortlink / 👉 mesmo quando o melhor preço veio numa linha sem URL (fallback qualquer produto). */
+  const urlForShortLink = (realUrl || fallbackCatalogUrl).trim()
 
   // Boilerplate WhatsApp: negrito/itálico com *…* ; preços e link são variáveis ou substituídos ao vivo
   const DEFAULT_TEMPLATE = `🔥 OFERTA RELÂMPAGO
@@ -243,13 +312,13 @@ export default function Composer() {
 
   // Gerar short link rastreável com domínio próprio e tag de afiliado no redirect
   const { data: affiliateUrl = '' } = useQuery<string>({
-    queryKey: ['short-link', productIds[0], realUrl, realSource],
+    queryKey: ['short-link', productIds[0], urlForShortLink, realSource],
     queryFn: () =>
       apiClient.post('/api/links/shorten', {
-        url: realUrl,
+        url: urlForShortLink,
         source: realSource || 'amazon',
-      }).then(r => r.data?.short_url || realUrl).catch(() => realUrl),
-    enabled: !!realUrl,
+      }).then(r => r.data?.short_url || urlForShortLink).catch(() => urlForShortLink),
+    enabled: !!urlForShortLink,
     staleTime: Infinity,
   })
 
@@ -274,6 +343,9 @@ export default function Composer() {
         .replace(/\{por\}/g, porStr)
         .replace(/\{desconto\}/g, descontoStr)
         .replace(/\{link\}/g, linkResolved)
+      if (realProductName) {
+        t = t.replace(/\*Produto\*/g, `*${realProductName}*`)
+      }
       if (realPrice > 0) {
         const priceBlock = `💰 De ~${deStr}~ por *${porStr}*`
         const variants = [
@@ -289,16 +361,18 @@ export default function Composer() {
         t = t.replace(/De\s+R\$\s*--/gi, `De ~${deStr}~`)
         t = t.replace(/por\s+R\$\s*--/gi, `por *${porStr}*`)
         if (descontoPct > 0) {
-          t = t.replace(/🏷️\s*\d*\s*OFF\b/gi, `🏷️ ${descontoStr} OFF`)
-          t = t.replace(/🏷️\s+OFF\b/gi, `🏷️ ${descontoStr} OFF`)
+          t = t.replace(/🏷️[^\n]*OFF\b/gi, `🏷️ ${descontoStr} OFF`)
+        } else if (descontoStr && realSource) {
+          t = t.replace(/🏷️\s*(?:OFF|--|%?\s*OFF)\b/gi, `🏷️ ${descontoStr}`)
         }
       }
       if (linkResolved && !t.includes(linkResolved)) {
         t = t.replace(/👉\s*$/gm, `👉 ${linkResolved}`)
+        t = t.replace(/👉\s*\n/g, `👉 ${linkResolved}\n`)
       }
       return t
     },
-    [composePricing, realProductName, realPrice],
+    [composePricing, realProductName, realPrice, realSource],
   )
 
   /** Catálogo / shortlink podem chegar depois do texto (IA, rascunho): reaplica variáveis e corrige “R$ --”. */
@@ -307,19 +381,30 @@ export default function Composer() {
       if (!prev.trim()) return prev
       const hasVars = /\{produto\}|\{de\}|\{por\}|\{desconto\}|\{link\}/.test(prev)
       const hasStalePrice = /R\$\s*--/.test(prev)
-      const preferredLink = affiliateUrl || realUrl || ''
+      const preferredLink = affiliateUrl || urlForShortLink || ''
       const needsLinkFix =
         !!preferredLink && /👉/.test(prev) && !prev.includes(preferredLink)
-      if (!hasVars && !hasStalePrice && !needsLinkFix) return prev
+      const needsNameFix = !!(realProductName && /\*Produto\*/.test(prev))
+      const needsDiscountFix =
+        realPrice > 0 && /🏷️/.test(prev) && !/-\d+%/.test(prev) && composePricing.descontoPct > 0
+      if (!hasVars && !hasStalePrice && !needsLinkFix && !needsNameFix && !needsDiscountFix)
+        return prev
       const next = applyComposeVariables(prev, preferredLink)
       return next !== prev ? next : prev
     })
-  }, [realPrice, realUrl, affiliateUrl, applyComposeVariables])
+  }, [
+    realPrice,
+    urlForShortLink,
+    affiliateUrl,
+    applyComposeVariables,
+    realProductName,
+    composePricing.descontoPct,
+  ])
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
-      const link = affiliateUrl || realUrl || ''
-      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || realUrl || ''
+      const link = affiliateUrl || urlForShortLink || ''
+      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || urlForShortLink || ''
       let finalText = applyComposeVariables(text, link)
       if (link && !finalText.includes(link)) finalText = `${finalText}\n\n${link}`
       return apiClient
@@ -355,7 +440,7 @@ export default function Composer() {
         .then((r) => r.data),
     onSuccess: (data: { text?: string }) => {
       if (!data?.text) return
-      const link = affiliateUrl || realUrl || ''
+      const link = affiliateUrl || urlForShortLink || ''
       setText(applyComposeVariables(data.text, link))
     },
     onError: (err: any) => {
@@ -373,7 +458,7 @@ export default function Composer() {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  const previewLink = affiliateUrl || realUrl || 'https://link.produto'
+  const previewLink = affiliateUrl || urlForShortLink || 'https://link.produto'
   const previewText = applyComposeVariables(previewLines, previewLink)
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
