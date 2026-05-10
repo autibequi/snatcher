@@ -760,23 +760,6 @@ export function TabOverview() {
         </div>
 
         <div className="max-h-[min(70vh,560px)] overflow-y-auto">
-          <div className="sticky top-0 z-[1] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-1.5 px-4 py-2.5 bg-warning/10 border-b border-warning/25 text-xs">
-            <div>
-              <span className="font-semibold text-fg">
-                Prévia do próximo ciclo auto-match
-                <span className="font-normal text-fg-3">
-                  {' '}
-                  (~{enabled && amSecs != null ? fmtEtaSeconds(amSecs) : '—'})
-                </span>
-              </span>
-            </div>
-            <span className="text-[10px] text-fg-3 shrink-0">
-              {previewCandidates.length} candidato{previewCandidates.length === 1 ? '' : 's'} ·{' '}
-              <a href="/automations/channels" className="text-accent hover:underline">
-                por canal
-              </a>
-            </span>
-          </div>
           {nextCyclePreview?.auto_match_master_enabled === false ? (
             <p className="px-4 py-6 text-sm text-center text-warning">Auto-match global desligado — ligue o Auto-pilot acima.</p>
           ) : previewCandidates.length === 0 ? (
