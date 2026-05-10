@@ -1357,9 +1357,79 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 		topProducts = []topRow{}
 	}
 
+	type channelAggRow struct {
+		ID     int64 `db:"id"`
+		Name   string `db:"name"`
+		Clicks int64 `db:"clicks"`
+	}
+	var byChannel []channelAggRow
+	_ = s.db.Select(&byChannel, `
+		SELECT ch.id, ch.name, COUNT(*)::bigint AS clicks
+		FROM shortlink_clicks sc
+		JOIN channel ch ON ch.id = sc.channel_id
+		WHERE sc.clicked_at >= $1 AND sc.channel_id IS NOT NULL
+		GROUP BY ch.id, ch.name
+		ORDER BY clicks DESC
+		LIMIT 15`, since)
+
+	type groupAggRow struct {
+		ID     int64   `db:"id"`
+		Name   string  `db:"name"`
+		Clicks float64 `db:"clicks"`
+	}
+	var byGroup []groupAggRow
+	_ = s.db.Select(&byGroup, `
+		WITH parts AS (
+			SELECT sc.id, sc.dispatch_id,
+				GREATEST(
+					(SELECT COUNT(*)::bigint FROM dispatch_targets dt2 WHERE dt2.dispatch_id = sc.dispatch_id),
+					1
+				)::float8 AS n_targets
+			FROM shortlink_clicks sc
+			WHERE sc.clicked_at >= $1 AND sc.dispatch_id IS NOT NULL
+		)
+		SELECT g.id, g.name, SUM(1.0 / parts.n_targets)::float8 AS clicks
+		FROM parts
+		JOIN dispatch_targets dt ON dt.dispatch_id = parts.dispatch_id
+		JOIN groups g ON g.id = dt.group_id
+		GROUP BY g.id, g.name
+		ORDER BY SUM(1.0 / parts.n_targets) DESC NULLS LAST
+		LIMIT 15`, since)
+
+	type categoryAggRow struct {
+		ID     int64  `db:"id"`
+		Name   string `db:"name"`
+		Slug   string `db:"slug"`
+		Clicks int64  `db:"clicks"`
+	}
+	var byCategory []categoryAggRow
+	_ = s.db.Select(&byCategory, `
+		SELECT t.id, t.name, t.slug, COUNT(*)::bigint AS clicks
+		FROM shortlink_clicks sc
+		JOIN catalogproduct_taxonomy cpt ON cpt.product_id = sc.product_id AND cpt.role = 'primary_category'
+		JOIN taxonomy t ON t.id = cpt.taxonomy_id
+		WHERE sc.clicked_at >= $1 AND sc.product_id IS NOT NULL
+		GROUP BY t.id, t.name, t.slug
+		ORDER BY clicks DESC
+		LIMIT 15`, since)
+
+	channelOut := make([]map[string]any, 0, len(byChannel))
+	for _, ch := range byChannel {
+		channelOut = append(channelOut, map[string]any{"id": ch.ID, "name": ch.Name, "clicks": ch.Clicks})
+	}
+	groupOut := make([]map[string]any, 0, len(byGroup))
+	for _, g := range byGroup {
+		groupOut = append(groupOut, map[string]any{"id": g.ID, "name": g.Name, "clicks": g.Clicks})
+	}
+	categoryOut := make([]map[string]any, 0, len(byCategory))
+	for _, c := range byCategory {
+		categoryOut = append(categoryOut, map[string]any{"id": c.ID, "name": c.Name, "slug": c.Slug, "clicks": c.Clicks})
+	}
+
 	return map[string]any{
 		"total": total, "unique": unique, "days": days,
 		"daily": dailyOut, "by_source": sourceOut, "top_products": topProducts,
+		"by_channel": channelOut, "by_group": groupOut, "by_category": categoryOut,
 		"catalog_total": catalogTotal, "catalog_new": catalogNew,
 		"variants_total": variantsTotal, "messages_sent": messagesSent,
 	}, nil

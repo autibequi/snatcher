@@ -19,6 +19,12 @@ interface AnalyticsSummary {
   daily: Array<{ date: string; clicks: number }>
   by_source: Array<{ source: string; clicks: number }>
   top_products: Array<{ id: number; title: string; source: string; price: number; clicks: number }>
+  /** Cliques com channel_id preenchido */
+  by_channel?: Array<{ id: number; name: string; clicks: number }>
+  /** Atribuição 1/N quando um dispatch tem N grupos-alvo */
+  by_group?: Array<{ id: number; name: string; clicks: number }>
+  /** Taxonomia primary_category dos produtos clicados */
+  by_category?: Array<{ id: number; name: string; slug: string; clicks: number }>
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,7 +58,61 @@ function fmt(n: number): string {
   return n.toLocaleString('pt-BR')
 }
 
+/** Cliques podem ser fracionários (grupos com peso por dispatch). */
+function fmtClickCount(n: number): string {
+  if (Number.isInteger(n)) return fmt(n)
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
+}
+
 // ── Sub-componentes ──────────────────────────────────────────────────────────
+
+function ClickRankList({
+  title,
+  subtitle,
+  rows,
+  fmtValue = fmtClickCount,
+}: {
+  title: string
+  subtitle?: string
+  rows: Array<{ name: string; clicks: number }>
+  fmtValue?: (n: number) => string
+}) {
+  if (!rows?.length) {
+    return (
+      <div className="bg-surface border border-border rounded-md p-4">
+        <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1">{title}</p>
+        {subtitle && <p className="text-[11px] text-fg-3 mb-3">{subtitle}</p>}
+        <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
+      </div>
+    )
+  }
+  const max = rows[0]?.clicks || 1
+  return (
+    <div className="bg-surface border border-border rounded-md p-4">
+      <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1">{title}</p>
+      {subtitle && <p className="text-[11px] text-fg-3 mb-3">{subtitle}</p>}
+      <div className="space-y-2">
+        {rows.map((row, i) => {
+          const pct = Math.round((row.clicks / max) * 100)
+          return (
+            <div key={`${row.name}-${i}`} className="flex items-center gap-3">
+              <span className="text-xs text-fg-3 w-4 shrink-0 text-right">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-fg truncate" title={row.name}>{row.name}</p>
+                <div className="h-1 bg-surface-2 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-xs font-semibold text-fg">{fmtValue(row.clicks)}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 function KpiCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
@@ -234,6 +294,27 @@ export default function Analytics() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Canal / grupo / categoria */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <ClickRankList
+          title="Cliques por canal"
+          subtitle="Só eventos com canal associado ao shortlink."
+          rows={data?.by_channel ?? []}
+          fmtValue={fmt}
+        />
+        <ClickRankList
+          title="Cliques por grupo"
+          subtitle="Peso 1/N quando o mesmo dispatch vai para N grupos."
+          rows={data?.by_group ?? []}
+        />
+        <ClickRankList
+          title="Cliques por categoria"
+          subtitle="Categoria primária do produto no catálogo."
+          rows={data?.by_category ?? []}
+          fmtValue={fmt}
+        />
       </div>
     </div>
   )
