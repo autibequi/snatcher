@@ -311,13 +311,16 @@ export default function Composer() {
   const missingAffiliate = !!realSource && affCoverage && !affCoverage.has_affiliate
 
   // Gerar short link rastreável com domínio próprio e tag de afiliado no redirect
-  const { data: affiliateUrl = '' } = useQuery<string>({
+  const { data: affiliateUrl = '', isPending: shortLinkPending } = useQuery<string>({
     queryKey: ['short-link', productIds[0], urlForShortLink, realSource],
     queryFn: () =>
-      apiClient.post('/api/links/shorten', {
-        url: urlForShortLink,
-        source: realSource || 'amazon',
-      }).then(r => r.data?.short_url || urlForShortLink).catch(() => urlForShortLink),
+      apiClient
+        .post('/api/links/shorten', {
+          url: urlForShortLink,
+          source: realSource || 'amazon',
+        })
+        .then((r) => (typeof r.data?.short_url === 'string' ? r.data.short_url : ''))
+        .catch(() => ''),
     enabled: !!urlForShortLink,
     staleTime: Infinity,
   })
@@ -381,7 +384,7 @@ export default function Composer() {
       if (!prev.trim()) return prev
       const hasVars = /\{produto\}|\{de\}|\{por\}|\{desconto\}|\{link\}/.test(prev)
       const hasStalePrice = /R\$\s*--/.test(prev)
-      const preferredLink = affiliateUrl || urlForShortLink || ''
+      const preferredLink = affiliateUrl || ''
       const needsLinkFix =
         !!preferredLink && /👉/.test(prev) && !prev.includes(preferredLink)
       const needsNameFix = !!(realProductName && /\*Produto\*/.test(prev))
@@ -403,8 +406,8 @@ export default function Composer() {
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: (targets) => {
-      const link = affiliateUrl || urlForShortLink || ''
-      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || urlForShortLink || ''
+      const link = affiliateUrl || ''
+      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || ''
       let finalText = applyComposeVariables(text, link)
       if (link && !finalText.includes(link)) finalText = `${finalText}\n\n${link}`
       return apiClient
@@ -440,7 +443,7 @@ export default function Composer() {
         .then((r) => r.data),
     onSuccess: (data: { text?: string }) => {
       if (!data?.text) return
-      const link = affiliateUrl || urlForShortLink || ''
+      const link = affiliateUrl || ''
       setText(applyComposeVariables(data.text, link))
     },
     onError: (err: any) => {
@@ -458,7 +461,7 @@ export default function Composer() {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  const previewLink = affiliateUrl || urlForShortLink || 'https://link.produto'
+  const previewLink = affiliateUrl || (urlForShortLink ? '… gerando link curto …' : 'https://link.produto')
   const previewText = applyComposeVariables(previewLines, previewLink)
 
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
@@ -557,7 +560,13 @@ export default function Composer() {
         <Button
           variant="primary"
           className="w-full h-11 text-sm font-semibold shadow-md shadow-accent/10"
-          disabled={!text || channels.length === 0 || dispatch.isPending || missingAffiliate}
+          disabled={
+            !text ||
+            channels.length === 0 ||
+            dispatch.isPending ||
+            missingAffiliate ||
+            (!!urlForShortLink && shortLinkPending && !affiliateLinkFromQuery)
+          }
           onClick={() => setShowConfirm(true)}
           title={missingAffiliate ? 'Configure um programa de afiliado primeiro' : undefined}
         >

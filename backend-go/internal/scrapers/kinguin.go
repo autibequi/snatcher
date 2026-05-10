@@ -39,8 +39,11 @@ func (s *kinguinScraper) Search(ctx context.Context, query string, minVal, maxVa
 	)
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Referer", "https://www.kinguin.net/")
+	applyPublicSiteHeaders(req)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	optionalScraperCookie(req, "SNATCHER_SCRAPER_KINGUIN_COOKIE")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -48,8 +51,9 @@ func (s *kinguinScraper) Search(ctx context.Context, query string, minVal, maxVa
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("kinguin status %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		prefix := readBodyPrefix(resp, 4096)
+		return nil, errHTTPCrawl("kinguin", resp.StatusCode, prefix)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)

@@ -40,8 +40,14 @@ func (s *humbleBundleScraper) Search(ctx context.Context, query string, minVal, 
 	)
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Referer", "https://www.humblebundle.com/store")
+	req.Header.Set("Origin", "https://www.humblebundle.com")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	applyPublicSiteHeaders(req)
+	optionalScraperCookie(req, "SNATCHER_SCRAPER_HUMBLE_COOKIE")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -49,8 +55,9 @@ func (s *humbleBundleScraper) Search(ctx context.Context, query string, minVal, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("humble bundle api status %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		prefix := readBodyPrefix(resp, 4096)
+		return nil, errHTTPCrawl("humble bundle", resp.StatusCode, prefix)
 	}
 
 	// Parse JSON response

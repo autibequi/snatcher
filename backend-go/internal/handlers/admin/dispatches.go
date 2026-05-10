@@ -142,9 +142,12 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	affiliateLink := strings.TrimSpace(req.AffiliateLink)
 
-	// Envio real: precisa de link gravado no dispatch. Se o front não mandou, resolve pelo produto (mesma lógica da página Afiliados).
+	// Envio real: precisa de link gravado no dispatch (short /v/…). Resolve pelo catálogo quando vazio
+	// ou quando o cliente ainda mandou URL cru do marketplace (fallback do compose antes do shorten).
 	if !isDraft {
-		if affiliateLink == "" && req.ProductID != nil {
+		needResolve := req.ProductID != nil &&
+			(affiliateLink == "" || affiliates.InferMarketplaceFromProductURL(affiliateLink) != "")
+		if needResolve {
 			resolved, err := h.resolveAffiliateDispatchLink(*req.ProductID, req.Message)
 			if err == nil && resolved != "" {
 				affiliateLink = resolved
@@ -153,6 +156,12 @@ func (h *DispatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		if affiliateLink == "" {
 			writeErr(w, http.StatusUnprocessableEntity,
 				"código de afiliado obrigatório — configure um programa para o marketplace deste produto antes de disparar")
+			return
+		}
+		// Nunca gravar URL cru do marketplace como affiliate_link — só short /v/… ou destino já afiliado.
+		if affiliates.InferMarketplaceFromProductURL(affiliateLink) != "" {
+			writeErr(w, http.StatusUnprocessableEntity,
+				"não foi possível gerar o link curto (/v/…) — verifique programa de afiliados e tente de novo")
 			return
 		}
 	}
