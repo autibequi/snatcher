@@ -584,7 +584,7 @@ func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) 
 	return sid, nil
 }
 
-func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source string, found bool) {
+func (s *SQLStore) PeekShortLinkByID(shortID string) (destURL string, source string, found bool) {
 	var row struct {
 		DestURL string `db:"dest_url"`
 		Source  string `db:"source"`
@@ -592,8 +592,20 @@ func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source stri
 	if err := s.db.Get(&row, `SELECT dest_url, source FROM short_links WHERE short_id = $1`, shortID); err != nil {
 		return "", "", false
 	}
-	_, _ = s.db.Exec(`UPDATE short_links SET click_count = click_count + 1 WHERE short_id = $1`, shortID)
 	return row.DestURL, row.Source, true
+}
+
+func (s *SQLStore) IncrementShortLinkClickCount(shortID string) {
+	_, _ = s.db.Exec(`UPDATE short_links SET click_count = click_count + 1 WHERE short_id = $1`, shortID)
+}
+
+func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	dest, src, ok := s.PeekShortLinkByID(shortID)
+	if !ok {
+		return "", "", false
+	}
+	s.IncrementShortLinkClickCount(shortID)
+	return dest, src, true
 }
 
 func (s *SQLStore) GetVariantByShortID(shortID string) (models.CatalogVariant, bool, error) {
@@ -1291,9 +1303,15 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	}
 	var bySource []sourceRow
 	_ = s.db.Select(&bySource, `
-		SELECT p.source, COUNT(*) AS clicks FROM clicklog c
-		JOIN product p ON c.product_id = p.id
-		WHERE c.clicked_at >= $1 GROUP BY p.source`, since)
+		SELECT source, SUM(clicks)::bigint AS clicks FROM (
+			SELECT p.source, COUNT(*)::bigint AS clicks FROM clicklog c
+			JOIN product p ON c.product_id = p.id
+			WHERE c.clicked_at >= $1 GROUP BY p.source
+			UNION ALL
+			SELECT COALESCE(NULLIF(TRIM(sc.source), ''), '(sem fonte)') AS source, COUNT(*)::bigint AS clicks
+			FROM shortlink_clicks sc WHERE sc.clicked_at >= $1
+			GROUP BY COALESCE(NULLIF(TRIM(sc.source), ''), '(sem fonte)')
+		) u GROUP BY source ORDER BY clicks DESC`, since)
 
 	type topRow struct {
 		ID     int64   `db:"id" json:"id"`
@@ -1304,9 +1322,20 @@ func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]an
 	}
 	var topProducts []topRow
 	_ = s.db.Select(&topProducts, `
-		SELECT p.id, p.title, p.source, p.price, COUNT(*) AS clicks
-		FROM clicklog c JOIN product p ON c.product_id = p.id
-		WHERE c.clicked_at >= $1 GROUP BY p.id ORDER BY clicks DESC LIMIT 10`, since)
+		SELECT id, title, source, price, clicks FROM (
+			SELECT p.id, p.title, p.source, p.price, COUNT(*)::bigint AS clicks
+			FROM clicklog c JOIN product p ON c.product_id = p.id
+			WHERE c.clicked_at >= $1 GROUP BY p.id, p.title, p.source, p.price
+			UNION ALL
+			SELECT cp.id, cp.canonical_name AS title,
+				COALESCE(cp.lowest_price_source, '') AS source,
+				COALESCE(cp.lowest_price, 0)::float8 AS price,
+				COUNT(*)::bigint AS clicks
+			FROM shortlink_clicks sc
+			JOIN catalogproduct cp ON sc.product_id = cp.id
+			WHERE sc.clicked_at >= $1 AND sc.product_id IS NOT NULL
+			GROUP BY cp.id, cp.canonical_name, cp.lowest_price_source, cp.lowest_price
+		) top_products_union ORDER BY clicks DESC LIMIT 10`, since)
 
 	var catalogTotal, catalogNew, variantsTotal, messagesSent int64
 	_ = s.db.Get(&catalogTotal, `SELECT COUNT(*) FROM catalogproduct`)

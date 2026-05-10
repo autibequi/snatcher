@@ -160,7 +160,7 @@ func Build(
 	r.Post("/api/auth/logout", auth.Logout)
 
 	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
-	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st)) // Coolify: nginx → backend:8000
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st, rd)) // Coolify: nginx → backend:8000 + analytics (shortlink_clicks)
 
 	// Serve arquivos de upload (imagens dos anúncios pagos, etc.)
 	r.Get("/uploads/*", func(w http.ResponseWriter, req *http.Request) {

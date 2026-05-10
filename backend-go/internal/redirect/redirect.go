@@ -123,7 +123,7 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 	amzTag, mlToolID := rd.getConfig()
 
 	// Novo sistema: tabela short_links — dest_url já inclui afiliado (BuildLink antes do insert).
-	if destURL, _, ok := rd.store.GetShortLinkByID(shortID); ok {
+	if destURL, _, ok := rd.store.PeekShortLinkByID(shortID); ok {
 		rd.cache.Store(shortID, productEntry{
 			redirectURL: destURL,
 			expiresAt:   time.Now().Add(productTTL),
@@ -198,7 +198,7 @@ func (rd *Redirector) logClick(r *http.Request, shortID string) {
 	}
 
 	// 2) Sistema novo: short_links → registra em shortlink_clicks com produto/canal/dispatch resolvidos
-	if destURL, source, ok := rd.store.GetShortLinkByID(shortID); ok {
+	if destURL, source, ok := rd.store.PeekShortLinkByID(shortID); ok {
 		// Resolve último dispatch que usou este short_id no affiliate_link, pega product_id+channel_id
 		// Útil para clusterização e analytics por canal/produto.
 		var ctx struct {
@@ -218,7 +218,13 @@ func (rd *Redirector) logClick(r *http.Request, shortID string) {
 			INSERT INTO shortlink_clicks (short_id, source, dest_url, product_id, channel_id, dispatch_id, ip_hash, user_agent, referrer)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			shortID, source, destURL, ctx.ProductID, ctx.ChannelID, ctx.DispatchID, ipHash, ua, ref)
+		rd.store.IncrementShortLinkClickCount(shortID)
 	}
+}
+
+// EnqueueClickLog grava clicklog ou shortlink_clicks de forma assíncrona (um incremento em short_links por evento).
+func (rd *Redirector) EnqueueClickLog(r *http.Request, shortID string) {
+	go rd.logClick(r, shortID)
 }
 
 // ---------------------------------------------------------------------------

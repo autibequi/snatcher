@@ -258,6 +258,9 @@ type Store interface {
 
 	// Short Links
 	GetOrCreateShortLink(destURL, source string) (string, error)
+	// PeekShortLinkByID lê dest/source sem incrementar click_count (uso em redirects + log).
+	PeekShortLinkByID(shortID string) (destURL string, source string, found bool)
+	IncrementShortLinkClickCount(shortID string)
 	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
 
 	// Channel stats (cliques reais, disparos, série diária)
