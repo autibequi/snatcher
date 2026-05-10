@@ -161,11 +161,11 @@ func (c *OpenAICompatClient) Complete(ctx context.Context, prompt string, opts O
 		}
 
 		// Modelos thinking (OpenRouter etc.) podem encher completion só com reasoning e não deixar JSON.
-		if strings.Contains(errStr, "only reasoning, no JSON found") && opts.MaxTokens > 0 && opts.MaxTokens < 32000 {
+		if strings.Contains(errStr, "only reasoning, no JSON found") && opts.MaxTokens > 0 && opts.MaxTokens < 32768 {
 			retryOpts := opts
 			retryOpts.MaxTokens = opts.MaxTokens * 2
-			if retryOpts.MaxTokens > 16384 {
-				retryOpts.MaxTokens = 16384
+			if retryOpts.MaxTokens > 32768 {
+				retryOpts.MaxTokens = 32768
 			}
 			retryOpts.Operation = opts.Operation + "_retry_reasoning_budget"
 			if out2, err2 := c.complete(ctx, prompt, retryOpts); err2 == nil {
@@ -233,6 +233,11 @@ func (c *OpenAICompatClient) complete(ctx context.Context, prompt string, opts O
 		reqBody["response_format"] = map[string]string{"type": "json_object"}
 		// Ollama nativo aceita também o campo "format" — incluímos para compat
 		reqBody["format"] = "json"
+	}
+	// vLLM + Qwen3/MiMo: sem isto o modelo pode usar completion_tokens inteiros só em thinking
+	// (campo reasoning vazio em content → "only reasoning, no JSON"). Ver doc reasoning_outputs / issue #20976.
+	if opts.JSONMode && strings.Contains(strings.ToLower(c.baseURL), "vllm") {
+		reqBody["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
 	}
 
 	fallback := strings.TrimSpace(c.openRouterFallback)

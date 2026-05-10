@@ -1265,11 +1265,11 @@ JSON apenas:
 		len(compactApproved), apprJSON,
 		len(compactPending), pendJSON)
 
-	// Saída pode ser grande (decisões + grupos); modelos thinking consomem max_tokens no reasoning —
-	// 1700 era pouco e gerava finish_reason=length sem JSON em content.
-	ctxC, cancel := context.WithTimeout(ctx, 120*time.Second)
+	// Saída grande + modelos thinking (MiMo/Qwen) podiam esgotar max_tokens só em reasoning.
+	// Cliente injeta chat_template_kwargs enable_thinking=false em vLLM; orçamento alto na 1ª tentativa.
+	ctxC, cancel := context.WithTimeout(ctx, 180*time.Second)
 	resp, err := cli.Complete(ctxC, prompt, llm.Options{
-		MaxTokens:   8192,
+		MaxTokens:   16384,
 		Temperature: 0.1,
 		Operation:   "jonfrey_maintain_taxonomy",
 		JSONMode:    true,
