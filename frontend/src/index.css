@@ -2,34 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ──────────────── Design tokens OKLCH — Dracula Light ──────────────── */
-/* Ref: draculatheme.com — bg/fg invertidos; accent ≈ Purple #bd93f9; ansi greens/oranges */
+/* ──────────────── Design tokens OKLCH — Light sóbrio (neutro frio, accent contido) ──────────────── */
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  --bg:             0.975 0.012 95;
-  --surface:        1 0 0;
-  --surface-2:      0.94 0.018 285;
-  --surface-3:      0.91 0.022 285;
-  --border:         0.85 0.028 285;
-  --border-strong:  0.76 0.035 285;
-  --fg:             0.248 0.016 278;
-  --fg-2:           0.36 0.028 276;
-  --fg-3:           0.48 0.038 275;
-  --fg-4:           0.56 0.06 272;
-  --accent:         0.58 0.17 302;
-  --accent-hover:   0.52 0.17 302;
-  --accent-soft:    0.93 0.06 302;
-  --success:        0.48 0.14 152;
-  --success-soft:   0.94 0.05 152;
-  --warning:        0.62 0.14 65;
-  --warning-soft:   0.96 0.06 75;
-  --danger:         0.55 0.2 25;
-  --danger-soft:    0.95 0.05 25;
-  --whatsapp:       0.48 0.14 152;
-  --shadow-sm:      0 1px 2px oklch(0.35 0.04 285 / 0.08);
-  --shadow:         0 1px 3px oklch(0.35 0.04 285 / 0.1), 0 1px 2px oklch(0.35 0.04 285 / 0.06);
-  --shadow-lg:      0 8px 24px oklch(0.35 0.04 285 / 0.12);
+  --bg:             0.965 0.006 265;
+  --surface:        0.995 0.003 265;
+  --surface-2:      0.945 0.008 268;
+  --surface-3:      0.915 0.01 268;
+  --border:         0.88 0.012 268;
+  --border-strong:  0.78 0.018 270;
+  --fg:             0.22 0.014 268;
+  --fg-2:           0.34 0.016 268;
+  --fg-3:           0.46 0.02 267;
+  --fg-4:           0.54 0.024 266;
+  --accent:         0.48 0.11 302;
+  --accent-hover:   0.42 0.11 302;
+  --accent-soft:    0.94 0.035 302;
+  --success:        0.42 0.1 152;
+  --success-soft:   0.945 0.035 152;
+  --warning:        0.52 0.1 65;
+  --warning-soft:   0.965 0.04 75;
+  --danger:         0.48 0.16 25;
+  --danger-soft:    0.955 0.035 25;
+  --whatsapp:       0.42 0.1 152;
+  --shadow-sm:      0 1px 2px oklch(0.25 0.02 268 / 0.06);
+  --shadow:         0 1px 3px oklch(0.25 0.02 268 / 0.07), 0 1px 2px oklch(0.25 0.02 268 / 0.04);
+  --shadow-lg:      0 8px 24px oklch(0.25 0.025 268 / 0.09);
   --r-xs:           4px;
   --r-sm:           6px;
   --r:              8px;
@@ -46,32 +45,32 @@
   --pad-y:          14px;
 }
 
-/* ──────────────── Dracula Dark (#282a36 base, #44475a selection, #bd93f9 purple) ──────────────── */
+/* ──────────────── Dracula Dark — base mais profunda (#12131a ~ #1a1b26), hierarquia coerente ──────────────── */
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg:             0.248 0.016 278;
-  --surface:        0.27 0.018 278;
-  --surface-2:      0.33 0.028 276;
-  --surface-3:      0.38 0.035 275;
-  --border:         0.45 0.045 275;
-  --border-strong:  0.52 0.055 275;
-  --fg:             0.975 0.009 106;
-  --fg-2:           0.88 0.015 106;
-  --fg-3:           0.62 0.06 272;
-  --fg-4:           0.56 0.075 272;
-  --accent:         0.76 0.14 302;
-  --accent-hover:   0.70 0.14 302;
-  --accent-soft:    0.36 0.09 302;
-  --success:        0.86 0.19 148;
-  --success-soft:   0.32 0.07 150;
-  --warning:        0.81 0.13 71;
-  --warning-soft:   0.34 0.07 71;
-  --danger:         0.67 0.22 22;
-  --danger-soft:    0.34 0.09 25;
-  --whatsapp:       0.86 0.19 148;
-  --shadow-sm:      0 1px 2px oklch(0.05 0.02 280 / 0.45);
-  --shadow:         0 1px 3px oklch(0.05 0.025 280 / 0.5), 0 1px 2px oklch(0.05 0.02 280 / 0.35);
-  --shadow-lg:      0 8px 24px oklch(0.05 0.03 280 / 0.55);
+  --bg:             0.175 0.018 278;
+  --surface:        0.205 0.02 278;
+  --surface-2:      0.255 0.026 277;
+  --surface-3:      0.30 0.032 276;
+  --border:         0.38 0.038 276;
+  --border-strong:  0.46 0.048 275;
+  --fg:             0.93 0.012 106;
+  --fg-2:           0.82 0.018 106;
+  --fg-3:           0.58 0.055 272;
+  --fg-4:           0.50 0.065 272;
+  --accent:         0.72 0.13 302;
+  --accent-hover:   0.66 0.13 302;
+  --accent-soft:    0.30 0.08 302;
+  --success:        0.82 0.17 148;
+  --success-soft:   0.28 0.065 150;
+  --warning:        0.77 0.12 71;
+  --warning-soft:   0.30 0.065 71;
+  --danger:         0.63 0.2 22;
+  --danger-soft:    0.30 0.08 25;
+  --whatsapp:       0.82 0.17 148;
+  --shadow-sm:      0 1px 2px oklch(0.02 0.015 280 / 0.65);
+  --shadow:         0 1px 3px oklch(0.02 0.018 280 / 0.72), 0 1px 2px oklch(0.02 0.015 280 / 0.5);
+  --shadow-lg:      0 8px 28px oklch(0.02 0.022 280 / 0.78);
 }
 
 /* Accent alternatives — tons Dracula ANSI (green / orange / pink) */

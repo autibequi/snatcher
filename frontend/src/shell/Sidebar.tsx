@@ -60,10 +60,10 @@ const navGroups: NavGroup[] = [
     label: 'Sistema',
     items: [
       { to: '/logs', label: 'Logs', icon: '📋' },
+      { to: '/manual', label: 'Manual', icon: '📖' },
       { to: '/affiliates', label: 'Afiliados', icon: '💰' },
       { to: '/taxonomy', label: 'Taxonomia', icon: '🏷️' },
       { to: '/settings', label: 'Configurações', icon: '⚙️' },
-      { to: '/manual', label: 'Manual', icon: '📖' },
     ],
   },
 ]
