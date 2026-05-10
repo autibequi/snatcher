@@ -1049,7 +1049,7 @@ export function TabOverview() {
           </div>
           {logsSorted.length === 0 ? (
             <p className="px-4 py-5 text-sm text-fg-3 text-center">
-              Nenhum disparo fora de rascunho nas últimas 24h. Depois de atualizar o servidor, reinicie o backend para carregar a query nova. Na página Logs, confira se os dispatches estão dentro da janela de 24h.
+              Nenhum disparo fora de rascunho nas últimas 24h. Se o KPI “Dispatches 24h” é maior que zero e esta lista continua vazia, o servidor provavelmente ainda não está com o backend que corrige a query da timeline — faça deploy e reinicie.
             </p>
           ) : (
             <div>

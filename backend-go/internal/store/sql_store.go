@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"snatcher/backendv2/internal/models"
 	"strconv"
 	"strings"
@@ -170,11 +171,14 @@ func (s *SQLStore) AutoMatchHasRecentPairLog(productID, channelID int64, since t
 }
 
 // CountAutoMatchDispatchesSince conta dispatches criados pelo auto-match na janela (KPI / auditoria).
+// Exclui rascunho — alinhado à timeline em GET /api/auto-match (logs).
 func (s *SQLStore) CountAutoMatchDispatchesSince(since time.Time) (int64, error) {
 	var n int64
 	err := s.db.Get(&n, `
 		SELECT COUNT(*) FROM dispatches
-		WHERE composed_by = 'auto-match' AND created_at >= $1`, since)
+		WHERE composed_by = 'auto-match'
+		  AND created_at >= $1
+		  AND status <> 'draft'`, since)
 	return n, err
 }
 
@@ -271,24 +275,30 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 	if limit <= 0 {
 		limit = 200
 	}
+	out, err := s.listAutoMatchLogsSincePrimary(since, limit)
+	if err != nil {
+		slog.Warn("ListAutoMatchLogsSince: primary query failed, using fallback", "err", err)
+		return s.listAutoMatchLogsSinceFallback(since, limit)
+	}
+	return out, nil
+}
+
+// listAutoMatchLogsSincePrimary: último aml por dispatch + metadados do dispatch (sem SELECT * no lateral).
+func (s *SQLStore) listAutoMatchLogsSincePrimary(since time.Time, limit int) ([]models.AutoMatchLog, error) {
 	var out []models.AutoMatchLog
-	// Driver = dispatches na janela com pelo menos um destino (envio real). Inclui manual (Composer),
-	// auto-match, API, etc. — antes filtrávamos só auto-match / aml e a timeline ficava vazia quando
-	// o pipeline gravava composed_by=manual. LEFT JOIN ao último auto_match_logs por dispatch.
-	// Score sem log → -1 na UI.
 	err := s.db.Select(&out, `
 		SELECT
-			COALESCE(l.id, -d.id) AS id,
-			COALESCE(d.product_id, l.product_id, 0) AS product_id,
-			COALESCE(ch.channel_id, l.channel_id, 0) AS channel_id,
+			COALESCE(aml.id, -d.id) AS id,
+			COALESCE(d.product_id, aml.product_id, 0) AS product_id,
+			COALESCE(ch.channel_id, aml.channel_id, 0) AS channel_id,
 			d.id AS dispatch_id,
-			COALESCE(l.score, (-1.0)::double precision) AS score,
+			COALESCE(aml.score, (-1.0)::double precision) AS score,
 			d.created_at,
-			COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
-			COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
-			l.false_positive,
-			l.false_positive_reason,
-			l.false_positive_marked_at,
+			COALESCE(aml.score_breakdown, '{}'::jsonb) AS score_breakdown,
+			COALESCE(aml.match_reasons, '{}'::text[]) AS match_reasons,
+			aml.false_positive,
+			COALESCE(aml.false_positive_reason, '') AS false_positive_reason,
+			aml.false_positive_marked_at,
 			COALESCE(p.canonical_name, '') AS product_name,
 			COALESCE(c.name, '') AS channel_name,
 			COALESCE(
@@ -301,13 +311,15 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 			COALESCE(d.composed_by, '') AS composed_by
 		FROM dispatches d
 		LEFT JOIN LATERAL (
-			SELECT l.*
+			SELECT
+				id, product_id, channel_id, dispatch_id, score,
+				score_breakdown, match_reasons, false_positive, false_positive_reason, false_positive_marked_at
 			FROM auto_match_logs l
 			WHERE l.dispatch_id = d.id
 			ORDER BY l.created_at DESC NULLS LAST, l.id DESC
 			LIMIT 1
-		) l ON true
-		LEFT JOIN catalogproduct p ON p.id = COALESCE(d.product_id, l.product_id)
+		) aml ON true
+		LEFT JOIN catalogproduct p ON p.id = COALESCE(d.product_id, aml.product_id)
 		LEFT JOIN LATERAL (
 			SELECT g.channel_id
 			FROM dispatch_targets dt
@@ -316,7 +328,58 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 			ORDER BY dt.id
 			LIMIT 1
 		) ch ON true
-		LEFT JOIN channel c ON c.id = COALESCE(ch.channel_id, l.channel_id)
+		LEFT JOIN channel c ON c.id = COALESCE(ch.channel_id, aml.channel_id)
+		WHERE d.created_at >= $1
+		  AND d.status <> 'draft'
+		ORDER BY d.created_at DESC
+		LIMIT $2`, since, limit)
+	return out, err
+}
+
+// listAutoMatchLogsSinceFallback: só dispatches + joins baratos — cobre fila sem dispatch_targets ainda e evita timeline vazia se a query principal falhar no scan.
+func (s *SQLStore) listAutoMatchLogsSinceFallback(since time.Time, limit int) ([]models.AutoMatchLog, error) {
+	var out []models.AutoMatchLog
+	err := s.db.Select(&out, `
+		SELECT
+			-d.id AS id,
+			COALESCE(d.product_id, 0) AS product_id,
+			COALESCE(
+				(SELECT g.channel_id
+				 FROM dispatch_targets dt
+				 JOIN groups g ON g.id = dt.group_id
+				 WHERE dt.dispatch_id = d.id
+				 ORDER BY dt.id
+				 LIMIT 1),
+				0
+			) AS channel_id,
+			d.id AS dispatch_id,
+			(-1.0)::double precision AS score,
+			d.created_at,
+			'{}'::jsonb AS score_breakdown,
+			'{}'::text[] AS match_reasons,
+			NULL::boolean AS false_positive,
+			''::text AS false_positive_reason,
+			NULL::timestamptz AS false_positive_marked_at,
+			COALESCE((SELECT canonical_name FROM catalogproduct p WHERE p.id = d.product_id), '') AS product_name,
+			COALESCE(
+				(SELECT c.name
+				 FROM dispatch_targets dt
+				 JOIN groups g ON g.id = dt.group_id
+				 JOIN channel c ON c.id = g.channel_id
+				 WHERE dt.dispatch_id = d.id
+				 ORDER BY dt.id
+				 LIMIT 1),
+				''
+			) AS channel_name,
+			COALESCE(
+				(SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+				 FROM dispatch_targets dt
+				 JOIN groups g ON g.id = dt.group_id
+				 WHERE dt.dispatch_id = d.id),
+				''
+			) AS group_names,
+			COALESCE(d.composed_by, '') AS composed_by
+		FROM dispatches d
 		WHERE d.created_at >= $1
 		  AND d.status <> 'draft'
 		ORDER BY d.created_at DESC
