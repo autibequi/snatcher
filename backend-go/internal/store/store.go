@@ -269,7 +269,7 @@ type Store interface {
 	AutoMatchHasRecentPairLog(productID, channelID int64, since time.Time) (bool, error)
 	// SetDispatchWaRRCursor persiste cursor round-robin WA no dispatch worker.
 	SetDispatchWaRRCursor(cursor int) error
-	// ListAutoMatchLogsSince retorna linhas de auto_match_logs + disparos composed_by=auto-match
+	// ListAutoMatchLogsSince: timeline por dispatches na janela (created_at), enriquecida com auto_match_logs.
 	// sem linha de log (órfãos), mesma janela temporal — para timeline na UI.
 	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)
 	// CountAutoMatchDispatchesSince conta dispatches criados pelo worker auto-match (composed_by=auto-match).

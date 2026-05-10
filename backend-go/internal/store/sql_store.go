@@ -272,72 +272,57 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 		limit = 200
 	}
 	var out []models.AutoMatchLog
-	// União: logs com dispatch auto-match + órfãos (sem linha em auto_match_logs).
-	// IMPORTANTE: janela temporal e ordenação usam dispatches.created_at — alinha com o KPI
-	// "Dispatches 24h". Filtrar só por auto_match_logs.created_at deixa a timeline vazia se essas
-	// datas divergirem (migração, bulk, clock).
-	// Score -1 marca órfão na UI (sem breakdown).
+	// Driver = dispatches na janela (mesma base conceitual que CountAutoMatchDispatchesSince).
+	// LEFT JOIN ao auto_match_logs mais recente por dispatch — não depende de composed_by na tabela
+	// de logs nem de INNER JOIN que falhava quando composed_by no dispatch estava errado/'manual'.
+	// Incluir também qualquer dispatch que tenha linha em auto_match_logs (ligação explícita ao auto-match).
+	// Score NULL/no log → -1 na UI (sem breakdown).
 	err := s.db.Select(&out, `
-		WITH unioned AS (
-			SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, d.created_at,
-			       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
-			       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
-			       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
-			       COALESCE(p.canonical_name, '') AS product_name,
-			       COALESCE(c.name, '') AS channel_name,
-			       COALESCE(
-			           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-			            FROM dispatch_targets dt
-			            JOIN groups g ON g.id = dt.group_id
-			            WHERE dt.dispatch_id = l.dispatch_id),
-			           ''
-			       ) AS group_names
+		SELECT
+			COALESCE(l.id, -d.id) AS id,
+			COALESCE(d.product_id, l.product_id, 0) AS product_id,
+			COALESCE(ch.channel_id, l.channel_id, 0) AS channel_id,
+			d.id AS dispatch_id,
+			COALESCE(l.score, (-1.0)::double precision) AS score,
+			d.created_at,
+			COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
+			COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
+			l.false_positive,
+			l.false_positive_reason,
+			l.false_positive_marked_at,
+			COALESCE(p.canonical_name, '') AS product_name,
+			COALESCE(c.name, '') AS channel_name,
+			COALESCE(
+				(SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+				 FROM dispatch_targets dt
+				 JOIN groups g ON g.id = dt.group_id
+				 WHERE dt.dispatch_id = d.id),
+				''
+			) AS group_names
+		FROM dispatches d
+		LEFT JOIN LATERAL (
+			SELECT l.*
 			FROM auto_match_logs l
-			INNER JOIN dispatches d ON d.id = l.dispatch_id
-			    AND d.composed_by IN ('auto-match', 'auto')
-			LEFT JOIN catalogproduct p ON p.id = l.product_id
-			LEFT JOIN channel c ON c.id = l.channel_id
-			WHERE d.created_at >= $1
-
-			UNION ALL
-
-			SELECT (-d.id) AS id,
-			       COALESCE(d.product_id, 0) AS product_id,
-			       COALESCE(ch.channel_id, 0) AS channel_id,
-			       d.id AS dispatch_id,
-			       (-1.0)::double precision AS score,
-			       d.created_at,
-			       '{}'::jsonb AS score_breakdown,
-			       '{}'::text[] AS match_reasons,
-			       NULL::boolean AS false_positive,
-			       NULL::text AS false_positive_reason,
-			       NULL::timestamp with time zone AS false_positive_marked_at,
-			       COALESCE(p2.canonical_name, '') AS product_name,
-			       COALESCE(c2.name, '') AS channel_name,
-			       COALESCE(
-			           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-			            FROM dispatch_targets dt
-			            JOIN groups g ON g.id = dt.group_id
-			            WHERE dt.dispatch_id = d.id),
-			           ''
-			       ) AS group_names
-			FROM dispatches d
-			LEFT JOIN catalogproduct p2 ON p2.id = d.product_id
-			LEFT JOIN LATERAL (
-				SELECT g.channel_id
-				FROM dispatch_targets dt
-				JOIN groups g ON g.id = dt.group_id
-				WHERE dt.dispatch_id = d.id
-				ORDER BY dt.id
-				LIMIT 1
-			) ch ON true
-			LEFT JOIN channel c2 ON c2.id = ch.channel_id
-			WHERE d.composed_by IN ('auto-match', 'auto')
-			  AND d.created_at >= $1
-			  AND NOT EXISTS (SELECT 1 FROM auto_match_logs l2 WHERE l2.dispatch_id = d.id)
-		)
-		SELECT * FROM unioned
-		ORDER BY created_at DESC
+			WHERE l.dispatch_id = d.id
+			ORDER BY l.created_at DESC NULLS LAST, l.id DESC
+			LIMIT 1
+		) l ON true
+		LEFT JOIN catalogproduct p ON p.id = COALESCE(d.product_id, l.product_id)
+		LEFT JOIN LATERAL (
+			SELECT g.channel_id
+			FROM dispatch_targets dt
+			JOIN groups g ON g.id = dt.group_id
+			WHERE dt.dispatch_id = d.id
+			ORDER BY dt.id
+			LIMIT 1
+		) ch ON true
+		LEFT JOIN channel c ON c.id = COALESCE(ch.channel_id, l.channel_id)
+		WHERE d.created_at >= $1
+		  AND (
+				d.composed_by IN ('auto-match', 'auto')
+				OR EXISTS (SELECT 1 FROM auto_match_logs aml WHERE aml.dispatch_id = d.id)
+			)
+		ORDER BY d.created_at DESC
 		LIMIT $2`, since, limit)
 	return out, err
 }

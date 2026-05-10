@@ -53,6 +53,8 @@ interface UnifiedRow {
   date: string
   channel?: string
   group?: string
+  /** Disparos (aba Tudo / export): valor bruto da API */
+  composed_by?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,6 +83,44 @@ export const DISPATCH_STATUS_TOOLTIP: Record<string, string> = {
   completed: 'Concluído — todos os grupos receberam a mensagem com sucesso.',
   failed: 'Falhou — um ou mais grupos não receberam. Veja esta aba com filtro Falhou.',
   cancelled: 'Cancelado — disparo interrompido manualmente antes da entrega.',
+}
+
+/** Valor legível para CSV/colunas; vazio = sem dado no servidor. */
+function dispatchOriginLabel(composedBy?: string): string {
+  const v = (composedBy ?? '').trim()
+  if (!v) return ''
+  const map: Record<string, string> = {
+    'auto-match': 'Auto-match',
+    auto: 'Auto (legado)',
+    manual: 'Manual',
+    api: 'API',
+    'scheduled-ad': 'Anúncio agendado',
+  }
+  return map[v] ?? v
+}
+
+function DispatchOriginBadge({ composedBy }: { composedBy?: string }) {
+  const v = (composedBy ?? '').trim()
+  if (!v) {
+    return (
+      <Tooltip content="Sem campo composed_by no servidor — disparo antigo ou migração incompleta." side="top">
+        <span className="text-fg-3 text-xs">—</span>
+      </Tooltip>
+    )
+  }
+  const label = dispatchOriginLabel(composedBy)
+  let variant: 'default' | 'success' | 'warning' | 'danger' | 'accent' | 'outline' = 'default'
+  if (v === 'auto-match' || v === 'auto') variant = 'success'
+  else if (v === 'manual') variant = 'warning'
+  else if (v === 'scheduled-ad') variant = 'accent'
+  else if (v === 'api') variant = 'outline'
+  return (
+    <Tooltip content={`Origem do disparo (composed_by: ${v})`} side="top">
+      <Badge variant={variant} size="sm">
+        {label}
+      </Badge>
+    </Tooltip>
+  )
 }
 
 function TypeBadge({ type }: { type: LogType }) {
@@ -115,10 +155,11 @@ function TypeBadge({ type }: { type: LogType }) {
 // ── CSV Export ────────────────────────────────────────────────────────────────
 
 function exportCsv(rows: UnifiedRow[], filename = 'logs.csv') {
-  const header = ['ID', 'Tipo', 'Descrição', 'Status', 'Canal', 'Grupo', 'Data']
+  const header = ['ID', 'Tipo', 'Origem', 'Descrição', 'Status', 'Canal', 'Grupo', 'Data']
   const lines = rows.map(r => [
     r.id,
     r.type,
+    `"${dispatchOriginLabel(r.composed_by).replace(/"/g, '""')}"`,
     `"${r.label.replace(/"/g, '""')}"`,
     r.status,
     r.channel ?? '',
@@ -285,12 +326,15 @@ function DispatchDrawer({
           </span>
         </div>
 
-        {dispatch.composed_by && (
-          <div>
-            <p className="text-xs text-fg-3 mb-1">Criado por</p>
-            <p className="text-sm text-fg">{dispatch.composed_by}</p>
+        <div>
+          <p className="text-xs text-fg-3 mb-1">Origem</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <DispatchOriginBadge composedBy={dispatch.composed_by} />
+            {dispatch.composed_by ? (
+              <span className="text-[10px] text-fg-3 font-mono">composed_by={dispatch.composed_by}</span>
+            ) : null}
           </div>
-        )}
+        </div>
 
         {(dispatch.channel_name || dispatch.group_name) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -631,6 +675,7 @@ export default function Logs() {
         date: d.created_at,
         channel: d.channel_name,
         group: d.group_name,
+        composed_by: d.composed_by,
       })
     }
     for (const l of crawlLogs) {
@@ -669,6 +714,7 @@ export default function Logs() {
         date: d.created_at,
         channel: d.channel_name,
         group: d.group_name,
+        composed_by: d.composed_by,
       }))
     } else if (logTab === 'crawlers') {
       rows = crawlLogs.map<UnifiedRow>(l => ({
@@ -780,17 +826,24 @@ export default function Logs() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
-                {['Tipo', 'Descrição', 'Canal', 'Grupo', 'Status', 'Data'].map(h => (
+                {['Tipo', 'Origem', 'Descrição', 'Canal', 'Grupo', 'Status', 'Data'].map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {unifiedRows.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-fg-3 text-sm">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-fg-3 text-sm">Nenhum registro encontrado.</td></tr>
               ) : unifiedRows.map(row => (
                 <tr key={`${row.type}-${row.id}`} className="border-b border-border last:border-0 hover:bg-surface-2">
                   <td className="px-4 py-2.5"><TypeBadge type={row.type} /></td>
+                  <td className="px-4 py-2.5">
+                    {row.type === 'dispatch' || row.type === 'scheduled' ? (
+                      <DispatchOriginBadge composedBy={row.composed_by} />
+                    ) : (
+                      <span className="text-fg-3 text-xs">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-fg text-sm max-w-xs truncate">{row.label}</td>
                   <td className="px-4 py-2.5 text-fg-3 text-xs">{row.channel ?? '—'}</td>
                   <td className="px-4 py-2.5 text-fg-3 text-xs">{row.group ?? '—'}</td>
@@ -869,6 +922,7 @@ export default function Logs() {
                   <tr className="border-b border-border bg-surface-2">
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">ID</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Tipo</th>
+                    <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Origem</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Canal</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Grupo</th>
                     <th className="text-left p-3 text-xs text-fg-2 font-medium uppercase tracking-wide">Status</th>
@@ -907,6 +961,9 @@ export default function Logs() {
                           {isDraft && <span className="text-xs text-accent mt-0.5 block">→ clique para continuar edição</span>}
                         </td>
                         <td className="p-3"><TypeBadge type={rowType} /></td>
+                        <td className="p-3 whitespace-nowrap">
+                          <DispatchOriginBadge composedBy={d.composed_by} />
+                        </td>
                         <td className="p-3 text-fg-2 text-xs">{d.channel_name ?? '—'}</td>
                         <td className="p-3 text-fg-2 text-xs">{d.group_name ?? '—'}</td>
                         <td className="p-3">
