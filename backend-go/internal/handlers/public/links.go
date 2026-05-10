@@ -20,7 +20,7 @@ func ShortLinkRedirect(st store.Store, rd *redirect.Redirector) http.HandlerFunc
 		destURL, _, found := st.PeekShortLinkByID(shortID)
 		if found {
 			rd.EnqueueClickLog(r, shortID)
-			w.Header().Set("Cache-Control", "no-cache")
+			redirect.SetProductRedirectCacheHeaders(w.Header())
 			http.Redirect(w, r, destURL, http.StatusFound)
 			return
 		}
@@ -32,7 +32,7 @@ func ShortLinkRedirect(st store.Store, rd *redirect.Redirector) http.HandlerFunc
 		}
 		programs, _ := st.ListAffiliatePrograms(nil)
 		finalURL, _, _ := affiliates.BuildLink(v.URL, v.Source, programs)
-		w.Header().Set("Cache-Control", "no-cache")
+		redirect.SetProductRedirectCacheHeaders(w.Header())
 		http.Redirect(w, r, finalURL, http.StatusFound)
 	}
 }
