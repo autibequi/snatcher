@@ -1,3 +1,4 @@
+import { uiFocusRing } from './tokens'
 
 interface Tab { id: string; label: string }
 
@@ -16,7 +17,7 @@ export function Tabs({ tabs, active, onChange, className = '' }: TabsProps) {
           key={tab.id}
           type="button"
           onClick={() => onChange(tab.id)}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px rounded-t-md ${uiFocusRing} ${
             active === tab.id
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-2 hover:text-fg hover:border-border-strong'

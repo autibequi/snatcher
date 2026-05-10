@@ -1,4 +1,5 @@
 import React from 'react'
+import { uiFocusRing } from './tokens'
 
 export interface SegmentedOption<T extends string> {
   value: T
@@ -28,10 +29,10 @@ export function SegmentedControl<T extends string>({
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+          className={`px-4 py-2 min-h-9 rounded-lg text-sm font-medium transition-colors ${uiFocusRing} ${
             value === opt.value
-              ? 'bg-accent text-white'
-              : 'bg-surface-2 text-fg-2 hover:bg-border border border-border'
+              ? 'bg-accent text-white shadow-sm'
+              : 'bg-surface-2 text-fg-2 hover:bg-surface-3 border border-border'
           }`}
         >
           {opt.label}

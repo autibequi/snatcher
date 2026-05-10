@@ -1,7 +1,7 @@
 import React from 'react'
 
 const controlClass = `
-  w-full min-h-[2.25rem] px-2.5 py-1.5 text-sm rounded-md border
+  w-full min-h-[2.25rem] px-2.5 py-1.5 text-sm rounded-lg border
   bg-surface text-fg placeholder:text-fg-3
   border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent
   disabled:opacity-50 disabled:cursor-not-allowed

@@ -1,5 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
+import { uiFocusRing } from './tokens'
 
 interface ModalProps {
   open: boolean
@@ -23,7 +24,7 @@ export function Modal({ open, onClose, title, children, footer, panelClassName =
       />
       {/* Panel */}
       <div
-        className={`relative bg-surface border border-border rounded-md shadow-xl w-full mx-4 max-h-[90vh] min-h-0 flex flex-col ${panelClassName}`}
+        className={`relative bg-surface border border-border rounded-lg shadow-modal w-full mx-4 max-h-[90vh] min-h-0 flex flex-col ${panelClassName}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -31,7 +32,7 @@ export function Modal({ open, onClose, title, children, footer, panelClassName =
           <button
             type="button"
             onClick={onClose}
-            className="text-fg-3 hover:text-fg transition-colors p-1 rounded"
+            className={`text-fg-3 hover:text-fg transition-colors p-1.5 rounded-md ${uiFocusRing}`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

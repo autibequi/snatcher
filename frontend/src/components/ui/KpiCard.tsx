@@ -1,3 +1,4 @@
+import { uiPanel, uiSectionLabel } from './tokens'
 
 /** Tonal override para o delta — por padrão: positivo=success, negativo=danger */
 export type DeltaTone = 'success' | 'danger' | 'warning' | 'neutral'
@@ -54,9 +55,9 @@ export function KpiCard({ label, value, delta, subtitle, tooltip, className = ''
   }
 
   return (
-    <div className={`bg-surface border border-border rounded-md p-4 shadow-card ${className}`}>
+    <div className={`${uiPanel} p-4 ${className}`}>
       <div className="flex items-center gap-1">
-        <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">{label}</p>
+        <p className={uiSectionLabel}>{label}</p>
         {tooltip && (
           <span
             title={tooltip}

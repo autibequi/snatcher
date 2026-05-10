@@ -12,11 +12,11 @@ interface BadgeProps {
 
 const variantClasses: Record<BadgeVariant, string> = {
   default: 'bg-surface-2 text-fg-2 border border-border',
-  success: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  warning: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  danger: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  accent: 'bg-accent/10 text-accent',
-  outline: 'border border-border-strong text-fg-2',
+  success: 'bg-success-soft text-success border border-success/25',
+  warning: 'bg-warning-soft text-warning border border-warning/30',
+  danger: 'bg-danger-soft text-danger border border-danger/30',
+  accent: 'bg-accent-soft text-accent border border-accent/25',
+  outline: 'border border-border-strong text-fg-2 bg-transparent',
 }
 
 const sizeClasses: Record<BadgeSize, string> = {
@@ -26,7 +26,7 @@ const sizeClasses: Record<BadgeSize, string> = {
 
 export function Badge({ variant = 'default', size = 'sm', children, className = '' }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center rounded-sm font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}>
+    <span className={`inline-flex items-center rounded-md font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}>
       {children}
     </span>
   )

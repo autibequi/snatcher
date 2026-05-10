@@ -1,4 +1,5 @@
 import React from 'react'
+import { uiPanel } from './tokens'
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   /** @default true */
@@ -6,14 +7,14 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * Painel de superfície padrão do app: borda, cantos, fundo.
+ * Painel de superfície padrão — alinhado a KpiCard / tokens `uiPanel`.
  */
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className = '', padding = true, children, ...props }, ref) => {
     return (
       <div
         ref={ref}
-        className={`border border-border rounded-lg bg-surface ${padding ? 'p-4' : ''} ${className}`.trim()}
+        className={`${uiPanel} ${padding ? 'p-4' : ''} ${className}`.trim()}
         {...props}
       >
         {children}
