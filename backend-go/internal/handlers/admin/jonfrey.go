@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,23 @@ type JonfreyHandler struct {
 	// Ciclo agendado (scheduler): um batch por vez — evita dois RunCycle sobrepostos e LastRunAt incorreto.
 	schedCycleMu   sync.Mutex
 	schedCycleBusy bool
+}
+
+// flexMergeID decodifica merge_id do LLM como número JSON ou string ("123").
+func flexMergeID(raw json.RawMessage) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var n int64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		return n
+	}
+	return 0
 }
 
 const (
@@ -294,18 +312,21 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 		_ = h.db.GetContext(ctx, &deliveryCount, `
 			SELECT COUNT(*) FROM dispatch_targets dt
 			JOIN dispatches d ON d.id = dt.dispatch_id
-			WHERE d.channel_id = $1 AND dt.status = 'delivered'
+			JOIN groups grp ON grp.id = dt.group_id
+			WHERE grp.channel_id = $1 AND dt.status = 'delivered'
 			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
 		_ = h.db.GetContext(ctx, &failedCount, `
 			SELECT COUNT(*) FROM dispatch_targets dt
 			JOIN dispatches d ON d.id = dt.dispatch_id
-			WHERE d.channel_id = $1 AND dt.status = 'failed'
+			JOIN groups grp ON grp.id = dt.group_id
+			WHERE grp.channel_id = $1 AND dt.status = 'failed'
 			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
 		var clicksOnDelivered int
 		_ = h.db.GetContext(ctx, &clicksOnDelivered, `
 			SELECT COALESCE(SUM(dt.click_count), 0) FROM dispatch_targets dt
 			JOIN dispatches d ON d.id = dt.dispatch_id
-			WHERE d.channel_id = $1 AND dt.status = 'delivered'
+			JOIN groups grp ON grp.id = dt.group_id
+			WHERE grp.channel_id = $1 AND dt.status = 'delivered'
 			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
 		ctr := 0.0
 		if deliveryCount > 0 {
@@ -896,18 +917,19 @@ func actionDetectFailingChannel(ctx context.Context, h *JonfreyHandler) (map[str
 	var stats []stat
 	err := h.db.SelectContext(ctx, &stats, `
 		SELECT
-		  d.channel_id,
+		  grp.channel_id AS channel_id,
 		  COALESCE(c.name, '') AS channel_name,
 		  COUNT(dt.id) AS total,
 		  COUNT(*) FILTER (WHERE dt.status = 'delivered') AS delivered,
 		  COUNT(*) FILTER (WHERE dt.status = 'failed') AS failed,
 		  COALESCE(SUM(dt.click_count), 0) AS clicks
-		FROM dispatches d
-		JOIN dispatch_targets dt ON dt.dispatch_id = d.id
-		LEFT JOIN channel c ON c.id = d.channel_id
+		FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		JOIN groups grp ON grp.id = dt.group_id
+		LEFT JOIN channel c ON c.id = grp.channel_id
 		WHERE d.created_at > now() - interval '14 days'
-		  AND d.channel_id IS NOT NULL
-		GROUP BY d.channel_id, c.name
+		  AND grp.channel_id IS NOT NULL
+		GROUP BY grp.channel_id, c.name
 		HAVING COUNT(dt.id) >= 20`)
 	if err != nil {
 		return nil, nil, "", err
@@ -987,9 +1009,10 @@ func actionManageGroupHealth(ctx context.Context, h *JonfreyHandler) (map[string
 		  AND g.last_error_at < now() - interval '7 days'
 		  AND (
 		      SELECT COUNT(*) FROM dispatch_targets dt
+		      JOIN dispatches d ON d.id = dt.dispatch_id
 		      WHERE dt.group_id = g.id
 		        AND dt.status = 'failed'
-		        AND dt.created_at > now() - interval '14 days'
+		        AND COALESCE(dt.attempted_at, d.created_at) > now() - interval '14 days'
 		  ) >= 3`)
 
 	resArch, err := h.db.ExecContext(ctx, `
@@ -999,9 +1022,10 @@ func actionManageGroupHealth(ctx context.Context, h *JonfreyHandler) (map[string
 		  AND g.last_error_at < now() - interval '7 days'
 		  AND (
 		      SELECT COUNT(*) FROM dispatch_targets dt
+		      JOIN dispatches d ON d.id = dt.dispatch_id
 		      WHERE dt.group_id = g.id
 		        AND dt.status = 'failed'
-		        AND dt.created_at > now() - interval '14 days'
+		        AND COALESCE(dt.attempted_at, d.created_at) > now() - interval '14 days'
 		  ) >= 3`)
 	if err != nil {
 		return nil, nil, "", err
@@ -1117,7 +1141,7 @@ func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[str
 			JOIN auto_match_logs aml ON aml.dispatch_id = d.id
 			WHERE d.status IN ('pending_approval', 'queued')
 		)
-		UPDATE dispatches SET status = 'rejected'
+		UPDATE dispatches SET status = 'failed'
 		WHERE id IN (SELECT id FROM ranked WHERE rn > 1)`)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("dedup: %w", err)
@@ -1127,15 +1151,18 @@ func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[str
 	// Passo 2: contar e expirar targets stale
 	var beforeStale int
 	_ = h.db.GetContext(ctx, &beforeStale, `
-		SELECT COUNT(*) FROM dispatch_targets
-		WHERE status = 'pending' AND created_at < now() - interval '2 hours'`)
+		SELECT COUNT(*) FROM dispatch_targets dt
+		JOIN dispatches d ON d.id = dt.dispatch_id
+		WHERE dt.status = 'pending' AND d.created_at < now() - interval '2 hours'`)
 
 	resExpire, err := h.db.ExecContext(ctx, `
-		UPDATE dispatch_targets
+		UPDATE dispatch_targets dt
 		SET status = 'failed',
 		    error_reason = 'expirado pelo Jonfrey'
-		WHERE status = 'pending'
-		  AND created_at < now() - interval '2 hours'`)
+		FROM dispatches d
+		WHERE dt.dispatch_id = d.id
+		  AND dt.status = 'pending'
+		  AND d.created_at < now() - interval '2 hours'`)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -1143,7 +1170,7 @@ func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[str
 
 	beforeMap := map[string]any{"stale_pending_count": beforeStale}
 	afterMap := map[string]any{"rejected_duplicates": dedupedCount, "expired": expiredCount}
-	reasoning := fmt.Sprintf("Removi %d dispatches duplicados na fila. Marquei %d targets travados em pending há mais de 2h como failed para liberar a fila.", dedupedCount, expiredCount)
+	reasoning := fmt.Sprintf("Marquei %d dispatches duplicados como failed. Expirei %d targets pending há mais de 2h (hora do dispatch) como failed para liberar a fila.", dedupedCount, expiredCount)
 	return beforeMap, afterMap, reasoning, nil
 }
 
@@ -1260,10 +1287,10 @@ JSON apenas:
 			Aliases   []string `json:"aliases"`
 		} `json:"tag_groups"`
 		TaxonomyDecisions []struct {
-			ID            int64    `json:"id"`
-			Action        string   `json:"action"`
-			MergeInto     int64    `json:"merge_id"`
-			ExtraKeywords []string `json:"extra_keywords"`
+			ID            int64           `json:"id"`
+			Action        string          `json:"action"`
+			MergeID       json.RawMessage `json:"merge_id"`
+			ExtraKeywords []string        `json:"extra_keywords"`
 		} `json:"taxonomy_decisions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
@@ -1324,7 +1351,8 @@ JSON apenas:
 			rejected_count++
 
 		case "merge_into":
-			target, ok := approvedByID[d.MergeInto]
+			mid := flexMergeID(d.MergeID)
+			target, ok := approvedByID[mid]
 			if !ok { break }
 			seen := map[string]bool{}
 			for _, k := range target.Keywords { seen[k] = true }

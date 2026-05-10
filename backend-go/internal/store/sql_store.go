@@ -2293,10 +2293,22 @@ func (s *SQLStore) UpsertClusters(clusters []models.Cluster) error {
 		return err
 	}
 	for _, c := range clusters {
+		// Colunas PostgreSQL são BIGINT[] / TEXT[] — não aceitar literal JSON "[1,2]" (malformed array).
+		var memberIDs []int64
+		if len(c.MemberChannels) > 0 {
+			_ = json.Unmarshal(c.MemberChannels, &memberIDs)
+		}
+		var cats, brands []string
+		if len(c.TopCategories) > 0 {
+			_ = json.Unmarshal(c.TopCategories, &cats)
+		}
+		if len(c.TopBrands) > 0 {
+			_ = json.Unmarshal(c.TopBrands, &brands)
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO clusters (label, description, member_channels, metrics, top_categories, top_brands)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
-			c.Label, c.Description, c.MemberChannels, c.Metrics, c.TopCategories, c.TopBrands); err != nil {
+			c.Label, c.Description, pq.Array(memberIDs), c.Metrics, pq.Array(cats), pq.Array(brands)); err != nil {
 			return err
 		}
 	}
