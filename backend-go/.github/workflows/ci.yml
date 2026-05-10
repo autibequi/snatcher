@@ -17,11 +17,13 @@ jobs:
         with:
           go-version: "1.23"
           cache: false
+          cache-dependency-path: backend-go/go.sum
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          working-directory: backend-go
           args: --config .golangci.yml
 
   test:
@@ -66,12 +68,26 @@ jobs:
   build:
     name: Build Status
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+          cache: true
+          cache-dependency-path: backend-go/go.sum
 
-      - name: Build
-        run: go build ./...
+      # Paridade com Dockerfile (tags=nosqlite, sem CGO, -p 1) — falha aqui = mesmo erro no Coolify.
+      - name: Build packages + binaries (Dockerfile parity)
+        env:
+          CGO_ENABLED: "0"
+          GOMAXPROCS: "1"
+          GOGC: "50"
+        run: |
+          go build -tags=nosqlite -buildvcs=false -trimpath -p 1 ./...
+          go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o /tmp/backendv2 ./cmd/server
+          go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o /tmp/seed ./cmd/seed
+          go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o /tmp/public ./cmd/public

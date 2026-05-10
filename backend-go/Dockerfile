@@ -7,6 +7,8 @@ WORKDIR /app
 # Produção usa Postgres; -tags=nosqlite não compila modernc.org/sqlite (reduz muito RAM/tempo de build).
 ENV CGO_ENABLED=0
 ENV GOMAXPROCS=1
+# Menos pico de heap durante compile em VPS pequenos (trade-off: mais GC).
+ENV GOGC=50
 
 COPY go.mod go.sum ./
 RUN go mod download
