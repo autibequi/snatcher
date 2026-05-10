@@ -573,7 +573,7 @@ export function TabOverview() {
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-4 py-4 sm:p-6 space-y-5">
       <FullAutoStatusBanner
         placement="automations"
         trailing={

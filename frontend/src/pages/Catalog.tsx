@@ -372,6 +372,7 @@ export default function Catalog() {
   const [expandedId, setExpandedId] = React.useState<number | null>(null)
   const [showInactive, setShowInactive] = React.useState(false)
   const [statusFilter, setStatusFilter] = React.useState('')
+  const [mobileFiltersOpen, setMobileFiltersOpen] = React.useState(false)
 
   const curateMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
@@ -441,25 +442,6 @@ export default function Catalog() {
   // Resetar página ao mudar filtros
   React.useEffect(() => { setPage(0) }, [search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter])
 
-  // GTM — GA4 view_item ao expandir linha (detalhe do produto + histórico)
-  React.useEffect(() => {
-    if (expandedId == null) return
-    const p = products.find(x => x.id === expandedId)
-    if (!p) return
-    const rawTitle = p.canonical_name ?? 'Produto'
-    const title = formatTitle(rawTitle, typeof p.brand === 'string' ? p.brand : undefined)
-    const tags = parseTags(p.tags)
-    pushCatalogProductView({
-      id: p.id,
-      title,
-      brand: typeof p.brand === 'string' ? p.brand : undefined,
-      price: p.lowest_price ?? 0,
-      category: tags[0],
-      source: p.lowest_price_source || undefined,
-      curation_status: p.curation_status,
-    })
-  }, [expandedId, products])
-
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
     queryKey: ['catalog', search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter, page],
     queryFn: () => {
@@ -511,40 +493,139 @@ export default function Catalog() {
     }
   }
 
-  return (
-    <div className="flex h-full overflow-hidden">
+  const hasActiveFilters = !!(
+    search ||
+    source ||
+    tagFilter ||
+    categoryFilter ||
+    subcategoryFilter ||
+    brandFilter ||
+    priceMin ||
+    priceMax ||
+    statusFilter
+  )
 
-      {/* ── Sidebar de filtros + contagem ── */}
-      <div className="flex flex-col w-52 flex-shrink-0 border-r border-border bg-surface">
-        <CatalogSidebar
-          search={search} onSearch={setSearch}
-          source={source} onSource={setSource} sources={sources}
-          categoryFilter={categoryFilter} onCategoryFilter={setCategoryFilter} categories={categories}
-          subcategoryFilter={subcategoryFilter} onSubcategoryFilter={setSubcategoryFilter} subcategories={subcategories}
-          brandFilter={brandFilter} onBrandFilter={setBrandFilter} brands={brands}
-          priceMin={priceMin} onPriceMin={setPriceMin}
-          priceMax={priceMax} onPriceMax={setPriceMax}
-          statusFilter={statusFilter} onStatusFilter={setStatusFilter}
-          showInactive={showInactive} onShowInactive={setShowInactive}
-          onClear={() => {
-            setSearch('')
-            setSource('')
-            setTagFilter('')
-            setCategoryFilter('')
-            setSubcategoryFilter('')
-            setBrandFilter('')
-            setPriceMin('')
-            setPriceMax('')
-            setStatusFilter('')
-          }}
-          hasActiveFilters={!!(search || source || tagFilter || categoryFilter || subcategoryFilter || brandFilter || priceMin || priceMax || statusFilter)}
-          products={products}
+  const clearFilters = () => {
+    setSearch('')
+    setSource('')
+    setTagFilter('')
+    setCategoryFilter('')
+    setSubcategoryFilter('')
+    setBrandFilter('')
+    setPriceMin('')
+    setPriceMax('')
+    setStatusFilter('')
+  }
+
+  // GTM — GA4 view_item ao expandir linha (detalhe do produto + histórico)
+  React.useEffect(() => {
+    if (expandedId == null) return
+    const p = products.find(x => x.id === expandedId)
+    if (!p) return
+    const rawTitle = p.canonical_name ?? 'Produto'
+    const title = formatTitle(rawTitle, typeof p.brand === 'string' ? p.brand : undefined)
+    const tags = parseTags(p.tags)
+    pushCatalogProductView({
+      id: p.id,
+      title,
+      brand: typeof p.brand === 'string' ? p.brand : undefined,
+      price: p.lowest_price ?? 0,
+      category: tags[0],
+      source: p.lowest_price_source || undefined,
+      curation_status: p.curation_status,
+    })
+  }, [expandedId, products])
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const onChange = () => {
+      if (mq.matches) setMobileFiltersOpen(false)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  const sidebarProps = {
+    search,
+    onSearch: setSearch,
+    source,
+    onSource: setSource,
+    sources,
+    categoryFilter,
+    onCategoryFilter: setCategoryFilter,
+    categories,
+    subcategoryFilter,
+    onSubcategoryFilter: setSubcategoryFilter,
+    subcategories,
+    brandFilter,
+    onBrandFilter: setBrandFilter,
+    brands,
+    priceMin,
+    onPriceMin: setPriceMin,
+    priceMax,
+    onPriceMax: setPriceMax,
+    statusFilter,
+    onStatusFilter: setStatusFilter,
+    showInactive,
+    onShowInactive: setShowInactive,
+    onClear: clearFilters,
+    hasActiveFilters,
+    products,
+  }
+
+  return (
+    <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
+      {/* Mobile: overlay ao abrir filtros */}
+      {mobileFiltersOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden border-0 cursor-default"
+          aria-label="Fechar filtros"
+          onClick={() => setMobileFiltersOpen(false)}
         />
+      )}
+
+      {/* Sidebar: drawer em &lt; md, coluna fixa em md+ */}
+      <div
+        id="catalog-filter-panel"
+        className={`
+          flex flex-col flex-shrink-0 border-r border-border bg-surface overflow-hidden
+          fixed inset-y-0 left-0 z-50 w-[min(85vw,20rem)] transition-transform duration-200 ease-out
+          md:static md:z-auto md:w-52 md:translate-x-0 md:inset-auto
+          ${mobileFiltersOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+      >
+        <div className="flex md:hidden items-center justify-between px-3 py-2 border-b border-border flex-shrink-0 bg-surface">
+          <span className="text-sm font-semibold text-fg">Filtros</span>
+          <button
+            type="button"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-fg-2 hover:text-fg hover:bg-surface-2 text-lg leading-none"
+            aria-label="Fechar filtros"
+            onClick={() => setMobileFiltersOpen(false)}
+          >
+            ✕
+          </button>
+        </div>
+        <CatalogSidebar {...sidebarProps} />
         <CountChip total={totalProducts} page={page} totalPages={totalPages} />
       </div>
 
       {/* ── Conteúdo principal ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-border bg-surface flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(true)}
+            className="min-h-[44px] px-3 py-2 rounded-md border border-border bg-surface-2 text-sm font-medium text-fg hover:bg-surface flex items-center gap-2"
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="catalog-filter-panel"
+          >
+            Filtros
+            {hasActiveFilters && (
+              <span className="h-2 w-2 rounded-full bg-accent shrink-0" aria-label="Há filtros ativos" title="Há filtros ativos" />
+            )}
+          </button>
+        </div>
         {/* Barra de seleção (só aparece quando tem itens marcados) */}
         {selected.size > 0 && (
           <div className="px-4 py-1.5 flex gap-2 border-b border-border flex-shrink-0 items-center">
@@ -558,13 +639,13 @@ export default function Catalog() {
       {/* Tabela */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="p-6 space-y-2">
+          <div className="px-4 py-4 sm:p-6 space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
         ) : products.length === 0 ? (
-          <div className="p-6">
+          <div className="px-4 py-4 sm:p-6">
             <EmptyState
               title="Nenhum produto"
               description="Configure um crawler para comecar a coletar produtos."
@@ -775,7 +856,7 @@ export default function Catalog() {
         )}
         {/* Paginação */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-border bg-surface">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-t border-border bg-surface">
             <button
               type="button"
               disabled={page === 0}

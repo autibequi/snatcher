@@ -501,7 +501,7 @@ export default function Groups() {
     (waGroupsLoading || waGroupsFetching)
 
   return (
-    <div className="p-6">
+    <div className="px-4 py-4 sm:p-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>

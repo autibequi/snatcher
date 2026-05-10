@@ -128,7 +128,8 @@ function TeamTab() {
       {isLoading ? <Skeleton className="h-20" /> : team.length === 0 ? (
         <EmptyState title="Nenhum operador" />
       ) : (
-        <table className="w-full text-sm bg-surface border border-border rounded-md">
+        <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm bg-surface min-w-[520px]">
           <thead>
             <tr className="border-b border-border">
               {['Nome', 'Email', 'Role', 'Último login', 'Ações'].map(h =>
@@ -161,6 +162,7 @@ function TeamTab() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {showCreate && (
@@ -878,11 +880,11 @@ export default function Settings() {
   const [tab, setTab] = useState('general')
 
   return (
-    <div className="p-6">
+    <div className="px-4 py-4 sm:p-6">
       <div className="bg-surface border border-border rounded-lg overflow-hidden">
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-        <div className="p-6">
+        <div className="px-4 py-4 sm:p-6">
           {tab === 'general' && <GeneralTab />}
           {tab === 'appearance' && <AppearanceTab />}
           {tab === 'team' && <TeamTab />}

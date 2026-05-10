@@ -90,7 +90,8 @@ export function ChannelPerformanceTable() {
           ))}
         </div>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[520px]">
           <thead>
             <tr className="border-b border-border">
               <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
@@ -138,6 +139,7 @@ export function ChannelPerformanceTable() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )

@@ -166,7 +166,7 @@ export function WorkQueueBadge() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-2 min-h-[2.25rem] px-3 py-1.5 rounded-full text-sm font-semibold transition-colors shadow-sm border border-transparent ${
+        className={`flex items-center gap-1.5 sm:gap-2 min-h-[44px] sm:min-h-[2.25rem] px-2.5 sm:px-3 py-1.5 rounded-full text-sm font-semibold transition-colors shadow-sm border border-transparent ${
           activeRunningCount > 0
             ? 'bg-accent/15 text-accent border-accent/25 hover:bg-accent/25'
             : 'bg-surface-2 text-fg-2 hover:text-fg border-border/60'
@@ -179,7 +179,14 @@ export function WorkQueueBadge() {
         <span className="text-lg leading-none" aria-hidden>
           ⏱
         </span>
-        <span className="whitespace-nowrap">
+        <span className="md:hidden whitespace-nowrap tabular-nums text-xs font-bold">
+          {activeRunningCount > 0
+            ? activeRunningCount
+            : items.length > 0
+              ? items.length
+              : '—'}
+        </span>
+        <span className="hidden md:inline whitespace-nowrap">
           {activeRunningCount > 0
             ? `${activeRunningCount} ativo(s)`
             : items.length > 0

@@ -167,7 +167,7 @@ export default function Analytics() {
   }, [isLoading, data, days])
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-4 py-4 sm:p-6 space-y-6">
       {/* Header + filtro de período */}
       <div className="flex items-center justify-end flex-wrap gap-3">
         <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border">
@@ -212,8 +212,9 @@ export default function Analytics() {
         ) : !data?.daily?.length ? (
           <p className="text-sm text-fg-3 text-center py-10">Sem dados no período</p>
         ) : (
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data.daily} margin={{ top: 2, right: 4, left: -20, bottom: 0 }}>
+          <div className="h-[160px] sm:h-[200px] w-full min-h-[140px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.daily} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border,#e5e7eb)" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -226,6 +227,7 @@ export default function Analytics() {
               <Bar dataKey="clicks" name="Cliques" fill="var(--color-accent,#6366f1)" radius={[3,3,0,0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
@@ -238,14 +240,15 @@ export default function Analytics() {
           ) : !data?.by_source?.length ? (
             <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
+            <div className="h-[180px] sm:h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={data.by_source}
                   dataKey="clicks"
                   nameKey="source"
                   cx="50%" cy="50%"
-                  outerRadius={70}
+                  outerRadius="75%"
                   label={({ name, percent }) =>
                     `${name ?? ''} ${((percent ?? 0) * 100).toFixed(0)}%`
                   }
@@ -271,6 +274,7 @@ export default function Analytics() {
                 />
               </PieChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 

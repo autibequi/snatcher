@@ -78,7 +78,7 @@ export function HelpManualButton({ onOpenManual }: { onOpenManual: () => void })
       <button
         type="button"
         onClick={openManual}
-        className="w-8 h-8 rounded-full border border-border bg-surface-2 text-fg-2 hover:text-accent hover:border-accent/50 flex items-center justify-center transition-colors flex-shrink-0"
+        className="min-h-[44px] min-w-[44px] rounded-full border border-border bg-surface-2 text-fg-2 hover:text-accent hover:border-accent/50 inline-flex items-center justify-center transition-colors flex-shrink-0"
         aria-label={`Ajuda: ${helpTopic}`}
         title={`Ajuda — ${helpTopic}`}
       >

@@ -50,12 +50,12 @@ export function Topbar({ onMenuClick, onOpenManual }: TopbarProps) {
   const title = override ?? baseTitle
 
   return (
-    <header className="flex items-center h-14 px-3 sm:px-4 bg-surface border-b border-border flex-shrink-0 gap-2 sm:gap-3">
+    <header className="flex items-center min-h-14 h-14 px-3 sm:px-4 bg-surface border-b border-border flex-shrink-0 gap-2 sm:gap-3">
       {/* Hamburger mobile */}
       <button
         type="button"
         onClick={onMenuClick}
-        className="lg:hidden text-fg-2 hover:text-fg p-1.5 rounded shrink-0"
+        className="lg:hidden text-fg-2 hover:text-fg min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded shrink-0"
         aria-label="Abrir menu"
       >
         ☰
@@ -64,7 +64,7 @@ export function Topbar({ onMenuClick, onOpenManual }: TopbarProps) {
       {/* Título da rota + busca — uma linha */}
       <div className="flex-1 flex items-center gap-2 sm:gap-3 min-w-0">
         {title ? (
-          <h1 className="text-sm font-semibold text-fg truncate shrink-0 max-w-[38vw] xs:max-w-[42vw] sm:max-w-[200px] md:max-w-[240px]">
+          <h1 className="text-sm font-semibold text-fg truncate shrink-0 max-w-[min(42vw,9rem)] sm:max-w-[200px] md:max-w-[240px]">
             {title}
           </h1>
         ) : null}
@@ -127,7 +127,7 @@ function SearchBar() {
   const showDropdown = open && query.trim().length >= 2
 
   return (
-    <div ref={containerRef} className="flex-1 max-w-md relative flex items-center">
+    <div ref={containerRef} className="flex-1 max-w-md relative flex items-center min-w-0">
       <span className="absolute left-2.5 text-fg-2 pointer-events-none text-sm leading-none">🔍</span>
       <input
         ref={inputRef}
@@ -135,10 +135,11 @@ function SearchBar() {
         value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        placeholder="Buscar produtos, grupos, canais…"
-        className="w-full h-8 pl-8 pr-14 rounded-md bg-surface-2 border border-border text-sm text-fg placeholder:text-fg-3 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
+        placeholder="Buscar…"
+        title="Buscar produtos, grupos, canais (⌘K)"
+        className="w-full h-8 pl-8 pr-8 md:pr-14 rounded-md bg-surface-2 border border-border text-sm text-fg placeholder:text-fg-3 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
       />
-      <kbd className="absolute right-2 flex items-center gap-0.5 text-[10px] text-fg-3 bg-surface border border-border rounded px-1 py-0.5 pointer-events-none font-mono leading-none">
+      <kbd className="absolute right-2 hidden md:flex items-center gap-0.5 text-[10px] text-fg-3 bg-surface border border-border rounded px-1 py-0.5 pointer-events-none font-mono leading-none">
         ⌘K
       </kbd>
 
@@ -200,11 +201,14 @@ function PendingApprovalsBadge() {
     <button
       type="button"
       onClick={() => navigate('/automations')}
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning/10 text-warning text-xs font-medium hover:bg-warning/20 transition-colors"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 rounded-full bg-warning/10 text-warning text-xs font-medium hover:bg-warning/20 transition-colors"
       title={`${pending.length} dispatch${pending.length !== 1 ? 'es' : ''} aguardando aprovação`}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
-      {pending.length} pendente{pending.length !== 1 ? 's' : ''}
+      <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse shrink-0" />
+      <span className="tabular-nums">{pending.length}</span>
+      <span className="hidden sm:inline">
+        pendente{pending.length !== 1 ? 's' : ''}
+      </span>
     </button>
   )
 }
@@ -237,11 +241,12 @@ function AccountsBadge() {
     <button
       type="button"
       onClick={() => (window.location.href = '/accounts')}
-      className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${colorClass} hover:opacity-80 transition-opacity`}
+      className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 rounded-full ${colorClass} hover:opacity-80 transition-opacity`}
       title={`${connected} de ${total} contas conectadas`}
     >
       <span className={`w-2 h-2 rounded-full ${dotColor} flex-shrink-0`} />
-      <span>{connected}/{total} contas</span>
+      <span className="tabular-nums font-medium">{connected}/{total}</span>
+      <span className="hidden sm:inline">contas</span>
     </button>
   )
 }

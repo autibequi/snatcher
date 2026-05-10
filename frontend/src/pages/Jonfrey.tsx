@@ -128,7 +128,7 @@ export default function Jonfrey() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="px-4 py-4 sm:p-6 max-w-4xl mx-auto space-y-6">
       {/* Piloto = toggle principal; Full-auto = libertação de dispatches sem aprovação */}
       <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
         {/* Barra superior: timer + último ciclo + executar — junto do toggle */}
