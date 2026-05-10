@@ -417,34 +417,6 @@ function DispatchDrawer({
 
 // ── Blocos de erro por domínio (antes havia aba “Erros” dedicada) ─────────────
 
-function FailedDispatchesAlert({ dispatches }: { dispatches: Dispatch[] }) {
-  const failedDispatches = dispatches.filter(d => d.status === 'failed')
-  if (failedDispatches.length === 0) return null
-  return (
-    <div className="bg-surface border border-danger/30 rounded-md overflow-hidden mb-4">
-      <div className="px-4 py-2.5 border-b border-border bg-danger/5">
-        <p className="text-xs font-medium text-danger uppercase tracking-wide">Disparos com falha ({failedDispatches.length})</p>
-      </div>
-      <table className="w-full text-sm">
-        <tbody>
-          {failedDispatches.map(d => (
-            <tr key={d.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-              <td className="px-4 py-2.5 text-fg font-mono text-xs">{d.short_id ?? `#${d.id}`}</td>
-              <td className="px-4 py-2.5 text-fg-2 text-xs">{d.message?.text?.slice(0, 60) ?? '(sem texto)'}</td>
-              <td className="px-4 py-2.5 text-fg-3 text-xs">{new Date(d.created_at).toLocaleString('pt-BR')}</td>
-              <td className="px-4 py-2.5">
-                <Badge variant="danger" size="sm">
-                  falhou
-                </Badge>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function CrawlerErrorsAlert({ logs }: { logs: CrawlLogEntry[] }) {
   const errorCrawls = logs.filter(l => l.status === 'error')
   if (errorCrawls.length === 0) return null
@@ -624,6 +596,15 @@ export default function Logs() {
   // ── Badge counts ──────────────────────────────────────────────────────────
 
   const failedDispatchCount = items.filter(d => d.status === 'failed').length
+
+  /** Uma só listagem: ordenado por data (recentes primeiro); falhas destacadas na linha — sem bloco separado em cima. */
+  const dispatchesSorted = React.useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [items]
+  )
   const crawlerErrorCount = crawlLogs.filter(l => l.status === 'error').length
   const jonfreyFailCount = jonfreyActions.filter(a => a.status === 'failed').length
 
@@ -829,7 +810,6 @@ export default function Logs() {
       {/* "Disparos" tab */}
       {logTab === 'dispatches' && (
         <div>
-          <FailedDispatchesAlert dispatches={items} />
           {/* Filtros */}
           <div className="flex gap-3 mb-4 flex-wrap items-end">
             <div className="flex flex-col gap-1">
@@ -897,14 +877,15 @@ export default function Logs() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((d) => {
+                  {dispatchesSorted.map((d) => {
                     const msgText = d.message?.text ?? ''
                     const isDraft = d.status === 'draft'
+                    const isFailed = d.status === 'failed'
                     const rowType: LogType = d.scheduled_for ? 'scheduled' : 'dispatch'
                     return (
                       <tr
                         key={d.id}
-                        className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${isDraft ? 'opacity-80' : ''}`}
+                        className={`border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer ${isDraft ? 'opacity-80' : ''} ${isFailed ? 'bg-danger/5' : ''}`}
                         onClick={() => isDraft
                           ? navigate(`/compose?draftId=${d.id}${d.product_id ? `&productId=${d.product_id}` : ''}`)
                           : setSelected(d)
