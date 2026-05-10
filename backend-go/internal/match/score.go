@@ -121,6 +121,10 @@ func ScoreChannelDetailed(product ProductInput, channel models.Channel, productT
 		Breakdown: ScoreBreakdown{HardFiltersPassed: true},
 		Reasons:   []string{},
 	}
+	// Obrigatório para RankChannels → auto-match: sem isto ChannelID fica 0 e todo score
+	// falha em automationsByChannelID[s.ChannelID] (skip_no_auto = produtos × scores).
+	result.ChannelID = ch.ID
+	result.ChannelName = ch.Name
 
 	// 1. HARD FILTERS
 	// Verifica exclude_category_ids

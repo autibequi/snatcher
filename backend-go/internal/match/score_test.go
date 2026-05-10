@@ -87,6 +87,18 @@ func TestScoreChannel_PriceOutOfBand(t *testing.T) {
 	}
 }
 
+func TestScoreChannel_PreservesChannelID(t *testing.T) {
+	ch := makeChannel(42, `{}`)
+	product := ProductInput{Category: "moda", Price: 200, Drop: 5}
+	s := ScoreChannel(product, ch, defaultWeights)
+	if s.ChannelID != 42 {
+		t.Fatalf("ChannelID: got %d want 42 (auto-match falha se 0)", s.ChannelID)
+	}
+	if s.ChannelName != "ch" {
+		t.Fatalf("ChannelName: got %q want ch", s.ChannelName)
+	}
+}
+
 func TestRankChannels_OrderedDesc(t *testing.T) {
 	ch1 := makeChannel(1, `{"categories":["eletronicos"],"min_drop":10}`)
 	ch1.Name = "Eletronicos BR"
