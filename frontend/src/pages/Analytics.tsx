@@ -5,6 +5,7 @@ import {
   CartesianGrid, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { apiClient } from '../lib/apiClient'
+import { pushAnalyticsSummary } from '../lib/gtm'
 import { Skeleton } from '../components/ui'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -152,6 +153,18 @@ export default function Analytics() {
   const ctr = data && data.messages_sent > 0
     ? ((data.total / data.messages_sent) * 100).toFixed(1) + '%'
     : '—'
+
+  React.useEffect(() => {
+    if (isLoading || !data) return
+    pushAnalyticsSummary({
+      analytics_period_days: days,
+      analytics_total_clicks: data.total,
+      analytics_unique_clicks: data.unique,
+      analytics_messages_sent: data.messages_sent ?? 0,
+      analytics_catalog_total: data.catalog_total ?? 0,
+      analytics_catalog_new: data.catalog_new ?? 0,
+    })
+  }, [isLoading, data, days])
 
   return (
     <div className="p-6 space-y-6">

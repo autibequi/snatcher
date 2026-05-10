@@ -2,6 +2,7 @@ import { Suspense, lazy, Component, ErrorInfo, ReactNode, useEffect } from 'reac
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AppShell } from './shell'
 import { RequireAuth } from './components/RequireAuth'
+import { GtmLoader } from './components/GtmLoader'
 import { apiClient } from './lib/apiClient'
 
 // --- Error Boundary ---
@@ -115,6 +116,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <GtmLoader />
         <Suspense fallback={<Fallback />}>
           <SetupGuard>
           <Routes>

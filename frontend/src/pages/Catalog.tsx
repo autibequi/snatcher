@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Badge, Button, Skeleton, EmptyState, Input, SearchSelect, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import { pushCatalogProductView } from '../lib/gtm'
 
 // ── Gráfico de histórico de preços (expandido ao clicar na linha) ─────────────
 function PriceHistoryChart({ productId }: { productId: number }) {
@@ -439,6 +440,25 @@ export default function Catalog() {
 
   // Resetar página ao mudar filtros
   React.useEffect(() => { setPage(0) }, [search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter])
+
+  // GTM — GA4 view_item ao expandir linha (detalhe do produto + histórico)
+  React.useEffect(() => {
+    if (expandedId == null) return
+    const p = products.find(x => x.id === expandedId)
+    if (!p) return
+    const rawTitle = p.canonical_name ?? 'Produto'
+    const title = formatTitle(rawTitle, typeof p.brand === 'string' ? p.brand : undefined)
+    const tags = parseTags(p.tags)
+    pushCatalogProductView({
+      id: p.id,
+      title,
+      brand: typeof p.brand === 'string' ? p.brand : undefined,
+      price: p.lowest_price ?? 0,
+      category: tags[0],
+      source: p.lowest_price_source || undefined,
+      curation_status: p.curation_status,
+    })
+  }, [expandedId, products])
 
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
     queryKey: ['catalog', search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter, page],

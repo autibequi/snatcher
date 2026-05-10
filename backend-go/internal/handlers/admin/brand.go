@@ -17,10 +17,11 @@ func NewBrandHandler(st store.Store) *BrandHandler {
 }
 
 type BrandResponse struct {
-	AppName    string `json:"app_name"`
-	AppDomain  string `json:"app_domain"`
-	PublicURL  string `json:"public_url"`
-	LLMProvider string `json:"llm_provider"`
+	AppName         string `json:"app_name"`
+	AppDomain       string `json:"app_domain"`
+	PublicURL       string `json:"public_url"`
+	LLMProvider     string `json:"llm_provider"`
+	GTMContainerID  string `json:"gtm_container_id,omitempty"`
 }
 
 // GET /api/brand — retorna configurações de white-label (público, sem auth)
@@ -55,10 +56,19 @@ func (h *BrandHandler) Get(w http.ResponseWriter, r *http.Request) {
 		llmProvider = cfg.LLMProvider.String
 	}
 
+	gtmID := ""
+	if cfg.GTMContainerID.Valid {
+		gtmID = strings.TrimSpace(cfg.GTMContainerID.String)
+	}
+	if gtmID == "" {
+		gtmID = strings.TrimSpace(os.Getenv("GTM_CONTAINER_ID"))
+	}
+
 	writeJSON(w, http.StatusOK, BrandResponse{
-		AppName:    appName,
-		AppDomain:  appDomain,
-		PublicURL:  os.Getenv("PUBLIC_BASE_URL"),
-		LLMProvider: llmProvider,
+		AppName:        appName,
+		AppDomain:      appDomain,
+		PublicURL:      os.Getenv("PUBLIC_BASE_URL"),
+		LLMProvider:    llmProvider,
+		GTMContainerID: gtmID,
 	})
 }

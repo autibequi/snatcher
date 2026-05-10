@@ -615,6 +615,8 @@ function NotificationsSection({
 // ───────────────────────────────────────
 
 interface AppConfig {
+  /** Google Tag Manager — ID público GTM-XXX */
+  gtm_container_id?: string | null
   global_interval?: number
   send_start_hour?: number
   send_end_hour?: number
@@ -733,6 +735,29 @@ function GeneralTab() {
         localConfig={localConfig}
         onChange={updateField}
       />
+
+      <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
+        <p className="text-sm font-semibold text-fg">Google Tag Manager</p>
+        <p className="text-xs text-fg-3 leading-relaxed">
+          Container público (<code className="text-[10px] bg-surface-2 px-1 rounded">GTM-XXXX</code>). O script
+          carrega em todas as rotas (login incluído via <code className="text-[10px]">/api/brand</code>). No GTM,
+          mapeia o evento <code className="text-[10px]">page_view</code> para GA4 e{' '}
+          <code className="text-[10px]">view_item</code> / <code className="text-[10px]">snatcher_analytics_summary</code>{' '}
+          conforme precisares.
+        </p>
+        <div>
+          <label className="text-xs text-fg-2 block mb-1">Container ID</label>
+          <input
+            type="text"
+            value={(merged.gtm_container_id as string) ?? ''}
+            onChange={e => updateField('gtm_container_id', e.target.value.trim() || null)}
+            className="w-full max-w-md text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg font-mono"
+            placeholder="GTM-XXXXXXX"
+            spellCheck={false}
+            autoCapitalize="characters"
+          />
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
         <Button

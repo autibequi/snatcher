@@ -119,6 +119,8 @@ type AppConfig struct {
 	// White-label
 	AppName   NullString `db:"app_name" json:"app_name,omitempty"`
 	AppDomain NullString `db:"app_domain" json:"app_domain,omitempty"`
+	// Google Tag Manager — exposto em GET /api/brand para injetar no SPA (ID público GTM-XXX).
+	GTMContainerID NullString `db:"gtm_container_id" json:"gtm_container_id,omitempty"`
 
 	// Auto match
 	AutoMatchEnabled   bool    `db:"auto_match_enabled" json:"auto_match_enabled"`

@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -200,6 +201,12 @@ func bootstrapConfig(st store.Store) {
 	}
 	if !cfg.WAInstance.Valid || cfg.WAInstance.String == "" {
 		cfg.WAInstance = models.NullString{NullString: sql.NullString{String: instance, Valid: true}}
+		changed = true
+	}
+
+	if envGTM := strings.TrimSpace(os.Getenv("GTM_CONTAINER_ID")); envGTM != "" &&
+		(!cfg.GTMContainerID.Valid || cfg.GTMContainerID.String == "") {
+		cfg.GTMContainerID = models.NullString{NullString: sql.NullString{String: envGTM, Valid: true}}
 		changed = true
 	}
 
