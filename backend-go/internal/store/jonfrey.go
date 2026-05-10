@@ -1,10 +1,23 @@
 package store
 
 import (
+	"encoding/json"
 	"time"
 
 	"snatcher/backendv2/internal/models"
 )
+
+// normalizeJonfreyJSONSnapshot garante JSON válido para colunas JSONB.
+// Driver pq + sqlx: []byte{} ou texto vazio viram '' no Postgres → "invalid input syntax for type json".
+func normalizeJonfreyJSONSnapshot(b []byte) []byte {
+	if len(b) == 0 {
+		return []byte("{}")
+	}
+	if json.Valid(b) {
+		return b
+	}
+	return []byte("{}")
+}
 
 // CreateJonfreyAction insere uma nova ação no audit log.
 func (s *SQLStore) CreateJonfreyAction(a models.JonfreyAction) (int64, error) {
@@ -34,6 +47,8 @@ func (s *SQLStore) CreateJonfreyAction(a models.JonfreyAction) (int64, error) {
 
 // UpdateJonfreyAction atualiza status, reasoning, snapshots, error_message e finished_at.
 func (s *SQLStore) UpdateJonfreyAction(a models.JonfreyAction) error {
+	a.BeforeSnapshot = normalizeJonfreyJSONSnapshot(a.BeforeSnapshot)
+	a.AfterSnapshot = normalizeJonfreyJSONSnapshot(a.AfterSnapshot)
 	_, err := s.db.NamedExec(`
 		UPDATE jonfrey_actions SET
 		  status = :status,

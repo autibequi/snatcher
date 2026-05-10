@@ -692,10 +692,22 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 		}}
 	}
 	if before != nil {
-		action.BeforeSnapshot, _ = json.Marshal(before)
+		raw, err := json.Marshal(before)
+		if err != nil {
+			slog.Warn("jonfrey json.Marshal(before) failed", "type", def.Type, "audit_id", action.ID, "err", err)
+			action.BeforeSnapshot = []byte("{}")
+		} else {
+			action.BeforeSnapshot = raw
+		}
 	}
 	if after != nil {
-		action.AfterSnapshot, _ = json.Marshal(after)
+		raw, err := json.Marshal(after)
+		if err != nil {
+			slog.Warn("jonfrey json.Marshal(after) failed", "type", def.Type, "audit_id", action.ID, "err", err)
+			action.AfterSnapshot = []byte("{}")
+		} else {
+			action.AfterSnapshot = raw
+		}
 	}
 	if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
 		slog.Error("jonfrey UpdateJonfreyAction failed", "id", action.ID, "type", def.Type, "err", updErr)
