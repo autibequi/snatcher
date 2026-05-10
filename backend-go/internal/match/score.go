@@ -533,8 +533,8 @@ func matchesWordBoundary(text, value string) bool {
 	return rgx.MatchString(text)
 }
 
-// resolveWeights retorna pesos do canal se algum estiver definido, caso contrário usa default.
-func resolveWeights(ch models.Channel) Weights {
+// ResolveWeights retorna pesos do canal se algum estiver definido, caso contrário usa default.
+func ResolveWeights(ch models.Channel) Weights {
 	w := ch.Audience.Weights
 	sum := w.Category + w.Brand + w.Drop + w.Price + w.History
 	if sum <= 0 {
@@ -551,6 +551,7 @@ func resolveWeights(ch models.Channel) Weights {
 
 // RankChannels calcula scores para uma lista de canais e ordena por score desc.
 // Retorna no máximo 50 resultados com score > 0.
+// Preferir RankChannelsDetailed no auto-match — esta variante não usa taxonomias nem histórico de cliques.
 func RankChannels(product ProductInput, channels []models.Channel) []Score {
 	scores := make([]Score, 0, len(channels))
 	for _, ch := range channels {
@@ -559,12 +560,50 @@ func RankChannels(product ProductInput, channels []models.Channel) []Score {
 		if len(c.AudienceRaw) > 0 {
 			_ = c.UnmarshalAudience()
 		}
-		s := ScoreChannel(product, c, resolveWeights(c))
+		s := ScoreChannel(product, c, ResolveWeights(c))
 		if s.Value > 0 {
 			scores = append(scores, s)
 		}
 	}
 	// ordenação bubble sort desc (lista tipicamente pequena < 1000)
+	for i := 0; i < len(scores)-1; i++ {
+		for j := i + 1; j < len(scores); j++ {
+			if scores[j].Value > scores[i].Value {
+				scores[i], scores[j] = scores[j], scores[i]
+			}
+		}
+	}
+	if len(scores) > 50 {
+		scores = scores[:50]
+	}
+	return scores
+}
+
+// RankChannelsDetailed calcula scores com taxonomias/atributos do produto e cliques por canal (histórico).
+// Usado pelo worker de auto-match para alinhar pontuação à curadoria e ao breakdown detalhado.
+func RankChannelsDetailed(product ProductInput, channels []models.Channel, productTaxonomies []models.CatalogProductTaxonomy, productAttrs map[string][]int64, clicksByChannelID map[int64]int) []Score {
+	scores := make([]Score, 0, len(channels))
+	for _, ch := range channels {
+		c := ch
+		if len(c.AudienceRaw) > 0 {
+			_ = c.UnmarshalAudience()
+		}
+		clicks := 0
+		if clicksByChannelID != nil {
+			clicks = clicksByChannelID[c.ID]
+		}
+		w := ResolveWeights(c)
+		result := ScoreChannelDetailed(product, c, productTaxonomies, productAttrs, clicks, w)
+		val := float64(result.Total)
+		if val > 0 {
+			scores = append(scores, Score{
+				ChannelID:   result.ChannelID,
+				ChannelName: result.ChannelName,
+				Value:       val,
+				Reasons:     result.Reasons,
+			})
+		}
+	}
 	for i := 0; i < len(scores)-1; i++ {
 		for j := i + 1; j < len(scores); j++ {
 			if scores[j].Value > scores[i].Value {
@@ -670,7 +709,7 @@ func RankGroups(product ProductInput, groups []models.RedesignGroup, channelByID
 		if !ok {
 			continue
 		}
-		gs := ScoreGroup(product, g, ch, defaultWeights)
+		gs := ScoreGroup(product, g, ch, ResolveWeights(ch))
 		if gs.Score > 0 {
 			scores = append(scores, gs)
 		}

@@ -216,25 +216,68 @@ func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.
 		limit = 200
 	}
 	var out []models.AutoMatchLog
+	// União: logs normais + dispatches auto-match sem entrada em auto_match_logs (ex.: falha ao inserir log).
+	// Score -1 marca órfão na UI (sem breakdown).
 	err := s.db.Select(&out, `
-		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
-		       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
-		       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
-		       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
-		       COALESCE(p.canonical_name, '') as product_name,
-		       COALESCE(c.name, '') as channel_name,
-		       COALESCE(
-		           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-		            FROM dispatch_targets dt
-		            JOIN groups g ON g.id = dt.group_id
-		            WHERE dt.dispatch_id = l.dispatch_id),
-		           ''
-		       ) AS group_names
-		FROM auto_match_logs l
-		LEFT JOIN catalogproduct p ON p.id = l.product_id
-		LEFT JOIN channel c ON c.id = l.channel_id
-		WHERE l.created_at >= $1
-		ORDER BY l.created_at DESC LIMIT $2`, since, limit)
+		WITH unioned AS (
+			SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
+			       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
+			       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
+			       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
+			       COALESCE(p.canonical_name, '') AS product_name,
+			       COALESCE(c.name, '') AS channel_name,
+			       COALESCE(
+			           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+			            FROM dispatch_targets dt
+			            JOIN groups g ON g.id = dt.group_id
+			            WHERE dt.dispatch_id = l.dispatch_id),
+			           ''
+			       ) AS group_names
+			FROM auto_match_logs l
+			LEFT JOIN catalogproduct p ON p.id = l.product_id
+			LEFT JOIN channel c ON c.id = l.channel_id
+			WHERE l.created_at >= $1
+
+			UNION ALL
+
+			SELECT (-d.id) AS id,
+			       COALESCE(d.product_id, 0) AS product_id,
+			       COALESCE(ch.channel_id, 0) AS channel_id,
+			       d.id AS dispatch_id,
+			       (-1.0)::double precision AS score,
+			       d.created_at,
+			       '{}'::jsonb AS score_breakdown,
+			       '{}'::text[] AS match_reasons,
+			       NULL::boolean AS false_positive,
+			       NULL::text AS false_positive_reason,
+			       NULL::timestamp with time zone AS false_positive_marked_at,
+			       COALESCE(p2.canonical_name, '') AS product_name,
+			       COALESCE(c2.name, '') AS channel_name,
+			       COALESCE(
+			           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
+			            FROM dispatch_targets dt
+			            JOIN groups g ON g.id = dt.group_id
+			            WHERE dt.dispatch_id = d.id),
+			           ''
+			       ) AS group_names
+			FROM dispatches d
+			LEFT JOIN catalogproduct p2 ON p2.id = d.product_id
+			LEFT JOIN LATERAL (
+				SELECT g.channel_id
+				FROM dispatch_targets dt
+				JOIN groups g ON g.id = dt.group_id
+				WHERE dt.dispatch_id = d.id
+				ORDER BY dt.id
+				LIMIT 1
+			) ch ON true
+			LEFT JOIN channel c2 ON c2.id = ch.channel_id
+			WHERE d.composed_by = 'auto-match'
+			  AND d.created_at >= $1
+			  AND NOT EXISTS (SELECT 1 FROM auto_match_logs l2 WHERE l2.dispatch_id = d.id)
+		)
+		SELECT * FROM unioned
+		ORDER BY created_at DESC
+		LIMIT $2`, since, limit)
 	return out, err
 }
 
@@ -767,8 +810,11 @@ func genShortID() string {
 
 func (s *SQLStore) UpdateCatalogVariant(v models.CatalogVariant) error {
 	v.LastSeenAt = time.Now()
+	if len(v.Metadata) == 0 {
+		v.Metadata = []byte("{}")
+	}
 	_, err := s.db.NamedExec(`
-		UPDATE catalogvariant SET price=:price, last_seen_at=:last_seen_at
+		UPDATE catalogvariant SET price=:price, last_seen_at=:last_seen_at, metadata=:metadata
 		WHERE id = :id`, v)
 	return err
 }
@@ -2123,7 +2169,7 @@ func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCou
 	err := s.db.Select(&out, `
 		SELECT group_id, COUNT(*) AS count
 		FROM dispatch_targets
-		WHERE status IN ('delivered', 'sending')
+		WHERE status = 'delivered'
 		  AND COALESCE(delivered_at, updated_at, created_at) > now() - ($1 || ' minutes')::interval
 		GROUP BY group_id`, minutes)
 	return out, err
@@ -2177,6 +2223,25 @@ func (s *SQLStore) HasDeliveredTarget(dispatchID int64) (bool, error) {
 	err := s.db.Get(&count,
 		`SELECT COUNT(*) FROM dispatch_targets WHERE dispatch_id = $1 AND status = 'delivered'`, dispatchID)
 	return count > 0, err
+}
+
+func (s *SQLStore) DispatchIDsWithDelivered(dispatchIDs []int64) map[int64]bool {
+	out := make(map[int64]bool)
+	if len(dispatchIDs) == 0 {
+		return out
+	}
+	var rows []int64
+	err := s.db.Select(&rows,
+		`SELECT DISTINCT dispatch_id FROM dispatch_targets
+		 WHERE dispatch_id = ANY($1) AND status = 'delivered'`,
+		pq.Array(dispatchIDs))
+	if err != nil {
+		return out
+	}
+	for _, id := range rows {
+		out[id] = true
+	}
+	return out
 }
 
 func (s *SQLStore) ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error) {

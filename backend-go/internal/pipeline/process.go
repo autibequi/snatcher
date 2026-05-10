@@ -131,10 +131,18 @@ func processResult(
 	if r.SourceSubID.Valid && r.SourceSubID.String != "" {
 		variant, found, err := st.GetVariantBySourceSubID(r.Source, r.SourceSubID.String)
 		if err == nil && found {
-			// UPDATE price + INSERT pricehistoryv2
-			if variant.Price != r.Price {
+			origMeta := variant.Metadata
+			merged := models.MergeCrawlMetadataJSON(variant.Metadata, r.Metadata)
+			metaChanged := string(merged) != string(origMeta)
+			variant.Metadata = merged
+			priceChanged := variant.Price != r.Price
+			if priceChanged {
 				variant.Price = r.Price
+			}
+			if priceChanged || metaChanged {
 				_ = st.UpdateCatalogVariant(variant)
+			}
+			if priceChanged {
 				_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
 					VariantID: variant.ID,
 					Price:     r.Price,
@@ -150,9 +158,18 @@ func processResult(
 	canonURL := canonicalizeURL(r.URL)
 	variant, found, err := st.GetVariantByURL(canonURL)
 	if err == nil && found {
-		if variant.Price != r.Price {
+		origMeta := variant.Metadata
+		merged := models.MergeCrawlMetadataJSON(variant.Metadata, r.Metadata)
+		metaChanged := string(merged) != string(origMeta)
+		variant.Metadata = merged
+		priceChanged := variant.Price != r.Price
+		if priceChanged {
 			variant.Price = r.Price
+		}
+		if priceChanged || metaChanged {
 			_ = st.UpdateCatalogVariant(variant)
+		}
+		if priceChanged {
 			_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
 				VariantID: variant.ID,
 				Price:     r.Price,
@@ -240,7 +257,14 @@ func processResult(
 
 	// PASSO 4: Enrich tags via patterns
 	_ = patternCache.Refresh(st)
-	hits := patternCache.MatchAllPatterns(canonical + " " + r.Title)
+	var crawlMeta models.CrawlMetadata
+	if len(r.Metadata) > 0 {
+		_ = json.Unmarshal(r.Metadata, &crawlMeta)
+	}
+	metaBits := strings.TrimSpace(strings.Join([]string{
+		crawlMeta.Brand, crawlMeta.SpecsSummary, crawlMeta.Description,
+	}, " "))
+	hits := patternCache.MatchAllPatterns(strings.TrimSpace(canonical + " " + r.Title + " " + metaBits))
 
 	refreshedProduct, _ := st.GetCatalogProduct(productID)
 

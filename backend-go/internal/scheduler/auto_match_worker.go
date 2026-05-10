@@ -21,7 +21,7 @@ func RunAutoMatchWorker(ctx context.Context, st store.Store) {
 
 // sortProductsByBestAutoMatchScore replica a prioridade «melhor score primeiro» da prévia por canal,
 // mantendo empates estáveis por updated_at DESC.
-func sortProductsByBestAutoMatchScore(cfg models.AppConfig, products []models.CatalogProduct, channels []models.Channel, autoBy map[int64]models.ChannelAutomation) []models.CatalogProduct {
+func sortProductsByBestAutoMatchScore(cfg models.AppConfig, st store.Store, products []models.CatalogProduct, channels []models.Channel, autoBy map[int64]models.ChannelAutomation, clicksByChannelID map[int64]int) []models.CatalogProduct {
 	type ranked struct {
 		p    models.CatalogProduct
 		best float64
@@ -32,16 +32,19 @@ func sortProductsByBestAutoMatchScore(cfg models.AppConfig, products []models.Ca
 			outRank = append(outRank, ranked{p: p, best: -1})
 			continue
 		}
+		taxonomies, _ := st.ListProductTaxonomies(p.ID)
+		attrs := ParseProductAttributes(p)
 		input := match.ProductInput{
 			Name:     p.CanonicalName,
 			Category: firstTag(p),
 			Price:    nullFloat(p.LowestPrice),
+			Drop:     ProductDropPercent(st, p),
 		}
 		if p.Brand.Valid {
 			input.Brand = p.Brand.String
 		}
 		price := nullFloat(p.LowestPrice)
-		scores := match.RankChannels(input, channels)
+		scores := match.RankChannelsDetailed(input, channels, taxonomies, attrs, clicksByChannelID)
 		best := -1.0
 		for _, s := range scores {
 			auto, ok := autoBy[s.ChannelID]
@@ -113,19 +116,50 @@ func buildAutoMatchMessage(p models.CatalogProduct) string {
 	return "🔥 " + name + "\n\n{link}"
 }
 
-// parseProductAttributes extrai mapa de atributos do campo Attributes (JSONB) do produto.
+// ParseProductAttributes extrai mapa de atributos do campo Attributes (JSONB) do produto.
 // Formato esperado: {"color": [1, 2], "size": [3, 4]}
 // Se o campo estiver vazio ou inválido, retorna map vazio.
-func parseProductAttributes(p models.CatalogProduct) map[string][]int64 {
+func ParseProductAttributes(p models.CatalogProduct) map[string][]int64 {
 	result := make(map[string][]int64)
 	if len(p.Attributes) == 0 {
 		return result
 	}
 	err := json.Unmarshal(p.Attributes, &result)
 	if err != nil {
-		// Log opcional se quiser
 		slog.Warn("parse product attributes", "product_id", p.ID, "err", err)
 		return make(map[string][]int64)
 	}
 	return result
+}
+
+// ProductDropPercent estima % de desconto (0–100+) a partir do menor preço vs original_price nas variantes.
+// Usado no score de match (componente Drop); sem metadata de preço original retorna 0.
+func ProductDropPercent(st store.Store, p models.CatalogProduct) float64 {
+	variants, err := st.ListVariantsByProduct(p.ID)
+	if err != nil || len(variants) == 0 {
+		return 0
+	}
+	_ = st.HydrateVariantPricesFromHistory(variants)
+	price := nullFloat(p.LowestPrice)
+	if price <= 0 {
+		for _, v := range variants {
+			if v.Price > 0 && (price <= 0 || v.Price < price) {
+				price = v.Price
+			}
+		}
+	}
+	var maxOrig float64
+	for _, v := range variants {
+		var meta models.CrawlMetadata
+		if len(v.Metadata) > 0 {
+			_ = json.Unmarshal(v.Metadata, &meta)
+		}
+		if meta.OriginalPrice > v.Price && meta.OriginalPrice > maxOrig {
+			maxOrig = meta.OriginalPrice
+		}
+	}
+	if maxOrig > 0 && price > 0 && maxOrig > price {
+		return (maxOrig - price) / maxOrig * 100
+	}
+	return 0
 }

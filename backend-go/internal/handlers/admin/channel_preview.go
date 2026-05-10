@@ -6,6 +6,7 @@ import (
 
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -82,9 +83,10 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 
 	recentLogs, _ := st.ListAutoMatchLogsByChannel(channelID, 200)
 	cutoff := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)
-	recentSet := make(map[int64]bool, len(recentLogs))
+	delivered := scheduler.BuildDispatchDeliveredMap(st, recentLogs)
+	recentSet := make(map[int64]bool)
 	for _, l := range recentLogs {
-		if l.CreatedAt.After(cutoff) {
+		if l.CreatedAt.After(cutoff) && delivered[l.DispatchID] {
 			recentSet[l.ProductID] = true
 		}
 	}
@@ -100,10 +102,17 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 	}
 
 	channels := []models.Channel{channel}
+	clicksByChannelID := map[int64]int{channelID: 0}
+	if n, err := st.CountChannelClicksLast30d(channelID); err == nil {
+		clicksByChannelID[channelID] = n
+	}
+
 	var items []ChannelAutomationPreviewRow
 
 	for _, p := range products {
-		inp := match.ProductInput{Name: p.CanonicalName}
+		taxonomies, _ := st.ListProductTaxonomies(p.ID)
+		attrs := scheduler.ParseProductAttributes(p)
+		inp := match.ProductInput{Name: p.CanonicalName, Drop: scheduler.ProductDropPercent(st, p)}
 		if p.Brand.Valid {
 			inp.Brand = p.Brand.String
 		}
@@ -122,7 +131,7 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 			continue
 		}
 
-		scores := match.RankChannels(inp, channels)
+		scores := match.RankChannelsDetailed(inp, channels, taxonomies, attrs, clicksByChannelID)
 		if len(scores) == 0 || scores[0].Value < threshold {
 			continue
 		}

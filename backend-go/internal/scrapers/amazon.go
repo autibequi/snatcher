@@ -106,6 +106,17 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 		if price < minVal || price > maxVal {
 			return
 		}
+		subtitle := strings.TrimSpace(sel.Find(".a-size-base.a-color-secondary").First().Text())
+		if subtitle == "" {
+			subtitle = strings.TrimSpace(sel.Find(".a-size-base-plus.a-color-secondary").First().Text())
+		}
+		var metaBytes []byte
+		if subtitle != "" {
+			if len(subtitle) > 320 {
+				subtitle = subtitle[:320]
+			}
+			metaBytes = crawlMetaBytes(models.CrawlMetadata{Description: subtitle})
+		}
 		items = append(items, pipeline.Item{
 			Title:       title,
 			Price:       price,
@@ -113,6 +124,7 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 			ImageURL:    img,
 			Source:      "amazon",
 			SourceSubID: asin,
+			Metadata:    metaBytes,
 		})
 	})
 	return items, nil
@@ -154,13 +166,19 @@ func (s *amazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 	// Convert pipeline.Item to models.CrawlResult
 	results := make([]models.CrawlResult, len(items))
 	for i, item := range items {
+		meta := item.Metadata
+		if len(meta) == 0 {
+			meta = []byte("{}")
+		}
 		results[i] = models.CrawlResult{
-			Title:     item.Title,
-			Price:     item.Price,
-			URL:       item.URL,
-			ImageURL:  nullableString(item.ImageURL),
-			Source:    item.Source,
-			CrawledAt: time.Now(),
+			Title:       item.Title,
+			Price:       item.Price,
+			URL:         item.URL,
+			ImageURL:    nullableString(item.ImageURL),
+			Source:      item.Source,
+			SourceSubID: nullableString(item.SourceSubID),
+			CrawledAt:   time.Now(),
+			Metadata:    meta,
 		}
 	}
 	return results, nil

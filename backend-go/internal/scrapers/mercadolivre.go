@@ -70,6 +70,76 @@ func extractMercadoLivreID(rawURL string) string {
 	return ""
 }
 
+type mlSearchAttr struct {
+	ID        string `json:"id"`
+	ValueName string `json:"value_name"`
+}
+
+// Ordem preferida para montar uma linha de specs na listagem (API search).
+var mlSpecAttrPriority = []string{
+	"MODEL", "LINE", "RAM_MEMORY", "INTERNAL_STORAGE_CAPACITY",
+	"STORAGE_CAPACITY", "COLOR", "DISPLAY_SIZE", "WEIGHT", "PROCESSOR_MODEL",
+}
+
+func mlMetadataFromAttrs(attrs []mlSearchAttr) models.CrawlMetadata {
+	if len(attrs) == 0 {
+		return models.CrawlMetadata{}
+	}
+	var brand string
+	byID := make(map[string]string)
+	for _, a := range attrs {
+		if a.ValueName == "" {
+			continue
+		}
+		if a.ID == "BRAND" {
+			brand = a.ValueName
+			continue
+		}
+		byID[a.ID] = a.ValueName
+	}
+	var parts []string
+	seen := make(map[string]bool)
+	for _, id := range mlSpecAttrPriority {
+		v, ok := byID[id]
+		if !ok || seen[v] {
+			continue
+		}
+		parts = append(parts, v)
+		seen[v] = true
+		if len(parts) >= 4 {
+			break
+		}
+	}
+	if len(parts) < 4 {
+		for _, a := range attrs {
+			if a.ID == "BRAND" || a.ValueName == "" || seen[a.ValueName] {
+				continue
+			}
+			parts = append(parts, a.ValueName)
+			seen[a.ValueName] = true
+			if len(parts) >= 4 {
+				break
+			}
+		}
+	}
+	specs := strings.Join(parts, " · ")
+	desc := specs
+	switch {
+	case brand != "" && specs != "":
+		desc = brand + " · " + specs
+	case brand != "":
+		desc = brand
+	}
+	if brand == "" && specs == "" && desc == "" {
+		return models.CrawlMetadata{}
+	}
+	return models.CrawlMetadata{
+		Brand:        brand,
+		SpecsSummary: specs,
+		Description:  desc,
+	}
+}
+
 // searchAPI usa a API oficial do ML com OAuth2 client_credentials.
 func (s *MLScraper) searchAPI(ctx context.Context, query string, minVal, maxVal float64) ([]pipeline.Item, error) {
 	token, err := s.getToken(ctx)
@@ -95,10 +165,11 @@ func (s *MLScraper) searchAPI(ctx context.Context, query string, minVal, maxVal 
 
 	var body struct {
 		Results []struct {
-			Title     string `json:"title"`
-			Price     float64 `json:"price"`
-			Permalink string `json:"permalink"`
-			Thumbnail string `json:"thumbnail"`
+			Title       string         `json:"title"`
+			Price       float64        `json:"price"`
+			Permalink   string         `json:"permalink"`
+			Thumbnail   string         `json:"thumbnail"`
+			Attributes  []mlSearchAttr `json:"attributes"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -106,17 +177,19 @@ func (s *MLScraper) searchAPI(ctx context.Context, query string, minVal, maxVal 
 	}
 
 	out := make([]pipeline.Item, 0, len(body.Results))
-	for _, r := range body.Results {
-		if r.Price < minVal || r.Price > maxVal {
+	for _, row := range body.Results {
+		if row.Price < minVal || row.Price > maxVal {
 			continue
 		}
+		meta := mlMetadataFromAttrs(row.Attributes)
 		out = append(out, pipeline.Item{
-			Title:       r.Title,
-			Price:       r.Price,
-			URL:         r.Permalink,
-			ImageURL:    r.Thumbnail,
+			Title:       row.Title,
+			Price:       row.Price,
+			URL:         row.Permalink,
+			ImageURL:    row.Thumbnail,
 			Source:      "mercadolivre",
-			SourceSubID: extractMercadoLivreID(r.Permalink),
+			SourceSubID: extractMercadoLivreID(row.Permalink),
+			Metadata:    crawlMetaBytes(meta),
 		})
 	}
 	return out, nil
@@ -203,6 +276,17 @@ func (s *MLScraper) searchHTML(ctx context.Context, query string, minVal, maxVal
 			u.RawQuery = ""
 			link = u.String()
 		}
+		subtitle := strings.TrimSpace(sel.Find(".poly-component__subtitle").First().Text())
+		if subtitle == "" {
+			subtitle = strings.TrimSpace(sel.Find(".ui-search-item__subtitle").First().Text())
+		}
+		var metaBytes []byte
+		if subtitle != "" {
+			if len(subtitle) > 400 {
+				subtitle = subtitle[:400]
+			}
+			metaBytes = crawlMetaBytes(models.CrawlMetadata{Description: subtitle})
+		}
 		items = append(items, pipeline.Item{
 			Title:       title,
 			Price:       price,
@@ -210,6 +294,7 @@ func (s *MLScraper) searchHTML(ctx context.Context, query string, minVal, maxVal
 			ImageURL:    img,
 			Source:      "mercadolivre",
 			SourceSubID: extractMercadoLivreID(link),
+			Metadata:    metaBytes,
 		})
 	})
 	return items, nil
@@ -247,13 +332,19 @@ func (s *mercadoLivreScraper) Search(ctx context.Context, query string, minVal, 
 	// Convert pipeline.Item to models.CrawlResult
 	results := make([]models.CrawlResult, len(items))
 	for i, item := range items {
+		meta := item.Metadata
+		if len(meta) == 0 {
+			meta = []byte("{}")
+		}
 		results[i] = models.CrawlResult{
-			Title:     item.Title,
-			Price:     item.Price,
-			URL:       item.URL,
-			ImageURL:  nullableString(item.ImageURL),
-			Source:    item.Source,
-			CrawledAt: time.Now(),
+			Title:       item.Title,
+			Price:       item.Price,
+			URL:         item.URL,
+			ImageURL:    nullableString(item.ImageURL),
+			Source:      item.Source,
+			SourceSubID: nullableString(item.SourceSubID),
+			CrawledAt:   time.Now(),
+			Metadata:    meta,
 		}
 	}
 	return results, nil

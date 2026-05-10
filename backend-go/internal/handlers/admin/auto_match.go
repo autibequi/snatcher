@@ -33,7 +33,11 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar config")
 		return
 	}
-	logs, _ := h.store.ListAutoMatchLogsSince(time.Now().Add(-24*time.Hour), 500)
+	logs, errLogs := h.store.ListAutoMatchLogsSince(time.Now().Add(-24*time.Hour), 500)
+	if errLogs != nil {
+		slog.Warn("auto-match status: list timeline", "err", errLogs)
+		logs = nil
+	}
 	if logs == nil {
 		logs = []models.AutoMatchLog{}
 	}
@@ -264,16 +268,26 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clicksByChannelID := make(map[int64]int, len(channels))
+	for _, ch := range channels {
+		n, clkErr := h.store.CountChannelClicksLast30d(ch.ID)
+		if clkErr != nil {
+			n = 0
+		}
+		clicksByChannelID[ch.ID] = n
+	}
+
 	recentLogs, _ := h.store.ListAutoMatchLogs(500)
-	type pairKey struct{ pID, cID int64 }
-	recentPairs := make(map[pairKey]bool, len(recentLogs))
+	deliveredByDispatch := scheduler.BuildDispatchDeliveredMap(h.store, recentLogs)
 
 	dispatched := 0
 	sentByChannel := make(map[int64]int, len(autoByChannelID))
 	var errs []string
 
 	for _, p := range products {
-		inp := match.ProductInput{Name: p.CanonicalName}
+		taxonomies, _ := h.store.ListProductTaxonomies(p.ID)
+		attrs := scheduler.ParseProductAttributes(p)
+		inp := match.ProductInput{Name: p.CanonicalName, Drop: scheduler.ProductDropPercent(h.store, p)}
 		if p.Brand.Valid {
 			inp.Brand = p.Brand.String
 		}
@@ -288,7 +302,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 			price = p.LowestPrice.Float64
 		}
 
-		scores := match.RankChannels(inp, channels)
+		scores := match.RankChannelsDetailed(inp, channels, taxonomies, attrs, clicksByChannelID)
 		for _, s := range scores {
 			auto, hasAuto := autoByChannelID[s.ChannelID]
 
@@ -335,18 +349,7 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 			}
 
 			cutoff := now.Add(-time.Duration(cooldownHours) * time.Hour)
-			if recentPairs[pairKey{p.ID, s.ChannelID}] {
-				continue
-			}
-			// Verificar cooldown preciso nos logs
-			alreadySent := false
-			for _, l := range recentLogs {
-				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
-					alreadySent = true
-					break
-				}
-			}
-			if alreadySent {
+			if scheduler.CooldownBlocksPair(recentLogs, p.ID, s.ChannelID, cutoff, deliveredByDispatch) {
 				continue
 			}
 
@@ -356,12 +359,14 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 				errs = append(errs, dispErr.Error())
 				continue
 			}
-			_, _ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
+			if _, logErr := h.store.CreateAutoMatchLog(models.AutoMatchLog{
 				ProductID:  p.ID,
 				ChannelID:  s.ChannelID,
 				DispatchID: dispatchID,
 				Score:      s.Value,
-			})
+			}); logErr != nil {
+				slog.Warn("run-now: create auto-match log", "dispatch_id", dispatchID, "err", logErr)
+			}
 			dispatched++
 			sentByChannel[s.ChannelID]++
 		}
@@ -418,14 +423,15 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Buscar canal para obter score
-	channels, err := h.store.ListChannels()
+	ch, err := h.store.GetChannel(req.ChannelID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "erro ao buscar canais")
+		writeErr(w, http.StatusNotFound, "canal nao encontrado")
 		return
 	}
 
-	inp := match.ProductInput{Name: targetProduct.CanonicalName}
+	taxonomies, _ := h.store.ListProductTaxonomies(req.ProductID)
+	attrs := scheduler.ParseProductAttributes(*targetProduct)
+	inp := match.ProductInput{Name: targetProduct.CanonicalName, Drop: scheduler.ProductDropPercent(h.store, *targetProduct)}
 	if targetProduct.Brand.Valid {
 		inp.Brand = targetProduct.Brand.String
 	}
@@ -436,14 +442,13 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 	if len(tags) > 0 {
 		inp.Category = tags[0]
 	}
-
-	scores := match.RankChannels(inp, channels)
-	var targetScore match.Score
-	for _, s := range scores {
-		if s.ChannelID == req.ChannelID {
-			targetScore = s
-			break
-		}
+	clicksLast30d, _ := h.store.CountChannelClicksLast30d(req.ChannelID)
+	detailed := match.ScoreChannelDetailed(inp, ch, taxonomies, attrs, clicksLast30d, match.ResolveWeights(ch))
+	targetScore := match.Score{
+		ChannelID:   detailed.ChannelID,
+		ChannelName: detailed.ChannelName,
+		Value:       float64(detailed.Total),
+		Reasons:     detailed.Reasons,
 	}
 
 	dispatchID, err := dispatchPairToStore(h.store, *targetProduct, targetScore)
@@ -453,12 +458,14 @@ func (h *AutoMatchHandler) DispatchOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = h.store.CreateAutoMatchLog(models.AutoMatchLog{
+	if _, logErr := h.store.CreateAutoMatchLog(models.AutoMatchLog{
 		ProductID:  req.ProductID,
 		ChannelID:  req.ChannelID,
 		DispatchID: dispatchID,
 		Score:      targetScore.Value,
-	})
+	}); logErr != nil {
+		slog.Warn("dispatch-one: create auto-match log", "dispatch_id", dispatchID, "err", logErr)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dispatch_id": dispatchID,

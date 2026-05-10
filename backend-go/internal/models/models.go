@@ -307,6 +307,8 @@ type CrawlResult struct {
 // os campos que conseguem extrair — todo o resto é opcional.
 type CrawlMetadata struct {
 	Description   string  `json:"description,omitempty"`
+	Brand         string  `json:"brand,omitempty"`          // marca (API/listagem)
+	SpecsSummary  string  `json:"specs_summary,omitempty"` // linha curta p/ curadoria (RAM, modelo, etc.)
 	Rating        float64 `json:"rating,omitempty"` // 0..5
 	ReviewsCount  int     `json:"reviews_count,omitempty"`
 	Seller        string  `json:"seller,omitempty"` // "Loja Oficial Samsung"
@@ -314,6 +316,54 @@ type CrawlMetadata struct {
 	FreeShipping  bool    `json:"free_shipping,omitempty"`
 	Installments  string  `json:"installments,omitempty"`   // "12x R$ 50 sem juros"
 	OriginalPrice float64 `json:"original_price,omitempty"` // pra calcular % de desconto
+}
+
+// MergeCrawlMetadataJSON funde dois blobs JSON de CrawlMetadata: campos não vazios de incoming
+// sobrescrevem existing (útil quando um novo crawl traz marca/specs e o anterior só tinha preço).
+func MergeCrawlMetadataJSON(existing, incoming []byte) []byte {
+	var ex, inc CrawlMetadata
+	if len(existing) > 0 {
+		_ = json.Unmarshal(existing, &ex)
+	}
+	if len(incoming) > 0 {
+		_ = json.Unmarshal(incoming, &inc)
+	}
+	m := ex
+	if inc.Description != "" {
+		m.Description = inc.Description
+	}
+	if inc.Brand != "" {
+		m.Brand = inc.Brand
+	}
+	if inc.SpecsSummary != "" {
+		m.SpecsSummary = inc.SpecsSummary
+	}
+	if inc.Rating > 0 {
+		m.Rating = inc.Rating
+	}
+	if inc.ReviewsCount > 0 {
+		m.ReviewsCount = inc.ReviewsCount
+	}
+	if inc.Seller != "" {
+		m.Seller = inc.Seller
+	}
+	if inc.OfficialStore {
+		m.OfficialStore = true
+	}
+	if inc.FreeShipping {
+		m.FreeShipping = true
+	}
+	if inc.Installments != "" {
+		m.Installments = inc.Installments
+	}
+	if inc.OriginalPrice > 0 {
+		m.OriginalPrice = inc.OriginalPrice
+	}
+	out, err := json.Marshal(m)
+	if err != nil || len(out) <= 2 {
+		return []byte("{}")
+	}
+	return out
 }
 
 type CatalogProduct struct {

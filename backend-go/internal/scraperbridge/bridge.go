@@ -47,6 +47,10 @@ func CrawlResultsToItems(crs []models.CrawlResult) []pipeline.Item {
 		if src == "" {
 			src = "unknown"
 		}
+		meta := cr.Metadata
+		if len(meta) == 0 {
+			meta = nil
+		}
 		out = append(out, pipeline.Item{
 			Title:       cr.Title,
 			Price:       cr.Price,
@@ -54,6 +58,7 @@ func CrawlResultsToItems(crs []models.CrawlResult) []pipeline.Item {
 			ImageURL:    img,
 			Source:      src,
 			SourceSubID: sub,
+			Metadata:    meta,
 		})
 	}
 	return out

@@ -600,10 +600,19 @@ export function TabOverview() {
   const renderLogRow = (log: AutoMatchLog) => {
     const groups = log.group_names ? log.group_names.split(', ').filter(Boolean) : []
     const groupsTitle = groups.length > 0 ? groups.join(', ') : undefined
+    const scoreLabel = log.score < 0 ? '—' : fmtScore(log.score)
+    const scoreClass =
+      log.score < 0
+        ? 'bg-surface-2 text-fg-3'
+        : log.score >= 70
+          ? 'bg-success/10 text-success'
+          : log.score >= 50
+            ? 'bg-warning/10 text-warning'
+            : 'bg-surface-2 text-fg-3'
     return (
-      <div key={log.id} className="px-3 py-2 flex items-center gap-3 border-b border-border/80 last:border-0">
-        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${log.score >= 70 ? 'bg-success/10 text-success' : log.score >= 50 ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-fg-3'}`}>
-          {fmtScore(log.score)}
+      <div key={`${log.id}-${log.dispatch_id}`} className="px-3 py-2 flex items-center gap-3 border-b border-border/80 last:border-0">
+        <span title={log.score < 0 ? 'Dispatch sem linha em auto_match_logs (score indisponível)' : undefined} className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${scoreClass}`}>
+          {scoreLabel}
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm text-fg truncate" title={groupsTitle}>

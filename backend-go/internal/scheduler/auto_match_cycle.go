@@ -134,13 +134,24 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		channels = append(channels, ch)
 	}
 
-	products = sortProductsByBestAutoMatchScore(cfg, products, channels, automationsByChannelID)
+	clicksByChannelID := make(map[int64]int, len(channels))
+	for _, ch := range channels {
+		n, err := st.CountChannelClicksLast30d(ch.ID)
+		if err != nil {
+			slog.Warn("auto match: channel clicks 30d", "channel_id", ch.ID, "err", err)
+			n = 0
+		}
+		clicksByChannelID[ch.ID] = n
+	}
+
+	products = sortProductsByBestAutoMatchScore(cfg, st, products, channels, automationsByChannelID, clicksByChannelID)
 
 	recentLogs, recentErr := st.ListAutoMatchLogs(500)
 	if recentErr != nil {
 		slog.Warn("auto match: list recent logs", "err", recentErr)
 		recentLogs = nil
 	}
+	deliveredByDispatch := BuildDispatchDeliveredMap(st, recentLogs)
 
 	const maxPendingPerGroup = 10
 	pendingByGroup := make(map[int64]int)
@@ -181,23 +192,24 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 	}{}
 
 	for _, p := range products {
-		input := match.ProductInput{
-			Name:     p.CanonicalName,
-			Category: firstTag(p),
-			Price:    nullFloat(p.LowestPrice),
-		}
-		if p.Brand.Valid {
-			input.Brand = p.Brand.String
-		}
-
-		scores := match.RankChannels(input, channels)
-
 		productTaxonomies, taxErr := st.ListProductTaxonomies(p.ID)
 		if taxErr != nil {
 			slog.Warn("auto match: list product taxonomies", "product_id", p.ID, "err", taxErr)
 			productTaxonomies = nil
 		}
-		productAttrs := parseProductAttributes(p)
+		productAttrs := ParseProductAttributes(p)
+
+		input := match.ProductInput{
+			Name:     p.CanonicalName,
+			Category: firstTag(p),
+			Price:    nullFloat(p.LowestPrice),
+			Drop:     ProductDropPercent(st, p),
+		}
+		if p.Brand.Valid {
+			input.Brand = p.Brand.String
+		}
+
+		scores := match.RankChannelsDetailed(input, channels, productTaxonomies, productAttrs, clicksByChannelID)
 
 		for _, s := range scores {
 			auto, ok := automationsByChannelID[s.ChannelID]
@@ -250,14 +262,7 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 			}
 
 			cutoff := now.Add(-cooldown)
-			alreadySent := false
-			for _, l := range recentLogs {
-				if l.ProductID == p.ID && l.ChannelID == s.ChannelID && l.CreatedAt.After(cutoff) {
-					alreadySent = true
-					break
-				}
-			}
-			if alreadySent {
+			if CooldownBlocksPair(recentLogs, p.ID, s.ChannelID, cutoff, deliveredByDispatch) {
 				skip.Cooldown++
 				continue
 			}
@@ -384,11 +389,8 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 			}
 			if err == nil && logID > 0 {
 				ch := channelsByID[s.ChannelID]
-				clicksLast30d, clkErr := st.CountChannelClicksLast30d(s.ChannelID)
-				if clkErr != nil {
-					slog.Warn("auto match: count channel clicks 30d", "channel_id", s.ChannelID, "err", clkErr)
-				}
-				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, clicksLast30d, match.Weights{})
+				clicksLast30d := clicksByChannelID[s.ChannelID]
+				detailedResult := match.ScoreChannelDetailed(input, ch, productTaxonomies, productAttrs, clicksLast30d, match.ResolveWeights(ch))
 				breakdownJSON, brErr := json.Marshal(detailedResult.Breakdown)
 				if brErr != nil {
 					slog.Warn("auto match: marshal score breakdown", "log_id", logID, "err", brErr)

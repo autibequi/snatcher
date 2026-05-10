@@ -256,11 +256,14 @@ type Store interface {
 	CancelDispatch(id int64) error
 	AllDispatchTargetsFinished(dispatchID int64) (bool, error)
 	HasDeliveredTarget(dispatchID int64) (bool, error)
+	// DispatchIDsWithDelivered devolve true nas chaves que têm pelo menos um target status=delivered.
+	DispatchIDsWithDelivered(dispatchIDs []int64) map[int64]bool
 
 	// Auto Match
 	CreateAutoMatchLog(log models.AutoMatchLog) (int64, error)
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
-	// ListAutoMatchLogsSince retorna logs com created_at >= since, mais recentes primeiro.
+	// ListAutoMatchLogsSince retorna linhas de auto_match_logs + disparos composed_by=auto-match
+	// sem linha de log (órfãos), mesma janela temporal — para timeline na UI.
 	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)
 
 	// Match — CTR histórico
