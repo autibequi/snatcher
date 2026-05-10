@@ -21,45 +21,16 @@ RUN go version && go env GOVERSION GOPATH
 # -p 1: menos paralelismo de pacotes (com GOMAXPROCS=1 reduz pico de RAM em VPS pequenos).
 # -v: imprime pacotes compilados — ajuda a ver onde parou se o build falhar.
 #
-# Em falha: meminfo + segundo go build sem strip (às vezes o linker morre por RAM sem mensagem útil).
-RUN set -eux; \
-  build_bin() { \
-    out="$1"; pkg="$2"; \
-    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
-      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
-      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
-      echo "=== retry (no strip, stderr captured) ==="; \
-      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
-      exit 1; \
-    fi; \
-  }; \
-  build_bin backendv2 ./cmd/server
+# Build em um único /bin/sh -c (POSIX): evita quirks de funções + set -eux em ash/Docker antigo.
+# Em falha: meminfo + segundo go build sem strip (stderr truncado para não estourar log).
+RUN /bin/sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o backendv2 ./cmd/server \
+  || { echo "=== snatcher build FAILED: backendv2 ./cmd/server ==="; head -n 25 /proc/meminfo || true; echo "=== retry (no strip, last 120 lines) ==="; go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o /tmp/backendv2-diag ./cmd/server 2>&1 | tail -n 120; exit 1; }'
 
-RUN set -eux; \
-  build_bin() { \
-    out="$1"; pkg="$2"; \
-    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
-      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
-      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
-      echo "=== retry (no strip) ==="; \
-      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
-      exit 1; \
-    fi; \
-  }; \
-  build_bin seed ./cmd/seed
+RUN /bin/sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o seed ./cmd/seed \
+  || { echo "=== snatcher build FAILED: seed ./cmd/seed ==="; head -n 25 /proc/meminfo || true; echo "=== retry (no strip, last 120 lines) ==="; go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o /tmp/seed-diag ./cmd/seed 2>&1 | tail -n 120; exit 1; }'
 
-RUN set -eux; \
-  build_bin() { \
-    out="$1"; pkg="$2"; \
-    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
-      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
-      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
-      echo "=== retry (no strip) ==="; \
-      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
-      exit 1; \
-    fi; \
-  }; \
-  build_bin public ./cmd/public
+RUN /bin/sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o public ./cmd/public \
+  || { echo "=== snatcher build FAILED: public ./cmd/public ==="; head -n 25 /proc/meminfo || true; echo "=== retry (no strip, last 120 lines) ==="; go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o /tmp/public-diag ./cmd/public 2>&1 | tail -n 120; exit 1; }'
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
