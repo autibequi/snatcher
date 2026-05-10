@@ -89,6 +89,16 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 		}
 	}
 
+	// Mesmo critério que RunAutoMatchWorker: só grupos WA/TG com status=active.
+	// Sem isto a prévia lista matches mas CreateDispatch nunca corre (canal sem grupos ativos).
+	activeGroups, err := st.ListRedesignGroups(channelID, "", "active")
+	if err != nil {
+		return nil, 0, 0, "", err
+	}
+	if len(activeGroups) == 0 {
+		return []ChannelAutomationPreviewRow{}, threshold, maxPerRun, channel.Name, nil
+	}
+
 	channels := []models.Channel{channel}
 	var items []ChannelAutomationPreviewRow
 
@@ -122,12 +132,18 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 			continue
 		}
 
+		// Mesmo skip que o worker: produto+canal ainda em cooldown não entra no ciclo.
+		// A prévia antiga listava estes itens com already_sent=true — UI parecia "válido" mas zero dispatches.
+		if recentSet[p.ID] {
+			continue
+		}
+
 		items = append(items, ChannelAutomationPreviewRow{
 			ProductID:   p.ID,
 			ProductName: p.CanonicalName,
 			Score:       scores[0].Value,
 			Price:       price,
-			AlreadySent: recentSet[p.ID],
+			AlreadySent: false,
 		})
 	}
 
