@@ -153,6 +153,7 @@ FORMATAÇÃO WHATSAPP (obrigatório):
 - Preço antigo / De-Por: use tachado ~R$ X~ na linha do "de" e o preço atual em *negrito* na linha seguinte (se os dados permitirem economia).
 - Evite parecer spam: sem CAPS LOCK inteiro, sem 10 emojis seguidos.
 - NÃO envolva a mensagem em aspas. Sem JSON. Sem explicações antes ou depois.
+- **Proibido** incluir qualquer URL ou domínio de marketplace (http, www., amazon., mercadolivre, shopee…). O sistema acrescenta apenas o link de afiliado curto — não escreva links na cópia.
 
 Comprimento: até ~420 caracteres (incluindo quebras de linha).
 

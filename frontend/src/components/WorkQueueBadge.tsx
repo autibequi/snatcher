@@ -166,22 +166,26 @@ export function WorkQueueBadge() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+        className={`flex items-center gap-2 min-h-[2.25rem] px-3 py-1.5 rounded-full text-sm font-semibold transition-colors shadow-sm border border-transparent ${
           activeRunningCount > 0
-            ? 'bg-accent/10 text-accent hover:bg-accent/20'
-            : 'bg-surface-2 text-fg-3 hover:text-fg'
+            ? 'bg-accent/15 text-accent border-accent/25 hover:bg-accent/25'
+            : 'bg-surface-2 text-fg-2 hover:text-fg border-border/60'
         }`}
         title="Fila universal (FIFO): jobs no PostgreSQL + Jonfrey"
       >
         {activeRunningCount > 0 && (
-          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
         )}
-        ⏱{' '}
-        {activeRunningCount > 0
-          ? `${activeRunningCount} ativo(s)`
-          : items.length > 0
-            ? `${items.length} item(ns)`
-            : 'fila'}
+        <span className="text-lg leading-none" aria-hidden>
+          ⏱
+        </span>
+        <span className="whitespace-nowrap">
+          {activeRunningCount > 0
+            ? `${activeRunningCount} ativo(s)`
+            : items.length > 0
+              ? `${items.length} na fila`
+              : 'Fila'}
+        </span>
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-lg shadow-modal z-50 overflow-hidden flex flex-col max-h-[min(28rem,70vh)]">

@@ -256,6 +256,18 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		}
 	}
 
+	appDomain := ""
+	if cfg.AppDomain.Valid {
+		appDomain = cfg.AppDomain.String
+	}
+	text = sanitizeDispatchOutboundText(text, strings.TrimSpace(dispatch.AffiliateLink), appDomain)
+	if strings.TrimSpace(text) == "" {
+		slog.Error("dispatch worker: texto vazio após sanitização de URLs", "target_id", t.ID, "dispatch_id", t.DispatchID)
+		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "mensagem só continha URLs de marketplace (removidas por política)")
+		checkAllFinished(st, t.DispatchID)
+		return false
+	}
+
 	jid := group.JID.String
 
 	// Enviar imagem + texto OU só texto

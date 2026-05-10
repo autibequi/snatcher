@@ -258,6 +258,7 @@ export function TabOverview() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['auto-match'] })
       qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+      qc.invalidateQueries({ queryKey: ['work-queue'] })
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? err?.message ?? 'Erro ao processar fila'),
   })
@@ -450,6 +451,30 @@ export function TabOverview() {
     return `${rank}º no canal · máx ${maxPerRunEffective}/ciclo`
   }
 
+  const isInThisAutoMatchCycle = React.useCallback(
+    (p: GlobalPreviewItem): boolean => {
+      if (!enabled) return false
+      const rank = previewRankInChannel.get(`${p.channel_id}-${p.product_id}`) ?? 999
+      return rank <= maxPerRunEffective
+    },
+    [enabled, previewRankInChannel, maxPerRunEffective],
+  )
+
+  /** Neste ciclo primeiro; depois restantes (mesma ordem por canal/rank). */
+  const previewRowsSorted = React.useMemo(() => {
+    const arr = [...previewCandidates]
+    arr.sort((a, b) => {
+      const ia = isInThisAutoMatchCycle(a)
+      const ib = isInThisAutoMatchCycle(b)
+      if (ia !== ib) return ia ? -1 : 1
+      const ra = previewRankInChannel.get(`${a.channel_id}-${a.product_id}`) ?? 999
+      const rb = previewRankInChannel.get(`${b.channel_id}-${b.product_id}`) ?? 999
+      if (a.channel_id !== b.channel_id) return a.channel_id - b.channel_id
+      return ra - rb
+    })
+    return arr
+  }, [previewCandidates, previewRankInChannel, isInThisAutoMatchCycle])
+
   const logsSorted = React.useMemo(
     () => [...logs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [logs],
@@ -549,16 +574,17 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="rounded-lg border border-border bg-surface p-4 shadow-card flex flex-wrap items-start justify-between gap-3">
+      <div className="rounded-lg border border-border bg-surface p-4 md:p-5 shadow-card flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-fg">Envio da fila (WhatsApp)</p>
+          <p className="text-base font-semibold text-fg">Envio da fila (WhatsApp)</p>
           <p className="text-[11px] text-fg-3 mt-1 max-w-3xl leading-relaxed">
             O servidor já corre o worker de envio periodicamente (~15s). Se acabou de aprovar ou libertar itens e quiser não esperar o próximo ciclo, force um envio agora.
           </p>
         </div>
         <Button
           variant="secondary"
-          size="sm"
+          size="lg"
+          className="shrink-0 text-base px-5"
           loading={processQueueMut.isPending}
           onClick={() => processQueueMut.mutate()}
         >
@@ -734,17 +760,21 @@ export function TabOverview() {
         </div>
 
         <div className="max-h-[min(70vh,560px)] overflow-y-auto">
-          <div className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-warning/10 border-b border-warning/25 text-xs">
-            <span className="font-semibold text-fg">
-              Na fila do próximo ciclo
-              <span className="font-normal text-fg-3">
-                {' '}
-                (~{enabled && amSecs != null ? fmtEtaSeconds(amSecs) : '—'})
+          <div className="sticky top-0 z-[1] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-1.5 px-4 py-2.5 bg-warning/10 border-b border-warning/25 text-xs">
+            <div>
+              <span className="font-semibold text-fg">
+                Prévia do próximo ciclo auto-match
+                <span className="font-normal text-fg-3">
+                  {' '}
+                  (~{enabled && amSecs != null ? fmtEtaSeconds(amSecs) : '—'})
+                </span>
               </span>
-            </span>
-            <span className="text-[10px] text-fg-3">
-              {previewCandidates.length} candidato{previewCandidates.length === 1 ? '' : 's'} na prévia · até{' '}
-              {maxPerRunEffective}/canal no ciclo ·{' '}
+              <p className="text-[10px] text-fg-3 mt-0.5 max-w-xl leading-snug">
+                Itens com faixa <strong className="text-accent font-medium">Neste ciclo</strong> são os que o match pode disparar agora (até {maxPerRunEffective} por canal, por score). O resto fica à espera de próximos ciclos — não é a fila de envio WA (use ⏱ no topo ou “Processar fila”).
+              </p>
+            </div>
+            <span className="text-[10px] text-fg-3 shrink-0">
+              {previewCandidates.length} candidato{previewCandidates.length === 1 ? '' : 's'} ·{' '}
               <a href="/automations/channels" className="text-accent hover:underline">
                 por canal
               </a>
@@ -758,25 +788,41 @@ export function TabOverview() {
             </p>
           ) : (
             <div className="divide-y divide-border/80">
-              {previewCandidates.map((p) => (
-                <div key={`${p.channel_id}-${p.product_id}`} className="px-3 py-2 flex items-center gap-3">
-                  <span
-                    className={`text-xs font-semibold px-1.5 py-0.5 rounded shrink-0 ${
-                      p.score >= 70 ? 'bg-warning/15 text-warning' : 'bg-surface-2 text-fg-3'
+              {previewRowsSorted.map((p) => {
+                const inCycle = isInThisAutoMatchCycle(p)
+                return (
+                  <div
+                    key={`${p.channel_id}-${p.product_id}`}
+                    className={`px-3 py-2.5 flex items-center gap-3 transition-colors ${
+                      inCycle
+                        ? 'bg-accent/[0.07] border-l-[3px] border-l-accent pl-[9px]'
+                        : 'bg-surface/40 border-l-[3px] border-l-transparent pl-[9px] opacity-90'
                     }`}
                   >
-                    {p.score.toFixed(0)}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-fg truncate">{p.product_name}</p>
-                    <p className="text-[10px] text-fg-3 truncate">{p.channel_name}</p>
+                    <span
+                      className={`text-xs font-semibold px-2 py-1 rounded-md shrink-0 min-w-[2.25rem] text-center ${
+                        inCycle
+                          ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
+                          : p.score >= 70
+                            ? 'bg-warning/15 text-warning'
+                            : 'bg-surface-2 text-fg-3'
+                      }`}
+                    >
+                      {p.score.toFixed(0)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-fg truncate">{p.product_name}</p>
+                      <p className="text-[10px] text-fg-3 truncate">{p.channel_name}</p>
+                    </div>
+                    <div className="text-right shrink-0 max-w-[11rem]">
+                      <p className={`text-[10px] font-semibold uppercase tracking-wide ${inCycle ? 'text-accent' : 'text-fg-3'}`}>
+                        {inCycle ? 'Neste ciclo' : 'Depois'}
+                      </p>
+                      <p className="text-[10px] text-fg leading-tight mt-0.5">{previewQueueLabel(p)}</p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[10px] font-medium text-warning">Fila</p>
-                    <p className="text-[10px] text-fg leading-tight">{previewQueueLabel(p)}</p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
