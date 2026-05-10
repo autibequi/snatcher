@@ -595,6 +595,14 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 		jm.AppendActivity(jobID, fmt.Sprintf("▶ início %s", def.Type))
 		jm.Update(jobID, done, total, fmt.Sprintf("a correr %s…", def.Type))
 		id := h.executeAction(runCtx, def, triggeredBy, target)
+		slog.Info("jonfrey batch passo concluído",
+			"job_id", jobID,
+			"triggered_by", triggeredBy,
+			"step", done+1,
+			"of", total,
+			"action_type", def.Type,
+			"audit_id", id,
+		)
 		if id > 0 {
 			ids = append(ids, id)
 		}
@@ -630,17 +638,14 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	action.ID = id
 
-	if def.Category == "dispatch" {
-		slog.Info("jonfrey executeAction dispatch",
-			"type", def.Type,
-			"audit_id", id,
-			"triggered_by", triggeredBy,
-			"note", "full-auto/release só efetiva pending→queued aqui; envio real é o dispatch worker a cada 15s",
-		)
-	}
-	slog.Debug("jonfrey executeAction start", "type", def.Type, "audit_id", id, "triggered_by", triggeredBy)
-
 	queueJob := jonfreyJobIDFromCtx(ctx)
+	slog.Info("jonfrey executeAction início",
+		"audit_id", id,
+		"action_type", def.Type,
+		"category", def.Category,
+		"triggered_by", triggeredBy,
+		"parent_job_id", queueJob,
+	)
 	if queueJob != "" {
 		jobs.Default().AppendActivity(queueJob, fmt.Sprintf("audit #%d · %s · estado running", id, def.Type))
 	}
@@ -711,13 +716,24 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
 		slog.Error("jonfrey UpdateJonfreyAction failed", "id", action.ID, "type", def.Type, "err", updErr)
-	} else if def.Category == "dispatch" {
-		slog.Info("jonfrey executeAction dispatch concluída",
-			"type", def.Type,
+	} else {
+		args := []any{
 			"audit_id", action.ID,
+			"action_type", def.Type,
+			"category", def.Category,
 			"status", action.Status,
-			"run_err", runErr,
-		)
+			"triggered_by", triggeredBy,
+			"parent_job_id", queueJob,
+		}
+		if runErr != nil {
+			args = append(args, "err", runErr.Error())
+		}
+		if def.Category == "dispatch" {
+			args = append(args,
+				"pipeline_note", "Jonfrey só move pending_approval→queued (full-auto); envio WA/TG é o RunDispatchWorker (~15s). Audit≠mensagem entregue.",
+			)
+		}
+		slog.Info("jonfrey executeAction fim", args...)
 	}
 	if queueJob != "" {
 		if runErr != nil {
@@ -1394,6 +1410,11 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 		"released_rows", released,
 		"pending_approval_before", before,
 	)
+	if released == 0 && before == 0 {
+		slog.Info("jonfrey auto_release_pending: zero linhas — não havia dispatches em pending_approval (UI pode falar em 'envio' mas fila de aprovação estava vazia)",
+			"released_rows", released,
+		)
+	}
 	beforeMap := map[string]any{"pending_approval_count": before}
 	afterMap := map[string]any{"released": released, "now_status": "queued"}
 	reasoning := fmt.Sprintf("Full-auto ON. Liberei %d dispatches que estavam em pending_approval. O dispatch worker enviará respeitando rotação de contas WA e throttling.", released)

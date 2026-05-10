@@ -148,7 +148,11 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 				} else {
 					slog.Info("scheduler: jonfrey tick — LastRunAt vazio, primeira execução ou reset")
 				}
-				slog.Info("scheduler: jonfrey tick disparando RunCycle")
+				slog.Info("scheduler: jonfrey tick disparando RunCycle",
+					"source", "gocron_1m",
+					"interval_minutes", cfg.IntervalMinutes,
+					"enabled_actions_count", len(cfg.EnabledActions),
+				)
 				sc.jonfreyTick(ctx)
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
