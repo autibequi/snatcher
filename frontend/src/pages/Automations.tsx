@@ -249,8 +249,24 @@ export function TabOverview() {
     },
   })
 
+  /** Mesmo tick que o cron (~15s); opcional após aprovar para não esperar o próximo ciclo. */
+  const tickDispatchQueue = () =>
+    apiClient.post('/api/dispatches/process-queue-now').catch(() => null)
+
+  const processQueueMut = useMutation({
+    mutationFn: () => apiClient.post('/api/dispatches/process-queue-now'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto-match'] })
+      qc.invalidateQueries({ queryKey: ['dispatches', 'pending-approval'] })
+    },
+    onError: (err: any) => alert(err?.response?.data?.error ?? err?.message ?? 'Erro ao processar fila'),
+  })
+
   const approveAllMut = useMutation({
-    mutationFn: () => apiClient.post('/api/dispatches/approve-all'),
+    mutationFn: async () => {
+      await apiClient.post('/api/dispatches/approve-all')
+      await tickDispatchQueue()
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['auto-match'] })
       qc.invalidateQueries({ queryKey: ['config'] })
@@ -261,10 +277,13 @@ export function TabOverview() {
   const approveBatchMut = useMutation({
     mutationFn: async (ids: number[]) => {
       try {
-        return await apiClient.post('/api/dispatches/approve-batch', { ids })
+        const r = await apiClient.post('/api/dispatches/approve-batch', { ids })
+        await tickDispatchQueue()
+        return r
       } catch (err: any) {
         if (err?.response?.status === 404) {
           await Promise.allSettled(ids.map(id => apiClient.post(`/api/dispatches/${id}/approve`)))
+          await tickDispatchQueue()
           return { data: { approved: ids.length } }
         }
         throw err
@@ -530,6 +549,23 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
+      <div className="rounded-lg border border-border bg-surface p-4 shadow-card flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-fg">Envio da fila (WhatsApp)</p>
+          <p className="text-[11px] text-fg-3 mt-1 max-w-3xl leading-relaxed">
+            O servidor já corre o worker de envio periodicamente (~15s). Se acabou de aprovar ou libertar itens e quiser não esperar o próximo ciclo, force um envio agora.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={processQueueMut.isPending}
+          onClick={() => processQueueMut.mutate()}
+        >
+          Processar fila agora
+        </Button>
+      </div>
+
       <FullAutoStatusBanner
         placement="automations"
         trailing={

@@ -18,6 +18,7 @@ import (
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -497,6 +498,17 @@ func (h *DispatchHandler) ApproveBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	n, _ := res.RowsAffected()
 	writeJSON(w, http.StatusOK, map[string]any{"approved": n})
+}
+
+// ProcessQueueNow POST /api/dispatches/process-queue-now
+// Executa uma passagem imediata do mesmo worker que o cron (~15s): envia até N targets
+// pending na Evolution. Não cria dispatches novos — só drena a fila já em "queued".
+func (h *DispatchHandler) ProcessQueueNow(w http.ResponseWriter, r *http.Request) {
+	scheduler.RunDispatchWorker(r.Context(), h.store)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"message": "tick de envio executado — ver logs do dispatch worker se nada saiu (rate limit, WA, etc.)",
+	})
 }
 
 // ApproveAllDispatch POST /api/dispatches/approve-all

@@ -19,6 +19,7 @@ import (
 	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -1415,6 +1416,9 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 			"released_rows", released,
 		)
 	}
+	// Mesmo processo do cron (~15s), mas logo após libertar pending→queued para não esperar o próximo tick.
+	scheduler.RunDispatchWorker(ctx, h.store)
+
 	beforeMap := map[string]any{"pending_approval_count": before}
 	afterMap := map[string]any{"released": released, "now_status": "queued"}
 	reasoning := fmt.Sprintf("Full-auto ON. Liberei %d dispatches que estavam em pending_approval. O dispatch worker enviará respeitando rotação de contas WA e throttling.", released)

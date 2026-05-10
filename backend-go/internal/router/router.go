@@ -406,6 +406,7 @@ func Build(
 		r.Get("/api/dispatches/pending-approval", dispatches.ListPendingApproval)
 		r.Get("/api/dispatches/send-queue", dispatches.ListSendQueue)
 		r.Post("/api/dispatches/approve-all", dispatches.ApproveAllDispatch)
+		r.Post("/api/dispatches/process-queue-now", dispatches.ProcessQueueNow)
 		r.Post("/api/dispatches/approve-batch", dispatches.ApproveBatch)
 		r.Post("/api/dispatches/expire-stale", dispatches.ExpireStaleTargets)
 		r.Post("/api/dispatches/{id}/diagnose", dispatches.Diagnose)
