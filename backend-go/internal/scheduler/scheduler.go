@@ -72,7 +72,7 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(15*time.Second),
-			gocron.NewTask(func() { RunDispatchWorker(ctx, sc.storeRef) }),
+			gocron.NewTask(func() { _ = RunDispatchWorker(ctx, sc.storeRef) }),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

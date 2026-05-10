@@ -17,21 +17,23 @@ import (
 
 // RunDispatchWorker processa dispatch_targets pendentes chamando a Evolution API.
 // Deve ser chamado periodicamente pelo scheduler.
-func RunDispatchWorker(ctx context.Context, st store.Store) {
+// Retorna quantos targets foram lidos da fila neste ciclo (0 = fila vazia ou erro ao listar).
+func RunDispatchWorker(ctx context.Context, st store.Store) int {
 	targets, err := st.ListPendingDispatchTargets(20)
 	if err != nil {
 		slog.Error("dispatch worker: list pending", "err", err)
-		return
+		return 0
 	}
 	if len(targets) == 0 {
-		return
+		return 0
 	}
-	slog.Info("dispatch worker: processing", "targets", len(targets))
+	n := len(targets)
+	slog.Info("dispatch worker: processing", "targets", n)
 
 	cfg, err := st.GetConfig()
 	if err != nil {
 		slog.Error("dispatch worker: get config", "err", err)
-		return
+		return n
 	}
 	waAccounts, err := st.ListWAAccounts()
 	if err != nil {
@@ -73,6 +75,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) {
 			deliveredByGroup[t.GroupID]++
 		}
 	}
+	return n
 }
 
 // evolutionSendBodyError detecta erro em JSON mesmo com HTTP 2xx (Evolution às vezes não usa 4xx).

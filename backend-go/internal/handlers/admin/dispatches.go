@@ -504,10 +504,15 @@ func (h *DispatchHandler) ApproveBatch(w http.ResponseWriter, r *http.Request) {
 // Executa uma passagem imediata do mesmo worker que o cron (~15s): envia até N targets
 // pending na Evolution. Não cria dispatches novos — só drena a fila já em "queued".
 func (h *DispatchHandler) ProcessQueueNow(w http.ResponseWriter, r *http.Request) {
-	scheduler.RunDispatchWorker(r.Context(), h.store)
+	n := scheduler.RunDispatchWorker(r.Context(), h.store)
+	msg := "tick de envio executado"
+	if n == 0 {
+		msg = "fila de envio vazia: não há dispatch_targets pending ligados a dispatches em status queued/sending (ou agendados para o futuro). Aprovar pending_approval → queued antes; este endpoint não cria envios, só drena a fila"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true,
-		"message": "tick de envio executado — ver logs do dispatch worker se nada saiu (rate limit, WA, etc.)",
+		"ok":         true,
+		"batch_size": n,
+		"message":    msg,
 	})
 }
 
