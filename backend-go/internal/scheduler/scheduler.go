@@ -116,10 +116,16 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 			gocron.DurationJob(1*time.Minute),
 			gocron.NewTask(func() {
 				if sc.jonfreyTick == nil {
-					return // callback ainda não registrado
+					slog.Warn("scheduler: jonfrey tick ignorado — SetJonfreyTick não registrou callback (handler nil)")
+					return
 				}
 				cfg, err := sc.storeRef.GetJonfreyConfig()
-				if err != nil || !cfg.Enabled {
+				if err != nil {
+					slog.Warn("scheduler: jonfrey tick ignorado — GetJonfreyConfig", "err", err)
+					return
+				}
+				if !cfg.Enabled {
+					slog.Debug("scheduler: jonfrey tick ignorado — Jonfrey desligado na config")
 					return
 				}
 				// Respeita IntervalMinutes do JonfreyConfig
@@ -128,11 +134,21 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					if interval <= 0 {
 						interval = 60 * time.Minute
 					}
-					if time.Since(cfg.LastRunAt.Time) < interval {
+					since := time.Since(cfg.LastRunAt.Time)
+					if since < interval {
+						nextIn := (interval - since).Round(time.Second)
+						slog.Info("scheduler: jonfrey tick aguardando intervalo",
+							"interval", interval.String(),
+							"last_run_at", cfg.LastRunAt.Time.UTC().Format(time.RFC3339),
+							"elapsed", since.Round(time.Second).String(),
+							"next_tick_in", nextIn.String(),
+						)
 						return
 					}
+				} else {
+					slog.Info("scheduler: jonfrey tick — LastRunAt vazio, primeira execução ou reset")
 				}
-				slog.Info("scheduler: jonfrey tick")
+				slog.Info("scheduler: jonfrey tick disparando RunCycle")
 				sc.jonfreyTick(ctx)
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),

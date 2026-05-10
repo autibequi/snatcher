@@ -416,14 +416,26 @@ func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 	_ = ctx // tick vem do scheduler; o batch usa context.Background + job próprio
 	cfg, err := h.store.GetJonfreyConfig()
-	if err != nil || !cfg.Enabled {
+	if err != nil {
+		slog.Warn("jonfrey RunCycle abortado — GetJonfreyConfig", "err", err)
+		return
+	}
+	if !cfg.Enabled {
+		slog.Info("jonfrey RunCycle ignorado — cfg.Enabled=false")
 		return
 	}
 
 	order := []string{"cleanup", "curation", "health", "optimization", "dispatch"}
+	enabled := []string(cfg.EnabledActions)
 	var typesToRun []string
+	var skippedUnknown []string
+	for _, t := range enabled {
+		if _, ok := actionRegistry[t]; !ok {
+			skippedUnknown = append(skippedUnknown, t)
+		}
+	}
 	for _, cat := range order {
-		for _, t := range []string(cfg.EnabledActions) {
+		for _, t := range enabled {
 			def, ok := actionRegistry[t]
 			if !ok || def.Category != cat {
 				continue
@@ -432,17 +444,35 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 		}
 	}
 	if len(typesToRun) == 0 {
+		slog.Info("jonfrey RunCycle sem ações a executar",
+			"enabled_actions", enabled,
+			"skipped_unknown_types", skippedUnknown,
+			"hint", "tipos devem existir no registry e bater categoria cleanup|curation|health|optimization|dispatch; para liberar dispatches inclua auto_release_pending ou enable_full_auto na lista",
+		)
 		return
 	}
 
 	h.schedCycleMu.Lock()
 	if h.schedCycleBusy {
 		h.schedCycleMu.Unlock()
-		slog.Debug("jonfrey RunCycle skipped: ciclo agendado já em execução")
+		slog.Info("jonfrey RunCycle ignorado — batch agendado já em execução (manual ou ciclo anterior)")
 		return
 	}
 	h.schedCycleBusy = true
 	h.schedCycleMu.Unlock()
+
+	hasDispatch := false
+	for _, t := range typesToRun {
+		if d, ok := actionRegistry[t]; ok && d.Category == "dispatch" {
+			hasDispatch = true
+			break
+		}
+	}
+	slog.Info("jonfrey RunCycle enfileirando batch",
+		"actions_count", len(typesToRun),
+		"actions", typesToRun,
+		"includes_dispatch_actions", hasDispatch,
+	)
 
 	jm := jobs.Default()
 	job, jobCtx := jm.StartKind(context.Background(), "jonfrey", fmt.Sprintf("Jonfrey agendado ×%d", len(typesToRun)))
@@ -450,10 +480,19 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 		defer func() {
 			cfg2, err := h.store.GetJonfreyConfig()
 			if err == nil {
-				cfg2.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
+				now := time.Now()
+				cfg2.LastRunAt = models.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}}
 				if err := h.store.UpdateJonfreyConfig(cfg2); err != nil {
 					slog.Warn("jonfrey RunCycle post-batch UpdateJonfreyConfig", "err", err)
+				} else {
+					slog.Info("jonfrey RunCycle: LastRunAt atualizado (scheduler compara isto com IntervalMinutes)",
+						"job_id", job.ID,
+						"last_run_at", now.UTC().Format(time.RFC3339),
+						"interval_minutes", cfg2.IntervalMinutes,
+					)
 				}
+			} else {
+				slog.Warn("jonfrey RunCycle post-batch GetJonfreyConfig", "err", err)
 			}
 			h.schedCycleMu.Lock()
 			h.schedCycleBusy = false
@@ -536,6 +575,13 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 	done := 0
 	var ids []int64
 
+	slog.Info("jonfrey runJonfreyBatch início",
+		"job_id", jobID,
+		"triggered_by", triggeredBy,
+		"total", total,
+		"types", typesToRun,
+	)
+
 	jm.AppendActivity(jobID, fmt.Sprintf("fila: %d ação(ões) · ordem FIFO", total))
 
 	for _, t := range typesToRun {
@@ -558,6 +604,13 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 	}
 
 	jm.Done(jobID, fmt.Sprintf("Jonfrey: %d/%d ações concluídas (audit ids=%v).", len(ids), total, ids))
+	slog.Info("jonfrey runJonfreyBatch fim",
+		"job_id", jobID,
+		"triggered_by", triggeredBy,
+		"audit_ids", ids,
+		"completed_steps", done,
+		"total", total,
+	)
 }
 
 // executeAction roda uma ação e grava no audit log. Retorna o ID da action criada.
@@ -576,6 +629,16 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 		return 0
 	}
 	action.ID = id
+
+	if def.Category == "dispatch" {
+		slog.Info("jonfrey executeAction dispatch",
+			"type", def.Type,
+			"audit_id", id,
+			"triggered_by", triggeredBy,
+			"note", "full-auto/release só efetiva pending→queued aqui; envio real é o dispatch worker a cada 15s",
+		)
+	}
+	slog.Debug("jonfrey executeAction start", "type", def.Type, "audit_id", id, "triggered_by", triggeredBy)
 
 	queueJob := jonfreyJobIDFromCtx(ctx)
 	if queueJob != "" {
@@ -636,6 +699,13 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	}
 	if updErr := h.store.UpdateJonfreyAction(action); updErr != nil {
 		slog.Error("jonfrey UpdateJonfreyAction failed", "id", action.ID, "type", def.Type, "err", updErr)
+	} else if def.Category == "dispatch" {
+		slog.Info("jonfrey executeAction dispatch concluída",
+			"type", def.Type,
+			"audit_id", action.ID,
+			"status", action.Status,
+			"run_err", runErr,
+		)
 	}
 	if queueJob != "" {
 		if runErr != nil {
@@ -1286,9 +1356,11 @@ JSON apenas:
 func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	cfg, err := h.store.GetConfig()
 	if err != nil {
+		slog.Warn("jonfrey auto_release_pending: GetConfig", "err", err)
 		return nil, nil, "", err
 	}
 	if !cfg.FullAutoMode {
+		slog.Info("jonfrey auto_release_pending: ignorado — FullAutoMode=false (sem passar pending_approval→queued)")
 		return map[string]any{"full_auto_mode": false},
 			map[string]any{"released": 0, "skipped": "full_auto_mode desligado"},
 			"Full-auto desligado — sem release automático. Aprove manualmente ou ative em Configurações.",
@@ -1296,11 +1368,20 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 	}
 	var before int
 	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
+	slog.Info("jonfrey auto_release_pending: antes do UPDATE",
+		"pending_approval_count", before,
+		"full_auto_mode", cfg.FullAutoMode,
+	)
 	res, err := h.db.ExecContext(ctx, `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
 	if err != nil {
+		slog.Error("jonfrey auto_release_pending: UPDATE falhou", "err", err)
 		return nil, nil, "", err
 	}
 	released, _ := res.RowsAffected()
+	slog.Info("jonfrey auto_release_pending: depois do UPDATE",
+		"released_rows", released,
+		"pending_approval_before", before,
+	)
 	beforeMap := map[string]any{"pending_approval_count": before}
 	afterMap := map[string]any{"released": released, "now_status": "queued"}
 	reasoning := fmt.Sprintf("Full-auto ON. Liberei %d dispatches que estavam em pending_approval. O dispatch worker enviará respeitando rotação de contas WA e throttling.", released)
