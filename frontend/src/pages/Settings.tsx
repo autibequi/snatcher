@@ -61,10 +61,10 @@ function AppearanceTab() {
         <div className="flex gap-3">
           {(['indigo', 'green', 'orange', 'pink'] as const).map((a) => {
             const colors: Record<string, string> = {
-              indigo: '#6366f1',
-              green: '#22c55e',
-              orange: '#f97316',
-              pink: '#ec4899',
+              indigo: '#bd93f9',
+              green: '#50fa7b',
+              orange: '#ffb86c',
+              pink: '#ff79c6',
             }
             return (
               <button
