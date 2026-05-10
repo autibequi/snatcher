@@ -272,6 +272,8 @@ type Store interface {
 	// ListAutoMatchLogsSince retorna linhas de auto_match_logs + disparos composed_by=auto-match
 	// sem linha de log (órfãos), mesma janela temporal — para timeline na UI.
 	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)
+	// CountAutoMatchDispatchesSince conta dispatches criados pelo worker auto-match (composed_by=auto-match).
+	CountAutoMatchDispatchesSince(since time.Time) (int64, error)
 
 	// Match — CTR histórico
 	// GetHistoricalCTRForGroup calcula CTR = clicks/dispatches para o grupo no contexto

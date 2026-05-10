@@ -147,15 +147,35 @@ func (s *SQLStore) AutoMatchProductChannelInFlight(productID, channelID int64) (
 	return exists, err
 }
 
-// AutoMatchHasRecentPairLog é verdadeiro se há linha em auto_match_logs no intervalo (cooldown estrito).
+// AutoMatchHasRecentPairLog é verdadeiro se o par produto+canal está em cooldown:
+// linha em auto_match_logs OU dispatch auto-match criado no intervalo (fallback se log falhou ao inserir).
 func (s *SQLStore) AutoMatchHasRecentPairLog(productID, channelID int64, since time.Time) (bool, error) {
-	var exists bool
-	err := s.db.Get(&exists, `
-		SELECT EXISTS (
-			SELECT 1 FROM auto_match_logs
-			WHERE product_id = $1 AND channel_id = $2 AND created_at >= $3
+	var blocked bool
+	err := s.db.Get(&blocked, `
+		SELECT (
+			EXISTS (
+				SELECT 1 FROM auto_match_logs
+				WHERE product_id = $1 AND channel_id = $2 AND created_at >= $3
+			)
+			OR EXISTS (
+				SELECT 1 FROM dispatches d
+				INNER JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+				INNER JOIN groups g ON g.id = dt.group_id
+				WHERE d.product_id IS NOT NULL AND d.product_id = $1 AND g.channel_id = $2
+				  AND d.composed_by = 'auto-match'
+				  AND d.created_at >= $3
+			)
 		)`, productID, channelID, since)
-	return exists, err
+	return blocked, err
+}
+
+// CountAutoMatchDispatchesSince conta dispatches criados pelo auto-match na janela (KPI / auditoria).
+func (s *SQLStore) CountAutoMatchDispatchesSince(since time.Time) (int64, error) {
+	var n int64
+	err := s.db.Get(&n, `
+		SELECT COUNT(*) FROM dispatches
+		WHERE composed_by = 'auto-match' AND created_at >= $1`, since)
+	return n, err
 }
 
 func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {

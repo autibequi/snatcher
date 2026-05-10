@@ -18,7 +18,6 @@ export function pageTitleFromPath(pathname: string): string {
     [/^\/automations\/channels(?:\/|$)/, 'Canais'],
     [/^\/automations\/jonfrey(?:\/|$)/, 'Jonfrey'],
     [/^\/automations\/pending(?:\/|$)/, 'Pendências'],
-    [/^\/automations$/, 'Automações'],
     [/^\/channels\/[^/]+/, 'Canal'],
     [/^\/crawlers\/[^/]+/, 'Crawler'],
     [/^\/groups\/[^/]+/, 'Grupo'],

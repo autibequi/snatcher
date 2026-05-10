@@ -65,6 +65,8 @@ interface AutoMatchStatus {
   threshold: number
   max_per_run: number
   logs: AutoMatchLog[]
+  /** Dispatches com composed_by=auto-match nas últimas 24h (servidor); preferir ao contar só linhas em logs */
+  dispatch_count_24h?: number
   last_run_at: string | null
   interval_seconds: number
   curation_script_confidence_min?: number
@@ -431,7 +433,11 @@ export function TabOverview() {
 
   const now = Date.now()
   const h24ago = now - 24 * 3600 * 1000
-  const dispatches24h = logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
+  /** KPI alinhado à tabela dispatches (evita 0 quando auto_match_logs falhou ou divergiu). */
+  const dispatches24h =
+    typeof data?.dispatch_count_24h === 'number'
+      ? data.dispatch_count_24h
+      : logs.filter(l => new Date(l.created_at).getTime() > h24ago).length
 
   /** Jonfrey (curadoria / fila) — precisa estar on para o “pipeline” completo. */
   const jonfreyOn = jonfreyConfig?.enabled ?? false
@@ -659,6 +665,7 @@ export function TabOverview() {
 
   return (
     <div className="px-4 py-4 sm:p-6 space-y-5">
+      <h1 className="text-xl font-semibold text-fg">Automações</h1>
       <FullAutoStatusBanner
         placement="automations"
         trailing={
@@ -820,8 +827,8 @@ export function TabOverview() {
       <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 max-w-4xl">
 
         {/* Disparos 24h */}
-        <KpiCard label="Disparos 24h" value={dispatches24h} subtitle="auto match"
-          tooltip="Produtos disparados automaticamente pelo auto-match nas últimas 24h." />
+        <KpiCard label="Dispatches 24h" value={dispatches24h} subtitle="auto-match"
+          tooltip="Contagem no servidor: dispatches com origem auto-match (composed_by=auto-match) criados nas últimas 24h. Não depende só da tabela auto_match_logs — por isso pode ser maior que o número de linhas na timeline abaixo se houve falha ao gravar log." />
 
         {/* Score mínimo + Max/ciclo juntos */}
         <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3">

@@ -33,13 +33,21 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar config")
 		return
 	}
-	logs, errLogs := h.store.ListAutoMatchLogsSince(time.Now().Add(-24*time.Hour), 500)
+	since24h := time.Now().Add(-24 * time.Hour)
+	logs, errLogs := h.store.ListAutoMatchLogsSince(since24h, 500)
 	if errLogs != nil {
 		slog.Warn("auto-match status: list timeline", "err", errLogs)
 		logs = nil
 	}
 	if logs == nil {
 		logs = []models.AutoMatchLog{}
+	}
+
+	var dispatchCount24h int64
+	if n, err := h.store.CountAutoMatchDispatchesSince(since24h); err != nil {
+		slog.Warn("auto-match status: count dispatches 24h", "err", err)
+	} else {
+		dispatchCount24h = n
 	}
 
 	// last_run_at: mais recente entre (último log de dispatch) e (último tick do worker).
@@ -64,6 +72,7 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		"threshold":                         cfg.AutoMatchThreshold,
 		"max_per_run":                       cfg.AutoMatchMaxPerRun,
 		"logs":                              logs,
+		"dispatch_count_24h":                dispatchCount24h,
 		"last_run_at":                       lastRunAt,
 		"interval_seconds":                  iv,
 		"curation_script_confidence_min":    curation.NormalizeScriptConfidenceMin(cfg),
