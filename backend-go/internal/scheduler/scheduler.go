@@ -92,11 +92,23 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Job de auto match — roda a cada 1 minuto quando habilitado
+	// Job de auto match — tick frequente; o intervalo real vem de appconfig (early return no worker).
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
-			gocron.DurationJob(1*time.Minute),
+			gocron.DurationJob(15*time.Second),
 			gocron.NewTask(func() { RunAutoMatchWorker(ctx, sc.storeRef) }),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Curadoria só por script (keywords + patterns), sem LLM — tick frequente; intervalo em appconfig.
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(30*time.Second),
+			gocron.NewTask(func() { RunCurationHeuristicWorker(ctx, sc.storeRef, time.Now()) }),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

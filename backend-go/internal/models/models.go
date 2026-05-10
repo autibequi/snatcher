@@ -130,6 +130,16 @@ type AppConfig struct {
 	AutoMatchOnlyCurated bool `db:"auto_match_only_curated" json:"auto_match_only_curated"`
 	// migration 0123 — última vez que RunAutoMatchWorker rodou (gocron 1 min)
 	AutoMatchLastWorkerRunAt NullTime `db:"auto_match_last_worker_run_at" json:"auto_match_last_worker_run_at,omitempty"`
+	// migration 0130 — intervalo real entre ciclos + cursor justo no catálogo
+	AutoMatchIntervalSeconds int   `db:"auto_match_interval_seconds" json:"auto_match_interval_seconds"`
+	AutoMatchProductCursor   int64 `db:"auto_match_product_cursor" json:"auto_match_product_cursor"`
+	// Curadoria script-first / batch (migration 0130)
+	CurationScriptConfidenceMin    float64 `db:"curation_script_confidence_min" json:"curation_script_confidence_min"`
+	CurationLLMConfidenceThreshold float64 `db:"curation_llm_confidence_threshold" json:"curation_llm_confidence_threshold"`
+	CurationHeuristicIntervalSeconds   int      `db:"curation_heuristic_interval_seconds" json:"curation_heuristic_interval_seconds"`
+	CurationHeuristicBatchSize         int      `db:"curation_heuristic_batch_size" json:"curation_heuristic_batch_size"`
+	CurationHeuristicLastID            int64    `db:"curation_heuristic_last_id" json:"curation_heuristic_last_id"`
+	CurationHeuristicLastRunAt       NullTime `db:"curation_heuristic_last_run_at" json:"curation_heuristic_last_run_at,omitempty"`
 
 	// Automation mode — migration 0096
 	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`

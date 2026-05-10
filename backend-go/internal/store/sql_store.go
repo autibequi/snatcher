@@ -87,6 +87,14 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			full_auto_mode=:full_auto_mode,
 			notify_approval_webhook=:notify_approval_webhook,
 			auto_match_only_curated=:auto_match_only_curated,
+			auto_match_interval_seconds=:auto_match_interval_seconds,
+			auto_match_product_cursor=:auto_match_product_cursor,
+			curation_script_confidence_min=:curation_script_confidence_min,
+			curation_llm_confidence_threshold=:curation_llm_confidence_threshold,
+			curation_heuristic_interval_seconds=:curation_heuristic_interval_seconds,
+			curation_heuristic_batch_size=:curation_heuristic_batch_size,
+			curation_heuristic_last_id=:curation_heuristic_last_id,
+			curation_heuristic_last_run_at=:curation_heuristic_last_run_at,
 			interval_between_groups_sec=:interval_between_groups_sec,
 			interval_between_channels_sec=:interval_between_channels_sec,
 			daily_limit_per_account=:daily_limit_per_account,
@@ -512,6 +520,99 @@ func (s *SQLStore) ListCatalogProducts(limit, offset int, includeInactive bool) 
 	q += ` ORDER BY updated_at DESC LIMIT $1 OFFSET $2`
 	err := s.db.Select(&out, q, limit, offset)
 	return out, err
+}
+
+const catalogScanLimitMax = 2000
+
+// ListCatalogProductsAfterCursor lista por id ASC para varrer o catálogo sem ficar preso nos últimos updated_at.
+// Quando afterID > 0 e não há linhas, faz uma segunda tentativa com afterID = 0 (wrap).
+func (s *SQLStore) ListCatalogProductsAfterCursor(limit int, afterID int64, includeInactive bool) ([]models.CatalogProduct, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > catalogScanLimitMax {
+		limit = catalogScanLimitMax
+	}
+	out, err := s.listCatalogProductsAfterCursorOnce(limit, afterID, includeInactive)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 && afterID > 0 {
+		out, err = s.listCatalogProductsAfterCursorOnce(limit, 0, includeInactive)
+	}
+	return out, err
+}
+
+func (s *SQLStore) listCatalogProductsAfterCursorOnce(limit int, afterID int64, includeInactive bool) ([]models.CatalogProduct, error) {
+	var out []models.CatalogProduct
+	q := `SELECT * FROM catalogproduct WHERE id > $1`
+	if !includeInactive {
+		q += ` AND inactive = FALSE`
+	}
+	q += ` ORDER BY id ASC LIMIT $2`
+	err := s.db.Select(&out, q, afterID, limit)
+	return out, err
+}
+
+// ListCatalogProductsForHeuristicBatch produtos pending ou incompletos (mesma regra que AutoHeuristic), por id ASC.
+func (s *SQLStore) ListCatalogProductsForHeuristicBatch(afterID int64, limit int) ([]models.CatalogProduct, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > catalogScanLimitMax {
+		limit = catalogScanLimitMax
+	}
+	out, err := s.listHeuristicBatchOnce(afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 && afterID > 0 {
+		out, err = s.listHeuristicBatchOnce(0, limit)
+	}
+	return out, err
+}
+
+func (s *SQLStore) listHeuristicBatchOnce(afterID int64, limit int) ([]models.CatalogProduct, error) {
+	var out []models.CatalogProduct
+	err := s.db.Select(&out, `
+		SELECT * FROM catalogproduct
+		WHERE id > $1
+		  AND curation_status != 'rejected'
+		  AND (
+		    curation_status = 'pending'
+		    OR (brand IS NULL OR brand = '')
+		    OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0
+		  )
+		ORDER BY id ASC
+		LIMIT $2`, afterID, limit)
+	return out, err
+}
+
+// SetAutoMatchProductCursor persiste o cursor do ciclo de auto-match (justiça entre produtos).
+func (s *SQLStore) SetAutoMatchProductCursor(cursor int64) error {
+	_, err := s.db.Exec(`UPDATE appconfig SET auto_match_product_cursor = $1 WHERE id = 1`, cursor)
+	return err
+}
+
+// SetCurationHeuristicCheckpoint marca último batch heurístico (worker agendado).
+func (s *SQLStore) SetCurationHeuristicCheckpoint(at time.Time, lastProductID int64) error {
+	_, err := s.db.Exec(`
+		UPDATE appconfig SET curation_heuristic_last_run_at = $1, curation_heuristic_last_id = $2 WHERE id = 1`,
+		at, lastProductID)
+	return err
+}
+
+// DeactivateCatalogProductsWithoutPrice marca inactive produtos sem preço (>0).
+func (s *SQLStore) DeactivateCatalogProductsWithoutPrice() (int64, error) {
+	res, err := s.db.Exec(`
+		UPDATE catalogproduct SET inactive = true
+		WHERE inactive = false
+		  AND (lowest_price IS NULL OR lowest_price <= 0)`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return n, err
 }
 
 func (s *SQLStore) SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error) {

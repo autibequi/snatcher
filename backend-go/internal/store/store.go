@@ -97,6 +97,13 @@ type Store interface {
 
 	// Catalog
 	ListCatalogProducts(limit, offset int, includeInactive bool) ([]models.CatalogProduct, error)
+	// ListCatalogProductsAfterCursor ordena por id ASC após cursor (auto-match justo).
+	ListCatalogProductsAfterCursor(limit int, afterID int64, includeInactive bool) ([]models.CatalogProduct, error)
+	// ListCatalogProductsForHeuristicBatch pending/incompletos para worker de heurística (id ASC).
+	ListCatalogProductsForHeuristicBatch(afterID int64, limit int) ([]models.CatalogProduct, error)
+	SetAutoMatchProductCursor(cursor int64) error
+	SetCurationHeuristicCheckpoint(at time.Time, lastProductID int64) error
+	DeactivateCatalogProductsWithoutPrice() (int64, error)
 	SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error)
 	CountCatalogProducts() (int64, error)
 	GetCatalogProduct(id int64) (models.CatalogProduct, error)

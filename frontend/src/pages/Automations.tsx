@@ -66,6 +66,10 @@ interface AutoMatchStatus {
   logs: AutoMatchLog[]
   last_run_at: string | null
   interval_seconds: number
+  curation_script_confidence_min?: number
+  curation_llm_confidence_threshold?: number
+  curation_heuristic_interval_seconds?: number
+  curation_heuristic_batch_size?: number
 }
 
 interface PendingDispatchFull {
@@ -325,7 +329,16 @@ export function TabOverview() {
   const pendingCount = pendingList.length
 
   const toggleMut = useMutation({
-    mutationFn: async (payload: Partial<{ enabled: boolean; threshold: number; max_per_run: number }>) => {
+    mutationFn: async (payload: Partial<{
+      enabled: boolean
+      threshold: number
+      max_per_run: number
+      interval_seconds: number
+      curation_script_confidence_min: number
+      curation_llm_confidence_threshold: number
+      curation_heuristic_interval_seconds: number
+      curation_heuristic_batch_size: number
+    }>) => {
       const tasks: Promise<unknown>[] = [apiClient.post('/api/auto-match/toggle', payload)]
       if (payload.enabled !== undefined) {
         tasks.push(apiClient.put('/api/jonfrey/config', { enabled: payload.enabled }).catch(() => null))
@@ -365,17 +378,32 @@ export function TabOverview() {
 
   const [localThreshold, setLocalThreshold] = React.useState<number | null>(null)
   const [localMaxPerRun, setLocalMaxPerRun] = React.useState<number | null>(null)
+  const [localIntervalSec, setLocalIntervalSec] = React.useState<number | null>(null)
+  const [localScriptMin, setLocalScriptMin] = React.useState<number | null>(null)
+  const [localLLMThresh, setLocalLLMThresh] = React.useState<number | null>(null)
+  const [localHeurInt, setLocalHeurInt] = React.useState<number | null>(null)
+  const [localHeurBatch, setLocalHeurBatch] = React.useState<number | null>(null)
 
   React.useEffect(() => {
     if (data) {
       if (localThreshold === null) setLocalThreshold(data.threshold)
       if (localMaxPerRun === null) setLocalMaxPerRun(data.max_per_run)
+      if (localIntervalSec === null) setLocalIntervalSec(data.interval_seconds)
+      if (localScriptMin === null) setLocalScriptMin(data.curation_script_confidence_min ?? 0.75)
+      if (localLLMThresh === null) setLocalLLMThresh(data.curation_llm_confidence_threshold ?? 0.65)
+      if (localHeurInt === null) setLocalHeurInt(data.curation_heuristic_interval_seconds ?? 120)
+      if (localHeurBatch === null) setLocalHeurBatch(data.curation_heuristic_batch_size ?? 500)
     }
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = data?.enabled ?? false
   const threshold = localThreshold ?? data?.threshold ?? 50
   const maxPerRunCfg = localMaxPerRun ?? data?.max_per_run ?? 3
+  const intervalSecLocal = localIntervalSec ?? data?.interval_seconds ?? 60
+  const scriptMinLocal = localScriptMin ?? data?.curation_script_confidence_min ?? 0.75
+  const llmThreshLocal = localLLMThresh ?? data?.curation_llm_confidence_threshold ?? 0.65
+  const heurIntLocal = localHeurInt ?? data?.curation_heuristic_interval_seconds ?? 120
+  const heurBatchLocal = localHeurBatch ?? data?.curation_heuristic_batch_size ?? 500
   const logs = data?.logs ?? []
 
   const now = Date.now()
@@ -386,8 +414,8 @@ export function TabOverview() {
 
   const nextAutoMatchMs = React.useMemo(
     () =>
-      data?.interval_seconds != null ? computeNextAutoMatchTickMs(data.last_run_at ?? null, data.interval_seconds) : null,
-    [data?.last_run_at, data?.interval_seconds],
+      intervalSecLocal > 0 ? computeNextAutoMatchTickMs(data?.last_run_at ?? null, intervalSecLocal) : null,
+    [data?.last_run_at, intervalSecLocal],
   )
 
   const [amSecs, setAmSecs] = React.useState<number | null>(null)
@@ -431,7 +459,7 @@ export function TabOverview() {
         : `${amSecs}s`
 
   const maxPerRunEffective = Math.max(1, nextCyclePreview?.max_per_run ?? data?.max_per_run ?? 3)
-  const intervalSecAm = data?.interval_seconds ?? 60
+  const intervalSecAm = intervalSecLocal
 
   const workerPreview = nextCyclePreview?.worker_aligned === true
 
@@ -756,6 +784,62 @@ export function TabOverview() {
               onChange={e => setLocalMaxPerRun(Number(e.target.value))}
               onBlur={() => toggleMut.mutate({ max_per_run: maxPerRunCfg })}
               className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Tick auto-match (s)</p>
+              <TooltipIcon content="Intervalo mínimo entre ciclos do worker de auto-match (15–3600 s). O servidor consulta a cada ~15 s; só corre o ciclo após este período desde o último tick registrado." side="top" />
+            </div>
+            <input type="number" min={15} max={3600} step={1} value={intervalSecLocal}
+              onChange={e => setLocalIntervalSec(Number(e.target.value))}
+              onBlur={() => toggleMut.mutate({ interval_seconds: intervalSecLocal })}
+              className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
+        </div>
+
+        <div className="bg-surface border border-border rounded-md p-4 shadow-card space-y-3 max-w-4xl">
+          <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Curadoria por script (batch)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide">Conf. mínima script</p>
+                <TooltipIcon content="Aplica marca/categoria automaticamente só quando keywords + patterns ≥ este valor (0–1)." side="top" />
+              </div>
+              <input type="number" min={0} max={1} step={0.05} value={scriptMinLocal}
+                onChange={e => setLocalScriptMin(Number(e.target.value))}
+                onBlur={() => toggleMut.mutate({ curation_script_confidence_min: scriptMinLocal })}
+                className="w-full text-sm border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide">Limiar LLM</p>
+                <TooltipIcon content="Auto-LLM só processa produtos com confiança script abaixo deste valor (encaminha dúvidas ao modelo)." side="top" />
+              </div>
+              <input type="number" min={0} max={1} step={0.05} value={llmThreshLocal}
+                onChange={e => setLocalLLMThresh(Number(e.target.value))}
+                onBlur={() => toggleMut.mutate({ curation_llm_confidence_threshold: llmThreshLocal })}
+                className="w-full text-sm border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide">Intervalo worker script (s)</p>
+                <TooltipIcon content="Mínimo entre execuções do worker que só aplica heurística (sem LLM). 30–86400 s." side="top" />
+              </div>
+              <input type="number" min={30} max={86400} step={10} value={heurIntLocal}
+                onChange={e => setLocalHeurInt(Number(e.target.value))}
+                onBlur={() => toggleMut.mutate({ curation_heuristic_interval_seconds: heurIntLocal })}
+                className="w-full text-sm border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-fg-3 uppercase tracking-wide">Tamanho do batch</p>
+                <TooltipIcon content="Produtos por rodada do worker de curadoria por script (50–2000)." side="top" />
+              </div>
+              <input type="number" min={50} max={2000} step={50} value={heurBatchLocal}
+                onChange={e => setLocalHeurBatch(Number(e.target.value))}
+                onBlur={() => toggleMut.mutate({ curation_heuristic_batch_size: heurBatchLocal })}
+                className="w-full text-sm border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+            </div>
           </div>
         </div>
       </div>

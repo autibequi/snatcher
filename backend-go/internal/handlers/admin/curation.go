@@ -13,9 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
 
+	cur "snatcher/backendv2/internal/curation"
 	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
-	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -200,7 +200,14 @@ func (h *CurationHandler) AutoHeuristic(w http.ResponseWriter, r *http.Request) 
 		    OR (brand IS NULL OR brand = '')
 		    OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0
 		  )
-		LIMIT 200`)
+		ORDER BY id ASC
+		LIMIT 500`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	cfg, err := h.store.GetConfig()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -212,50 +219,19 @@ func (h *CurationHandler) AutoHeuristic(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			continue
 		}
-		changed := false
-		// Extrai quantity se ainda vazio
-		if p.Quantity == "" {
-			if q := pipeline.ExtractQuantity(p.CanonicalName); q != "" {
-				p.Quantity = q
-				changed = true
-			}
+		wasPending := p.CurationStatus == "pending"
+		hadBrand := p.Brand.Valid && p.Brand.String != ""
+		_, applied, err := cur.ApplyScriptCurator(h.store, &p, cfg)
+		if err != nil {
+			continue
 		}
-		// Detecta taxonomia — preenche categoria e marca
-		matchedIDs, _ := h.store.DetectAndUpsertTaxonomy(p.CanonicalName)
-		if len(matchedIDs) > 0 {
-			taxEntries, _ := h.store.GetTaxonomyByIDs(matchedIDs)
-			for _, t := range taxEntries {
-				switch t.Type {
-				case "brand":
-					if !p.Brand.Valid || p.Brand.String == "" {
-						p.Brand.String = t.Name
-						p.Brand.Valid = true
-						branded++
-						changed = true
-					}
-				case "category":
-					tags := p.GetTags()
-					found := false
-					for _, tag := range tags {
-						if strings.EqualFold(tag, t.Name) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						p.SetTags(append(tags, t.Name))
-						changed = true
-					}
-				}
-			}
-			if p.CurationStatus == "pending" {
-				p.CurationStatus = "auto"
+		if applied {
+			if wasPending && p.CurationStatus == "auto" {
 				categorized++
-				changed = true
 			}
-		}
-		if changed {
-			_ = h.store.UpdateCatalogProduct(p)
+			if !hadBrand && p.Brand.Valid && p.Brand.String != "" {
+				branded++
+			}
 		}
 		processed++
 	}
@@ -341,8 +317,8 @@ func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client, jobID 
 		}
 	}()
 
-	var products []curationRow
-	err := h.db.SelectContext(ctx, &products, `
+	var candidates []curationRow
+	err := h.db.SelectContext(ctx, &candidates, `
 		SELECT id, canonical_name, brand, tags, curation_status
 		FROM catalogproduct
 		WHERE curation_status != 'rejected'
@@ -351,13 +327,35 @@ func (h *CurationHandler) runAutoLLM(ctx context.Context, cli llm.Client, jobID 
 		    OR (brand IS NULL OR brand = '')
 		    OR tags IS NULL OR tags = '[]'::jsonb OR jsonb_array_length(tags) = 0
 		  )
-		ORDER BY created_at DESC LIMIT 20`)
+		ORDER BY id ASC LIMIT 120`)
 	if err != nil {
 		slog.Error("AutoLLM: query failed", "err", err)
 		return
 	}
+
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		slog.Error("AutoLLM: config", "err", err)
+		return
+	}
+
+	var products []curationRow
+	for _, row := range candidates {
+		score, _, _, err := cur.ScriptConfidence(h.store, row.CanonicalName)
+		if err != nil {
+			continue
+		}
+		if !cur.NeedsLLMForCuration(score, cfg) {
+			continue
+		}
+		products = append(products, row)
+		if len(products) >= 20 {
+			break
+		}
+	}
+
 	if len(products) == 0 {
-		slog.Info("AutoLLM: nada pendente")
+		slog.Info("AutoLLM: nada pendente abaixo do limiar LLM ou fila vazia")
 		return
 	}
 

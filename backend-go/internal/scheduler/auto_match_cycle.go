@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
+	"snatcher/backendv2/internal/curation"
 	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
@@ -41,31 +42,49 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		slog.Error("auto match: get config", "err", err)
 		return err
 	}
-	if cfg.AutoMatchEnabled && !dryRun {
-		if err := st.TouchAutoMatchWorkerRun(time.Now()); err != nil {
-			slog.Warn("auto match: touch worker run", "err", err)
-		}
-	}
 	if !cfg.AutoMatchEnabled {
 		return nil
 	}
 
+	intervalSec := curation.NormalizeAutoMatchIntervalSeconds(cfg)
+	if !dryRun && cfg.AutoMatchLastWorkerRunAt.Valid {
+		if now.Sub(cfg.AutoMatchLastWorkerRunAt.Time) < time.Duration(intervalSec)*time.Second {
+			return nil
+		}
+	}
+
 	if !dryRun {
+		if err := st.TouchAutoMatchWorkerRun(now); err != nil {
+			slog.Warn("auto match: touch worker run", "err", err)
+		}
 		debugagent.Write("H3", "auto_match_worker.go:RunAutoMatchWorker", "cycle_start", map[string]any{
 			"full_auto_mode":          cfg.FullAutoMode,
 			"auto_match_threshold":    cfg.AutoMatchThreshold,
 			"auto_match_only_curated": cfg.AutoMatchOnlyCurated,
 			"auto_match_max_per_run":  cfg.AutoMatchMaxPerRun,
+			"interval_seconds":        intervalSec,
+			"product_cursor":          cfg.AutoMatchProductCursor,
 		}, "")
 	}
 
-	products, err := st.ListCatalogProducts(100, 0, false)
+	rawProducts, err := st.ListCatalogProductsAfterCursor(500, cfg.AutoMatchProductCursor, false)
 	if err != nil {
 		slog.Error("auto match: list products", "err", err)
 		return err
 	}
-	products = store.FilterCatalogProductsForAutoMatch(products, cfg.AutoMatchOnlyCurated)
+	maxBatchID := int64(0)
+	for _, p := range rawProducts {
+		if p.ID > maxBatchID {
+			maxBatchID = p.ID
+		}
+	}
+	products := store.FilterCatalogProductsForAutoMatch(rawProducts, cfg.AutoMatchOnlyCurated)
 	if len(products) == 0 {
+		if !dryRun && maxBatchID > 0 {
+			if err := st.SetAutoMatchProductCursor(maxBatchID); err != nil {
+				slog.Warn("auto match: set product cursor", "err", err)
+			}
+		}
 		return nil
 	}
 
@@ -389,6 +408,11 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 	}
 	if dryRun {
 		return nil
+	}
+	if maxBatchID > 0 {
+		if err := st.SetAutoMatchProductCursor(maxBatchID); err != nil {
+			slog.Warn("auto match: set product cursor", "err", err)
+		}
 	}
 	if nDisp == 0 {
 		slog.Info("auto match: cycle finished — no dispatches",

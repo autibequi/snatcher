@@ -9,13 +9,12 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
+	"snatcher/backendv2/internal/curation"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
-
-const autoMatchIntervalSeconds = 60
 
 type AutoMatchHandler struct {
 	store store.Store
@@ -55,13 +54,18 @@ func (h *AutoMatchHandler) Status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	iv := curation.NormalizeAutoMatchIntervalSeconds(cfg)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":          cfg.AutoMatchEnabled,
-		"threshold":        cfg.AutoMatchThreshold,
-		"max_per_run":      cfg.AutoMatchMaxPerRun,
-		"logs":             logs,
-		"last_run_at":      lastRunAt,
-		"interval_seconds": autoMatchIntervalSeconds,
+		"enabled":                           cfg.AutoMatchEnabled,
+		"threshold":                         cfg.AutoMatchThreshold,
+		"max_per_run":                       cfg.AutoMatchMaxPerRun,
+		"logs":                              logs,
+		"last_run_at":                       lastRunAt,
+		"interval_seconds":                  iv,
+		"curation_script_confidence_min":    curation.NormalizeScriptConfidenceMin(cfg),
+		"curation_llm_confidence_threshold": curation.NormalizeLLMConfidenceThreshold(cfg),
+		"curation_heuristic_interval_seconds": curation.NormalizeHeuristicIntervalSeconds(cfg),
+		"curation_heuristic_batch_size":       curation.NormalizeHeuristicBatchSize(cfg),
 	})
 }
 
@@ -137,9 +141,14 @@ func (h *AutoMatchHandler) Preview(w http.ResponseWriter, r *http.Request) {
 // POST /api/auto-match/toggle
 func (h *AutoMatchHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled         *bool    `json:"enabled"`
-		Threshold       *float64 `json:"threshold"`
-		MaxPerRun       *int     `json:"max_per_run"`
+		Enabled                         *bool    `json:"enabled"`
+		Threshold                       *float64 `json:"threshold"`
+		MaxPerRun                       *int     `json:"max_per_run"`
+		IntervalSeconds                 *int     `json:"interval_seconds"`
+		CurationScriptConfidenceMin     *float64 `json:"curation_script_confidence_min"`
+		CurationLLMConfidenceThreshold  *float64 `json:"curation_llm_confidence_threshold"`
+		CurationHeuristicIntervalSeconds *int    `json:"curation_heuristic_interval_seconds"`
+		CurationHeuristicBatchSize      *int     `json:"curation_heuristic_batch_size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
@@ -161,15 +170,62 @@ func (h *AutoMatchHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	if req.MaxPerRun != nil {
 		cfg.AutoMatchMaxPerRun = *req.MaxPerRun
 	}
+	if req.IntervalSeconds != nil {
+		v := *req.IntervalSeconds
+		if v < 15 {
+			v = 15
+		}
+		if v > 3600 {
+			v = 3600
+		}
+		cfg.AutoMatchIntervalSeconds = v
+	}
+	if req.CurationScriptConfidenceMin != nil {
+		v := *req.CurationScriptConfidenceMin
+		if v >= 0 && v <= 1 {
+			cfg.CurationScriptConfidenceMin = v
+		}
+	}
+	if req.CurationLLMConfidenceThreshold != nil {
+		v := *req.CurationLLMConfidenceThreshold
+		if v >= 0 && v <= 1 {
+			cfg.CurationLLMConfidenceThreshold = v
+		}
+	}
+	if req.CurationHeuristicIntervalSeconds != nil {
+		v := *req.CurationHeuristicIntervalSeconds
+		if v < 30 {
+			v = 30
+		}
+		if v > 86400 {
+			v = 86400
+		}
+		cfg.CurationHeuristicIntervalSeconds = v
+	}
+	if req.CurationHeuristicBatchSize != nil {
+		v := *req.CurationHeuristicBatchSize
+		if v < 50 {
+			v = 50
+		}
+		if v > 2000 {
+			v = 2000
+		}
+		cfg.CurationHeuristicBatchSize = v
+	}
 
 	if err := h.store.UpdateConfig(cfg); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao salvar config")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":     cfg.AutoMatchEnabled,
-		"threshold":   cfg.AutoMatchThreshold,
-		"max_per_run": cfg.AutoMatchMaxPerRun,
+		"enabled":                           cfg.AutoMatchEnabled,
+		"threshold":                         cfg.AutoMatchThreshold,
+		"max_per_run":                       cfg.AutoMatchMaxPerRun,
+		"interval_seconds":                  curation.NormalizeAutoMatchIntervalSeconds(cfg),
+		"curation_script_confidence_min":    curation.NormalizeScriptConfidenceMin(cfg),
+		"curation_llm_confidence_threshold": curation.NormalizeLLMConfidenceThreshold(cfg),
+		"curation_heuristic_interval_seconds": curation.NormalizeHeuristicIntervalSeconds(cfg),
+		"curation_heuristic_batch_size":       curation.NormalizeHeuristicBatchSize(cfg),
 	})
 }
 
