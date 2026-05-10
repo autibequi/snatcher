@@ -8,9 +8,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o backendv2 ./cmd/server \
- && go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o seed ./cmd/seed \
- && go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o public ./cmd/public
+RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o backendv2 ./cmd/server
+RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o seed ./cmd/seed
+RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o public ./cmd/public
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
