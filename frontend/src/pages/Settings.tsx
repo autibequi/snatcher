@@ -708,11 +708,11 @@ function GeneralTab() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={(merged.dispatch_send_window_enabled ?? true) as boolean}
+              checked={(merged.dispatch_send_window_enabled ?? false) as boolean}
               onChange={e => updateField('dispatch_send_window_enabled', e.target.checked)}
               className="accent-accent"
             />
-            <span className="text-sm text-fg">Respeitar janela de envio nos disparos</span>
+            <span className="text-sm text-fg">Respeitar janela de envio nos disparos (desligado = 24h)</span>
           </label>
           <div>
             <label className="text-xs text-fg-2 block mb-1">Fuso horário (IANA)</label>

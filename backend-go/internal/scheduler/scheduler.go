@@ -80,6 +80,18 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Full-auto: pending_approval → queued sem depender do Jonfrey (tick separado).
+	if sc.storeRef != nil {
+		_, err = sc.s.NewJob(
+			gocron.DurationJob(1*time.Minute),
+			gocron.NewTask(func() { RunPromotePendingApproval(ctx, sc.storeRef) }),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Job de auto match — roda a cada 1 minuto quando habilitado
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(

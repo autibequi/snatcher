@@ -47,7 +47,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		return 0
 	}
 	if !inDispatchSendWindow(cfg, time.Now()) {
-		slog.Debug("dispatch worker: fora da janela de envio — fila mantida para depois",
+		slog.Info("dispatch worker: fora da janela de envio — mensagens ficam na fila até o horário permitido",
 			"tz", cfg.DispatchSendTimezone,
 			"start_h", cfg.SendStartHour, "end_h", cfg.SendEndHour)
 		return 0

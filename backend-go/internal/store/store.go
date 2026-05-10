@@ -241,6 +241,9 @@ type Store interface {
 	ListDispatches(status string, limit, offset int) ([]models.Dispatch, error)
 	ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error)
 	ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error)
+	// PromotePendingApprovalToQueued passa pending_approval → queued quando full_auto_mode=true
+	// (não depende do Jonfrey nem da ação auto_release_pending).
+	PromotePendingApprovalToQueued() (int64, error)
 	UpdateDispatchTargetStatus(id int64, status, errorReason string) error
 	UpdateDispatchStatus(id int64, status string) error
 	CancelDispatch(id int64) error

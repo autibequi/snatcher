@@ -132,14 +132,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Build router primeiro — regista SetJonfreyTick no scheduler antes de Start (tick Jonfrey/dispatch OK desde o 1º ciclo).
+	h := router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
+
 	if err := sched.Start(ctx); err != nil {
 		slog.Error("scheduler start", "err", err)
 		os.Exit(1)
 	}
 	defer sched.Stop()
 
-	// HTTP server
-	h := router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
+	// HTTP server (handler já construído acima)
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: h,

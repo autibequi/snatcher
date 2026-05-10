@@ -1955,6 +1955,17 @@ func (s *SQLStore) ListPendingDispatchTargets(limit int) ([]models.DispatchTarge
 	return out, err
 }
 
+func (s *SQLStore) PromotePendingApprovalToQueued() (int64, error) {
+	res, err := s.db.Exec(`
+		UPDATE dispatches SET status = 'queued'
+		WHERE status = 'pending_approval'
+		  AND EXISTS (SELECT 1 FROM appconfig WHERE id = 1 AND full_auto_mode = true)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *SQLStore) AllDispatchTargetsFinished(dispatchID int64) (bool, error) {
 	var count int
 	err := s.db.Get(&count,
