@@ -574,24 +574,6 @@ export function TabOverview() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="rounded-lg border border-border bg-surface p-4 md:p-5 shadow-card flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-semibold text-fg">Envio da fila (WhatsApp)</p>
-          <p className="text-[11px] text-fg-3 mt-1 max-w-3xl leading-relaxed">
-            O servidor já corre o worker de envio periodicamente (~15s). Se acabou de aprovar ou libertar itens e quiser não esperar o próximo ciclo, force um envio agora.
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="lg"
-          className="shrink-0 text-base px-5"
-          loading={processQueueMut.isPending}
-          onClick={() => processQueueMut.mutate()}
-        >
-          Processar fila agora
-        </Button>
-      </div>
-
       <FullAutoStatusBanner
         placement="automations"
         trailing={
@@ -719,8 +701,8 @@ export function TabOverview() {
         </div>
       </div>
 
-      {/* Linha do tempo: uma lista — próximos (fila) + enviados; relógios no topo */}
-      <div className="bg-surface border border-border rounded-md overflow-hidden">
+      {/* Linha do tempo: envio WA + próximos (prévia) + enviados */}
+      <div className="bg-surface border border-border rounded-lg shadow-card overflow-hidden">
         <div className="px-4 py-3 border-b border-border bg-surface-2/40 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-fg">Quem entra na próxima janela · o que já foi disparado</p>
@@ -759,6 +741,24 @@ export function TabOverview() {
           </div>
         </div>
 
+        <div className="px-4 py-3 border-b border-border bg-whatsapp/8 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-fg">Envio da fila (WhatsApp)</p>
+            <p className="text-[11px] text-fg-3 mt-0.5 leading-snug max-w-2xl">
+              O servidor já corre o worker de envio periodicamente (~15s). Depois de aprovar ou libertar itens na fila, force aqui um envio em lote sem esperar o próximo ciclo.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="md"
+            className="shrink-0"
+            loading={processQueueMut.isPending}
+            onClick={() => processQueueMut.mutate()}
+          >
+            Processar fila agora
+          </Button>
+        </div>
+
         <div className="max-h-[min(70vh,560px)] overflow-y-auto">
           <div className="sticky top-0 z-[1] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-1.5 px-4 py-2.5 bg-warning/10 border-b border-warning/25 text-xs">
             <div>
@@ -769,9 +769,6 @@ export function TabOverview() {
                   (~{enabled && amSecs != null ? fmtEtaSeconds(amSecs) : '—'})
                 </span>
               </span>
-              <p className="text-[10px] text-fg-3 mt-0.5 max-w-xl leading-snug">
-                Itens com faixa <strong className="text-accent font-medium">Neste ciclo</strong> são os que o match pode disparar agora (até {maxPerRunEffective} por canal, por score). O resto fica à espera de próximos ciclos — não é a fila de envio WA (use ⏱ no topo ou “Processar fila”).
-              </p>
             </div>
             <span className="text-[10px] text-fg-3 shrink-0">
               {previewCandidates.length} candidato{previewCandidates.length === 1 ? '' : 's'} ·{' '}
