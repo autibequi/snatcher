@@ -85,7 +85,7 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOMAXPROCS: "1"
-          GOGC: "50"
+          GOGC: "10"
         run: |
           go build -tags=nosqlite -buildvcs=false -trimpath -p 1 ./...
           go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o /tmp/backendv2 ./cmd/server

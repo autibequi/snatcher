@@ -7,8 +7,8 @@ WORKDIR /app
 # Produção usa Postgres; -tags=nosqlite não compila modernc.org/sqlite (reduz muito RAM/tempo de build).
 ENV CGO_ENABLED=0
 ENV GOMAXPROCS=1
-# Menos pico de heap durante compile em VPS pequenos (trade-off: mais GC).
-ENV GOGC=50
+# Mais GC durante compile = menos pico de heap em VPS / Docker sem BuildKit (OOM → exit 1 sem mensagem).
+ENV GOGC=10
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -20,9 +20,46 @@ RUN go version && go env GOVERSION GOPATH
 # -buildvcs=false: contexto de build costuma não ter .git completo → Go 1.18+ falha ao stampar VCS.
 # -p 1: menos paralelismo de pacotes (com GOMAXPROCS=1 reduz pico de RAM em VPS pequenos).
 # -v: imprime pacotes compilados — ajuda a ver onde parou se o build falhar.
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o backendv2 ./cmd/server
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o seed ./cmd/seed
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o public ./cmd/public
+#
+# Em falha: meminfo + segundo go build sem strip (às vezes o linker morre por RAM sem mensagem útil).
+RUN set -eux; \
+  build_bin() { \
+    out="$1"; pkg="$2"; \
+    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
+      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
+      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
+      echo "=== retry (no strip, stderr captured) ==="; \
+      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
+      exit 1; \
+    fi; \
+  }; \
+  build_bin backendv2 ./cmd/server
+
+RUN set -eux; \
+  build_bin() { \
+    out="$1"; pkg="$2"; \
+    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
+      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
+      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
+      echo "=== retry (no strip) ==="; \
+      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
+      exit 1; \
+    fi; \
+  }; \
+  build_bin seed ./cmd/seed
+
+RUN set -eux; \
+  build_bin() { \
+    out="$1"; pkg="$2"; \
+    if ! go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o "$out" "$pkg"; then \
+      echo "=== snatcher build FAILED for ${out} (${pkg}) ==="; \
+      echo "=== /proc/meminfo (top) ==="; head -n 20 /proc/meminfo || true; \
+      echo "=== retry (no strip) ==="; \
+      go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -v -o "/tmp/${out}-diag" "$pkg" 2>&1 || true; \
+      exit 1; \
+    fi; \
+  }; \
+  build_bin public ./cmd/public
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
