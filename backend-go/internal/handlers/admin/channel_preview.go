@@ -81,15 +81,7 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 	}
 	products = store.FilterCatalogProductsForAutoMatch(products, cfg.AutoMatchOnlyCurated)
 
-	recentLogs, _ := st.ListAutoMatchLogsByChannel(channelID, 200)
 	cutoff := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)
-	delivered := scheduler.BuildDispatchDeliveredMap(st, recentLogs)
-	recentSet := make(map[int64]bool)
-	for _, l := range recentLogs {
-		if l.CreatedAt.After(cutoff) && delivered[l.DispatchID] {
-			recentSet[l.ProductID] = true
-		}
-	}
 
 	// Mesmo critério que RunAutoMatchWorker: só grupos WA/TG com status=active.
 	// Sem isto a prévia lista matches mas CreateDispatch nunca corre (canal sem grupos ativos).
@@ -141,9 +133,12 @@ func BuildChannelAutomationPreview(st store.Store, channelID int64) ([]ChannelAu
 			continue
 		}
 
-		// Mesmo skip que o worker: produto+canal ainda em cooldown não entra no ciclo.
-		// A prévia antiga listava estes itens com already_sent=true — UI parecia "válido" mas zero dispatches.
-		if recentSet[p.ID] {
+		inFlight, _ := st.AutoMatchProductChannelInFlight(p.ID, channelID)
+		if inFlight {
+			continue
+		}
+		hasLog, _ := st.AutoMatchHasRecentPairLog(p.ID, channelID, cutoff)
+		if hasLog {
 			continue
 		}
 

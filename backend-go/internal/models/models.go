@@ -141,6 +141,11 @@ type AppConfig struct {
 	CurationHeuristicLastID            int64    `db:"curation_heuristic_last_id" json:"curation_heuristic_last_id"`
 	CurationHeuristicLastRunAt       NullTime `db:"curation_heuristic_last_run_at" json:"curation_heuristic_last_run_at,omitempty"`
 
+	// Pausa entre envios Evolution no dispatch worker — migration 0131
+	DispatchMinIntervalMs int `db:"dispatch_min_interval_ms" json:"dispatch_min_interval_ms"`
+	// Cursor round-robin global para contas WA sem vínculo fixo — migration 0131
+	DispatchWaRRCursor int `db:"dispatch_wa_rr_cursor" json:"dispatch_wa_rr_cursor"`
+
 	// Automation mode — migration 0096
 	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`
 	NotifyApprovalWebhook string `db:"notify_approval_webhook" json:"notify_approval_webhook"`
@@ -619,6 +624,10 @@ type ChannelAutomation struct {
 	PausedUntil NullTime  `db:"paused_until" json:"paused_until,omitempty"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+
+	// migration 0131 — limite de grupos por dispatch + rotação entre ciclos
+	MaxGroupsPerDispatch   int `db:"max_groups_per_dispatch" json:"max_groups_per_dispatch"`
+	AutoMatchNextGroupIdx  int `db:"auto_match_next_group_idx" json:"auto_match_next_group_idx"`
 
 	// Joinado para listagem
 	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`

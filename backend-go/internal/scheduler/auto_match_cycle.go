@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"time"
 
 	"snatcher/backendv2/internal/affiliates"
@@ -31,6 +32,28 @@ func SimulateAutoMatchCycle(ctx context.Context, st store.Store, now time.Time) 
 	var planned []AutoMatchPlannedRow
 	err := runAutoMatchCycle(ctx, st, now, true, &planned)
 	return planned, err
+}
+
+// pickGroupsForDispatch seleciona até maxGroups grupos com rotação circular (stable por ID).
+func pickGroupsForDispatch(groups []models.RedesignGroup, maxGroups int, startIdx int) ([]models.RedesignGroup, int) {
+	if len(groups) == 0 {
+		return nil, startIdx
+	}
+	if maxGroups <= 0 {
+		maxGroups = 1
+	}
+	g := append([]models.RedesignGroup(nil), groups...)
+	sort.Slice(g, func(i, j int) bool { return g[i].ID < g[j].ID })
+	n := len(g)
+	if maxGroups >= n {
+		return g, startIdx % n
+	}
+	out := make([]models.RedesignGroup, 0, maxGroups)
+	for i := 0; i < maxGroups; i++ {
+		out = append(out, g[(startIdx+i)%n])
+	}
+	next := (startIdx + maxGroups) % n
+	return out, next
 }
 
 // runAutoMatchCycle é o núcleo compartilhado entre o worker real e a prévia.
@@ -146,13 +169,6 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 
 	products = sortProductsByBestAutoMatchScore(cfg, st, products, channels, automationsByChannelID, clicksByChannelID)
 
-	recentLogs, recentErr := st.ListAutoMatchLogs(500)
-	if recentErr != nil {
-		slog.Warn("auto match: list recent logs", "err", recentErr)
-		recentLogs = nil
-	}
-	deliveredByDispatch := BuildDispatchDeliveredMap(st, recentLogs)
-
 	const maxPendingPerGroup = 10
 	pendingByGroup := make(map[int64]int)
 	if cs, err := st.CountPendingTargetsByGroup(); err != nil {
@@ -189,6 +205,7 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		MarshalErr         int
 		MissingOfferURL    int
 		CreateDispatchErr  int
+		DedupePending      int
 	}{}
 
 	for _, p := range products {
@@ -261,8 +278,19 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 				continue
 			}
 
+			inFlight, infErr := st.AutoMatchProductChannelInFlight(p.ID, s.ChannelID)
+			if infErr != nil {
+				slog.Warn("auto match: in-flight check", "product_id", p.ID, "channel_id", s.ChannelID, "err", infErr)
+			} else if inFlight {
+				skip.DedupePending++
+				continue
+			}
+
 			cutoff := now.Add(-cooldown)
-			if CooldownBlocksPair(recentLogs, p.ID, s.ChannelID, cutoff, deliveredByDispatch) {
+			hasRecentLog, logErr := st.AutoMatchHasRecentPairLog(p.ID, s.ChannelID, cutoff)
+			if logErr != nil {
+				slog.Warn("auto match: cooldown log query", "product_id", p.ID, "channel_id", s.ChannelID, "err", logErr)
+			} else if hasRecentLog {
 				skip.Cooldown++
 				continue
 			}
@@ -279,8 +307,18 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 				continue
 			}
 
-			targets := make([]models.DispatchTarget, 0, len(groups))
-			for _, g := range groups {
+			maxGrp := auto.MaxGroupsPerDispatch
+			if maxGrp <= 0 {
+				maxGrp = 1
+			}
+			startG := auto.AutoMatchNextGroupIdx
+			if startG < 0 {
+				startG = 0
+			}
+			pickedGroups, nextGroupIdx := pickGroupsForDispatch(groups, maxGrp, startG)
+
+			targets := make([]models.DispatchTarget, 0, len(pickedGroups))
+			for _, g := range pickedGroups {
 				if pendingByGroup[g.ID] >= maxPendingPerGroup {
 					continue
 				}
@@ -324,6 +362,9 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 					})
 				}
 				sentByChannel[s.ChannelID]++
+				au := automationsByChannelID[s.ChannelID]
+				au.AutoMatchNextGroupIdx = nextGroupIdx
+				automationsByChannelID[s.ChannelID] = au
 				continue
 			}
 
@@ -401,6 +442,13 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)
 			sentByChannel[s.ChannelID]++
+			if err := st.UpdateAutoMatchNextGroupIdx(s.ChannelID, nextGroupIdx); err != nil {
+				slog.Warn("auto match: update group rotation cursor", "channel_id", s.ChannelID, "err", err)
+			} else {
+				au := automationsByChannelID[s.ChannelID]
+				au.AutoMatchNextGroupIdx = nextGroupIdx
+				automationsByChannelID[s.ChannelID] = au
+			}
 		}
 	}
 
@@ -425,6 +473,7 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 			"skip_channel_filter", skip.ChannelFilter,
 			"skip_below_threshold", skip.BelowThreshold,
 			"skip_max_per_run", skip.MaxPerRunSat,
+			"skip_dedupe_pending", skip.DedupePending,
 			"skip_cooldown", skip.Cooldown,
 			"skip_list_groups_err", skip.ListGroupsErr,
 			"skip_no_groups", skip.NoActiveGroups,

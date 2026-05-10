@@ -149,6 +149,7 @@ type Store interface {
 	DeleteChannelRule(id int64) error
 	GetChannelAutomation(channelID int64) (*models.ChannelAutomation, error)
 	UpsertChannelAutomation(a models.ChannelAutomation) error
+	UpdateAutoMatchNextGroupIdx(channelID int64, idx int) error
 	ListChannelAutomations(enabledOnly bool) ([]models.ChannelAutomation, error)
 	ListAutoMatchLogsByChannel(channelID int64, limit int) ([]models.AutoMatchLog, error)
 	WasSentRecently(productID, targetID int64, since time.Time) (bool, error)
@@ -262,6 +263,12 @@ type Store interface {
 	// Auto Match
 	CreateAutoMatchLog(log models.AutoMatchLog) (int64, error)
 	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
+	// AutoMatchProductChannelInFlight bloqueia duplicar fila (produto+canal com dispatch/target pendente).
+	AutoMatchProductChannelInFlight(productID, channelID int64) (bool, error)
+	// AutoMatchHasRecentPairLog cooldown por par produto+canal (qualquer log recente).
+	AutoMatchHasRecentPairLog(productID, channelID int64, since time.Time) (bool, error)
+	// SetDispatchWaRRCursor persiste cursor round-robin WA no dispatch worker.
+	SetDispatchWaRRCursor(cursor int) error
 	// ListAutoMatchLogsSince retorna linhas de auto_match_logs + disparos composed_by=auto-match
 	// sem linha de log (órfãos), mesma janela temporal — para timeline na UI.
 	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)

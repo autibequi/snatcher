@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -116,13 +117,27 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		deliveredByGroup[c.GroupID] = c.Count
 	}
 
-	for _, t := range targets {
+	rrCursor := cfg.DispatchWaRRCursor
+	for i, t := range targets {
+		if cfg.DispatchMinIntervalMs > 0 && i > 0 {
+			d := time.Duration(cfg.DispatchMinIntervalMs) * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return n
+			case <-time.After(d):
+			}
+		}
 		if deliveredByGroup[t.GroupID] >= maxPerGroupPerHour {
 			slog.Warn("dispatch worker: rate limit por grupo, target adiado", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID], "limit", maxPerGroupPerHour)
 			continue // deixa pending — próximo ciclo tenta de novo
 		}
-		if processTarget(ctx, st, t, cfg, waAccounts) {
+		if processTarget(ctx, st, t, cfg, waAccounts, &rrCursor) {
 			deliveredByGroup[t.GroupID]++
+		}
+	}
+	if rrCursor != cfg.DispatchWaRRCursor {
+		if err := st.SetDispatchWaRRCursor(rrCursor); err != nil {
+			slog.Warn("dispatch worker: persist wa rr cursor", "err", err)
 		}
 	}
 	return n
@@ -169,9 +184,21 @@ func evolutionSendBodyError(body []byte) string {
 	return ""
 }
 
+func sortedActiveWAAccountsWithInstance(cfg models.AppConfig, waAccounts []models.WAAccount) []models.WAAccount {
+	var cands []models.WAAccount
+	for _, acc := range waAccounts {
+		if !acc.Active || !acc.Instance.Valid || strings.TrimSpace(acc.Instance.String) == "" {
+			continue
+		}
+		cands = append(cands, acc)
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].ID < cands[j].ID })
+	return cands
+}
+
 // resolveEvolutionCredentials escolhe URL/apiKey/instance por target.
-// Prioridade: dispatch_targets.wa_account_id > groups.wa_account_id > primeira conta WA ativa com instance (legado) > só config global.
-func resolveEvolutionCredentials(st store.Store, cfg models.AppConfig, waAccounts []models.WAAccount, t models.DispatchTarget, group models.RedesignGroup) (baseURL, apiKey, instance string, accountID int64, err error) {
+// Prioridade: dispatch_targets.wa_account_id > groups.wa_account_id > round-robin entre contas ativas com instance (rrCursor) > primeira conta > só config global.
+func resolveEvolutionCredentials(st store.Store, cfg models.AppConfig, waAccounts []models.WAAccount, t models.DispatchTarget, group models.RedesignGroup, rrCursor *int) (baseURL, apiKey, instance string, accountID int64, err error) {
 	preferredID := int64(0)
 	if t.WAAccountID.Valid && t.WAAccountID.Int64 > 0 {
 		preferredID = t.WAAccountID.Int64
@@ -195,6 +222,23 @@ func resolveEvolutionCredentials(st store.Store, cfg models.AppConfig, waAccount
 			return "", "", "", 0, fmt.Errorf("Evolution sem instance (config global ou conta %d)", preferredID)
 		}
 		return b, k, inst, acc.ID, nil
+	}
+
+	cands := sortedActiveWAAccountsWithInstance(cfg, waAccounts)
+	if len(cands) > 0 && rrCursor != nil && len(cands) > 1 {
+		idx := (*rrCursor%len(cands) + len(cands)) % len(cands)
+		acc := cands[idx]
+		*rrCursor++
+		b, k, inst := mergeEvolutionFromConfig(cfg, &acc)
+		if b != "" && inst != "" {
+			return b, k, inst, acc.ID, nil
+		}
+	} else if len(cands) > 0 {
+		acc := cands[0]
+		b, k, inst := mergeEvolutionFromConfig(cfg, &acc)
+		if b != "" && inst != "" {
+			return b, k, inst, acc.ID, nil
+		}
 	}
 
 	// Mesmo critério histórico do worker: primeira conta ativa com instance definido no registro.
@@ -245,7 +289,7 @@ func mergeEvolutionFromConfig(cfg models.AppConfig, acc *models.WAAccount) (base
 }
 
 // processTarget envia um target; retorna true só se marcou delivered (para rate limit por grupo).
-func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount) bool {
+func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount, rrCursor *int) bool {
 	dispatch, err := st.GetDispatch(t.DispatchID)
 	if err != nil {
 		slog.Error("dispatch worker: dispatch não encontrado", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
@@ -268,7 +312,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		return false
 	}
 
-	baseURL, apiKey, instance, accountID, credErr := resolveEvolutionCredentials(st, cfg, waAccounts, t, group)
+	baseURL, apiKey, instance, accountID, credErr := resolveEvolutionCredentials(st, cfg, waAccounts, t, group, rrCursor)
 	if credErr != nil {
 		slog.Error("dispatch worker: credenciais Evolution", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID, "err", credErr)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", credErr.Error())

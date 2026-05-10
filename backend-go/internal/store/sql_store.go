@@ -98,8 +98,16 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			interval_between_groups_sec=:interval_between_groups_sec,
 			interval_between_channels_sec=:interval_between_channels_sec,
 			daily_limit_per_account=:daily_limit_per_account,
-			rotate_accounts=:rotate_accounts
+			rotate_accounts=:rotate_accounts,
+			dispatch_min_interval_ms=:dispatch_min_interval_ms,
+			dispatch_wa_rr_cursor=:dispatch_wa_rr_cursor
 		WHERE id = 1`, cfg)
+	return err
+}
+
+// SetDispatchWaRRCursor persiste só o cursor WA round-robin (dispatch worker).
+func (s *SQLStore) SetDispatchWaRRCursor(cursor int) error {
+	_, err := s.db.Exec(`UPDATE appconfig SET dispatch_wa_rr_cursor = $1 WHERE id = 1`, cursor)
 	return err
 }
 
@@ -120,6 +128,34 @@ func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) (int64, error) {
 		RETURNING id`,
 		log.ProductID, log.ChannelID, log.DispatchID, log.Score).Scan(&id)
 	return id, err
+}
+
+// AutoMatchProductChannelInFlight implementa anti-duplicata antes de CreateDispatch.
+func (s *SQLStore) AutoMatchProductChannelInFlight(productID, channelID int64) (bool, error) {
+	var exists bool
+	err := s.db.Get(&exists, `
+		SELECT EXISTS (
+			SELECT 1 FROM dispatches d
+			INNER JOIN dispatch_targets dt ON dt.dispatch_id = d.id
+			INNER JOIN groups g ON g.id = dt.group_id
+			WHERE d.product_id IS NOT NULL AND d.product_id = $1 AND g.channel_id = $2
+			  AND (
+				  d.status IN ('queued','pending_approval','sending')
+				  OR dt.status IN ('pending','sending')
+			  )
+		)`, productID, channelID)
+	return exists, err
+}
+
+// AutoMatchHasRecentPairLog é verdadeiro se há linha em auto_match_logs no intervalo (cooldown estrito).
+func (s *SQLStore) AutoMatchHasRecentPairLog(productID, channelID int64, since time.Time) (bool, error) {
+	var exists bool
+	err := s.db.Get(&exists, `
+		SELECT EXISTS (
+			SELECT 1 FROM auto_match_logs
+			WHERE product_id = $1 AND channel_id = $2 AND created_at >= $3
+		)`, productID, channelID, since)
+	return exists, err
 }
 
 func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
@@ -1274,11 +1310,13 @@ func (s *SQLStore) UpsertChannelAutomation(a models.ChannelAutomation) error {
 		INSERT INTO channel_automations
 			(channel_id, enabled, auto_match_enabled, threshold, max_per_run, cooldown_hours,
 			 events_enabled, notify_new, notify_drop, notify_lowest, drop_threshold,
-			 match_type, match_value, max_price, paused_until)
+			 match_type, match_value, max_price, paused_until,
+			 max_groups_per_dispatch, auto_match_next_group_idx)
 		VALUES
 			(:channel_id, :enabled, :auto_match_enabled, :threshold, :max_per_run, :cooldown_hours,
 			 :events_enabled, :notify_new, :notify_drop, :notify_lowest, :drop_threshold,
-			 :match_type, :match_value, :max_price, :paused_until)
+			 :match_type, :match_value, :max_price, :paused_until,
+			 :max_groups_per_dispatch, :auto_match_next_group_idx)
 		ON CONFLICT (channel_id) DO UPDATE SET
 			enabled = EXCLUDED.enabled,
 			auto_match_enabled = EXCLUDED.auto_match_enabled,
@@ -1294,7 +1332,17 @@ func (s *SQLStore) UpsertChannelAutomation(a models.ChannelAutomation) error {
 			match_value = EXCLUDED.match_value,
 			max_price = EXCLUDED.max_price,
 			paused_until = EXCLUDED.paused_until,
+			max_groups_per_dispatch = EXCLUDED.max_groups_per_dispatch,
+			auto_match_next_group_idx = channel_automations.auto_match_next_group_idx,
 			updated_at = now()`, a)
+	return err
+}
+
+// UpdateAutoMatchNextGroupIdx atualiza só o cursor de rotação de grupos (worker auto-match).
+func (s *SQLStore) UpdateAutoMatchNextGroupIdx(channelID int64, idx int) error {
+	_, err := s.db.Exec(`
+		UPDATE channel_automations SET auto_match_next_group_idx = $2, updated_at = now()
+		WHERE channel_id = $1`, channelID, idx)
 	return err
 }
 

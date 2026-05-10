@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Badge, Button, Tabs, KpiCard, Skeleton, Switch, Tooltip as UITooltip, TooltipIcon } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
@@ -335,9 +335,11 @@ export interface ChannelDetailInnerProps {
   channelId: string
   embedded?: boolean
   onClose?: () => void
+  /** Se true (ex.: drawer em Automações), permite editar limites/filtros aqui; na rota /channels/:id fica só leitura + link. */
+  editAutomation?: boolean
 }
 
-export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDetailInnerProps) {
+export function ChannelDetailInner({ channelId, embedded, onClose, editAutomation }: ChannelDetailInnerProps) {
   const id = channelId
   const navigate = useNavigate()
   const [tab, setTab] = React.useState('overview')
@@ -486,20 +488,22 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
     staleTime: 30_000,
   })
   const previewItems = channelPreview?.items ?? []
+
   const [autoForm, setAutoForm] = React.useState<any>({})
   React.useEffect(() => {
     if (!automationRow) return
-    // “Ativo” e auto-match são o mesmo interruptor na UI — alinhar enabled ↔ auto_match_enabled
     setAutoForm({
       ...automationRow,
       auto_match_enabled: automationRow.enabled,
     })
   }, [automationRow])
+
   const saveAutoMut = useMutation({
     mutationFn: () => apiClient.put(`/api/automations/${id}`, autoForm).then(r => r.data),
     onSuccess: () => {
       refetchAutomation()
       qc.invalidateQueries({ queryKey: ['automations', id, 'detail'] })
+      qc.invalidateQueries({ queryKey: ['automations'] })
     },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar'),
   })
@@ -821,54 +825,88 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
             <AudienceEditor channelId={id!} audience={audience} />
             <div className="border border-border rounded-md p-4 space-y-3">
               <p className="text-xs font-medium text-fg">Filtro estrito (descarta antes de pontuar)</p>
-              <p className="text-xs text-fg-3">
-                Produtos que não passam neste filtro nem entram na pontuação. Mesmos campos da automação — salve abaixo.
-              </p>
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
-                <select
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-                  value={autoForm.match_type ?? 'all'}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, match_type: e.target.value }))}
-                >
-                  {MATCH_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              {needsMatchValue && (
-                <div>
-                  <label className="text-xs text-fg-2 block mb-1">
-                    Valor ({MATCH_TYPES.find(t => t.value === autoForm.match_type)?.label?.toLowerCase() ?? autoForm.match_type})
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: suplementos / growth / whey"
-                    value={autoForm.match_value ?? ''}
-                    onChange={e => setAutoForm((f: any) => ({ ...f, match_value: e.target.value || null }))}
-                    className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                  />
-                </div>
+              {editAutomation ? (
+                <>
+                  <p className="text-xs text-fg-3">
+                    Mesmos campos que a aba Automação — salve em &quot;Salvar automação&quot; na aba Automação.
+                  </p>
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Tipo de filtro</label>
+                    <select
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+                      value={autoForm.match_type ?? 'all'}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, match_type: e.target.value }))}
+                    >
+                      {MATCH_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {needsMatchValue && (
+                    <div>
+                      <label className="text-xs text-fg-2 block mb-1">
+                        Valor ({MATCH_TYPES.find(t => t.value === autoForm.match_type)?.label?.toLowerCase() ?? autoForm.match_type})
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: suplementos / growth / whey"
+                        value={autoForm.match_value ?? ''}
+                        onChange={e => setAutoForm((f: any) => ({ ...f, match_value: e.target.value || null }))}
+                        className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Preço máximo absoluto (R$, opcional)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="ex: 199.90"
+                      value={autoForm.max_price ?? ''}
+                      onChange={e =>
+                        setAutoForm((f: any) => ({
+                          ...f,
+                          max_price: e.target.value === '' ? null : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                  </div>
+                  <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
+                    Salvar filtros (automação)
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-fg-3">
+                    Produtos que não passam neste filtro nem entram na pontuação. Edite em{' '}
+                    <Link to="/automations/channels" className="text-accent hover:underline">Automações → Canais</Link>
+                    {' '}(drawer do canal) ou use o atalho abaixo.
+                  </p>
+                  {!automationRow ? (
+                    <p className="text-xs text-fg-3">Carregando…</p>
+                  ) : (
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <dt className="text-fg-2">Tipo</dt>
+                      <dd className="text-fg">{MATCH_TYPES.find(t => t.value === (automationRow.match_type ?? 'all'))?.label ?? automationRow.match_type}</dd>
+                      {(automationRow.match_type ?? 'all') !== 'all' && (
+                        <>
+                          <dt className="text-fg-2">Valor</dt>
+                          <dd className="text-fg font-mono text-xs">{automationRow.match_value ?? '—'}</dd>
+                        </>
+                      )}
+                      <dt className="text-fg-2">Preço máximo (R$)</dt>
+                      <dd className="text-fg">{automationRow.max_price != null && automationRow.max_price !== '' ? Number(automationRow.max_price).toFixed(2) : '—'}</dd>
+                    </dl>
+                  )}
+                  <Link
+                    to="/automations/channels"
+                    className="inline-flex text-sm font-medium text-accent hover:underline"
+                  >
+                    Abrir Automações →
+                  </Link>
+                </>
               )}
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Preço máximo absoluto (R$, opcional)</label>
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="ex: 199.90"
-                  value={autoForm.max_price ?? ''}
-                  onChange={e =>
-                    setAutoForm((f: any) => ({
-                      ...f,
-                      max_price: e.target.value === '' ? null : Number(e.target.value),
-                    }))
-                  }
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
-              <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
-                Salvar filtros de automação
-              </Button>
             </div>
           </div>
         )}
@@ -1153,185 +1191,294 @@ export function ChannelDetailInner({ channelId, embedded, onClose }: ChannelDeta
               <p className="text-xs text-danger">Erro ao pedir conselho: {describeError(adviseMut.error)}</p>
             )}
 
-            <div className="border border-border rounded-md p-5 space-y-4">
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Auto-match</p>
-                  <p className="text-xs text-fg-3">
-                    Liga a automação deste canal e o disparo automático de produtos com score alto.
-                  </p>
+            {editAutomation ? (
+              <>
+                <div className="border border-border rounded-md p-5 space-y-4">
+                  <div className="flex items-center justify-between py-2 border-b border-border">
+                    <div>
+                      <p className="text-sm font-medium text-fg">Auto-match</p>
+                      <p className="text-xs text-fg-3">
+                        Liga a automação deste canal e o disparo automático de produtos com score alto.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={!!autoForm.enabled}
+                      onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v, auto_match_enabled: v }))}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-border">
+                    <div>
+                      <p className="text-sm font-medium text-fg">Eventos</p>
+                      <p className="text-xs text-fg-3">Pipeline de eventos de preço (dentro da janela configurada)</p>
+                    </div>
+                    <Switch checked={!!autoForm.events_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, events_enabled: v }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                      Threshold de score (0–100)
+                      <TooltipIcon content="Score mínimo para disparar neste canal." />
+                      <span className="text-fg-3 ml-1">
+                        {autoForm.threshold == null ? `(default: ${globalThreshold})` : ''}
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={autoForm.threshold ?? globalThreshold}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, threshold: Number(e.target.value) }))}
+                      className="w-full accent-accent"
+                    />
+                    <div className="flex justify-between text-xs text-fg-3 mt-0.5">
+                      <span>0</span>
+                      <span className="font-semibold text-fg">{autoForm.threshold ?? globalThreshold}</span>
+                      <span>100</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-fg-3 hover:text-accent mt-1"
+                      onClick={() => setAutoForm((f: any) => ({ ...f, threshold: null }))}
+                    >
+                      Usar default global ({globalThreshold})
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                      Max disparos por ciclo do worker
+                      <TooltipIcon content="Máximo de dispatches automáticos criados por este canal em cada execução do worker — não é limite por dia civil." />
+                      <span className="text-fg-3 ml-1">
+                        {autoForm.max_per_run == null ? `(default: ${globalMaxPerRun})` : ''}
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={autoForm.max_per_run ?? ''}
+                      placeholder={String(globalMaxPerRun)}
+                      onChange={e =>
+                        setAutoForm((f: any) => ({
+                          ...f,
+                          max_per_run: e.target.value === '' ? null : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                      Grupos por dispatch
+                      <TooltipIcon content="Quantos grupos recebem o mesmo disparo. 1 = um grupo por vez com rotação entre ciclos; maior = broadcast para vários grupos de uma vez." />
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={autoForm.max_groups_per_dispatch ?? 1}
+                      onChange={e =>
+                        setAutoForm((f: any) => ({
+                          ...f,
+                          max_groups_per_dispatch: Math.max(1, Number(e.target.value) || 1),
+                        }))
+                      }
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
+                      Cooldown entre disparos (horas)
+                      <TooltipIcon content="Novo disparo do mesmo produto para este canal só após este intervalo (registo em auto-match)." />
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={autoForm.cooldown_hours ?? 6}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) || 6 }))}
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Pausar até (opcional)</label>
+                    <input
+                      type="datetime-local"
+                      value={autoForm.paused_until ? autoForm.paused_until.slice(0, 16) : ''}
+                      onChange={e =>
+                        setAutoForm((f: any) => ({
+                          ...f,
+                          paused_until: e.target.value ? new Date(e.target.value).toISOString() : null,
+                        }))
+                      }
+                      className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+                    />
+                    {autoForm.paused_until && (
+                      <button
+                        type="button"
+                        className="text-xs text-fg-3 hover:text-accent mt-1"
+                        onClick={() => setAutoForm((f: any) => ({ ...f, paused_until: null }))}
+                      >
+                        Remover pausa
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <Switch
-                  checked={!!autoForm.enabled}
-                  onChange={v => setAutoForm((f: any) => ({ ...f, enabled: v, auto_match_enabled: v }))}
-                />
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <div>
-                  <p className="text-sm font-medium text-fg">Eventos</p>
-                  <p className="text-xs text-fg-3">Pipeline de eventos de preço (dentro da janela configurada)</p>
+
+                <div className="border border-border rounded-md p-5 space-y-4">
+                  <p className="text-sm font-semibold text-fg">Notificações (eventos)</p>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!autoForm.notify_new}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, notify_new: e.target.checked }))}
+                      className="accent-accent"
+                    />
+                    <div>
+                      <p className="text-sm text-fg">Produto novo encontrado</p>
+                      <p className="text-xs text-fg-3">Notifica quando um produto que atende ao filtro aparece no catálogo</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!autoForm.notify_drop}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, notify_drop: e.target.checked }))}
+                      className="accent-accent"
+                    />
+                    <div>
+                      <p className="text-sm text-fg">Queda de preço</p>
+                      <p className="text-xs text-fg-3">Notifica quando o preço cair mais que o threshold abaixo</p>
+                    </div>
+                  </label>
+                  <div>
+                    <label className="text-xs text-fg-2 block mb-1">Threshold de queda (%) — atualmente {dropPct}%</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={50}
+                      value={dropPct}
+                      disabled={!autoForm.notify_drop}
+                      onChange={e =>
+                        setAutoForm((f: any) => ({ ...f, drop_threshold: Number(e.target.value) / 100 }))
+                      }
+                      className="w-full accent-accent disabled:opacity-40"
+                    />
+                    <div className="flex justify-between text-xs text-fg-3 mt-0.5">
+                      <span>1%</span>
+                      <span className="font-semibold text-fg">{dropPct}%</span>
+                      <span>50%</span>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!autoForm.notify_lowest}
+                      onChange={e => setAutoForm((f: any) => ({ ...f, notify_lowest: e.target.checked }))}
+                      className="accent-accent"
+                    />
+                    <div>
+                      <p className="text-sm text-fg">Menor preço histórico</p>
+                      <p className="text-xs text-fg-3">Notifica quando atingir o menor preço registrado</p>
+                    </div>
+                  </label>
                 </div>
-                <Switch checked={!!autoForm.events_enabled} onChange={v => setAutoForm((f: any) => ({ ...f, events_enabled: v }))} />
-              </div>
 
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Threshold de score (0–100)
-                  <TooltipIcon content="Score mínimo para disparar neste canal." />
-                  <span className="text-fg-3 ml-1">
-                    {autoForm.threshold == null ? `(default: ${globalThreshold})` : ''}
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={autoForm.threshold ?? globalThreshold}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, threshold: Number(e.target.value) }))}
-                  className="w-full accent-accent"
-                />
-                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
-                  <span>0</span>
-                  <span className="font-semibold text-fg">{autoForm.threshold ?? globalThreshold}</span>
-                  <span>100</span>
+                <div className="flex justify-end gap-2">
+                  <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
+                    Salvar automação
+                  </Button>
                 </div>
-                <button
-                  type="button"
-                  className="text-xs text-fg-3 hover:text-accent mt-1"
-                  onClick={() => setAutoForm((f: any) => ({ ...f, threshold: null }))}
-                >
-                  Usar default global ({globalThreshold})
-                </button>
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Max disparos por ciclo
-                  <TooltipIcon content="Máximo de produtos por ciclo automático neste canal." />
-                  <span className="text-fg-3 ml-1">
-                    {autoForm.max_per_run == null ? `(default: ${globalMaxPerRun})` : ''}
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={autoForm.max_per_run ?? ''}
-                  placeholder={String(globalMaxPerRun)}
-                  onChange={e =>
-                    setAutoForm((f: any) => ({
-                      ...f,
-                      max_per_run: e.target.value === '' ? null : Number(e.target.value),
-                    }))
-                  }
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 flex items-center gap-1 mb-1">
-                  Cooldown entre disparos (horas)
-                  <TooltipIcon content="Evita reenviar o mesmo produto para este canal dentro do período." />
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={168}
-                  value={autoForm.cooldown_hours ?? 6}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) || 6 }))}
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Pausar até (opcional)</label>
-                <input
-                  type="datetime-local"
-                  value={autoForm.paused_until ? autoForm.paused_until.slice(0, 16) : ''}
-                  onChange={e =>
-                    setAutoForm((f: any) => ({
-                      ...f,
-                      paused_until: e.target.value ? new Date(e.target.value).toISOString() : null,
-                    }))
-                  }
-                  className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-                />
-                {autoForm.paused_until && (
-                  <button
-                    type="button"
-                    className="text-xs text-fg-3 hover:text-accent mt-1"
-                    onClick={() => setAutoForm((f: any) => ({ ...f, paused_until: null }))}
+              </>
+            ) : (
+              <div className="border border-border rounded-md p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-fg">Resumo da automação</p>
+                    <p className="text-xs text-fg-3 mt-1">
+                      Threshold, limites por ciclo do worker, cooldown, eventos e notificações são configurados na página{' '}
+                      <strong className="text-fg-2">Automações</strong> (abra um canal pelo drawer ou use o link).
+                    </p>
+                  </div>
+                  <Link
+                    to="/automations/channels"
+                    className="shrink-0 text-sm font-medium text-accent hover:underline"
                   >
-                    Remover pausa
-                  </button>
+                    Ir para Automações →
+                  </Link>
+                </div>
+
+                {!automationRow ? (
+                  <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : (
+                  <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    <dt className="text-fg-2 flex items-center gap-1">
+                      Automação ativa
+                      <TooltipIcon content="Interruptor principal do canal na lista de Automações." />
+                    </dt>
+                    <dd className="text-fg">{automationRow.enabled ? 'Sim' : 'Não'}</dd>
+
+                    <dt className="text-fg-2">Auto-match</dt>
+                    <dd className="text-fg">{automationRow.auto_match_enabled !== false ? 'Ligado' : 'Desligado'}</dd>
+
+                    <dt className="text-fg-2 flex items-center gap-1">
+                      Threshold (0–100)
+                      <TooltipIcon content="Score mínimo para candidatos a disparo neste canal." />
+                    </dt>
+                    <dd className="text-fg">
+                      {automationRow.threshold != null && automationRow.threshold !== ''
+                        ? Number(automationRow.threshold)
+                        : `Default global (${globalThreshold})`}
+                    </dd>
+
+                    <dt className="text-fg-2 flex items-center gap-1">
+                      Máx. disparos por ciclo do worker
+                      <TooltipIcon content="Por execução do worker de auto-match neste canal — não é limite por dia civil." />
+                    </dt>
+                    <dd className="text-fg">
+                      {automationRow.max_per_run != null && automationRow.max_per_run !== ''
+                        ? automationRow.max_per_run
+                        : `Default global (${globalMaxPerRun})`}
+                    </dd>
+
+                    <dt className="text-fg-2">Grupos por dispatch</dt>
+                    <dd className="text-fg">
+                      {automationRow.max_groups_per_dispatch != null && automationRow.max_groups_per_dispatch > 0
+                        ? automationRow.max_groups_per_dispatch
+                        : '1'}
+                    </dd>
+
+                    <dt className="text-fg-2">Cooldown (horas)</dt>
+                    <dd className="text-fg">{automationRow.cooldown_hours ?? 6}</dd>
+
+                    <dt className="text-fg-2">Pausa até</dt>
+                    <dd className="text-fg">
+                      {automationRow.paused_until
+                        ? new Date(automationRow.paused_until).toLocaleString('pt-BR')
+                        : '—'}
+                    </dd>
+
+                    <dt className="text-fg-2">Eventos de preço</dt>
+                    <dd className="text-fg">{automationRow.events_enabled ? 'Ligados' : 'Desligados'}</dd>
+
+                    <dt className="text-fg-2">Notificações</dt>
+                    <dd className="text-fg text-xs">
+                      novo: {automationRow.notify_new ? 'sim' : 'não'} · queda: {automationRow.notify_drop ? 'sim' : 'não'} ·
+                      menor preço: {automationRow.notify_lowest ? 'sim' : 'não'}
+                      {automationRow.notify_drop && (
+                        <span className="text-fg-3">
+                          {' '}
+                          (queda ≥ {Math.round((automationRow.drop_threshold ?? 0.1) * 100)}%)
+                        </span>
+                      )}
+                    </dd>
+                  </dl>
                 )}
               </div>
-            </div>
-
-            <div className="border border-border rounded-md p-5 space-y-4">
-              <p className="text-sm font-semibold text-fg">Notificações (eventos)</p>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!autoForm.notify_new}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_new: e.target.checked }))}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Produto novo encontrado</p>
-                  <p className="text-xs text-fg-3">Notifica quando um produto que atende ao filtro aparece no catálogo</p>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!autoForm.notify_drop}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_drop: e.target.checked }))}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Queda de preço</p>
-                  <p className="text-xs text-fg-3">Notifica quando o preço cair mais que o threshold abaixo</p>
-                </div>
-              </label>
-              <div>
-                <label className="text-xs text-fg-2 block mb-1">Threshold de queda (%) — atualmente {dropPct}%</label>
-                <input
-                  type="range"
-                  min={1}
-                  max={50}
-                  value={dropPct}
-                  disabled={!autoForm.notify_drop}
-                  onChange={e =>
-                    setAutoForm((f: any) => ({ ...f, drop_threshold: Number(e.target.value) / 100 }))
-                  }
-                  className="w-full accent-accent disabled:opacity-40"
-                />
-                <div className="flex justify-between text-xs text-fg-3 mt-0.5">
-                  <span>1%</span>
-                  <span className="font-semibold text-fg">{dropPct}%</span>
-                  <span>50%</span>
-                </div>
-              </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!autoForm.notify_lowest}
-                  onChange={e => setAutoForm((f: any) => ({ ...f, notify_lowest: e.target.checked }))}
-                  className="accent-accent"
-                />
-                <div>
-                  <p className="text-sm text-fg">Menor preço histórico</p>
-                  <p className="text-xs text-fg-3">Notifica quando atingir o menor preço registrado</p>
-                </div>
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="primary" size="sm" loading={saveAutoMut.isPending} onClick={() => saveAutoMut.mutate()}>
-                Salvar automação
-              </Button>
-            </div>
+            )}
           </div>
         )}
 

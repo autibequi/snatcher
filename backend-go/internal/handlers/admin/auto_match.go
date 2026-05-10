@@ -277,9 +277,6 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		clicksByChannelID[ch.ID] = n
 	}
 
-	recentLogs, _ := h.store.ListAutoMatchLogs(500)
-	deliveredByDispatch := scheduler.BuildDispatchDeliveredMap(h.store, recentLogs)
-
 	dispatched := 0
 	sentByChannel := make(map[int64]int, len(autoByChannelID))
 	var errs []string
@@ -348,8 +345,13 @@ func (h *AutoMatchHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			inFlight, _ := h.store.AutoMatchProductChannelInFlight(p.ID, s.ChannelID)
+			if inFlight {
+				continue
+			}
 			cutoff := now.Add(-time.Duration(cooldownHours) * time.Hour)
-			if scheduler.CooldownBlocksPair(recentLogs, p.ID, s.ChannelID, cutoff, deliveredByDispatch) {
+			hasLog, _ := h.store.AutoMatchHasRecentPairLog(p.ID, s.ChannelID, cutoff)
+			if hasLog {
 				continue
 			}
 

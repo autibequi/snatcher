@@ -116,6 +116,9 @@ func (h *AutomationsHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	if a.DropThreshold == 0 {
 		a.DropThreshold = 0.10
 	}
+	if a.MaxGroupsPerDispatch <= 0 {
+		a.MaxGroupsPerDispatch = 1
+	}
 	if err := h.store.UpsertChannelAutomation(a); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

@@ -14,6 +14,7 @@ interface ChannelAutomation {
   auto_match_enabled: boolean
   threshold?: number | null
   max_per_run?: number | null
+  max_groups_per_dispatch?: number | null
   cooldown_hours: number
   events_enabled: boolean
   notify_new: boolean
@@ -185,6 +186,7 @@ function defaultAutomation(channelId: number): ChannelAutomation {
     match_value: null,
     max_price: null,
     paused_until: null,
+    max_groups_per_dispatch: 1,
   }
 }
 
@@ -200,7 +202,7 @@ export function Drawer({ row, onClose }: DrawerProps) {
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden />
       <div className="fixed inset-y-0 right-0 w-full max-w-[56rem] bg-surface border-l border-border z-50 flex flex-col shadow-xl min-h-0">
-        <ChannelDetailInner channelId={String(row.channel_id)} embedded onClose={onClose} />
+        <ChannelDetailInner channelId={String(row.channel_id)} embedded onClose={onClose} editAutomation />
       </div>
     </>
   )
@@ -229,12 +231,27 @@ export function TabOverview() {
     staleTime: 15_000,
   })
 
-  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean } & Record<string, unknown>>({
+  const { data: appConfig } = useQuery<{ full_auto_mode?: boolean; dispatch_min_interval_ms?: number } & Record<string, unknown>>({
     queryKey: ['config'],
     queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
     staleTime: 60_000,
   })
   const fullAutoMode = !!appConfig?.full_auto_mode
+
+  const [localDispatchMinMs, setLocalDispatchMinMs] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    if (!appConfig || localDispatchMinMs !== null) return
+    const v = (appConfig as { dispatch_min_interval_ms?: number }).dispatch_min_interval_ms
+    setLocalDispatchMinMs(typeof v === 'number' && !Number.isNaN(v) ? v : 0)
+  }, [appConfig, localDispatchMinMs])
+
+  const saveDispatchIntervalMut = useMutation({
+    mutationFn: async (ms: number) => {
+      await apiClient.put('/api/config', { dispatch_min_interval_ms: Math.max(0, Math.floor(ms)) })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao salvar pausa Evolution'),
+  })
 
   const toggleFullAuto = useMutation({
     mutationFn: async (v: boolean) => {
@@ -787,7 +804,7 @@ export function TabOverview() {
           <div>
             <div className="flex items-center gap-1 mb-1">
               <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Max/ciclo</p>
-              <TooltipIcon content="Máximo de produtos disparados por canal por ciclo. Evita spam: mesmo com 100 produtos elegíveis, só esse número sai por vez." side="top" />
+              <TooltipIcon content="Não é limite por dia. É o máximo de produtos (dispatches automáticos criados) por canal por execução do worker de auto-match. Cada canal tem esse teto independentemente." side="top" />
             </div>
             <input type="number" min={1} max={20} value={maxPerRunCfg}
               onChange={e => setLocalMaxPerRun(Number(e.target.value))}
@@ -803,6 +820,23 @@ export function TabOverview() {
               onChange={e => setLocalIntervalSec(Number(e.target.value))}
               onBlur={() => toggleMut.mutate({ interval_seconds: intervalSecLocal })}
               className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-xs text-fg-3 font-medium uppercase tracking-wide">Pausa Evolution (ms)</p>
+              <TooltipIcon content="Intervalo mínimo entre processar dois targets consecutivos no worker de disparos (Evolution). 0 = sem pausa extra (continua valendo limite 3/h por grupo)." side="top" />
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={600_000}
+              step={50}
+              value={localDispatchMinMs ?? 0}
+              onChange={e => setLocalDispatchMinMs(Number(e.target.value))}
+              onBlur={() => saveDispatchIntervalMut.mutate(localDispatchMinMs ?? 0)}
+              disabled={saveDispatchIntervalMut.isPending || appConfig == null}
+              className="w-full text-sm font-bold border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent disabled:opacity-50"
+            />
           </div>
         </div>
 
