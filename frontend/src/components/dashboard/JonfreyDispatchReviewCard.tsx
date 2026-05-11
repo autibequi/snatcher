@@ -108,13 +108,23 @@ export function JonfreyDispatchReviewCard() {
     setReview(null)
 
     try {
-      const res = await apiClient.post('/api/jonfrey/review-dispatches', { period_hours: 24 })
+      // Override do timeout default (30s) — análise LLM pode levar 60-90s no caminho feliz.
+      const res = await apiClient.post(
+        '/api/jonfrey/review-dispatches',
+        { period_hours: 24 },
+        { timeout: 120_000 },
+      )
       setReview(res.data as JonfreyReviewResult)
     } catch (err: unknown) {
-      const e = err as { response?: { status?: number; data?: { error?: string } } }
+      const e = err as {
+        code?: string
+        response?: { status?: number; data?: { error?: string } }
+      }
       if (e?.response?.status === 404) {
         // Endpoint ainda não implementado no backend
         setReviewError('endpoint_pending')
+      } else if (e?.code === 'ECONNABORTED') {
+        setReviewError('A análise demorou demais (>120s). O LLM pode estar sobrecarregado — tente novamente em alguns segundos.')
       } else {
         setReviewError(e?.response?.data?.error ?? 'Erro ao gerar análise')
       }
