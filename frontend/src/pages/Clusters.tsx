@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ScatterChart,
@@ -9,20 +10,13 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  PieChart,
-  Pie,
 } from 'recharts'
-import { Badge, Button, Skeleton } from '../components/ui'
+import { Badge, Button, EmptyState, PageHeader, Skeleton } from '../components/ui'
+import { pageContainer, sectionCard, filterBar, responsiveGrid } from '../lib/uiTokens'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface DeviceSplit {
-  ios?: number
-  android?: number
-  web?: number
-}
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Cluster {
   id: number
@@ -41,268 +35,119 @@ interface Cluster {
   }
   top_categories: string[]
   top_brands: string[]
-  device_split?: DeviceSplit
   opportunity?: string
   computed_at: string
 }
 
 type Period = '7d' | '30d' | '90d'
+type SortKey = 'ctr' | 'cvr' | 'avgTicket'
 
-// ── Cluster colours (up to 8) ─────────────────────────────────────────────────
+const PERIOD_LABELS: Record<Period, string> = { '7d': '7 dias', '30d': '30 dias', '90d': '90 dias' }
+const SORT_LABELS: Record<SortKey, string> = { ctr: 'CTR', cvr: 'CVR', avgTicket: 'Ticket' }
 
-const CLUSTER_COLORS = [
-  '#6366f1', // indigo
-  '#f43f5e', // rose
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#3b82f6', // blue
-  '#a855f7', // purple
-  '#14b8a6', // teal
-  '#f97316', // orange
-]
+// ── Colors ─────────────────────────────────────────────────────────────────────
 
-function clusterColor(idx: number): string {
-  return CLUSTER_COLORS[idx % CLUSTER_COLORS.length]
-}
+const COLORS = ['#6366f1', '#f43f5e', '#f59e0b', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#f97316']
+const clusterColor = (idx: number) => COLORS[idx % COLORS.length]
 
-// ── Donut for device split ────────────────────────────────────────────────────
+// ── Bubble tooltip ─────────────────────────────────────────────────────────────
 
-interface DeviceDonutProps {
-  split: DeviceSplit
-}
+interface BubblePoint { x: number; y: number; z: number; label: string; id: number; colorIdx: number }
 
-function DeviceDonut({ split }: DeviceDonutProps) {
-  const DEVICE_COLORS: Record<string, string> = {
-    iOS: '#6366f1',
-    Android: '#10b981',
-    Web: '#f59e0b',
-  }
-
-  const total = (split.ios ?? 0) + (split.android ?? 0) + (split.web ?? 0)
-  if (total === 0) return <p className="text-xs text-fg-3">—</p>
-
-  const data = [
-    { name: 'iOS', value: split.ios ?? 0 },
-    { name: 'Android', value: split.android ?? 0 },
-    { name: 'Web', value: split.web ?? 0 },
-  ].filter(d => d.value > 0)
-
-  const dominant = data.reduce((a, b) => (a.value > b.value ? a : b))
-  const dominantPct = Math.round((dominant.value / total) * 100)
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-12 h-12 flex-shrink-0">
-        <PieChart width={48} height={48}>
-          <Pie
-            data={data}
-            cx={20}
-            cy={20}
-            innerRadius={14}
-            outerRadius={22}
-            dataKey="value"
-            strokeWidth={0}
-          >
-            {data.map(entry => (
-              <Cell key={entry.name} fill={DEVICE_COLORS[entry.name] ?? '#888'} />
-            ))}
-          </Pie>
-        </PieChart>
-      </div>
-      <div>
-        <p className="text-xs font-medium text-fg">
-          {dominant.name} {dominantPct}%
-        </p>
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          {data.map(d => (
-            <p key={d.name} className="text-xs text-fg-3">
-              {d.name}: {Math.round((d.value / total) * 100)}%
-            </p>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Detail Panel ──────────────────────────────────────────────────────────────
-
-interface DetailPanelProps {
-  cluster: Cluster
-  colorIdx: number
-  onClose: () => void
-}
-
-function DetailPanel({ cluster, colorIdx, onClose }: DetailPanelProps) {
-  const color = clusterColor(colorIdx)
-  const m = cluster.metrics
-
-  const hasPriceRange =
-    m.price_min !== undefined || m.price_max !== undefined
-  const priceLabel = hasPriceRange
-    ? `R$ ${m.price_min ?? '?'}–${m.price_max ?? '?'}`
-    : m.avg_ticket
-      ? `≈ R$ ${Math.round(m.avg_ticket)}`
-      : '—'
-
-  const opportunityText =
-    cluster.opportunity ??
-    (m.avg_ticket && m.avg_ticket > 150
-      ? `Alto ticket médio (R$ ${Math.round(m.avg_ticket)}). Considere ampliar categorias de alto valor.`
-      : m.ctr && m.ctr > 0.08
-        ? `CTR acima da média. Bom momento para testes A/B de produto.`
-        : null)
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div
-        className="flex items-start justify-between p-4 border-b border-border"
-        style={{ borderLeftColor: color, borderLeftWidth: 3 }}
-      >
-        <div>
-          <p className="font-semibold text-fg">{cluster.label}</p>
-          {cluster.description && (
-            <p className="text-xs text-fg-3 mt-0.5">{cluster.description}</p>
-          )}
-          <p className="text-xs text-fg-3 mt-1">
-            {cluster.members_count ?? cluster.member_channels?.length ?? 0} membros
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-fg-3 hover:text-fg transition-colors p-1 -mr-1"
-          aria-label="Fechar painel"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Cards */}
-      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-        {/* Device */}
-        <div>
-          <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-2">
-            Dispositivo
-          </p>
-          {cluster.device_split ? (
-            <DeviceDonut split={cluster.device_split} />
-          ) : (
-            <p className="text-xs text-fg-3">—</p>
-          )}
-        </div>
-
-        {/* Pico de clique */}
-        <div>
-          <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">
-            Pico de clique
-          </p>
-          <p className="text-sm font-medium text-fg">
-            {m.peak_hour ?? '—'}
-          </p>
-        </div>
-
-        {/* Top categorias */}
-        {cluster.top_categories?.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-2">
-              Top categorias
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {cluster.top_categories.slice(0, 5).map(cat => (
-                <Badge key={cat} size="sm" variant="accent">
-                  {cat}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Faixa de preço */}
-        <div>
-          <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-1">
-            Faixa de preço média
-          </p>
-          <p className="text-sm font-medium text-fg">{priceLabel}</p>
-        </div>
-
-        {/* Métricas rápidas */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-surface-2 rounded-md p-2">
-            <p className="text-xs text-fg-3">CTR</p>
-            <p className="text-sm font-semibold text-fg">
-              {m.ctr ? `${(m.ctr * 100).toFixed(1)}%` : '—'}
-            </p>
-          </div>
-          <div className="bg-surface-2 rounded-md p-2">
-            <p className="text-xs text-fg-3">CVR</p>
-            <p className="text-sm font-semibold text-fg">
-              {m.cvr ? `${(m.cvr * 100).toFixed(1)}%` : '—'}
-            </p>
-          </div>
-        </div>
-
-        {/* Oportunidade */}
-        {opportunityText && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-md p-3">
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1">
-              Oportunidade
-            </p>
-            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-              {opportunityText}
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Bubble Tooltip ─────────────────────────────────────────────────────────────
-
-interface BubbleTooltipProps {
-  active?: boolean
-  payload?: Array<{ payload: BubblePoint }>
-}
-
-function BubbleTooltip({ active, payload }: BubbleTooltipProps) {
+function BubbleTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: BubblePoint }> }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
   return (
     <div className="bg-surface border border-border rounded-md shadow-lg p-3 text-xs">
       <p className="font-semibold text-fg mb-1">{d.label}</p>
       <p className="text-fg-3">Membros: <span className="text-fg font-medium">{d.z}</span></p>
-      <p className="text-fg-3">Freq. cliques/dia: <span className="text-fg font-medium">{d.x.toFixed(1)}</span></p>
-      <p className="text-fg-3">Ticket médio: <span className="text-fg font-medium">
-        {d.y > 0 ? `R$ ${Math.round(d.y)}` : '—'}
-      </span></p>
+      <p className="text-fg-3">Freq/dia: <span className="text-fg font-medium">{d.x.toFixed(1)}</span></p>
+      <p className="text-fg-3">Ticket: <span className="text-fg font-medium">{d.y > 0 ? `R$ ${Math.round(d.y)}` : '--'}</span></p>
     </div>
   )
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Cluster Card ───────────────────────────────────────────────────────────────
 
-interface BubblePoint {
-  x: number
-  y: number
-  z: number
-  label: string
-  id: number
-  colorIdx: number
+function ClusterCard({ cluster, colorIdx }: { cluster: Cluster; colorIdx: number }) {
+  const m = cluster.metrics
+  const members = cluster.members_count ?? cluster.member_channels?.length ?? 0
+  const color = clusterColor(colorIdx)
+
+  const fmtPct = (v?: number) => v != null ? `${(v * 100).toFixed(1)}%` : '--'
+  const fmtTicket = (v?: number) => v != null ? `R$ ${Math.round(v)}` : '--'
+
+  return (
+    <div className={`${sectionCard} flex flex-col gap-3`} style={{ borderTop: `3px solid ${color}` }}>
+      {/* Title row */}
+      <div>
+        <p className="text-sm font-semibold text-fg">{cluster.label}</p>
+        {cluster.description && <p className="text-xs text-fg-3 mt-0.5">{cluster.description}</p>}
+        <p className="text-xs text-fg-3 mt-0.5">{members.toLocaleString('pt-BR')} membros</p>
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: 'CTR', value: fmtPct(m.ctr) },
+          { label: 'CVR', value: fmtPct(m.cvr) },
+          { label: 'Ticket', value: fmtTicket(m.avg_ticket) },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-surface-2 rounded-md p-2 text-center">
+            <p className="text-xs text-fg-3">{label}</p>
+            <p className="text-xs font-semibold text-fg">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Top categories */}
+      {cluster.top_categories?.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {cluster.top_categories.slice(0, 4).map(cat => (
+            <Badge key={cat} size="sm" variant="accent">{cat}</Badge>
+          ))}
+          {cluster.top_brands?.slice(0, 2).map(brand => (
+            <Badge key={brand} size="sm" variant="outline">{brand}</Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Channel chips */}
+      {cluster.member_channels?.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {cluster.member_channels.slice(0, 6).map(cid => (
+            <Link
+              key={cid}
+              to={`/channels/${cid}`}
+              className="text-xs px-1.5 py-0.5 rounded border border-border text-fg-3 hover:text-accent hover:border-accent transition-colors"
+            >
+              #{cid}
+            </Link>
+          ))}
+          {cluster.member_channels.length > 6 && (
+            <span className="text-xs text-fg-3">+{cluster.member_channels.length - 6}</span>
+          )}
+        </div>
+      )}
+
+      {/* Opportunity */}
+      {cluster.opportunity && (
+        <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 p-2.5">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-0.5">Oportunidade</p>
+          <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{cluster.opportunity}</p>
+        </div>
+      )}
+    </div>
+  )
 }
 
-const PERIOD_LABELS: Record<Period, string> = {
-  '7d': '7 dias',
-  '30d': '30 dias',
-  '90d': '90 dias',
-}
+// ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function Clusters() {
   const qc = useQueryClient()
   const [period, setPeriod] = React.useState<Period>('30d')
-  const [selectedId, setSelectedId] = React.useState<number | null>(null)
+  const [search, setSearch] = React.useState('')
+  const [sort, setSort] = React.useState<SortKey>('ctr')
 
   const { data: clusters = [], isLoading } = useQuery<Cluster[]>({
     queryKey: ['clusters', period],
@@ -318,14 +163,12 @@ export default function Clusters() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['clusters'] }),
   })
 
-  useWSEvent('product.new', () => {
-    // silently refetch
-  })
+  useWSEvent('product.new', () => {})
 
   const exportCSV = () => {
     if (!clusters.length) return
     const rows = [
-      ['Label', 'Descrição', 'Membros', 'CTR (%)', 'CVR (%)', 'Ticket Médio', 'Top Categorias'],
+      ['Label', 'Descricao', 'Membros', 'CTR (%)', 'CVR (%)', 'Ticket Medio', 'Top Categorias'],
       ...clusters.map(c => [
         c.label,
         c.description ?? '',
@@ -346,7 +189,29 @@ export default function Clusters() {
     URL.revokeObjectURL(url)
   }
 
-  // Build scatter data — fallback to index-based x/y when fields absent
+  const totalMembers = clusters.reduce(
+    (acc, c) => acc + (c.members_count ?? c.member_channels?.length ?? 0),
+    0,
+  )
+
+  const displayed = React.useMemo(() => {
+    let list = [...clusters]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(c =>
+        c.label.toLowerCase().includes(q) ||
+        c.description?.toLowerCase().includes(q) ||
+        c.top_categories?.some(x => x.toLowerCase().includes(q))
+      )
+    }
+    list.sort((a, b) => {
+      if (sort === 'ctr') return (b.metrics.ctr ?? 0) - (a.metrics.ctr ?? 0)
+      if (sort === 'cvr') return (b.metrics.cvr ?? 0) - (a.metrics.cvr ?? 0)
+      return (b.metrics.avg_ticket ?? 0) - (a.metrics.avg_ticket ?? 0)
+    })
+    return list
+  }, [clusters, search, sort])
+
   const bubbleData: BubblePoint[] = clusters.map((c, idx) => ({
     id: c.id,
     label: c.label,
@@ -356,229 +221,149 @@ export default function Clusters() {
     z: c.members_count ?? c.member_channels?.length ?? 1,
   }))
 
-  const selectedCluster = selectedId !== null
-    ? clusters.find(c => c.id === selectedId) ?? null
-    : null
-  const selectedColorIdx = selectedCluster
-    ? clusters.findIndex(c => c.id === selectedCluster.id)
-    : 0
-
-  const totalMembers = clusters.reduce(
-    (acc, c) => acc + (c.members_count ?? c.member_channels?.length ?? 0),
-    0,
-  )
-
-  const hasData = !isLoading && clusters.length > 0
+  const subtitle = clusters.length > 0
+    ? `${clusters.length} agrupamentos · ${totalMembers.toLocaleString('pt-BR')} membros`
+    : 'Agrupamentos de comportamento similar'
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4 gap-4 flex-wrap">
-        <div>
-          {hasData && (
-            <p className="text-xs text-fg-3">
-              {clusters.length} agrupamentos · {totalMembers.toLocaleString('pt-BR')} membros
-              {clusters[0]?.computed_at && (
-                <> · última análise {new Date(clusters[0].computed_at).toLocaleString('pt-BR')}</>
-              )}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Period filter */}
-          <div className="flex rounded-md border border-border overflow-hidden text-xs">
-            {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 transition-colors ${
-                  period === p
-                    ? 'bg-accent text-white font-medium'
-                    : 'bg-surface text-fg-2 hover:bg-surface-2'
-                }`}
-              >
-                {PERIOD_LABELS[p]}
-              </button>
-            ))}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={exportCSV}
-            disabled={!hasData}
-          >
-            Exportar relatório
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={recompute.isPending}
-            onClick={() => recompute.mutate()}
-          >
-            Recomputar clusters
-          </Button>
-        </div>
-      </div>
-
-      {/* Body */}
-      {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-72 w-full rounded-md" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 rounded-md" />
-            ))}
-          </div>
-        </div>
-      ) : !clusters.length ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-fg font-medium mb-1">Nenhum cluster calculado</p>
-            <p className="text-sm text-fg-3 mb-4">
-              Clique em Recomputar para agrupar canais por comportamento de audiência.
-            </p>
+    <div className={pageContainer}>
+      <PageHeader
+        title="Clusters"
+        subtitle={subtitle}
+        className="mb-4"
+        actions={
+          <>
+            <Button variant="ghost" size="sm" onClick={exportCSV} disabled={!clusters.length}>
+              Exportar
+            </Button>
             <Button
               variant="secondary"
               size="sm"
               loading={recompute.isPending}
               onClick={() => recompute.mutate()}
             >
-              Recomputar agora
+              Recomputar
             </Button>
+          </>
+        }
+      />
+
+      {/* Filter bar */}
+      <div className={`${filterBar} mb-4 -mx-3 sm:-mx-4`}>
+        {/* Search */}
+        <input
+          type="search"
+          placeholder="Buscar cluster..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="h-8 rounded-md border border-border bg-surface px-3 text-sm text-fg placeholder:text-fg-3 focus:outline-none focus:ring-2 focus:ring-accent/40 w-48"
+        />
+
+        {/* Period */}
+        <div className="flex rounded-md border border-border overflow-hidden text-xs">
+          {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 transition-colors ${
+                period === p ? 'bg-accent text-white font-medium' : 'bg-surface text-fg-2 hover:bg-surface-2'
+              }`}
+            >
+              {PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
+        {/* Sort */}
+        <div className="flex items-center gap-1.5 text-xs text-fg-3">
+          <span>Ordenar:</span>
+          {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
+            <button
+              key={k}
+              onClick={() => setSort(k)}
+              className={`px-2 py-1 rounded-md transition-colors ${
+                sort === k ? 'bg-accent text-white' : 'hover:bg-surface-2 text-fg-2'
+              }`}
+            >
+              {SORT_LABELS[k]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-56 w-full rounded-md" />
+          <div className={responsiveGrid}>
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-md" />)}
           </div>
         </div>
+      ) : !clusters.length ? (
+        <EmptyState
+          title="Nenhum cluster calculado"
+          description="Clique em Recomputar para agrupar canais por comportamento de audiência."
+          cta={{ label: 'Recomputar agora', onClick: () => recompute.mutate() }}
+        />
       ) : (
-        <div className={`flex gap-4 flex-1 min-h-0 ${selectedCluster ? 'flex-col lg:flex-row' : 'flex-col'}`}>
-          {/* Left: chart + list */}
-          <div className="flex flex-col gap-4 flex-1 min-w-0">
-            {/* Bubble Chart */}
-            <div className="bg-surface border border-border rounded-md p-4">
-              <div className="flex items-start justify-between mb-1">
-                <div>
-                  <p className="text-sm font-medium text-fg">Mapa de comportamento</p>
-                  <p className="text-xs text-fg-3">grupos plotados por padrão de clique</p>
-                </div>
-                <p className="text-xs text-fg-3 hidden sm:block">
-                  cada bolha = um grupo · tamanho = membros · cor = cluster
-                </p>
+        <div className="space-y-6">
+          {/* Bubble chart */}
+          <div className={sectionCard}>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <p className="text-sm font-medium text-fg">Mapa de comportamento</p>
+                <p className="text-xs text-fg-3">grupos plotados por padrao de clique</p>
               </div>
-
-              <ResponsiveContainer width="100%" height={280}>
-                <ScatterChart margin={{ top: 16, right: 16, bottom: 24, left: 16 }}>
-                  <XAxis
-                    type="number"
-                    dataKey="x"
-                    name="Freq. cliques/dia"
-                    tick={{ fontSize: 11, fill: 'var(--color-fg-3)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    label={{
-                      value: 'frequência de cliques / dia →',
-                      position: 'insideBottom',
-                      offset: -12,
-                      style: { fontSize: 10, fill: 'var(--color-fg-3)' },
-                    }}
-                  />
-                  <YAxis
-                    type="number"
-                    dataKey="y"
-                    name="Ticket médio"
-                    tick={{ fontSize: 11, fill: 'var(--color-fg-3)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={v => v > 0 ? `R$${v}` : ''}
-                    label={{
-                      value: '↑ ticket médio (R$)',
-                      angle: -90,
-                      position: 'insideLeft',
-                      offset: 10,
-                      style: { fontSize: 10, fill: 'var(--color-fg-3)' },
-                    }}
-                  />
-                  <ZAxis type="number" dataKey="z" range={[400, 4000]} />
-                  <Tooltip content={<BubbleTooltip />} cursor={false} />
-                  <Scatter
-                    data={bubbleData}
-                    onClick={(d) => {
-                      const point = d as unknown as BubblePoint
-                      setSelectedId(point.id === selectedId ? null : point.id)
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {bubbleData.map(entry => (
-                      <Cell
-                        key={entry.id}
-                        fill={clusterColor(entry.colorIdx)}
-                        fillOpacity={
-                          selectedId === null || selectedId === entry.id ? 0.8 : 0.25
-                        }
-                        stroke={selectedId === entry.id ? 'var(--color-fg)' : 'transparent'}
-                        strokeWidth={2}
-                      />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
+              <p className="text-xs text-fg-3 hidden sm:block">bolha = grupo · tamanho = membros · cor = cluster</p>
             </div>
-
-            {/* Cluster List */}
-            <div className="bg-surface border border-border rounded-md overflow-hidden">
-              <div className="px-4 py-2 border-b border-border">
-                <p className="text-sm font-medium text-fg">Clusters detectados</p>
-              </div>
-              <div className="divide-y divide-border">
-                {clusters.map((c, idx) => {
-                  const members = c.members_count ?? c.member_channels?.length ?? 0
-                  const color = clusterColor(idx)
-                  const isSelected = c.id === selectedId
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelectedId(isSelected ? null : c.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${
-                        isSelected ? 'bg-surface-2' : ''
-                      }`}
-                    >
-                      <span
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-fg truncate">{c.label}</p>
-                        <p className="text-xs text-fg-3">
-                          {members.toLocaleString('pt-BR')} membros
-                          {c.metrics.ctr ? ` · CTR ${(c.metrics.ctr * 100).toFixed(1)}%` : ''}
-                        </p>
-                      </div>
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                        className="text-fg-3 flex-shrink-0"
-                      >
-                        <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <ScatterChart margin={{ top: 12, right: 12, bottom: 20, left: 12 }}>
+                <XAxis
+                  type="number"
+                  dataKey="x"
+                  name="Freq. cliques/dia"
+                  tick={{ fontSize: 11, fill: 'var(--color-fg-3)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  label={{ value: 'frequencia de cliques / dia', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: 'var(--color-fg-3)' } }}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="y"
+                  name="Ticket medio"
+                  tick={{ fontSize: 11, fill: 'var(--color-fg-3)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={v => v > 0 ? `R$${v}` : ''}
+                  label={{ value: 'ticket medio (R$)', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 10, fill: 'var(--color-fg-3)' } }}
+                />
+                <ZAxis type="number" dataKey="z" range={[300, 3000]} />
+                <Tooltip content={<BubbleTooltip />} cursor={false} />
+                <Scatter data={bubbleData}>
+                  {bubbleData.map(entry => (
+                    <Cell
+                      key={entry.id}
+                      fill={clusterColor(entry.colorIdx)}
+                      fillOpacity={0.75}
+                    />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
           </div>
 
-          {/* Right: Detail Panel */}
-          {selectedCluster && (
-            <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-surface border border-border rounded-md overflow-hidden flex flex-col">
-              <DetailPanel
-                cluster={selectedCluster}
-                colorIdx={selectedColorIdx}
-                onClose={() => setSelectedId(null)}
+          {/* Cluster grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {displayed.map((c, idx) => (
+              <ClusterCard
+                key={c.id}
+                cluster={c}
+                colorIdx={clusters.findIndex(x => x.id === c.id)}
               />
-            </div>
-          )}
+            ))}
+            {displayed.length === 0 && (
+              <p className="col-span-full text-sm text-fg-3 py-8 text-center">Nenhum cluster encontrado para "{search}"</p>
+            )}
+          </div>
         </div>
       )}
     </div>

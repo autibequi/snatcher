@@ -1,9 +1,31 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Skeleton, EmptyState, Tabs } from '../components/ui'
+import {
+  Badge,
+  Button,
+  Input,
+  Skeleton,
+  EmptyState,
+  Tabs,
+  Modal,
+  PageHeader,
+  PlatformPill,
+} from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
+import {
+  sectionCard,
+  sectionHeader,
+  sectionTitle,
+  sectionSubtitle,
+  pageContainer,
+  responsiveGrid,
+  formLabel,
+  formGroup,
+} from '../lib/uiTokens'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface WAAccount {
   id: number
@@ -28,15 +50,15 @@ interface TGAccount {
 }
 
 interface QRData {
-  qr_code?: string
+  state?: string
   base64?: string
+  message?: string
 }
 
 interface StatusData {
   status: string
 }
 
-/** Limites globais de envio (mesmos campos que appconfig / Settings antes da mudança). */
 interface AccountsAntiBanConfig {
   interval_between_groups?: number
   interval_between_channels?: number
@@ -44,6 +66,25 @@ interface AccountsAntiBanConfig {
   rotate_accounts?: boolean
   [key: string]: unknown
 }
+
+// ── Status helpers ─────────────────────────────────────────────────────────────
+
+const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
+  connected: 'success',
+  qr_pending: 'warning',
+  scanning: 'warning',
+  disconnected: 'default',
+  stopped: 'default',
+  banned: 'danger',
+}
+
+const evoStatusMap: Record<string, string> = {
+  WORKING: 'connected',
+  SCAN_QR_CODE: 'scanning',
+  STOPPED: 'disconnected',
+}
+
+// ── Anti-ban panel ─────────────────────────────────────────────────────────────
 
 function AccountsAntiBanPanel() {
   const qc = useQueryClient()
@@ -64,25 +105,26 @@ function AccountsAntiBanPanel() {
   })
 
   const merged: AccountsAntiBanConfig = { ...config, ...localConfig }
-  const updateField = (key: keyof AccountsAntiBanConfig, value: unknown) => {
+  const updateField = (key: keyof AccountsAntiBanConfig, value: unknown) =>
     setLocalConfig(prev => ({ ...prev, [key]: value }))
-  }
 
   return (
-    <div className="bg-surface border border-border rounded-lg p-5 space-y-4 mb-6 max-w-4xl">
-      <div>
-        <p className="text-sm font-semibold text-fg">Anti-ban</p>
-        <p className="text-xs text-fg-3 mt-0.5">
-          Limites globais para WhatsApp/Telegram — ritmo entre grupos/canais, teto diário por conta e rotação.
-        </p>
+    <div className={`${sectionCard} mb-6 max-w-4xl`}>
+      <div className={sectionHeader}>
+        <div>
+          <p className={sectionTitle}>Anti-ban</p>
+          <p className={sectionSubtitle}>
+            Limites globais para WhatsApp/Telegram — ritmo entre grupos/canais, teto diario por conta e rotacao.
+          </p>
+        </div>
       </div>
 
       {isLoading && !config ? (
         <Skeleton variant="card" className="h-24" />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Intervalo entre grupos (s)</label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className={formGroup}>
+            <label className={formLabel}>Intervalo entre grupos (s)</label>
             <input
               type="number"
               min={0}
@@ -93,8 +135,8 @@ function AccountsAntiBanPanel() {
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Intervalo entre canais (s)</label>
+          <div className={formGroup}>
+            <label className={formLabel}>Intervalo entre canais (s)</label>
             <input
               type="number"
               min={0}
@@ -105,8 +147,8 @@ function AccountsAntiBanPanel() {
               className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
             />
           </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Limite diário por conta</label>
+          <div className={formGroup}>
+            <label className={formLabel}>Limite diario por conta</label>
             <input
               type="number"
               min={0}
@@ -132,7 +174,7 @@ function AccountsAntiBanPanel() {
         </div>
       )}
 
-      <div className="flex items-center gap-3 pt-1">
+      <div className="flex items-center gap-3">
         <Button
           variant="secondary"
           size="sm"
@@ -149,100 +191,8 @@ function AccountsAntiBanPanel() {
   )
 }
 
-const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
-  connected: 'success',
-  qr_pending: 'warning',
-  scanning: 'warning',   // SCAN_QR_CODE → aguardando scan
-  disconnected: 'default',
-  stopped: 'default',
-  banned: 'danger',
-}
+// ── QR Code modal ─────────────────────────────────────────────────────────────
 
-// ── Modal primitivo (sem dependência externa) ──────────────────────────────────
-function Modal({
-  open,
-  onClose,
-  title,
-  children,
-  maxWidth = 'max-w-md',
-}: {
-  open: boolean
-  onClose: () => void
-  title: string
-  children: React.ReactNode
-  maxWidth?: string
-}) {
-  const overlayRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    if (open) document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
-
-  if (!open) return null
-
-  return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={e => { if (e.target === overlayRef.current) onClose() }}
-    >
-      <div className={`bg-surface border border-border rounded-lg shadow-xl w-full ${maxWidth} flex flex-col max-h-[90vh]`}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-fg-3 hover:text-fg transition-colors text-lg leading-none"
-          >
-            ×
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {children}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Modal de confirmação de exclusão ──────────────────────────────────────────
-function ConfirmDeleteModal({
-  open,
-  onClose,
-  onConfirm,
-  accountName,
-  loading,
-}: {
-  open: boolean
-  onClose: () => void
-  onConfirm: () => void
-  accountName: string
-  loading: boolean
-}) {
-  return (
-    <Modal open={open} onClose={onClose} title="Confirmar exclusão" maxWidth="max-w-sm">
-      <div className="p-5">
-        <p className="text-sm text-fg-2 mb-4">
-          Tem certeza que deseja excluir a conta <strong className="text-fg">{accountName}</strong>? Esta ação não pode ser desfeita.
-        </p>
-        <div className="flex gap-2 justify-end">
-          <Button variant="secondary" size="sm" onClick={onClose} disabled={loading}>
-            Cancelar
-          </Button>
-          <Button variant="danger" size="sm" onClick={onConfirm} loading={loading}>
-            Excluir
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// ── Modal de QR Code ──────────────────────────────────────────────────────────
 function QRModal({
   accountId,
   onClose,
@@ -250,14 +200,14 @@ function QRModal({
   accountId: number | null
   onClose: () => void
 }) {
-  const { data: qrData, refetch: refetchQR } = useQuery({
+  const { data: qrData, refetch: refetchQR } = useQuery<QRData>({
     queryKey: ['accounts', accountId, 'qr'],
     queryFn: () => apiClient.get(`/api/accounts/wa/${accountId}/qr`).then(r => r.data),
     refetchInterval: (data: any) => {
       if (!data) return 3000
-      if (data?.state === 'qr') return 22000     // QR expira em ~25s
-      if (data?.state === 'creating') return 2500 // aguardar criação
-      return 4000                                 // waiting / error
+      if (data?.state === 'qr') return 22000
+      if (data?.state === 'creating') return 2500
+      return 4000
     },
     enabled: !!accountId,
   })
@@ -279,18 +229,18 @@ function QRModal({
   }, [connected, onClose])
 
   return (
-    <Modal open={!!accountId} onClose={onClose} title="Conectar via QR Code" maxWidth="max-w-sm">
-      <div className="p-5 flex flex-col items-center gap-4">
+    <Modal open={!!accountId} onClose={onClose} title="Conectar via QR Code" panelClassName="max-w-sm">
+      <div className="flex flex-col items-center gap-4">
         {connected ? (
           <div className="flex flex-col items-center gap-2 py-6">
-            <span className="text-4xl">✓</span>
+            <span className="text-4xl text-success">&#10003;</span>
             <p className="text-sm font-medium text-success">Conta conectada!</p>
           </div>
         ) : (
           <>
             <p className="text-xs text-fg-3 text-center">
               Escaneie o QR Code com o WhatsApp para conectar a conta.
-              Atualizando automaticamente…
+              Atualizando automaticamente...
             </p>
 
             <div className="w-72 h-72 rounded-md border border-border bg-surface flex items-center justify-center overflow-hidden">
@@ -299,10 +249,13 @@ function QRModal({
               ) : (
                 <div className="flex flex-col items-center gap-2 text-center px-4">
                   <p className="text-sm text-fg-2">
-                    {qrData?.state === 'creating' ? '⏳ Criando instância...' :
-                     qrData?.state === 'error'    ? '❌ Erro na Evolution API' :
-                     qrData?.state === 'not_configured' ? '⚙️ Evolution não configurada' :
-                     '⏳ Aguardando QR code...'}
+                    {qrData?.state === 'creating'
+                      ? 'Criando instancia...'
+                      : qrData?.state === 'error'
+                      ? 'Erro na Evolution API'
+                      : qrData?.state === 'not_configured'
+                      ? 'Evolution nao configurada'
+                      : 'Aguardando QR code...'}
                   </p>
                   {qrData?.message && (
                     <p className="text-xs text-fg-3 break-all">{qrData.message}</p>
@@ -319,9 +272,9 @@ function QRModal({
             </div>
 
             <p className="text-xs text-fg-3">
-              Status atual:{' '}
+              Status:{' '}
               <Badge variant={statusVariant[statusData?.status ?? ''] ?? 'default'} size="sm">
-                {statusData?.status ?? 'aguardando…'}
+                {statusData?.status ?? 'aguardando...'}
               </Badge>
             </p>
           </>
@@ -334,7 +287,42 @@ function QRModal({
   )
 }
 
-// ── Modal de criação de conta ─────────────────────────────────────────────────
+// ── Confirm delete modal ───────────────────────────────────────────────────────
+
+function ConfirmDeleteModal({
+  open,
+  onClose,
+  onConfirm,
+  accountName,
+  loading,
+}: {
+  open: boolean
+  onClose: () => void
+  onConfirm: () => void
+  accountName: string
+  loading: boolean
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Confirmar exclusao" panelClassName="max-w-sm">
+      <p className="text-sm text-fg-2 mb-4">
+        Tem certeza que deseja excluir a conta{' '}
+        <strong className="text-fg">{accountName}</strong>?{' '}
+        Esta acao nao pode ser desfeita.
+      </p>
+      <div className="flex gap-2 justify-end">
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={loading}>
+          Cancelar
+        </Button>
+        <Button variant="danger" size="sm" onClick={onConfirm} loading={loading}>
+          Excluir
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Create account modal ──────────────────────────────────────────────────────
+
 interface CreateForm {
   name: string
   provider: string
@@ -378,10 +366,8 @@ function CreateAccountModal({
 
   const validate = (): boolean => {
     const errs: Partial<Record<keyof CreateForm, string>> = {}
-    if (!form.name.trim()) errs.name = 'Campo obrigatório'
-    if (tab === 'tg') {
-      if (!form.bot_token.trim()) errs.bot_token = 'Campo obrigatório'
-    }
+    if (!form.name.trim()) errs.name = 'Campo obrigatorio'
+    if (tab === 'tg' && !form.bot_token.trim()) errs.bot_token = 'Campo obrigatorio'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -398,15 +384,14 @@ function CreateAccountModal({
           role: form.role,
           daily_limit: Number(form.daily_limit),
         }).then(r => r.data)
-      } else {
-        return apiClient.post('/api/accounts/tg', {
-          name: form.name,
-          bot_token: form.bot_token,
-          bot_username: form.bot_username,
-          role: form.role,
-          daily_limit: Number(form.daily_limit),
-        }).then(r => r.data)
       }
+      return apiClient.post('/api/accounts/tg', {
+        name: form.name,
+        bot_token: form.bot_token,
+        bot_username: form.bot_username,
+        role: form.role,
+        daily_limit: Number(form.daily_limit),
+      }).then(r => r.data)
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
@@ -435,117 +420,117 @@ function CreateAccountModal({
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="Adicionar conta" maxWidth="max-w-lg">
-      <form onSubmit={handleSubmit}>
-        <div className="px-5 pt-4">
-          <Tabs
-            tabs={[
-              { id: 'wa', label: 'WhatsApp' },
-              { id: 'tg', label: 'Telegram' },
-            ]}
-            active={tab}
-            onChange={id => { setTab(id as 'wa' | 'tg'); setErrors({}) }}
-            className="mb-4"
-          />
-        </div>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Conectar conta"
+      panelClassName="max-w-lg"
+      footer={
+        <>
+          <Button type="button" variant="secondary" size="sm" onClick={handleClose} disabled={createMut.isPending}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="create-account-form" variant="primary" size="sm" loading={createMut.isPending}>
+            Criar conta
+          </Button>
+        </>
+      }
+    >
+      <form id="create-account-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <Tabs
+          tabs={[
+            { id: 'wa', label: 'WhatsApp' },
+            { id: 'tg', label: 'Telegram' },
+          ]}
+          active={tab}
+          onChange={id => { setTab(id as 'wa' | 'tg'); setErrors({}) }}
+        />
 
-        <div className="px-5 pb-4 flex flex-col gap-3">
-          <Input
-            label="Nome da conta"
-            placeholder="Ex: Vendas principal"
-            value={form.name}
-            onChange={e => set('name', e.target.value)}
-            error={errors.name}
-          />
+        <Input
+          label="Nome da conta"
+          placeholder="Ex: Vendas principal"
+          value={form.name}
+          onChange={e => set('name', e.target.value)}
+          error={errors.name}
+        />
 
-          {tab === 'wa' ? (
-            <>
-              <p className="text-xs text-fg-3 bg-surface-2 rounded-md px-3 py-2">
-                A conexão com o WhatsApp usa a Evolution API configurada no servidor. Preencha apenas o nome e clique em "Criar conta" — o QR Code aparecerá a seguir.
-              </p>
-            </>
-          ) : (
-            <>
-              <Input
-                label="Bot Token"
-                placeholder="123456:ABC-DEF..."
-                type="password"
-                value={form.bot_token}
-                onChange={e => set('bot_token', e.target.value)}
-                error={errors.bot_token}
-              />
-              <Input
-                label="Bot Username (opcional)"
-                placeholder="@meu_bot"
-                value={form.bot_username}
-                onChange={e => set('bot_username', e.target.value)}
-              />
-            </>
-          )}
+        {tab === 'wa' ? (
+          <p className="text-xs text-fg-3 bg-surface-2 rounded-md px-3 py-2">
+            A conexao com o WhatsApp usa a Evolution API configurada no servidor.
+            Preencha apenas o nome e clique em Criar conta. O QR Code aparecera a seguir.
+          </p>
+        ) : (
+          <>
+            <Input
+              label="Bot Token"
+              placeholder="123456:ABC-DEF..."
+              type="password"
+              value={form.bot_token}
+              onChange={e => set('bot_token', e.target.value)}
+              error={errors.bot_token}
+            />
+            <Input
+              label="Bot Username (opcional)"
+              placeholder="@meu_bot"
+              value={form.bot_username}
+              onChange={e => set('bot_username', e.target.value)}
+            />
+          </>
+        )}
 
-          {/* Campos comuns */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-fg-2 block mb-1">Papel</label>
-              <select
-                value={form.role}
-                onChange={e => set('role', e.target.value)}
-                className="w-full h-8 px-2.5 text-sm rounded-md border bg-surface text-fg border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="sender">Sender</option>
-                <option value="reader">Reader</option>
-              </select>
-            </div>
-            <div className="w-32">
-              <Input
-                label="Limite diário"
-                type="number"
-                min={0}
-                value={form.daily_limit}
-                onChange={e => set('daily_limit', Number(e.target.value))}
-              />
-            </div>
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-fg-2 block mb-1">Papel</label>
+            <select
+              value={form.role}
+              onChange={e => set('role', e.target.value)}
+              className="w-full h-8 px-2.5 text-sm rounded-md border bg-surface text-fg border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              <option value="sender">Sender</option>
+              <option value="reader">Reader</option>
+            </select>
           </div>
-
-          {createMut.isError && (
-            <p className="text-xs text-danger">
-              Erro ao criar conta. Verifique os dados e tente novamente.
-            </p>
-          )}
-
-          <div className="flex gap-2 justify-end pt-2 border-t border-border">
-            <Button type="button" variant="secondary" size="sm" onClick={handleClose} disabled={createMut.isPending}>
-              Cancelar
-            </Button>
-            <Button type="submit" variant="primary" size="sm" loading={createMut.isPending}>
-              Criar conta
-            </Button>
+          <div className="w-32">
+            <Input
+              label="Limite diario"
+              type="number"
+              min={0}
+              value={form.daily_limit}
+              onChange={e => set('daily_limit', Number(e.target.value))}
+            />
           </div>
         </div>
+
+        {createMut.isError && (
+          <p className="text-xs text-danger">
+            Erro ao criar conta. Verifique os dados e tente novamente.
+          </p>
+        )}
       </form>
     </Modal>
   )
 }
 
-// ── AccountCard ───────────────────────────────────────────────────────────────
+// ── Account card ──────────────────────────────────────────────────────────────
+
 function AccountCard({
   account,
   platform,
   onReconnect,
+  onTest,
   onDelete,
 }: {
   account: WAAccount | TGAccount
-  platform: string
+  platform: 'wa' | 'tg'
   onReconnect?: () => void
+  onTest?: () => void
   onDelete: () => void
 }) {
   const navigate = useNavigate()
   const wa = account as WAAccount
-  const isWA = platform === 'WhatsApp'
+  const isWA = platform === 'wa'
 
-  // Polling de status em tempo real via Evolution API (apenas WA).
-  // Intervalo maior que o TTL do cache backend (5s) para evitar piling up de requests.
-  const { data: liveStatus } = useQuery<{ status: string }>({
+  const { data: liveStatus } = useQuery<StatusData>({
     queryKey: ['wa-live-status', account.id],
     queryFn: () => apiClient.get(`/api/accounts/wa/${account.id}/status`).then(r => r.data),
     refetchInterval: 15_000,
@@ -553,73 +538,95 @@ function AccountCard({
     staleTime: 10_000,
   })
 
-  const evoStatusMap: Record<string, string> = {
-    WORKING: 'connected',
-    SCAN_QR_CODE: 'scanning',
-    STOPPED: 'disconnected',
-  }
   const displayStatus = isWA && liveStatus?.status
     ? (evoStatusMap[liveStatus.status] ?? liveStatus.status.toLowerCase())
     : (wa.status ?? 'ativo')
 
+  const tg = account as TGAccount
+  const subline = isWA
+    ? (wa.base_url?.Valid ? wa.base_url.String : null)
+    : (tg.bot_username?.Valid ? tg.bot_username.String : null)
+
   const throughputPct =
     account.daily_limit > 0 ? account.sent_today / account.daily_limit : 0
   const throughputColor =
-    throughputPct > 0.9
-      ? 'bg-danger'
-      : throughputPct > 0.7
-      ? 'bg-warning'
-      : 'bg-success'
+    throughputPct > 0.9 ? 'bg-danger' : throughputPct > 0.7 ? 'bg-warning' : 'bg-success'
 
   return (
-    <div className="bg-surface border border-border rounded-md p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <p className="font-medium text-fg">{account.name}</p>
-          <p className="text-xs text-fg-3">
-            {platform} &middot; {account.role}
-          </p>
+    <div className={`${sectionCard} flex flex-col gap-3`}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <PlatformPill platform={platform} size="xs" />
+            <p className="font-medium text-fg text-sm truncate">{account.name}</p>
+          </div>
+          {subline && (
+            <p className="text-xs text-fg-3 mt-0.5 truncate">{subline}</p>
+          )}
         </div>
         <Badge variant={statusVariant[displayStatus] ?? 'default'} size="sm">
           {displayStatus}
         </Badge>
       </div>
 
-      {account.daily_limit > 0 && (
-        <div className="mb-3">
-          <div className="flex justify-between text-xs text-fg-2 mb-1">
-            <span>Enviados hoje</span>
-            <span>
-              {account.sent_today} / {account.daily_limit}
-            </span>
+      {/* Body */}
+      <div className="text-xs text-fg-3 space-y-0.5">
+        <p>
+          Papel: <span className="text-fg-2 font-medium">{account.role}</span>
+        </p>
+        {account.daily_limit > 0 && (
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Enviados hoje</span>
+              <span className="text-fg-2 font-medium">
+                {account.sent_today} / {account.daily_limit}
+              </span>
+            </div>
+            <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${throughputColor} transition-all`}
+                style={{ width: `${Math.min(100, throughputPct * 100)}%` }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full ${throughputColor} transition-all`}
-              style={{ width: `${Math.min(100, throughputPct * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="flex gap-2">
+      {/* Footer — acoes diretas */}
+      <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border">
         {onReconnect && (
           <Button variant="ghost" size="sm" onClick={onReconnect}>
             Reconectar
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={() => navigate('/logs')}>
+        {onTest && (
+          <Button variant="ghost" size="sm" onClick={onTest}>
+            Testar
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(`/activity?account=${account.id}`)}
+        >
           Logs
         </Button>
-        <Button variant="ghost" size="sm" className="text-danger hover:text-danger ml-auto" onClick={onDelete}>
-          Excluir
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-danger hover:text-danger ml-auto"
+          onClick={onDelete}
+        >
+          Remover
         </Button>
       </div>
     </div>
   )
 }
 
-// ── Página principal ──────────────────────────────────────────────────────────
+// ── Pagina principal ──────────────────────────────────────────────────────────
+
 export default function Accounts() {
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
@@ -633,14 +640,12 @@ export default function Accounts() {
 
   const { data: waAccounts = [], isLoading: waLoading } = useQuery<WAAccount[]>({
     queryKey: ['accounts', 'wa'],
-    queryFn: () =>
-      apiClient.get('/api/accounts/wa').then(r => (Array.isArray(r.data) ? r.data : [])),
+    queryFn: () => apiClient.get('/api/accounts/wa').then(r => (Array.isArray(r.data) ? r.data : [])),
   })
 
   const { data: tgAccounts = [], isLoading: tgLoading } = useQuery<TGAccount[]>({
     queryKey: ['accounts', 'tg'],
-    queryFn: () =>
-      apiClient.get('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data : [])),
+    queryFn: () => apiClient.get('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data : [])),
   })
 
   const deleteMut = useMutation({
@@ -674,7 +679,14 @@ export default function Accounts() {
     setQrAccountId(id)
   }
 
-  // Tabs with counts
+  const handleTest = (id: number, platform: 'wa' | 'tg') => {
+    const path =
+      platform === 'wa'
+        ? `/api/accounts/wa/${id}/test`
+        : `/api/accounts/tg/${id}/test`
+    apiClient.post(path).catch(() => {})
+  }
+
   const platformTabs = [
     { id: 'all', label: `Todas (${waAccounts.length + tgAccounts.length})` },
     { id: 'wa', label: `WhatsApp (${waAccounts.length})` },
@@ -686,16 +698,20 @@ export default function Accounts() {
   const hasAny = waAccounts.length > 0 || tgAccounts.length > 0
 
   return (
-    <div className="p-6">
+    <div className={pageContainer}>
+      <PageHeader
+        title="Contas conectadas"
+        subtitle="WhatsApp e Telegram prontos para enviar mensagens."
+        className="mb-6"
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+            Conectar conta
+          </Button>
+        }
+      />
+
       <AccountsAntiBanPanel />
 
-      <div className="flex items-center justify-end mb-4">
-        <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
-          + Adicionar conta
-        </Button>
-      </div>
-
-      {/* Tabs de plataforma */}
       <Tabs
         tabs={platformTabs}
         active={platformTab}
@@ -704,25 +720,26 @@ export default function Accounts() {
       />
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className={responsiveGrid}>
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} variant="card" className="h-32" />
+            <Skeleton key={i} variant="card" className="h-40" />
           ))}
         </div>
       ) : !hasAny ? (
         <EmptyState
           title="Nenhuma conta"
-          description="Conecte uma conta WhatsApp ou Telegram para enviar promacoes."
-          cta={{ label: 'Adicionar conta', onClick: () => setShowCreate(true) }}
+          description="Conecte uma conta WhatsApp ou Telegram para comecar a enviar mensagens."
+          cta={{ label: 'Conectar conta', onClick: () => setShowCreate(true) }}
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className={responsiveGrid}>
           {visibleWA.map(a => (
             <AccountCard
               key={`wa-${a.id}`}
               account={a}
-              platform="WhatsApp"
+              platform="wa"
               onReconnect={() => handleReconnect(a.id)}
+              onTest={() => handleTest(a.id, 'wa')}
               onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'wa' })}
             />
           ))}
@@ -730,7 +747,8 @@ export default function Accounts() {
             <AccountCard
               key={`tg-${a.id}`}
               account={a}
-              platform="Telegram"
+              platform="tg"
+              onTest={() => handleTest(a.id, 'tg')}
               onDelete={() => setDeleteTarget({ id: a.id, name: a.name, platform: 'tg' })}
             />
           ))}

@@ -6,7 +6,9 @@ import {
 } from 'recharts'
 import { apiClient } from '../lib/apiClient'
 import { pushAnalyticsSummary } from '../lib/gtm'
-import { Skeleton } from '../components/ui'
+import { KpiCard, PageHeader, SegmentedControl, Skeleton } from '../components/ui'
+import type { SegmentedOption } from '../components/ui'
+import { pageContainer, responsiveKpiGrid, sectionCard } from '../lib/uiTokens'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -20,37 +22,37 @@ interface AnalyticsSummary {
   daily: Array<{ date: string; clicks: number }>
   by_source: Array<{ source: string; clicks: number }>
   top_products: Array<{ id: number; title: string; source: string; price: number; clicks: number }>
-  /** Cliques com channel_id preenchido */
   by_channel?: Array<{ id: number; name: string; clicks: number }>
-  /** Atribuição 1/N quando um dispatch tem N grupos-alvo */
   by_group?: Array<{ id: number; name: string; clicks: number }>
-  /** Taxonomia primary_category dos produtos clicados */
   by_category?: Array<{ id: number; name: string; slug: string; clicks: number }>
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const PERIOD_OPTIONS = [
-  { label: '7 dias',   value: 7 },
-  { label: '30 dias',  value: 30 },
-  { label: '90 dias',  value: 90 },
-  { label: '1 ano',    value: 365 },
+type PeriodValue = '7' | '30' | '90' | '365'
+
+const PERIOD_OPTIONS: SegmentedOption<PeriodValue>[] = [
+  { value: '7',   label: '7 dias' },
+  { value: '30',  label: '30 dias' },
+  { value: '90',  label: '90 dias' },
+  { value: '365', label: '1 ano' },
 ]
 
 const SOURCE_COLORS: Record<string, string> = {
-  amz:         '#f97316',
-  amazon:      '#f97316',
-  ml:          '#eab308',
-  mercadolivre:'#eab308',
-  magalu:      '#3b82f6',
-  shopee:      '#ea580c',
-  aliexpress:  '#ef4444',
-  casasbahia:  '#f43f5e',
-  kabum:       '#f59e0b',
-  americanas:  '#dc2626',
+  amz:          '#f97316',
+  amazon:       '#f97316',
+  ml:           '#eab308',
+  mercadolivre: '#eab308',
+  magalu:       '#3b82f6',
+  shopee:       '#ea580c',
+  aliexpress:   '#ef4444',
+  casasbahia:   '#f43f5e',
+  kabum:        '#f59e0b',
+  americanas:   '#dc2626',
 }
 
-const FALLBACK_COLORS = ['#6366f1','#8b5cf6','#ec4899','#14b8a6','#22c55e']
+const FALLBACK_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#22c55e']
+
 function sourceColor(src: string, idx: number): string {
   return SOURCE_COLORS[src?.toLowerCase()] ?? FALLBACK_COLORS[idx % FALLBACK_COLORS.length]
 }
@@ -59,13 +61,24 @@ function fmt(n: number): string {
   return n.toLocaleString('pt-BR')
 }
 
-/** Cliques podem ser fracionários (grupos com peso por dispatch). */
 function fmtClickCount(n: number): string {
   if (Number.isInteger(n)) return fmt(n)
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
 
 // ── Sub-componentes ──────────────────────────────────────────────────────────
+
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-surface border border-border rounded-md px-3 py-2 text-xs shadow-lg">
+      <p className="text-fg-2 mb-1">{label}</p>
+      {payload.map((p, i) => (
+        <p key={i} className="text-fg font-semibold">{fmt(p.value)} cliques</p>
+      ))}
+    </div>
+  )
+}
 
 function ClickRankList({
   title,
@@ -78,69 +91,41 @@ function ClickRankList({
   rows: Array<{ name: string; clicks: number }>
   fmtValue?: (n: number) => string
 }) {
-  if (!rows?.length) {
-    return (
-      <div className="bg-surface border border-border rounded-md p-4">
-        <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1">{title}</p>
-        {subtitle && <p className="text-[11px] text-fg-3 mb-3">{subtitle}</p>}
-        <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
-      </div>
-    )
-  }
   const max = rows[0]?.clicks || 1
   return (
-    <div className="bg-surface border border-border rounded-md p-4">
+    <div className={sectionCard}>
       <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1">{title}</p>
       {subtitle && <p className="text-[11px] text-fg-3 mb-3">{subtitle}</p>}
-      <div className="space-y-2">
-        {rows.map((row, i) => {
-          const pct = Math.round((row.clicks / max) * 100)
-          return (
-            <div key={`${row.name}-${i}`} className="flex items-center gap-3">
-              <span className="text-xs text-fg-3 w-4 shrink-0 text-right">{i + 1}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-fg truncate" title={row.name}>{row.name}</p>
-                <div className="h-1 bg-surface-2 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+      {!rows?.length ? (
+        <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row, i) => {
+            const pct = Math.round((row.clicks / max) * 100)
+            return (
+              <div key={`${row.name}-${i}`} className="flex items-center gap-3">
+                <span className="text-xs text-fg-3 w-4 shrink-0 text-right">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-fg truncate" title={row.name}>{row.name}</p>
+                  <div className="h-1 bg-surface-2 rounded-full mt-1 overflow-hidden">
+                    <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
+                <span className="text-xs font-semibold text-fg shrink-0">{fmtValue(row.clicks)}</span>
               </div>
-              <div className="text-right shrink-0">
-                <span className="text-xs font-semibold text-fg">{fmtValue(row.clicks)}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
-function KpiCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div className="bg-surface border border-border rounded-md p-4">
-      <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-bold text-fg">{typeof value === 'number' ? fmt(value) : value}</p>
-      {sub && <p className="text-xs text-fg-3 mt-1">{sub}</p>}
-    </div>
-  )
-}
-
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-surface border border-border rounded-md px-3 py-2 text-xs shadow-lg">
-      <p className="text-fg-2 mb-1">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} className="text-fg font-semibold">{fmt(p.value)} cliques</p>
-      ))}
-    </div>
-  )
-}
-
-// ── Página principal ─────────────────────────────────────────────────────────
+// ── Pagina principal ──────────────────────────────────────────────────────────
 
 export default function Analytics() {
-  const [days, setDays] = React.useState(30)
+  const [period, setPeriod] = React.useState<PeriodValue>('30')
+  const days = Number(period)
 
   const { data, isLoading } = useQuery<AnalyticsSummary>({
     queryKey: ['analytics-summary', days],
@@ -167,73 +152,86 @@ export default function Analytics() {
   }, [isLoading, data, days])
 
   return (
-    <div className="px-4 py-4 sm:p-6 space-y-6">
-      {/* Header + filtro de período */}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border">
-          {PERIOD_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setDays(opt.value)}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                days === opt.value
-                  ? 'bg-accent text-white shadow-sm'
-                  : 'text-fg-2 hover:text-fg'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className={pageContainer + ' space-y-6'}>
+      <PageHeader
+        title="Analytics"
+        subtitle={'Metricas de cliques e desempenho dos ultimos ' + days + ' dias'}
+        actions={
+          <SegmentedControl
+            value={period}
+            onChange={setPeriod}
+            options={PERIOD_OPTIONS}
+          />
+        }
+      />
 
       {/* KPIs */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+        <div className={responsiveKpiGrid}>
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Cliques totais" value={data?.total ?? 0} sub={`últimos ${days} dias`} />
-          <KpiCard label="Cliques únicos" value={data?.unique ?? 0} sub="por IP" />
-          <KpiCard label="CTR estimado" value={ctr} sub={`${fmt(data?.messages_sent ?? 0)} disparos`} />
-          <KpiCard label="Produtos no catálogo" value={data?.catalog_total ?? 0} sub={`+${data?.catalog_new ?? 0} novos`} />
+        <div className={responsiveKpiGrid}>
+          <KpiCard
+            label="Cliques totais"
+            value={fmt(data?.total ?? 0)}
+            subtitle={'ultimos ' + days + ' dias'}
+          />
+          <KpiCard
+            label="Cliques unicos"
+            value={fmt(data?.unique ?? 0)}
+            subtitle="por IP"
+          />
+          <KpiCard
+            label="CTR estimado"
+            value={ctr}
+            subtitle={fmt(data?.messages_sent ?? 0) + ' disparos'}
+          />
+          <KpiCard
+            label="Produtos no catalogo"
+            value={fmt(data?.catalog_total ?? 0)}
+            subtitle={'+' + (data?.catalog_new ?? 0) + ' novos'}
+          />
         </div>
       )}
 
-      {/* Gráfico diário */}
-      <div className="bg-surface border border-border rounded-md p-4">
+      {/* Grafico diario */}
+      <div className={sectionCard}>
         <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-4">
-          Cliques por dia — últimos {days} dias
+          Cliques por dia — ultimos {days} dias
         </p>
         {isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : !data?.daily?.length ? (
-          <p className="text-sm text-fg-3 text-center py-10">Sem dados no período</p>
+          <p className="text-sm text-fg-3 text-center py-10">Sem dados no periodo</p>
         ) : (
-          <div className="h-[160px] sm:h-[200px] w-full min-h-[140px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.daily} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border,#e5e7eb)" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: 'var(--color-fg-3,#9ca3af)' }}
-                tickFormatter={v => v.slice(5)}
-                axisLine={false} tickLine={false}
-              />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--color-fg-3,#9ca3af)' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="clicks" name="Cliques" fill="var(--color-accent,#6366f1)" radius={[3,3,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[160px] sm:h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.daily} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border,#e5e7eb)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: 'var(--color-fg-3,#9ca3af)' }}
+                  tickFormatter={v => v.slice(5)}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: 'var(--color-fg-3,#9ca3af)' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="clicks" name="Cliques" fill="var(--color-accent,#6366f1)" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </div>
 
+      {/* Pizza por fonte + Top produtos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Pizza por fonte */}
-        <div className="bg-surface border border-border rounded-md p-4">
+        <div className={sectionCard}>
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-4">Cliques por fonte</p>
           {isLoading ? (
             <Skeleton className="h-48 w-full" />
@@ -241,70 +239,65 @@ export default function Analytics() {
             <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
           ) : (
             <div className="h-[180px] sm:h-[200px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.by_source}
-                  dataKey="clicks"
-                  nameKey="source"
-                  cx="50%" cy="50%"
-                  outerRadius="75%"
-                  label={({ name, percent }) =>
-                    `${name ?? ''} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {data.by_source.map((entry, i) => (
-                    <Cell key={i} fill={sourceColor(entry.source, i)} />
-                  ))}
-                </Pie>
-                <Legend
-                  formatter={(value) => (
-                    <span className="text-xs text-fg-2">{value}</span>
-                  )}
-                />
-                <Tooltip
-                  formatter={(val) => [fmt(Number(val ?? 0)), 'cliques']}
-                  contentStyle={{
-                    background: 'var(--color-surface,#fff)',
-                    border: '1px solid var(--color-border,#e5e7eb)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={data.by_source}
+                    dataKey="clicks"
+                    nameKey="source"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius="75%"
+                    label={({ name, percent }: { name?: string; percent?: number }) =>
+                      (name ?? '') + ' ' + ((percent ?? 0) * 100).toFixed(0) + '%'
+                    }
+                    labelLine={false}
+                  >
+                    {data.by_source.map((entry, i) => (
+                      <Cell key={i} fill={sourceColor(entry.source, i)} />
+                    ))}
+                  </Pie>
+                  <Legend
+                    formatter={(value: string) => (
+                      <span className="text-xs text-fg-2">{value}</span>
+                    )}
+                  />
+                  <Tooltip
+                    formatter={(val: unknown) => [fmt(Number(val ?? 0)), 'cliques']}
+                    contentStyle={{
+                      background: 'var(--color-surface,#fff)',
+                      border: '1px solid var(--color-border,#e5e7eb)',
+                      borderRadius: 6,
+                      fontSize: 12,
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
 
-        {/* Top produtos */}
-        <div className="bg-surface border border-border rounded-md p-4">
+        <div className={sectionCard}>
           <p className="text-xs text-fg-3 font-medium uppercase tracking-wide mb-3">Top produtos por cliques</p>
           {isLoading ? (
-            <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+            <div className="space-y-2">{[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
           ) : !data?.top_products?.length ? (
             <p className="text-sm text-fg-3 text-center py-10">Sem dados</p>
           ) : (
             <div className="space-y-2">
               {data.top_products.map((p, i) => {
-                const max = data.top_products[0]?.clicks || 1
-                const pct = Math.round((p.clicks / max) * 100)
+                const maxClicks = data.top_products[0]?.clicks || 1
+                const pct = Math.round((p.clicks / maxClicks) * 100)
                 return (
                   <div key={p.id} className="flex items-center gap-3">
                     <span className="text-xs text-fg-3 w-4 shrink-0 text-right">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-fg truncate" title={p.title}>{p.title}</p>
                       <div className="h-1 bg-surface-2 rounded-full mt-1 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-accent"
-                          style={{ width: `${pct}%` }}
-                        />
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xs font-semibold text-fg">{fmt(p.clicks)}</span>
-                    </div>
+                    <span className="text-xs font-semibold text-fg shrink-0">{fmt(p.clicks)}</span>
                   </div>
                 )
               })}
@@ -317,19 +310,19 @@ export default function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <ClickRankList
           title="Cliques por canal"
-          subtitle="Só eventos com canal associado ao shortlink."
-          rows={data?.by_channel ?? []}
+          subtitle="So eventos com canal associado ao shortlink."
+          rows={(data?.by_channel ?? []).map(r => ({ name: r.name, clicks: r.clicks }))}
           fmtValue={fmt}
         />
         <ClickRankList
           title="Cliques por grupo"
           subtitle="Peso 1/N quando o mesmo dispatch vai para N grupos."
-          rows={data?.by_group ?? []}
+          rows={(data?.by_group ?? []).map(r => ({ name: r.name, clicks: r.clicks }))}
         />
         <ClickRankList
           title="Cliques por categoria"
-          subtitle="Categoria primária do produto no catálogo."
-          rows={data?.by_category ?? []}
+          subtitle="Categoria primaria do produto no catalogo."
+          rows={(data?.by_category ?? []).map(r => ({ name: r.name, clicks: r.clicks }))}
           fmtValue={fmt}
         />
       </div>
