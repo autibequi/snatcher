@@ -15,6 +15,8 @@ import (
 )
 
 // RunAdsWorker avalia anúncios recorrentes (schedule_cron) e cria dispatches na fila WA.
+// Não recebe notifier diretamente: a notificação do disparo é emitida pelo
+// dispatch_worker quando o dispatch finaliza (mesmo path do auto-match).
 func RunAdsWorker(ctx context.Context, st store.Store) {
 	select {
 	case <-ctx.Done():

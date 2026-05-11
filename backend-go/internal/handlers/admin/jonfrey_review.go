@@ -123,7 +123,69 @@ func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Requ
 	h.reviewCachedAt = now
 	h.reviewMu.Unlock()
 
+	// Cache miss / regeneração → notifica grupo configurado em Settings.
+	// Dedup curto (10min) cobre F5 sequencial; dedup chave inclui `force`
+	// para que toggle manual de "↻" sempre passe pelo menos 1 envio por TTL.
+	h.notifyJonfreyReview(resp, force)
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// notifyJonfreyReview posta no grupo de notificações um resumo da revisão.
+// Lista veredictos críticos (produto_errado / problema), até 6 itens.
+func (h *JonfreyHandler) notifyJonfreyReview(resp reviewDispatchesResp, forced bool) {
+	if h.notif == nil {
+		return
+	}
+	var problems []reviewDispatchItem
+	for _, it := range resp.Items {
+		if it.Assessment == "produto_errado" || it.Assessment == "problema" {
+			problems = append(problems, it)
+		}
+	}
+	lines := []string{resp.Headline}
+	if len(problems) == 0 {
+		lines = append(lines, fmt.Sprintf("✅ Sem anomalias em %d disparos avaliados.", len(resp.Items)))
+	} else {
+		lines = append(lines, fmt.Sprintf("⚠ %d anomalia%s (de %d):",
+			len(problems), pluralPT(len(problems)), len(resp.Items)))
+		const maxItems = 6
+		for i, it := range problems {
+			if i >= maxItems {
+				lines = append(lines, fmt.Sprintf("…e mais %d", len(problems)-maxItems))
+				break
+			}
+			tag := "⚠"
+			if it.Assessment == "produto_errado" {
+				tag = "❌"
+			}
+			lines = append(lines, fmt.Sprintf("%s %s | %s — %s",
+				tag, truncShortS(it.Group, 24), truncShortS(it.Product, 36), truncShortS(it.Note, 80)))
+		}
+	}
+	dedupKey := "jonfrey-review:24h"
+	if forced {
+		dedupKey += ":force"
+	}
+	h.notif.Notify(notifier.KindJonfreyReview, strings.Join(lines, "\n"),
+		dedupKey, 10*time.Minute)
+}
+
+// pluralPT — sufixo plural simples (mesmo helper do scheduler, redeclarado
+// pra evitar import cíclico).
+func pluralPT(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func truncShortS(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
 }
 
 // computeReviewDispatches roda a query + LLM (com fallback heurístico).

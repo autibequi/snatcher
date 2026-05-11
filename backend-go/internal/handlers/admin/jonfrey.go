@@ -20,6 +20,7 @@ import (
 	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
@@ -30,6 +31,7 @@ type JonfreyHandler struct {
 	db       *sqlx.DB
 	llmFn    func() llm.Client
 	curation *CurationHandler // delega tarefas longas (inspect-all, etc)
+	notif    *notifier.Notifier // pode ser nil — métodos checam internamente
 
 	// Ciclo agendado (scheduler): um batch por vez — evita dois RunCycle sobrepostos e LastRunAt incorreto.
 	schedCycleMu   sync.Mutex
@@ -86,6 +88,7 @@ func NewJonfreyHandler(st store.Store, db *sqlx.DB) *JonfreyHandler {
 
 func (h *JonfreyHandler) SetLLMFn(fn func() llm.Client)              { h.llmFn = fn }
 func (h *JonfreyHandler) SetCurationHandler(c *CurationHandler)      { h.curation = c }
+func (h *JonfreyHandler) SetNotifier(n *notifier.Notifier)           { h.notif = n }
 
 // ── Catálogo de ações que o Jonfrey pode executar ────────────────────────────
 

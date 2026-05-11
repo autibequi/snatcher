@@ -320,7 +320,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if strings.TrimSpace(text) == "" {
 		slog.Error("dispatch worker: texto vazio após sanitização de URLs", "target_id", t.ID, "dispatch_id", t.DispatchID)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "mensagem só continha URLs de marketplace (removidas por política)")
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 
@@ -336,12 +336,12 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if errMsg != "" {
 		slog.Error("dispatch worker: envio Evolution falhou", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_jid", jid, "has_media", msg.MediaURL != "", "err", errMsg)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", errMsg)
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 	slog.Info("dispatch worker: sent", "target_id", t.ID, "group", jid)
 	_ = st.UpdateDispatchTargetStatus(t.ID, "delivered", "")
-	checkAllFinished(st, t.DispatchID)
+	checkAllFinished(st, t.DispatchID, notif)
 	return true
 }
 
@@ -412,7 +412,7 @@ func truncateLog(s string, max int) string {
 	return s[:max] + "…"
 }
 
-func checkAllFinished(st store.Store, dispatchID int64) {
+func checkAllFinished(st store.Store, dispatchID int64, notif *notifier.Notifier) {
 	done, err := st.AllDispatchTargetsFinished(dispatchID)
 	if err != nil {
 		slog.Warn("dispatch worker: AllDispatchTargetsFinished", "dispatch_id", dispatchID, "err", err)
@@ -421,7 +421,6 @@ func checkAllFinished(st store.Store, dispatchID int64) {
 	if !done {
 		return
 	}
-	// Verificar se pelo menos 1 target foi entregue; senão marcar como failed
 	hasDelivered, delivErr := st.HasDeliveredTarget(dispatchID)
 	if delivErr != nil {
 		slog.Warn("dispatch worker: HasDeliveredTarget", "dispatch_id", dispatchID, "err", delivErr)
@@ -434,4 +433,104 @@ func checkAllFinished(st store.Store, dispatchID int64) {
 		slog.Info("dispatch worker: dispatch completed", "dispatch_id", dispatchID)
 	}
 	_ = st.UpdateDispatchStatus(dispatchID, finalStatus)
+
+	notifyDispatchOutcome(st, dispatchID, finalStatus, notif)
+}
+
+// notifyDispatchOutcome posta no grupo de notificações um resumo do dispatch.
+// Inclui: produto (se houver), preview da mensagem (1 linha), grupos que
+// receberam, falhas se houver. Dedup por dispatch_id pra evitar duplicação
+// caso checkAllFinished seja chamado duas vezes em rajada.
+func notifyDispatchOutcome(st store.Store, dispatchID int64, status string, notif *notifier.Notifier) {
+	if notif == nil {
+		return
+	}
+	d, err := st.GetDispatch(dispatchID)
+	if err != nil {
+		return
+	}
+	targets, err := st.ListDispatchTargets(dispatchID)
+	if err != nil {
+		return
+	}
+
+	var deliveredGroups, failedGroups []string
+	for _, t := range targets {
+		g, gerr := st.GetRedesignGroup(t.GroupID)
+		name := fmt.Sprintf("#%d", t.GroupID)
+		if gerr == nil && strings.TrimSpace(g.Name) != "" {
+			name = g.Name
+		}
+		switch t.Status {
+		case "delivered":
+			deliveredGroups = append(deliveredGroups, name)
+		case "failed":
+			failedGroups = append(failedGroups, name)
+		}
+	}
+
+	// Preview da mensagem — primeira linha não-vazia, máx 100 chars.
+	var msgPayload struct {
+		Text     string `json:"text"`
+		MediaURL string `json:"media_url"`
+	}
+	_ = json.Unmarshal(d.Message, &msgPayload)
+	preview := firstNonEmptyLine(msgPayload.Text)
+	if len(preview) > 100 {
+		preview = preview[:99] + "…"
+	}
+
+	productName := ""
+	if d.ProductID.Valid {
+		if p, perr := st.GetCatalogProduct(d.ProductID.Int64); perr == nil {
+			productName = p.CanonicalName
+		}
+	}
+
+	var lines []string
+	if status == "completed" {
+		head := fmt.Sprintf("✅ Entregue em %d grupo%s", len(deliveredGroups), pluralS(len(deliveredGroups)))
+		if len(failedGroups) > 0 {
+			head += fmt.Sprintf(" · ⚠ %d falha%s", len(failedGroups), pluralS(len(failedGroups)))
+		}
+		lines = append(lines, head)
+	} else {
+		lines = append(lines, fmt.Sprintf("❌ Dispatch falhou (#%d) — nenhum grupo recebeu", dispatchID))
+	}
+	if productName != "" {
+		lines = append(lines, "🛒 "+truncShort(productName, 80))
+	}
+	if preview != "" {
+		lines = append(lines, "💬 "+preview)
+	}
+	if len(deliveredGroups) > 0 {
+		lines = append(lines, "→ "+joinTrunc(deliveredGroups, 6))
+	}
+	if len(failedGroups) > 0 && status == "completed" {
+		lines = append(lines, "⚠ falhou: "+joinTrunc(failedGroups, 4))
+	}
+
+	kind := notifier.KindDispatchCompleted
+	if status != "completed" {
+		kind = notifier.KindDispatchFailed
+	}
+	notif.Notify(kind, strings.Join(lines, "\n"),
+		fmt.Sprintf("dispatch:%d:%s", dispatchID, status), 5*time.Minute)
+}
+
+func firstNonEmptyLine(s string) string {
+	for _, ln := range strings.Split(s, "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln != "" {
+			return ln
+		}
+	}
+	return ""
+}
+
+func joinTrunc(names []string, max int) string {
+	if len(names) <= max {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:max], ", ") + fmt.Sprintf(" +%d", len(names)-max)
 }
