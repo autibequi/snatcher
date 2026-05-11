@@ -68,6 +68,22 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		return nil
 	}
 
+	// Respeita a janela de envio configurada em Settings: fora dela NÃO enfileira.
+	// Sem este guard, o auto-match continua rodando durante a noite e às 7h
+	// existe um backlog gigante de dispatches "queued" que o worker despeja
+	// de uma vez quando a janela abre — exatamente o pico que o user quer evitar.
+	// dryRun (simulação no UI) ignora este guard pra continuar mostrando o que
+	// SERIA disparado se estivéssemos no horário.
+	if !dryRun && !InDispatchSendWindow(cfg, now) {
+		slog.Info("auto match: fora da janela de envio — ciclo pulado, sem enfileirar",
+			"tz", cfg.DispatchSendTimezone,
+			"start_h", cfg.SendStartHour,
+			"end_h", cfg.SendEndHour,
+			"hint", "ative/desative em Settings → Janela de envio (WA)",
+		)
+		return nil
+	}
+
 	intervalSec := curation.NormalizeAutoMatchIntervalSeconds(cfg)
 	if !dryRun && cfg.AutoMatchLastWorkerRunAt.Valid {
 		if now.Sub(cfg.AutoMatchLastWorkerRunAt.Time) < time.Duration(intervalSec)*time.Second {

@@ -1432,6 +1432,21 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 			"Full-auto desligado — sem release automático. Aprove manualmente ou ative em Configurações.",
 			nil
 	}
+	// Mesmo com full-auto, não libere fora da janela de envio: caso contrário
+	// dispatches presos em pending_approval viram "queued" durante a noite e
+	// disparam todos juntos quando a janela abre. Mantemos pending até estar
+	// dentro do horário, igual o auto-match cycle.
+	if !scheduler.InDispatchSendWindow(cfg, time.Now()) {
+		slog.Info("jonfrey auto_release_pending: fora da janela de envio — manter pending_approval",
+			"tz", cfg.DispatchSendTimezone,
+			"start_h", cfg.SendStartHour,
+			"end_h", cfg.SendEndHour,
+		)
+		return map[string]any{"in_window": false},
+			map[string]any{"released": 0, "skipped": "fora da janela de envio (Settings → Janela de envio)"},
+			"Fora da janela de envio configurada — pending_approval permanece, libero quando o horário abrir.",
+			nil
+	}
 	var before int
 	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
 	slog.Info("jonfrey auto_release_pending: antes do UPDATE",

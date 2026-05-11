@@ -28,6 +28,18 @@ func RunAdsWorker(ctx context.Context, st store.Store) {
 		return
 	}
 
+	// Mesma regra do auto-match: fora da janela de envio, NÃO enfileira anúncios
+	// recorrentes. O cron continua tickando, mas só registra no log e segue.
+	// Quando a janela abrir, o próximo tick processa.
+	if !InDispatchSendWindow(cfg, time.Now()) {
+		slog.Info("ads worker: fora da janela de envio — sem enfileirar anúncios",
+			"tz", cfg.DispatchSendTimezone,
+			"start_h", cfg.SendStartHour,
+			"end_h", cfg.SendEndHour,
+		)
+		return
+	}
+
 	loc := adsCronLocation()
 	ads, err := st.ListAds(true)
 	if err != nil {

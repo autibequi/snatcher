@@ -76,7 +76,9 @@ export function SystemTab() {
           <div className={switchRow}>
             <div>
               <p className={formLabel}>Janela de envio (WA)</p>
-              <p className={formHint}>Fora do horário acima, disparos ficam na fila</p>
+              <p className={formHint}>
+                Fora do horário acima: auto-match e ads NÃO enfileiram, e pending_approval não vira queued. Disparos manuais continuam funcionando.
+              </p>
             </div>
             <Switch
               checked={(merged.dispatch_send_window_enabled ?? false) as boolean}
