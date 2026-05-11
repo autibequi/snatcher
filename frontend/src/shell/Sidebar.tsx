@@ -14,10 +14,11 @@ const NAV: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/',         label: 'Dashboard',      icon: '🏠' },
-      { to: '/match',    label: 'Match',           icon: '🎯' },
-      { to: '/compose',  label: 'Compor disparo',  icon: '✍️' },
-      { to: '/activity', label: 'Activity',        icon: '📊' },
+      { to: '/',             label: 'Dashboard',      icon: '🏠' },
+      { to: '/match',        label: 'Match',           icon: '🎯' },
+      { to: '/automations',  label: 'Auto-matches',    icon: '🤖' },
+      { to: '/compose',      label: 'Compor disparo',  icon: '✍️' },
+      { to: '/activity',     label: 'Activity',        icon: '📊' },
     ],
   },
   {

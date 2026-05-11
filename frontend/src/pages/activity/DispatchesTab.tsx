@@ -314,13 +314,16 @@ export function DispatchesTab({
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [selected, setSelected] = React.useState<Dispatch | null>(null)
-  const [items, setItems] = React.useState<Dispatch[]>([])
 
   // Load dispatch from URL param if provided
   const { data: dispatchFromUrl } = useQuery({
     queryKey: ['dispatch-open-from-url', openDispatchId],
     queryFn: () =>
-      apiClient.get(`/api/dispatches/${openDispatchId!}`).then(r => r.data as Dispatch),
+      apiClient.get(`/api/dispatches/${openDispatchId!}`).then(r => {
+        // API returns { dispatch, targets } — extract the dispatch object
+        const d = r.data as { dispatch?: Dispatch } | Dispatch
+        return ('dispatch' in d && d.dispatch ? d.dispatch : d) as Dispatch
+      }),
     enabled: openDispatchId != null && openDispatchId > 0,
     retry: false,
   })
@@ -330,8 +333,10 @@ export function DispatchesTab({
     setSelected(dispatchFromUrl)
   }, [openDispatchId, dispatchFromUrl])
 
-  const { isLoading } = useQuery<Dispatch[]>({
-    queryKey: ['dispatches', status, dateFrom, dateTo, accountId],
+  const queryKey = ['dispatches', status, dateFrom, dateTo, accountId] as const
+
+  const { isLoading, data: items = [] } = useQuery<Dispatch[]>({
+    queryKey,
     queryFn: () => {
       const qp = new URLSearchParams()
       if (status) qp.set('status', status)
@@ -340,22 +345,22 @@ export function DispatchesTab({
       if (accountId) qp.set('account_id', accountId)
       return apiClient
         .get(`/api/dispatches${qp.toString() ? `?${qp}` : ''}`)
-        .then(r => {
-          const data = Array.isArray(r.data) ? r.data : []
-          setItems(data)
-          return data
-        })
+        .then(r => (Array.isArray(r.data) ? r.data : []))
     },
     refetchInterval: 30_000,
   })
 
-  // WS: real-time updates
+  // WS: real-time updates via query cache (avoids stale-closure / remount issues)
   useWSEvent('dispatch.target_updated', (data: { dispatchId: number }) => {
-    setItems(prev => prev.map(d => (d.id === data.dispatchId ? { ...d, status: 'sending' } : d)))
+    qc.setQueryData<Dispatch[]>(queryKey, prev =>
+      (prev ?? []).map(d => (d.id === data.dispatchId ? { ...d, status: 'sending' } : d)),
+    )
     setSelected(prev => (prev?.id === data.dispatchId ? { ...prev, status: 'sending' } : prev))
   })
   useWSEvent('dispatch.completed', (data: { dispatchId: number }) => {
-    setItems(prev => prev.map(d => (d.id === data.dispatchId ? { ...d, status: 'completed' } : d)))
+    qc.setQueryData<Dispatch[]>(queryKey, prev =>
+      (prev ?? []).map(d => (d.id === data.dispatchId ? { ...d, status: 'completed' } : d)),
+    )
     setSelected(prev => (prev?.id === data.dispatchId ? { ...prev, status: 'completed' } : prev))
   })
 

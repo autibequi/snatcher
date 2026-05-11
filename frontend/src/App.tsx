@@ -93,6 +93,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Taxonomy = lazy(() => import('./pages/Taxonomy'))
 const Manual = lazy(() => import('./pages/Manual'))
 const ManualTutorialPage = lazy(() => import('./pages/ManualTutorialPage'))
+const Automations = lazy(() => import('./pages/Automations'))
 
 const Setup = lazy(() => import('./pages/Setup'))
 const DevAtoms = import.meta.env.DEV
@@ -162,14 +163,16 @@ export default function App() {
               <Route path="manual" element={<Manual />} />
               <Route path="manual/:slug" element={<ManualTutorialPage />} />
 
+              {/* AUTOMAÇÕES */}
+              <Route path="automations" element={<Automations />} />
+
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />
               <Route path="ads" element={<Navigate to="/activity" replace />} />
-              <Route path="auto-match" element={<Navigate to="/channels" replace />} />
-              <Route path="automations" element={<Navigate to="/channels" replace />} />
+              <Route path="auto-match" element={<Navigate to="/automations" replace />} />
               <Route path="automations/channels" element={<Navigate to="/channels" replace />} />
               <Route path="automations/jonfrey" element={<Navigate to="/activity?tab=jonfrey" replace />} />
-              <Route path="automations/pending" element={<Navigate to="/activity?tab=pending" replace />} />
+              <Route path="automations/pending" element={<Navigate to="/automations" replace />} />
 
               {import.meta.env.DEV && DevAtoms && <Route path="_dev/atoms" element={<DevAtoms />} />}
               <Route path="*" element={<NotFound />} />
