@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Input, Modal, Switch, Skeleton, EmptyState, KpiCard, Textarea } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import { useWSEvent } from '../../lib/useWS'
+import { tblDense, thDense, thDenseRight, tdDense, tdDenseRight, trDense } from '../../lib/uiTokens'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -86,13 +87,6 @@ export function relativeTime(iso?: string): string {
   if (diff < 3600) return `ha ${Math.round(diff / 60)}min`
   if (diff < 86400) return `ha ${Math.round(diff / 3600)}h`
   return `ha ${Math.round(diff / 86400)}d`
-}
-
-function fmtRange(min?: number, max?: number): string {
-  if (min == null && max == null) return '—'
-  const lo = min != null ? `R$${min}` : 'R$0'
-  const hi = max != null ? `R$${max}` : ''
-  return hi ? `${lo}–${hi}` : `${lo}+`
 }
 
 // ── Intervals ─────────────────────────────────────────────────────────────────
@@ -718,76 +712,115 @@ export function MarketplaceTab({ onNew, onSuggest }: { onNew: () => void; onSugg
         </div>
       </div>
 
-      {/* Table — scroll-x on mobile */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      {/* Tabela densa — spec v4: status (running/ok/error/paused) + ações ▶/⚙ */}
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+        <table className={`${tblDense} min-w-[820px]`}>
           <thead>
-            <tr className="border-b border-border">
-              {['Ativo', 'Termo', 'Fontes', 'Faixa', 'Frequencia', '# Encontrados', 'Ultimo crawl', 'Proxima exec', 'Acoes'].map(h => (
-                <th key={h} className="text-left p-3 text-fg-2 font-medium">{h}</th>
-              ))}
+            <tr>
+              <th className={`${thDense} w-[60px]`}>Ativo</th>
+              <th className={thDense}>Termo</th>
+              <th className={thDense}>Fontes</th>
+              <th className={thDense}>Status</th>
+              <th className={thDense}>Frequência</th>
+              <th className={thDense}>Última coleta</th>
+              <th className={thDenseRight}>Encontrados</th>
+              <th className={`${thDense} w-[100px] text-right`}>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {terms.map(t => (
-              <tr
-                key={t.id}
-                className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-                onClick={() => setEditingTerm(t)}
-              >
-                <td className="p-3" onClick={e => e.stopPropagation()}>
-                  <Switch
-                    checked={t.active}
-                    onChange={active => toggleMut.mutate({ id: t.id, active })}
-                  />
-                </td>
-                <td className="p-3 font-medium text-fg">"{t.query}"</td>
-                <td className="p-3">
-                  <div className="flex flex-wrap gap-1">
-                    {parseSources(t.sources).map((s: string) => <SourcePill key={s} source={s} />)}
-                  </div>
-                </td>
-                <td className="p-3 text-fg-2 text-xs whitespace-nowrap">{fmtRange(t.min_val, t.max_val)}</td>
-                <td className="p-3 text-fg-2 text-xs whitespace-nowrap">{fmtInterval(t.crawl_interval)}</td>
-                <td className="p-3 text-fg">{t.result_count}</td>
-                <td className="p-3 text-fg-3 text-xs">{relativeTime(t.last_crawled_at)}</td>
-                <td className="p-3 text-xs text-fg-2">
-                  {!t.active ? (
-                    <span className="text-fg-3">pausado</span>
-                  ) : t.last_error ? (
-                    <Badge variant="danger" size="sm">erro</Badge>
-                  ) : t.last_crawled_at ? (
-                    <span className="text-fg-3">
-                      {(() => {
-                        const next = new Date(t.last_crawled_at).getTime() + (t.crawl_interval * 60_000)
-                        const diff = Math.max(0, Math.round((next - Date.now()) / 60_000))
-                        return diff === 0 ? 'agora' : `em ~${diff}min`
-                      })()}
-                    </span>
-                  ) : (
-                    <span className="text-fg-3">—</span>
-                  )}
-                </td>
-                <td className="p-3" onClick={e => e.stopPropagation()}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => crawlNow.mutate(t.id)}
-                    loading={runningIds.has(t.id)}
-                    disabled={runningIds.size > 0}
-                    className="border-success/40 text-success hover:bg-success/10 px-2 min-w-[1.75rem]"
-                    aria-label={runningIds.has(t.id) ? 'Rodando...' : 'Rodar agora'}
-                    title={runningIds.has(t.id) ? 'Rodando...' : 'Rodar agora'}
-                  >
-                    {!runningIds.has(t.id) ? (
-                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    ) : null}
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {terms.map(t => {
+              const isRunning = runningIds.has(t.id)
+              const status: 'running' | 'ok' | 'error' | 'paused' =
+                !t.active ? 'paused' :
+                isRunning ? 'running' :
+                t.last_error ? 'error' :
+                'ok'
+
+              return (
+                <tr
+                  key={t.id}
+                  className={`${trDense} cursor-pointer`}
+                  onClick={() => setEditingTerm(t)}
+                >
+                  <td className={tdDense} onClick={e => e.stopPropagation()}>
+                    <Switch
+                      checked={t.active}
+                      onChange={active => toggleMut.mutate({ id: t.id, active })}
+                    />
+                  </td>
+                  <td className={`${tdDense} font-medium text-fg max-w-[260px] truncate`} title={t.query}>
+                    “{t.query}”
+                  </td>
+                  <td className={tdDense}>
+                    <div className="flex flex-wrap gap-1">
+                      {parseSources(t.sources).map((s: string) => <SourcePill key={s} source={s} />)}
+                    </div>
+                  </td>
+                  <td className={tdDense}>
+                    {status === 'running' && (
+                      <span className="inline-flex items-center gap-1 text-success text-xs font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                        rodando
+                      </span>
+                    )}
+                    {status === 'ok' && (
+                      <span className="inline-flex items-center gap-1 text-success text-xs font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                        ok
+                      </span>
+                    )}
+                    {status === 'error' && (
+                      <span
+                        className="inline-flex items-center gap-1 text-danger text-xs font-medium"
+                        title={t.last_error}
+                      >
+                        ⚠ erro
+                        {t.last_error && (
+                          <span className="text-[11px] text-fg-3 ml-1 max-w-[160px] truncate">
+                            · {t.last_error}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {status === 'paused' && (
+                      <span className="inline-flex items-center gap-1 text-warning text-xs font-medium">
+                        ⏸ pausado
+                      </span>
+                    )}
+                  </td>
+                  <td className={`${tdDense} font-mono text-[12px] text-fg-3 whitespace-nowrap`}>
+                    {fmtInterval(t.crawl_interval)}
+                  </td>
+                  <td className={`${tdDense} text-fg-3 text-xs whitespace-nowrap`}>
+                    {relativeTime(t.last_crawled_at)}
+                  </td>
+                  <td className={tdDenseRight}>
+                    <span className="font-semibold text-fg">{t.result_count.toLocaleString('pt-BR')}</span>
+                  </td>
+                  <td className={`${tdDense} text-right`} onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => crawlNow.mutate(t.id)}
+                      disabled={runningIds.size > 0}
+                      className="text-success hover:bg-success-soft p-1 rounded text-sm disabled:opacity-40 mr-1"
+                      title={isRunning ? 'Rodando…' : 'Rodar agora'}
+                      aria-label="Rodar agora"
+                    >
+                      {isRunning ? '⏳' : '▶'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTerm(t)}
+                      className="text-fg-3 hover:text-fg p-1 rounded text-sm"
+                      title="Configurações"
+                      aria-label="Configurações"
+                    >
+                      ⚙
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
