@@ -27,3 +27,5 @@ docs/ux-audit-jon-promo/
 # Local dev cache (tempograph, tempo)
 .tempo/
 .tempograph/
+
+.team/
