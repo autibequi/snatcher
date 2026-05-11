@@ -20,16 +20,16 @@ func TestInDispatchSendWindow(t *testing.T) {
 		SendStartHour:             8,
 		SendEndHour:               22,
 	}
-	if inDispatchSendWindow(cfg, night) {
+	if InDispatchSendWindow(cfg, night) {
 		t.Fatal("03h BRT should be outside 8–22 window")
 	}
-	if !inDispatchSendWindow(cfg, morning) {
+	if !InDispatchSendWindow(cfg, morning) {
 		t.Fatal("10h BRT should be inside 8–22 window")
 	}
 
 	disabled := cfg
 	disabled.DispatchSendWindowEnabled = false
-	if !inDispatchSendWindow(disabled, night) {
+	if !InDispatchSendWindow(disabled, night) {
 		t.Fatal("window disabled → always allow")
 	}
 }

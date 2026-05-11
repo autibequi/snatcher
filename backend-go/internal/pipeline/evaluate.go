@@ -231,7 +231,15 @@ func formatMessage(ch models.Channel, p models.CatalogProduct, variants []models
 	return msg
 }
 
+// inSendWindow delega pra scheduler.IsHourInWindow pra garantir semântica única.
+// Mantido aqui como helper local pra não exigir import cycle reverso.
 func inSendWindow(t time.Time, startHour, endHour int) bool {
+	if startHour == endHour {
+		return true
+	}
 	h := t.Hour()
-	return h >= startHour && h < endHour
+	if startHour < endHour {
+		return h >= startHour && h < endHour
+	}
+	return h >= startHour || h < endHour
 }

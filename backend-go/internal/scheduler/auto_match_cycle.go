@@ -9,7 +9,6 @@ import (
 
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/curation"
-	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
@@ -80,14 +79,6 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		if err := st.TouchAutoMatchWorkerRun(now); err != nil {
 			slog.Warn("auto match: touch worker run", "err", err)
 		}
-		debugagent.Write("H3", "auto_match_worker.go:RunAutoMatchWorker", "cycle_start", map[string]any{
-			"full_auto_mode":          cfg.FullAutoMode,
-			"auto_match_threshold":    cfg.AutoMatchThreshold,
-			"auto_match_only_curated": cfg.AutoMatchOnlyCurated,
-			"auto_match_max_per_run":  cfg.AutoMatchMaxPerRun,
-			"interval_seconds":        intervalSec,
-			"product_cursor":          cfg.AutoMatchProductCursor,
-		}, "")
 	}
 
 	rawProducts, err := st.ListCatalogProductsAfterCursor(500, cfg.AutoMatchProductCursor, false)
@@ -482,11 +473,6 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 			"skip_missing_url_inner", skip.MissingOfferURL,
 			"skip_create_dispatch", skip.CreateDispatchErr,
 		)
-		debugagent.Write("H3", "auto_match_worker.go:RunAutoMatchWorker", "cycle_no_dispatches", map[string]any{
-			"products_evaluated":        len(products),
-			"missing_offer_url_precalc": missingOfferURL,
-			"skip":                      skip,
-		}, "")
 	} else {
 		slog.Info("auto match: cycle finished", "dispatches_created", nDisp)
 	}

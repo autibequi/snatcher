@@ -17,7 +17,7 @@ func TestAdShouldFireNow_EveryMinute(t *testing.T) {
 	if !adShouldFireNow(sched, loc, now, models.NullTime{}) {
 		t.Fatal("expected fire on every-minute cron")
 	}
-	last := models.NullTime{Valid: true, Time: time.Date(2026, 3, 15, 14, 30, 10, 0, loc)}
+	last := models.NewNullTime(time.Date(2026, 3, 15, 14, 30, 10, 0, loc))
 	if adShouldFireNow(sched, loc, now, last) {
 		t.Fatal("should not fire twice same calendar minute")
 	}

@@ -145,6 +145,8 @@ type AppConfig struct {
 	DispatchMinIntervalMs int `db:"dispatch_min_interval_ms" json:"dispatch_min_interval_ms"`
 	// Cursor round-robin global para contas WA sem vínculo fixo — migration 0131
 	DispatchWaRRCursor int `db:"dispatch_wa_rr_cursor" json:"dispatch_wa_rr_cursor"`
+	// Rate limit por grupo (anti-spam WA) — migration 0133. 0/negativo = fallback 3.
+	DispatchMaxPerGroupPerHour int `db:"dispatch_max_per_group_per_hour" json:"dispatch_max_per_group_per_hour"`
 
 	// Automation mode — migration 0096
 	FullAutoMode          bool   `db:"full_auto_mode" json:"full_auto_mode"`

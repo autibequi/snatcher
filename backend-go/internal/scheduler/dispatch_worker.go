@@ -12,37 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
-
-// inDispatchSendWindow retorna true se o envio via Evolution pode ocorrer agora,
-// usando send_start_hour/send_end_hour da AppConfig no fuso dispatch_send_timezone (IANA).
-// Com dispatch_send_window_enabled=false, sempre true (envio 24h).
-func inDispatchSendWindow(cfg models.AppConfig, now time.Time) bool {
-	if !cfg.DispatchSendWindowEnabled {
-		return true
-	}
-	tzName := strings.TrimSpace(cfg.DispatchSendTimezone)
-	if tzName == "" {
-		tzName = "America/Sao_Paulo"
-	}
-	loc, err := time.LoadLocation(tzName)
-	if err != nil {
-		slog.Warn("dispatch send window: timezone inválido, usando UTC", "tz", tzName, "err", err)
-		loc = time.UTC
-	}
-	h := now.In(loc).Hour()
-	start, end := cfg.SendStartHour, cfg.SendEndHour
-	// Mesma semântica que pipeline.inSendWindow: [start, end)
-	return h >= start && h < end
-}
-
-// InDispatchSendWindow exportado para handlers/admin e diagnóstico (mesma regra do worker).
-func InDispatchSendWindow(cfg models.AppConfig, now time.Time) bool {
-	return inDispatchSendWindow(cfg, now)
-}
 
 // RunDispatchWorker processa dispatch_targets pendentes chamando a Evolution API.
 // Deve ser chamado periodicamente pelo scheduler.
@@ -53,16 +25,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		slog.Error("dispatch worker: get config", "err", err)
 		return 0
 	}
-	winOK := inDispatchSendWindow(cfg, time.Now())
-	// #region agent log
-	debugagent.Write("H2", "dispatch_worker.go:RunDispatchWorker", "pre_tick", map[string]any{
-		"in_send_window":           winOK,
-		"dispatch_window_enabled": cfg.DispatchSendWindowEnabled,
-		"send_tz":                 cfg.DispatchSendTimezone,
-		"send_start_h":            cfg.SendStartHour,
-		"send_end_h":              cfg.SendEndHour,
-	}, "")
-	// #endregion
+	winOK := InDispatchSendWindow(cfg, time.Now())
 	if !winOK {
 		slog.Info("dispatch worker: fora da janela de envio — mensagens ficam na fila até o horário permitido",
 			"tz", cfg.DispatchSendTimezone,
@@ -75,11 +38,6 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		slog.Error("dispatch worker: list pending", "err", err)
 		return 0
 	}
-	// #region agent log
-	debugagent.Write("H1", "dispatch_worker.go:RunDispatchWorker", "pending_targets_fetched", map[string]any{
-		"count": len(targets),
-	}, "")
-	// #endregion
 	if len(targets) == 0 {
 		slog.Info("[dbg_dispatch] worker tick: nenhum dispatch_target pending ligado a dispatch queued/sending (ou agendado futuro)")
 		return 0
@@ -92,18 +50,17 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 		waAccounts = nil
 	}
 
-	// Rate limit por grupo: default 3 mensagens/hora por grupo (anti-spam, evita ban WA).
-	// Conta dispatches já entregues nas últimas 60min para o grupo. Se >= limit, pula este target neste ciclo.
-	const maxPerGroupPerHour = 3
+	// Rate limit por grupo (anti-spam, evita ban WA). Vem de cfg.DispatchMaxPerGroupPerHour
+	// (migration 0133); fallback 3 quando o DB ainda não foi migrado ou valor é inválido.
+	maxPerGroupPerHour := cfg.DispatchMaxPerGroupPerHour
+	if maxPerGroupPerHour <= 0 {
+		maxPerGroupPerHour = 3
+	}
 	type groupCount struct {
 		GroupID int64 `db:"group_id"`
 		Count   int   `db:"count"`
 	}
 	deliveredByGroup := make(map[int64]int, len(targets))
-	if hdb, ok := st.(interface{ DB() interface{} }); ok {
-		_ = hdb // placeholder se store expõe db
-	}
-	// Usa método helper se disponível, senão conta via store
 	var counts []groupCount
 	if cs, err := st.CountRecentDeliveriesByGroup(60); err != nil {
 		slog.Warn("dispatch worker: count recent deliveries by group", "err", err)

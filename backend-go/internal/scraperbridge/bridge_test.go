@@ -36,7 +36,6 @@ func TestBuildPipelineScraperMap_IncludesExtraSources(t *testing.T) {
 	if m["ml"] == nil || m["amz"] == nil {
 		t.Fatal("missing ml/amz")
 	}
-	// At least one registry-only source must appear after wiring (e.g. shopee, magalu).
 	if m["shopee"] == nil {
 		t.Fatal("expected shopee scraper in merged map — registry may have changed")
 	}

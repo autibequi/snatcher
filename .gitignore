@@ -1,32 +1,29 @@
-# Python (legacy — backend-python/ removido pós-refactor Go)
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-*.egg-info/
+# env
 .env
-
-# SQLite (legacy — stack atual usa Postgres)
-backend-python/data/*.db
-backend-python/data/*.db-shm
-backend-python/data/*.db-wal
-backend-go/app.db
 
 # Node
 node_modules/
 dist/
 .cache/
 
-# Go binários (não commitar — build artifacts)
+# Go binários (build artifacts)
 backend-go/backend-go
 backend-go/backendv2
 backend-go/public
 backend-go/llm-eval
+backend-go/data/
+backend-go/*.db
+backend-go/*.db-shm
+backend-go/*.db-wal
 
 # OS
 .DS_Store
-ReDesign/
 
-# bleh
-docs/
+# Material auxiliar — migrado pro vault /workspace/obsidian/projects/snatcher/
+ReDesign/
 audit-run/
+docs/ux-audit-jon-promo/
+
+# Local dev cache (tempograph, tempo)
+.tempo/
+.tempograph/

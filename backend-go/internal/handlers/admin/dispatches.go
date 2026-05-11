@@ -18,7 +18,6 @@ import (
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/debugagent"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
@@ -528,23 +527,7 @@ func (h *DispatchHandler) ProcessQueueNow(w http.ResponseWriter, r *http.Request
 	if cfgErr == nil {
 		sendWin = scheduler.InDispatchSendWindow(cfg, time.Now())
 	}
-	// #region agent log
-	debugagent.Write("H1", "dispatches.go:ProcessQueueNow", "queue_snapshot_pre_tick", map[string]any{
-		"pending_targets_join_queued_sending": pendQueuedJoin,
-		"dispatches_pending_approval":          pendApproval,
-		"full_auto_mode":                       fullAuto,
-		"in_dispatch_send_window":              sendWin,
-		"cfg_err":                              cfgErr != nil,
-	}, "")
-	// #endregion
-
 	n := scheduler.RunDispatchWorker(r.Context(), h.store)
-
-	// #region agent log
-	debugagent.Write("H4", "dispatches.go:ProcessQueueNow", "after_run_dispatch_worker", map[string]any{
-		"batch_size": n,
-	}, "")
-	// #endregion
 
 	slog.Info("[dbg_dispatch] process-queue-now",
 		"batch_size", n,

@@ -3,7 +3,27 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"time"
 )
+
+// Helpers para construir Null* sem o boilerplate {NullX: sql.NullX{X: v, Valid: true}}.
+// Passar string vazia / zero gera Valid:false (semântica "ausente").
+
+func NewNullString(s string) NullString {
+	return NullString{NullString: sql.NullString{String: s, Valid: s != ""}}
+}
+
+func NewNullInt64(i int64) NullInt64 {
+	return NullInt64{NullInt64: sql.NullInt64{Int64: i, Valid: i != 0}}
+}
+
+func NewNullFloat64(f float64) NullFloat64 {
+	return NullFloat64{NullFloat64: sql.NullFloat64{Float64: f, Valid: f != 0}}
+}
+
+func NewNullTime(t time.Time) NullTime {
+	return NullTime{NullTime: sql.NullTime{Time: t, Valid: !t.IsZero()}}
+}
 
 // NullString serializa como string JSON ou null (não como {String, Valid}).
 type NullString struct {
