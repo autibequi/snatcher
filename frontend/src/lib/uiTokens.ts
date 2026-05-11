@@ -6,6 +6,20 @@ export const tableRow = 'border-b border-border last:border-0 hover:bg-surface-2
 export const tableCell = 'px-4 py-2.5 text-sm text-fg align-middle'
 export const tableCellMuted = 'px-4 py-2.5 text-sm text-fg-3 align-middle'
 
+// Redesign v4: tabela densa para listagens — TH 11px uppercase tracking,
+// hover row com mistura sutil de surface-2, números tabular-nums.
+// Aplicar em <table className={tblDense}> e <th className={thDense}>, <td className={tdDense}>.
+// Linha selecionada: rowSelected (fundo accent-soft + inset-border accent à esquerda).
+export const tblDense = 'w-full border-collapse text-sm text-fg'
+export const thDense = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-3 bg-surface-2 border-b border-border whitespace-nowrap'
+export const thDenseRight = `${thDense} text-right`
+export const tdDense = 'px-3 py-2 align-middle border-b border-border last:border-0'
+export const tdDenseRight = `${tdDense} text-right tabular-nums`
+export const tdDenseMono = `${tdDense} font-mono text-[12px] text-fg-3`
+export const trDense = 'transition-colors hover:bg-[color-mix(in_oklch,oklch(var(--surface-2))_50%,transparent)]'
+export const rowSelected = 'bg-accent-soft/60 shadow-[inset_2px_0_0_oklch(var(--accent))]'
+export const rowDimmed = 'opacity-55'
+
 // Forms
 export const formGroup = 'space-y-1.5'
 export const formLabel = 'text-sm font-medium text-fg'

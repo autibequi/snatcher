@@ -33,31 +33,27 @@ export const PriceTrendBadge: FC<PriceTrendBadgeProps> = ({ variantId, window = 
   })
 
   if (isLoading) {
-    return <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-700 text-gray-400 animate-pulse">...</span>
+    return <span className="text-[11px] px-1.5 py-0.5 rounded-md font-medium bg-surface-2 text-fg-3 animate-pulse">…</span>
   }
 
   if (!stats || stats.score === null) {
-    return <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-700 text-gray-400">Sem histórico</span>
+    return <span className="text-[11px] px-1.5 py-0.5 rounded-md font-medium bg-surface-2 text-fg-3">sem histórico</span>
   }
 
   const { score, p25, p50, p75, current } = stats
 
-  let bgColor = 'bg-gray-700'
-  let textColor = 'text-gray-300'
-  let label = 'Sem info'
+  let cls = 'bg-surface-2 text-fg-3'
+  let label = 'sem info'
 
   if (score >= 0.7) {
-    bgColor = 'bg-green-900'
-    textColor = 'text-green-300'
-    label = 'Excelente!'
+    cls = 'bg-success-soft text-success border border-success/25'
+    label = 'excelente'
   } else if (score >= 0.4) {
-    bgColor = 'bg-yellow-900'
-    textColor = 'text-yellow-300'
-    label = 'Regular'
+    cls = 'bg-warning-soft text-warning border border-warning/25'
+    label = 'regular'
   } else {
-    bgColor = 'bg-red-900'
-    textColor = 'text-red-300'
-    label = 'Caro'
+    cls = 'bg-danger-soft text-danger border border-danger/25'
+    label = 'caro'
   }
 
   const tooltip = `
@@ -71,7 +67,7 @@ export const PriceTrendBadge: FC<PriceTrendBadgeProps> = ({ variantId, window = 
   return (
     <span
       title={tooltip}
-      className={`text-xs px-2 py-1 rounded-full font-medium ${bgColor} ${textColor} cursor-help`}
+      className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${cls} cursor-help`}
     >
       {label}
     </span>
