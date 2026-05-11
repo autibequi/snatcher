@@ -306,8 +306,14 @@ function BestMatchesView() {
 
   const backendThreshold = data?.threshold ?? 50
   // Slider local — começa no threshold do backend mas o user pode ajustar.
+  // Pattern oficial React p/ "ajustar state quando prop muda":
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
   const [minScore, setMinScore] = React.useState<number>(backendThreshold)
-  React.useEffect(() => { setMinScore(backendThreshold) }, [backendThreshold])
+  const [prevThreshold, setPrevThreshold] = React.useState<number>(backendThreshold)
+  if (backendThreshold !== prevThreshold) {
+    setPrevThreshold(backendThreshold)
+    setMinScore(backendThreshold)
+  }
 
   const items = React.useMemo(
     () => allItems.filter(it => it.score >= minScore),
