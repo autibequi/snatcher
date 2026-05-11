@@ -68,36 +68,34 @@ const Fallback = () => (
 
 const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Catalog = lazy(() => import('./pages/Catalog'))
-const Channels = lazy(() => import('./pages/Channels'))
-const ChannelDetail = lazy(() => import('./pages/ChannelDetail'))
-const Groups = lazy(() => import('./pages/Groups'))
-const Crawlers = lazy(() => import('./pages/Crawlers'))
-const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
-const Logs = lazy(() => import('./pages/Logs'))
-const Pending = lazy(() => import('./pages/Pending'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Taxonomy = lazy(() => import('./pages/Taxonomy'))
-const Curation = lazy(() => import('./pages/Curation'))
-
-// --- Páginas novas (lazy) ---
-
 const Match = lazy(() => import('./pages/Match'))
 const Composer = lazy(() => import('./pages/Composer'))
+const Activity = lazy(() => import('./pages/Activity'))
+
+const Crawlers = lazy(() => import('./pages/Crawlers'))
+const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
+const Catalog = lazy(() => import('./pages/Catalog'))
+const Curation = lazy(() => import('./pages/Curation'))
+
+const Channels = lazy(() => import('./pages/Channels'))
+const ChannelDetail = lazy(() => import('./pages/ChannelDetail'))
+const PublicLinks = lazy(() => import('./pages/PublicLinks'))
+
+const Groups = lazy(() => import('./pages/Groups'))
+const GroupDetail = lazy(() => import('./pages/GroupDetail'))
 const Accounts = lazy(() => import('./pages/Accounts'))
 const Affiliates = lazy(() => import('./pages/Affiliates'))
-const PublicLinks = lazy(() => import('./pages/PublicLinks'))
-const Clusters = lazy(() => import('./pages/Clusters'))
-const GroupDetail = lazy(() => import('./pages/GroupDetail'))
-const DevAtoms = lazy(() => import('./pages/DevAtoms'))
+
 const Analytics = lazy(() => import('./pages/Analytics'))
-const Automations = lazy(() => import('./pages/Automations'))
-const AutomationsByChannel = lazy(() => import('./pages/AutomationsByChannel'))
-const Jonfrey = lazy(() => import('./pages/Jonfrey'))
-const Ads = lazy(() => import('./pages/Ads'))
-const Setup = lazy(() => import('./pages/Setup'))
+const Clusters = lazy(() => import('./pages/Clusters'))
+
+const Settings = lazy(() => import('./pages/Settings'))
+const Taxonomy = lazy(() => import('./pages/Taxonomy'))
 const Manual = lazy(() => import('./pages/Manual'))
 const ManualTutorialPage = lazy(() => import('./pages/ManualTutorialPage'))
+
+const Setup = lazy(() => import('./pages/Setup'))
+const DevAtoms = lazy(() => import('./pages/DevAtoms'))
 
 // Redireciona para /setup se nenhum usuário existir ainda
 function SetupGuard({ children }: { children: ReactNode }) {
@@ -129,33 +127,48 @@ export default function App() {
                 </RequireAuth>
               }
             >
+              {/* OPERAÇÃO */}
               <Route index element={<Dashboard />} />
               <Route path="match" element={<Match />} />
-              <Route path="auto-match" element={<Navigate to="/automations" replace />} />
-              <Route path="automations" element={<Automations />} />
-              <Route path="automations/channels" element={<AutomationsByChannel />} />
-              <Route path="automations/jonfrey" element={<Jonfrey />} />
-              <Route path="automations/pending" element={<Pending />} />
-              <Route path="ads" element={<Ads />} />
               <Route path="compose" element={<Composer />} />
-              <Route path="logs" element={<Logs />} />
-              <Route path="catalog" element={<Catalog />} />
+              <Route path="activity" element={<Activity />} />
+
+              {/* FONTES & PRODUTOS */}
               <Route path="crawlers" element={<Crawlers />} />
               <Route path="crawlers/:id" element={<CrawlerDetail />} />
-              <Route path="channels" element={<Navigate to="/automations/channels" replace />} />
+              <Route path="catalog" element={<Catalog />} />
+              <Route path="curation" element={<Curation />} />
+
+              {/* DESTINOS */}
+              <Route path="channels" element={<Channels />} />
               <Route path="channels/:id" element={<ChannelDetail />} />
               <Route path="links" element={<PublicLinks />} />
+
+              {/* PROVEDORES */}
               <Route path="groups" element={<Groups />} />
               <Route path="groups/:id" element={<GroupDetail />} />
               <Route path="accounts" element={<Accounts />} />
               <Route path="affiliates" element={<Affiliates />} />
-              <Route path="clusters" element={<Clusters />} />
+
+              {/* ANÁLISE */}
               <Route path="analytics" element={<Analytics />} />
+              <Route path="clusters" element={<Clusters />} />
+
+              {/* SISTEMA */}
               <Route path="settings/*" element={<Settings />} />
               <Route path="taxonomy" element={<Taxonomy />} />
-              <Route path="curation" element={<Curation />} />
               <Route path="manual" element={<Manual />} />
               <Route path="manual/:slug" element={<ManualTutorialPage />} />
+
+              {/* Redirects de URLs antigas */}
+              <Route path="logs" element={<Navigate to="/activity" replace />} />
+              <Route path="ads" element={<Navigate to="/activity" replace />} />
+              <Route path="auto-match" element={<Navigate to="/channels" replace />} />
+              <Route path="automations" element={<Navigate to="/channels" replace />} />
+              <Route path="automations/channels" element={<Navigate to="/channels" replace />} />
+              <Route path="automations/jonfrey" element={<Navigate to="/activity?tab=jonfrey" replace />} />
+              <Route path="automations/pending" element={<Navigate to="/activity?tab=pending" replace />} />
+
               <Route path="_dev/atoms" element={<DevAtoms />} />
               <Route path="*" element={<NotFound />} />
             </Route>

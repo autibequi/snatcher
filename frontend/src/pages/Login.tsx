@@ -67,7 +67,7 @@ const Login: FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 text-fg font-medium py-3 rounded-xl transition-colors"
+            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 text-fg font-medium py-3 rounded-md transition-colors"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

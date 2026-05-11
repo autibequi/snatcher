@@ -4,14 +4,11 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
 import { ManualModal } from '../components/ManualModal'
-import { TutorialModalProvider } from '../contexts/TutorialModalContext'
 import { PageTitleProvider } from '../contexts/PageTitleContext'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [manualOpen, setManualOpen] = React.useState(false)
-
-  const openManual = React.useCallback(() => setManualOpen(true), [])
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
@@ -39,12 +36,10 @@ export function AppShell() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <PageTitleProvider>
-          <Topbar onMenuClick={() => setSidebarOpen(true)} onOpenManual={openManual} />
-          <TutorialModalProvider openTutorial={openManual}>
-            <main className="flex-1 overflow-y-auto">
-              <Outlet />
-            </main>
-          </TutorialModalProvider>
+          <Topbar onMenuClick={() => setSidebarOpen(true)} />
+          <main className="flex-1 overflow-y-auto">
+            <Outlet />
+          </main>
         </PageTitleProvider>
       </div>
       <ApiErrorToast />

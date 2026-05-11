@@ -1,89 +1,77 @@
-import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useAuth } from '../lib/auth'
 
-interface SidebarProps {
+export interface SidebarProps {
+  open?: boolean
   onClose?: () => void
 }
 
-interface NavItem {
-  to: string
-  label: string
-  icon: string
-}
+type NavItem = { label: string; to: string; icon?: string }
+type NavGroup = { label: string; items: NavItem[] }
 
-interface NavGroup {
-  label: string
-  items: NavItem[]
-}
-
-const navGroups: NavGroup[] = [
+const NAV: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/', label: 'Dashboard', icon: '🏠' },
-      { to: '/compose', label: 'Compor disparo', icon: '📤' },
-      { to: '/ads', label: 'Anúncios pagos', icon: '💸' },
-    ],
-  },
-  {
-    label: 'Auto disparos',
-    items: [
-      { to: '/automations', label: 'Visão geral', icon: '⚡' },
-      { to: '/automations/channels', label: 'Canais', icon: '📢' },
-      { to: '/automations/jonfrey', label: 'Jonfrey', icon: '🤵' },
+      { to: '/',         label: 'Dashboard',      icon: '◈' },
+      { to: '/match',    label: 'Match',           icon: '⇄' },
+      { to: '/compose',  label: 'Compor disparo',  icon: '↑' },
+      { to: '/activity', label: 'Activity',        icon: '≡' },
     ],
   },
   {
     label: 'Fontes & Produtos',
     items: [
-      { to: '/crawlers', label: 'Crawlers', icon: '🔄' },
-      { to: '/curation', label: 'Triagem', icon: '✋' },
-      { to: '/catalog', label: 'Catálogo', icon: '📦' },
+      { to: '/crawlers', label: 'Crawlers',  icon: '↻' },
+      { to: '/catalog',  label: 'Catálogo',  icon: '▦' },
+    ],
+  },
+  {
+    label: 'Destinos',
+    items: [
+      { to: '/channels', label: 'Canais',         icon: '◎' },
+      { to: '/links',    label: 'Links públicos',  icon: '⊕' },
     ],
   },
   {
     label: 'Provedores',
     items: [
-      { to: '/groups', label: 'Grupos', icon: '👥' },
-      { to: '/accounts', label: 'Contas conectadas', icon: '📱' },
+      { to: '/groups',     label: 'Grupos',     icon: '⊞' },
+      { to: '/accounts',   label: 'Contas',     icon: '▣' },
+      { to: '/affiliates', label: 'Afiliados',  icon: '◉' },
     ],
   },
   {
     label: 'Análise',
     items: [
-      { to: '/analytics', label: 'Insights de cliques', icon: '📊' },
-      { to: '/links', label: 'Links públicos', icon: '🔗' },
-      { to: '/clusters', label: 'Clusters', icon: '🧩' },
+      { to: '/analytics', label: 'Analytics', icon: '▲' },
+      { to: '/clusters',  label: 'Clusters',  icon: '◆' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { to: '/logs', label: 'Logs', icon: '📋' },
-      { to: '/manual', label: 'Manual', icon: '📖' },
-      { to: '/affiliates', label: 'Afiliados', icon: '💰' },
-      { to: '/taxonomy', label: 'Taxonomia', icon: '🏷️' },
-      { to: '/settings', label: 'Configurações', icon: '⚙️' },
+      { to: '/settings', label: 'Configurações', icon: '⚙' },
+      { to: '/taxonomy', label: 'Taxonomia',      icon: '⊟' },
+      { to: '/manual',   label: 'Manual',         icon: '?' },
     ],
   },
 ]
 
-function navItemLooksActive(item: NavItem, pathname: string, navLinkActive: boolean): boolean {
-  if (item.to === '/manual') {
-    return pathname === '/manual' || pathname.startsWith('/manual/')
-  }
-  return navLinkActive
-}
-
 export function Sidebar({ onClose }: SidebarProps) {
-  const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
 
-  const displayName = user?.name ?? ''
+  // Auto-close drawer on navigation (mobile)
+  useEffect(() => {
+    onClose?.()
+  }, [location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const displayName  = user?.name  ?? ''
   const displayEmail = user?.email ?? ''
-  const roleLabel = user?.role === 'admin' ? 'Admin' : 'Operador'
-  const initials = displayName
+  const roleLabel    = user?.role === 'admin' ? 'Admin' : 'Operador'
+  const initials     = displayName
     .split(' ')
     .slice(0, 2)
     .map((w: string) => w[0]?.toUpperCase() ?? '')
@@ -91,27 +79,21 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Topo compacto: avatar + utilizador (clique → configurações); ✕ só mobile */}
+      {/* User header */}
       <div className="flex items-center gap-2 px-2 py-2 border-b border-border flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => {
-            navigate('/settings')
-            onClose?.()
-          }}
-          className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-md py-1 px-1 -mx-1 hover:bg-surface-2 transition-colors"
-        >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
             <span className="text-xs font-semibold text-accent leading-none">{initials || 'RC'}</span>
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-fg leading-tight truncate">{displayName || 'Conta'}</p>
             <p className="text-[10px] text-fg-3 leading-tight truncate">
-              {roleLabel}
-              {displayEmail ? ` · ${displayEmail}` : ''}
+              {roleLabel}{displayEmail ? ` · ${displayEmail}` : ''}
             </p>
           </div>
-        </button>
+        </div>
+
+        {/* Close button — mobile only */}
         <button
           type="button"
           onClick={onClose}
@@ -122,11 +104,11 @@ export function Sidebar({ onClose }: SidebarProps) {
         </button>
       </div>
 
-      {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2 min-h-0">
-        {navGroups.map(group => (
-          <div key={group.label} className="mb-4">
-            <p className="px-2 py-1 text-xs font-medium text-fg-3 uppercase tracking-wider">
+      {/* Nav */}
+      <nav aria-label="Navegação principal" className="flex-1 overflow-y-auto py-2 px-2 min-h-0">
+        {NAV.map(group => (
+          <div key={group.label}>
+            <p className="text-[10px] uppercase tracking-wider text-fg-3 mt-4 mb-1.5 px-3 select-none">
               {group.label}
             </p>
             {group.items.map(item => (
@@ -134,16 +116,21 @@ export function Sidebar({ onClose }: SidebarProps) {
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
-                onClick={onClose}
+                aria-current={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to)) ? 'page' : undefined}
                 className={({ isActive }) =>
-                  `flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                    navItemLooksActive(item, location.pathname, isActive)
-                      ? 'bg-accent/10 text-accent font-medium'
-                      : 'text-fg-2 hover:bg-surface-2 hover:text-fg'
-                  }`
+                  [
+                    'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors',
+                    isActive
+                      ? 'bg-surface-2 text-accent font-medium'
+                      : 'text-fg-2 hover:text-fg hover:bg-surface-2',
+                  ].join(' ')
                 }
               >
-                <span className="w-5 text-center text-base leading-none">{item.icon}</span>
+                {item.icon && (
+                  <span className="w-4 text-center text-sm leading-none opacity-70" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                )}
                 {item.label}
               </NavLink>
             ))}
