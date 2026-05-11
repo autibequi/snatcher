@@ -1472,7 +1472,7 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 		)
 	}
 	// Mesmo processo do cron (~15s), mas logo após libertar pending→queued para não esperar o próximo tick.
-	_ = scheduler.RunDispatchWorker(ctx, h.store)
+	_ = scheduler.RunDispatchWorker(ctx, h.store, h.notif)
 
 	beforeMap := map[string]any{"pending_approval_count": before}
 	afterMap := map[string]any{"released": released, "now_status": "queued"}

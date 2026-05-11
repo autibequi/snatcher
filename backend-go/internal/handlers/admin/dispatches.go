@@ -18,6 +18,7 @@ import (
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
@@ -27,6 +28,7 @@ type DispatchHandler struct {
 	store store.Store
 	db    *sqlx.DB
 	llmFn func() llm.Client
+	notif *notifier.Notifier // pode ser nil
 }
 
 // NewDispatchHandler cria um DispatchHandler.
@@ -35,6 +37,7 @@ func NewDispatchHandler(st store.Store, db *sqlx.DB) *DispatchHandler {
 }
 
 func (h *DispatchHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
+func (h *DispatchHandler) SetNotifier(n *notifier.Notifier) { h.notif = n }
 
 type dispatchTargetReq struct {
 	GroupID   *int64 `json:"group_id"`
@@ -527,7 +530,7 @@ func (h *DispatchHandler) ProcessQueueNow(w http.ResponseWriter, r *http.Request
 	if cfgErr == nil {
 		sendWin = scheduler.InDispatchSendWindow(cfg, time.Now())
 	}
-	n := scheduler.RunDispatchWorker(r.Context(), h.store)
+	n := scheduler.RunDispatchWorker(r.Context(), h.store, h.notif)
 
 	slog.Info("[dbg_dispatch] process-queue-now",
 		"batch_size", n,

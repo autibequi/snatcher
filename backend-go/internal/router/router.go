@@ -93,6 +93,7 @@ func Build(
 	notif := notifier.New(st)
 	jonfrey.SetNotifier(notif)
 	dash.SetNotifier(notif)
+	dispatches.SetNotifier(notif)
 	if sched != nil {
 		sched.SetNotifier(notif)
 	}
