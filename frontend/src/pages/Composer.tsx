@@ -1,9 +1,9 @@
 import React from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Button, Spinner, PlatformPill, PageHeader } from '../components/ui'
+import { Badge, Button, Spinner, PlatformPill, PageHeader } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
-import { formGroup, formLabel, formHint, sectionCard, switchRow, pageContainer } from '../lib/uiTokens'
+import { formGroup, formLabel, formHint, sectionCard, sectionTitle, switchRow, pageContainer } from '../lib/uiTokens'
 import { MessagePreview } from '../components/MessagePreview'
 
 interface Channel {
@@ -475,10 +475,10 @@ export default function Composer() {
       : productImage
 
   const previewWACard = (
-    <div className="rounded-xl border border-border bg-gradient-to-b from-surface to-surface-2/80 p-3 sm:p-4 shadow-sm ring-1 ring-border/60">
-      <div className="flex items-center justify-between gap-2 mb-2 md:mb-3">
-        <p className="text-xs font-semibold text-fg uppercase tracking-wide">Preview</p>
-        <span className="text-[10px] text-fg-3 font-medium px-2 py-0.5 rounded-full bg-surface border border-border">Ao vivo</span>
+    <div className={sectionCard}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className={sectionTitle}>Preview</p>
+        <span className="text-[10px] text-fg-3 font-medium px-2 py-0.5 rounded-full bg-surface-2 border border-border">Ao vivo</span>
       </div>
       <MessagePreview
         text={previewText || '…'}
@@ -487,7 +487,7 @@ export default function Composer() {
         maxHeight={typeof window !== 'undefined' && window.innerWidth < 768 ? 120 : undefined}
       />
       {productImages.length > 1 && (
-        <div className="flex items-center justify-center gap-1.5 mt-2 sm:mt-3">
+        <div className="flex items-center justify-center gap-1.5 mt-3">
           {productImages.map((_, i) => (
             <button
               key={i}
@@ -507,7 +507,7 @@ export default function Composer() {
     <>
       {/* Resumo */}
       <div className={sectionCard}>
-        <p className="text-sm font-semibold text-fg mb-3">Resumo</p>
+        <p className={`${sectionTitle} mb-3`}>Resumo</p>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between gap-4"><span className="text-fg-2">Produtos</span><span className="text-fg font-medium tabular-nums">{productIds.length}</span></div>
           <div className="flex justify-between gap-4"><span className="text-fg-2">Canais</span><span className="text-fg font-medium tabular-nums">{channels.length}</span></div>
@@ -579,7 +579,7 @@ export default function Composer() {
       <PageHeader
         title="Composer"
         subtitle={productIds.length > 0 ? `${productIds.length} produto${productIds.length !== 1 ? 's' : ''}` : undefined}
-        className="mb-6"
+        className="mb-4"
         actions={
           <>
             <Button
@@ -598,15 +598,15 @@ export default function Composer() {
       />
 
       {/* 2 colunas: formulário (esq) + preview/ações (dir) */}
-      <div className="flex flex-col md:flex-row md:items-start md:gap-8 lg:gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
 
         {/* Mobile: preview sticky no topo */}
-        <div className="md:hidden sticky top-0 z-20 -mx-3 px-3 py-2 mb-3 bg-bg/95 backdrop-blur-md border-b border-border/80">
+        <div className="lg:hidden sticky top-0 z-20 bg-bg/95 backdrop-blur-md border-b border-border/80 pb-3 pt-2 col-span-full">
           {previewWACard}
         </div>
 
         {/* Coluna formulário */}
-        <div className="order-2 md:order-1 flex-1 min-w-0 md:max-h-[calc(100vh-8.25rem)] md:overflow-y-auto md:overscroll-contain md:pr-1 space-y-4 md:[scrollbar-gutter:stable]">
+        <div className="min-w-0 max-h-[calc(100vh-8.25rem)] overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] space-y-4">
 
           {/* Etapa 1: Produtos */}
           <div className={`${sectionCard} !p-0 overflow-hidden`}>
@@ -711,9 +711,11 @@ export default function Composer() {
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">2</span>
                 <span className="font-medium text-fg">Template da mensagem</span>
               </div>
-              <span className="text-[11px] text-fg-3 flex flex-wrap items-center gap-x-1 gap-y-1">
+              <span className="flex flex-wrap items-center gap-1">
                 {VARIABLES.map(v => (
-                  <button key={v} type="button" onClick={() => setText(t => t + v)} className="font-mono text-[11px] text-accent hover:underline px-1 rounded bg-accent/5">{v}</button>
+                  <button key={v} type="button" onClick={() => setText(t => t + v)}>
+                    <Badge variant="accent" size="sm" className="font-mono cursor-pointer hover:opacity-80">{v}</Badge>
+                  </button>
                 ))}
               </span>
             </div>
@@ -860,15 +862,15 @@ export default function Composer() {
             </div>
           </div>
 
-          {/* Mobile: resumo + agendar + disparar */}
-          <div className="md:hidden space-y-4 pb-8">
+          {/* Mobile/tablet: resumo + agendar + disparar */}
+          <div className="lg:hidden space-y-4 pb-8">
             {composerMetaActions}
           </div>
 
         </div>
 
         {/* Desktop: preview + painel lateral */}
-        <aside className="hidden md:flex flex-col order-1 md:order-2 w-full md:w-[min(100%,380px)] lg:w-[400px] shrink-0 gap-4 md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-8.25rem)] md:overflow-y-auto md:overscroll-contain md:pb-4 md:pl-6 md:ml-2 md:border-l md:border-border/70">
+        <aside className="hidden lg:flex flex-col gap-4 sticky top-4 self-start max-h-[calc(100vh-8.25rem)] overflow-y-auto overscroll-contain pb-4">
           {previewAsideDesktop}
         </aside>
       </div>

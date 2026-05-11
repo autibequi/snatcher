@@ -329,6 +329,13 @@ function TabOverview({ group, members, admins, isProtected, groupId, onAdminAdde
 
   return (
     <div className="space-y-6">
+      {/* Audience infer action - Moved to top */}
+      <div className="flex justify-end">
+        <Button variant="secondary" size="sm" loading={audienceMut.isPending} onClick={() => audienceMut.mutate()}>
+          ✨ Inferir audiência
+        </Button>
+      </div>
+
       {/* Audience inference result */}
       {audienceMut.data && (
         <div className="bg-accent/5 border border-accent/30 rounded-md p-4">
@@ -433,12 +440,6 @@ function TabOverview({ group, members, admins, isProtected, groupId, onAdminAdde
         )}
       </div>
 
-      {/* Audience infer action */}
-      <div className="flex justify-end">
-        <Button variant="secondary" size="sm" loading={audienceMut.isPending} onClick={() => audienceMut.mutate()}>
-          ✨ Inferir audiência
-        </Button>
-      </div>
     </div>
   )
 }

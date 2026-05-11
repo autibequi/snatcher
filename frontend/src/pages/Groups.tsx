@@ -237,8 +237,8 @@ function GroupsTable({ groups, search, accountFilter, onRowClick }: {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-surface-2">
-            {['Grupo', 'Plataforma', 'Canais', 'Conta', 'Membros', 'Admins', 'Status', 'Audiência', ''].map((h, i) => (
-              <th key={i} className={`${tableHeaderCell} ${i === 4 ? 'text-right' : 'text-left'} ${i === 8 ? 'w-6 px-4' : ''}`}>{h}</th>
+            {['Grupo', 'Plataforma', 'Canais', 'Conta', 'Membros', 'Admins', 'Status', 'Audiência'].map((h, i) => (
+              <th key={i} className={`${tableHeaderCell} ${i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -259,7 +259,6 @@ function GroupsTable({ groups, search, accountFilter, onRowClick }: {
                 </td>
                 <td className={tableCell}><StatusDot status={g.status} /></td>
                 <td className={tableCell}><AudienceBadge audienceStatus={g.audience_status} /></td>
-                <td className="px-4 py-2.5 text-fg-3 text-xs">›</td>
               </tr>
             )
           })}

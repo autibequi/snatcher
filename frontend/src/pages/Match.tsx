@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Skeleton, EmptyState, PageHeader } from '../components/ui'
+import { Skeleton, EmptyState, PageHeader, Button } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
 import { ProductSwitcher } from '../components/match/ProductSwitcher'
@@ -399,8 +399,9 @@ function BestMatchesView() {
                     </td>
                     <td className={`${tableCell} text-right pr-4`}>
                       {!item.already_sent && (
-                        <button
-                          type="button"
+                        <Button
+                          size="sm"
+                          variant="primary"
                           onClick={() =>
                             dispatchMut.mutate({
                               product_id: item.product_id,
@@ -408,10 +409,9 @@ function BestMatchesView() {
                             })
                           }
                           disabled={dispatchMut.isPending}
-                          className="text-xs bg-accent text-white px-3 py-1.5 rounded-md hover:bg-accent-hover disabled:opacity-50"
                         >
                           ✈ Disparar
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>

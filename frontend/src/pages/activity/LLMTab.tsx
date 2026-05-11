@@ -366,7 +366,7 @@ export function LLMTab({ q = '' }: LLMTabProps) {
     })
   }, [rows, q])
 
-  const colCount = 9
+  const colCount = 8
 
   return (
     <div className="bg-surface border border-border rounded-lg shadow-sm">
@@ -430,9 +430,6 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                 <th className="text-right px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
                   Dt
                 </th>
-                <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
-                  Estado
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -488,25 +485,6 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                       </td>
                       <td className="px-3 py-2.5 text-[11px] text-fg-3 font-mono text-right align-top whitespace-nowrap tabular-nums">
                         {r.latency_seconds != null ? `${r.latency_seconds.toFixed(2)}s` : '—'}
-                      </td>
-                      <td className="px-3 py-2.5 align-top">
-                        {isTransient ? (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-warning/15 text-warning rounded-md">
-                            {r.status || 'retry'}
-                          </span>
-                        ) : r.error ? (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-danger/15 text-danger rounded-md font-medium">
-                            erro
-                          </span>
-                        ) : r.cache_hit ? (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-accent/15 text-accent rounded-md">
-                            cache
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-success/15 text-success rounded-md">
-                            {r.status || 'ok'}
-                          </span>
-                        )}
                       </td>
                     </tr>
                     {isRealError && r.error_msg && (
@@ -578,8 +556,8 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                                 </ul>
                               </details>
                             )}
-                            <div className="flex flex-col gap-3">
-                              <div className="rounded-lg border border-border bg-surface overflow-hidden">
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <div className="flex-1 rounded-lg border border-border bg-surface overflow-hidden">
                                 <div className="px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
                                   Mensagem enviada
                                 </div>
@@ -587,7 +565,7 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                                   {r.prompt.trim() ? r.prompt : '(vazio)'}
                                 </pre>
                               </div>
-                              <div className="rounded-lg border border-border bg-surface overflow-hidden">
+                              <div className="flex-1 rounded-lg border border-border bg-surface overflow-hidden">
                                 <div className="px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
                                   Mensagem recebida
                                 </div>

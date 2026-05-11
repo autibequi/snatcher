@@ -145,15 +145,6 @@ function ChannelRow({ channel, onClick }: { channel: Channel; onClick: () => voi
         )}
       </td>
 
-      {/* Platform */}
-      <td className={tableCell}>
-        {channel.platform ? (
-          <PlatformPill platform={channel.platform} size="sm" />
-        ) : (
-          <span className="text-fg-3">—</span>
-        )}
-      </td>
-
       {/* Status */}
       <td className={tableCell}>{statusBadge}</td>
 
@@ -657,7 +648,6 @@ export default function Channels() {
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <th className={`${tableHeaderCell} w-[30%]`}>Canal</th>
-                <th className={tableHeaderCell}>Plataforma</th>
                 <th className={tableHeaderCell}>Status</th>
                 <th className={tableHeaderCell}>Grupos</th>
                 <th className={tableHeaderCell}>CTR 30d</th>
