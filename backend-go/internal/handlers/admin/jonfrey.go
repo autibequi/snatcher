@@ -38,8 +38,10 @@ type JonfreyHandler struct {
 	schedCycleBusy bool
 
 	// Cache da revisão Jonfrey · 24h (GET /api/jonfrey/review-dispatches).
-	// TTL curto (1h) — período-base é 24h, mas no caminho feliz queremos refrescar
-	// ao longo do dia para pegar dispatches novos sem cobrar LLM a cada tela.
+	// TTL 24h — janela é exatamente 24h, então re-rodar antes só faria o
+	// usuário pagar LLM de novo cobrindo quase os mesmos dispatches.
+	// Cache em memória (hit rápido) + persistido em jonfrey_review_cache
+	// (sobrevive a restart do backend). Bypass manual via ?force=1 no GET.
 	reviewMu       sync.Mutex
 	reviewCache    *reviewDispatchesResp
 	reviewCachedAt time.Time

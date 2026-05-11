@@ -1,5 +1,4 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ScatterChart,
@@ -48,19 +47,6 @@ function toArray(v: unknown): string[] {
       return Array.isArray(p) ? p : []
     } catch {
       return v.split(',').map(s => s.trim()).filter(Boolean)
-    }
-  }
-  return []
-}
-
-function toNumberArray(v: unknown): number[] {
-  if (Array.isArray(v)) return v.filter(x => typeof x === 'number').map(x => x)
-  if (typeof v === 'string') {
-    try {
-      const p = JSON.parse(v)
-      return Array.isArray(p) ? p.filter(x => typeof x === 'number') : []
-    } catch {
-      return v.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     }
   }
   return []
@@ -139,26 +125,15 @@ function ClusterCard({ cluster, colorIdx }: { cluster: Cluster; colorIdx: number
         </div>
       )}
 
-      {/* Channel chips */}
-      {(() => {
-        const channels = toNumberArray(cluster.member_channels)
-        return channels.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {channels.slice(0, 6).map(cid => (
-              <Link
-                key={cid}
-                to={`/channels/${cid}`}
-                className="text-xs px-1.5 py-0.5 rounded border border-border text-fg-3 hover:text-accent hover:border-accent transition-colors"
-              >
-                #{cid}
-              </Link>
-            ))}
-            {channels.length > 6 && (
-              <span className="text-xs text-fg-3">+{channels.length - 6}</span>
-            )}
-          </div>
-        ) : null
-      })()}
+      {/*
+        Antes vinha aqui uma linha de chips "#123 #456 …" — IDs crus dos canais
+        membros do cluster. O backend (/api/clusters) só devolve member_channels
+        como []int, sem nomes; o resultado parecia hash aleatório no fim do card
+        e não dava utilidade ao usuário. A contagem de membros já está no
+        header da caixa, então removemos a lista. Para inspecionar os canais
+        de um cluster específico use o endpoint /api/clusters/{id}, que tem
+        métricas enriquecidas.
+      */}
 
       {/* Opportunity */}
       {cluster.opportunity && (

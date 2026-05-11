@@ -66,7 +66,10 @@ const (
 	reviewDispatchesMaxHours    = 168 // 7 dias
 	reviewDispatchesLLMTimeout  = 90 * time.Second
 	reviewDispatchesHTTPTimeout = 120 * time.Second
-	reviewDispatchesCacheTTL    = 1 * time.Hour
+	// TTL 24h: período da revisão é 24h, então re-rodar antes regenera
+	// quase a mesma lista pagando LLM de novo. Mesmo valor do
+	// /dashboard/recommendation. Bypass manual: ?force=1 no GET.
+	reviewDispatchesCacheTTL = 24 * time.Hour
 )
 
 // ReviewDispatches POST /api/jonfrey/review-dispatches
@@ -91,11 +94,13 @@ func (h *JonfreyHandler) ReviewDispatches(w http.ResponseWriter, r *http.Request
 }
 
 // ReviewDispatchesGet GET /api/jonfrey/review-dispatches?force=1
-// Mesmo padrão do /api/dashboard/recommendation: TTL 1h em memória,
-// força regeneração via ?force=1. Período fixo 24h (use POST se quiser outro).
+// Mesmo padrão do /api/dashboard/recommendation: TTL 24h, cache em memória +
+// persistido em jonfrey_review_cache (sobrevive a restart). Período fixo 24h
+// (use POST se quiser outro). ?force=1 invalida ambos os caches e regera.
 func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("force") == "1"
 
+	// 1) Hit em memória.
 	if !force {
 		h.reviewMu.Lock()
 		cached := h.reviewCache
@@ -110,6 +115,37 @@ func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	// 2) Hit em DB (sobrevive restart). Aceita só se ainda dentro do TTL.
+	if !force {
+		var dbRow struct {
+			Headline    string    `db:"headline"`
+			Items       []byte    `db:"items"`
+			GeneratedAt time.Time `db:"generated_at"`
+			CachedAt    time.Time `db:"cached_at"`
+		}
+		err := h.db.GetContext(r.Context(), &dbRow,
+			`SELECT headline, items, generated_at, cached_at
+			   FROM jonfrey_review_cache WHERE id = 1`)
+		if err == nil && time.Since(dbRow.CachedAt) < reviewDispatchesCacheTTL {
+			var items []reviewDispatchItem
+			_ = json.Unmarshal(dbRow.Items, &items)
+			out := reviewDispatchesResp{
+				Headline:    dbRow.Headline,
+				Items:       items,
+				GeneratedAt: dbRow.GeneratedAt.UTC().Format(time.RFC3339Nano),
+				CachedFor:   int(reviewDispatchesCacheTTL.Seconds() - time.Since(dbRow.CachedAt).Seconds()),
+			}
+			h.reviewMu.Lock()
+			cp := out
+			h.reviewCache = &cp
+			h.reviewCachedAt = dbRow.CachedAt
+			h.reviewMu.Unlock()
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+	}
+
+	// 3) Miss em memória + DB (ou ?force=1) → roda LLM/heurística.
 	ctx, cancel := context.WithTimeout(r.Context(), reviewDispatchesHTTPTimeout)
 	defer cancel()
 
@@ -121,6 +157,21 @@ func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Requ
 
 	now := time.Now()
 	resp.CachedFor = int(reviewDispatchesCacheTTL.Seconds())
+
+	// Persiste no DB (sobrevive a restart do backend).
+	itemsJSON, _ := json.Marshal(resp.Items)
+	if _, dbErr := h.db.ExecContext(r.Context(), `
+		INSERT INTO jonfrey_review_cache (id, headline, items, generated_at, cached_at)
+		VALUES (1, $1, $2, $3, $3)
+		ON CONFLICT (id) DO UPDATE SET
+			headline = EXCLUDED.headline,
+			items = EXCLUDED.items,
+			generated_at = EXCLUDED.generated_at,
+			cached_at = EXCLUDED.cached_at`,
+		resp.Headline, itemsJSON, now); dbErr != nil {
+		// Persistência é "best effort" — log e segue.
+		slog.Warn("jonfrey: persist review cache", "err", dbErr)
+	}
 
 	h.reviewMu.Lock()
 	cp := resp

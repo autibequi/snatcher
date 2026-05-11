@@ -85,7 +85,16 @@ export function useJonfreyReview() {
       apiClient
         .get('/api/jonfrey/review-dispatches', { timeout: 120_000 })
         .then(r => r.data as JonfreyReviewResult),
-    staleTime: 5 * 60_000,
+    // Backend já tem cache de 24h (em memória + DB) — basta o front não
+    // refetchar agressivo. staleTime longo + sem refetch on focus/mount
+    // garante que abrir/fechar a aba ou voltar pro tab do navegador NÃO
+    // dispara nova request. Regeneração só acontece via botão "↻"
+    // (que chama com ?force=1) ou expiração natural do cache backend.
+    staleTime: 24 * 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
     retry: 0,
   })
 }
