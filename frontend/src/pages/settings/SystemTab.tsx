@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Switch } from '../../components/ui'
+import { Button, Switch } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import { sectionCard, sectionTitle, formGroup, formLabel, formHint, switchRow } from '../../lib/uiTokens'
 
@@ -13,7 +13,19 @@ interface AppConfig {
   dispatch_send_timezone?: string
   dispatch_min_interval_ms?: number
   dispatch_max_per_group_per_hour?: number
+  notifications_group_id?: number | null
   [key: string]: unknown
+}
+
+interface GroupOption {
+  id: number
+  name: string
+  platform: string
+  channel_name?: string
+  account_label?: string
+  status?: string
+  member_count?: number
+  archived?: boolean
 }
 
 export function SystemTab() {
@@ -24,6 +36,21 @@ export function SystemTab() {
     queryKey: ['config'],
     queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
   })
+
+  // Lista enriquecida de grupos (mesma origem da página /groups e do seletor de canais).
+  // Sem filtro server-side: filtramos client-side pra mostrar só WA ativos com JID.
+  const { data: allGroups = [] } = useQuery<GroupOption[]>({
+    queryKey: ['groups', 'for-notifications'],
+    queryFn: () => apiClient.get('/api/groups').then(r => r.data ?? []),
+    staleTime: 60_000,
+  })
+
+  const notificationGroupOptions = useMemo<GroupOption[]>(
+    () => allGroups
+      .filter(g => g.platform === 'whatsapp' && !g.archived && (g.status ?? 'active') !== 'banned')
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [allGroups],
+  )
 
   const saveMut = useMutation({
     mutationFn: (data: Partial<AppConfig>) => apiClient.put('/api/config', data).then(r => r.data),
@@ -95,6 +122,37 @@ export function SystemTab() {
               placeholder="America/Sao_Paulo"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Notificações operacionais */}
+      <div className={sectionCard}>
+        <p className={`${sectionTitle} mb-1`}>Notificações</p>
+        <p className={`${formHint} mb-3`}>
+          Grupo WhatsApp que recebe os resumos automáticos do sistema: relatórios do
+          Jonfrey (revisão e recomendação), entregas de dispatch (com lista de grupos
+          e produto), resumos do auto-match e falhas relevantes.
+        </p>
+        <div className={formGroup}>
+          <label className={formLabel}>Grupo de destino</label>
+          <select
+            value={merged.notifications_group_id ?? ''}
+            onChange={e => upd('notifications_group_id', e.target.value ? Number(e.target.value) : null)}
+            className="w-full max-w-md text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
+          >
+            <option value="">— Desativado —</option>
+            {notificationGroupOptions.map(g => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+                {g.channel_name ? ` · ${g.channel_name}` : ''}
+                {g.account_label ? ` · ${g.account_label}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className={formHint}>
+            Apenas grupos WhatsApp já cadastrados na página <strong>Grupos</strong> aparecem aqui.
+            Se a lista estiver vazia, importe um grupo lá primeiro.
+          </p>
         </div>
       </div>
 
