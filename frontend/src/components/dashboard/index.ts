@@ -4,4 +4,6 @@ export { ChannelPerformanceTable } from './ChannelPerformanceTable'
 export type { ChannelPerf } from './ChannelPerformanceTable'
 export { UpcomingDispatches, formatRelativeEta } from './UpcomingDispatches'
 export type { UpcomingDispatch } from './UpcomingDispatches'
-export { JonfreyDispatchReviewCard } from './JonfreyDispatchReviewCard'
+// JonfreyDispatchReviewCard foi movido para componentes/automatch/JonfreyCheckTab
+// e vive como aba na página /auto-match. Mantemos o ficheiro antigo apagado pra
+// não dar a impressão de que ainda há um card no dashboard.
