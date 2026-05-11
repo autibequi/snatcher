@@ -4,9 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import {
   statusChipSuccess,
-  statusChipWarning,
   statusChipDanger,
   statusChipMuted,
+  normalizeStatus,
 } from '../lib/uiTokens'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
 import { resolveTutorialSlugFromPath } from '../content/tutorials'
@@ -299,6 +299,9 @@ function WorkQueuePanel({ open, filter, setFilter, data, refetch }: WorkQueuePan
         )}
         {visibleItems.map((item, idx) => {
           const key = isJobRow(item) ? `job:${item.id}` : `jf:${item.id}:${item.created_at}`
+          // Mesmo helper para os dois tipos de linha — garante que "running"
+          // job e "running" Jonfrey tenham EXATAMENTE a mesma cor/label.
+          const s = normalizeStatus(item.status)
           if (isJobRow(item)) {
             const j = item
             const act = j.activity ?? []
@@ -310,21 +313,17 @@ function WorkQueuePanel({ open, filter, setFilter, data, refetch }: WorkQueuePan
                     {j.name}
                   </span>
                   <span
-                    className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                      j.status === 'running'
-                        ? 'bg-accent/10 text-accent'
-                        : j.status === 'completed'
-                          ? 'bg-success/10 text-success'
-                          : j.status === 'failed'
-                            ? 'bg-danger/10 text-danger'
-                            : 'bg-fg-3/10 text-fg-3'
-                    }`}
+                    className={`${s.chipClass} flex-shrink-0 !px-1.5 !py-0.5 !text-[10px] !rounded`}
+                    title={`status: ${j.status}`}
                   >
-                    {j.status}
+                    {s.pulseDot && (
+                      <span className={`w-1 h-1 rounded-full ${s.dotColorClass} animate-pulse shrink-0`} aria-hidden />
+                    )}
+                    {s.label}
                   </span>
                 </div>
                 <p className="text-[10px] text-fg-3 mt-0.5 font-mono">{fmtShort(j.queue_ts)} · #{idx + 1}</p>
-                {j.status === 'running' && (
+                {s.tone === 'running' && (
                   <>
                     <div className="mt-1 h-1 bg-surface-2 rounded-full overflow-hidden">
                       <div className="h-full bg-accent transition-all" style={{ width: `${j.progress}%` }} />
@@ -360,23 +359,19 @@ function WorkQueuePanel({ open, filter, setFilter, data, refetch }: WorkQueuePan
           }
           const a = item
           const err = a.error_message?.trim()
-          const sum = err || a.reasoning?.trim() || (a.status === 'running' ? 'Em execução…' : '—')
+          const sum = err || a.reasoning?.trim() || (s.tone === 'running' ? 'Em execução…' : '—')
           return (
             <div key={key} className="px-3 py-2 border-b border-border last:border-0 bg-surface-2/40">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-mono text-fg truncate">{a.action_type}</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
-                    a.status === 'running'
-                      ? 'bg-accent/10 text-accent'
-                      : a.status === 'success'
-                        ? 'bg-success/10 text-success'
-                        : a.status === 'failed'
-                          ? 'bg-danger/10 text-danger'
-                          : 'bg-fg-3/10 text-fg-3'
-                  }`}
+                  className={`${s.chipClass} flex-shrink-0 !px-1.5 !py-0.5 !text-[10px] !rounded`}
+                  title={`status: ${a.status}`}
                 >
-                  {a.status}
+                  {s.pulseDot && (
+                    <span className={`w-1 h-1 rounded-full ${s.dotColorClass} animate-pulse shrink-0`} aria-hidden />
+                  )}
+                  {s.label}
                 </span>
               </div>
               <p className="text-[10px] text-fg-3 mt-0.5">
@@ -450,49 +445,66 @@ export function StatusZone() {
 
   return (
     <div ref={ref} className="relative flex items-center gap-1.5 flex-shrink-0">
-      {failedCount > 0 && (
-        <button
-          type="button"
-          onClick={() => togglePanel('failed')}
-          title={`${failedCount} item(s) com falha · clique para ver detalhes`}
-          aria-label={`${failedCount} falhas na fila`}
-          className={`${statusChipDanger} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
-        >
-          <span aria-hidden>⚠</span>
-          <span className="tabular-nums">
-            {failedCount} erro{failedCount !== 1 ? 's' : ''}
-          </span>
-        </button>
-      )}
+      {/*
+        Pills externas usam exatamente a MESMA família de cores que os itens
+        dentro do popup — antes havia conflito (running âmbar fora, roxo
+        dentro). Cores vêm de normalizeStatus() para manter sincronia.
+      */}
+      {failedCount > 0 && (() => {
+        const s = normalizeStatus('failed')
+        return (
+          <button
+            type="button"
+            onClick={() => togglePanel('failed')}
+            title={`${failedCount} item(s) com falha · clique para ver detalhes`}
+            aria-label={`${failedCount} falhas na fila`}
+            className={`${s.chipClass} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
+          >
+            <span aria-hidden>{s.icon}</span>
+            <span className="tabular-nums">
+              {failedCount} {failedCount === 1 ? 'falha' : 'falhas'}
+            </span>
+          </button>
+        )
+      })()}
 
-      {runningCount > 0 && (
-        <button
-          type="button"
-          onClick={() => togglePanel('running')}
-          title={`${runningCount} job(s) em execução · clique para acompanhar`}
-          aria-label={`${runningCount} jobs em execução`}
-          className={`${statusChipWarning} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
-        >
-          <span aria-hidden>⏳</span>
-          <span className="tabular-nums">
-            {runningCount} ativo{runningCount !== 1 ? 's' : ''}
-          </span>
-          <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse shrink-0" aria-hidden />
-        </button>
-      )}
+      {runningCount > 0 && (() => {
+        const s = normalizeStatus('running')
+        return (
+          <button
+            type="button"
+            onClick={() => togglePanel('running')}
+            title={`${runningCount} item(s) em execução · clique para acompanhar`}
+            aria-label={`${runningCount} itens em execução`}
+            className={`${s.chipClass} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
+          >
+            <span aria-hidden>{s.icon}</span>
+            <span className="tabular-nums">
+              {runningCount} em execução
+            </span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${s.dotColorClass} animate-pulse shrink-0`}
+              aria-hidden
+            />
+          </button>
+        )
+      })()}
 
-      {queuedOnlyCount > 0 && failedCount === 0 && runningCount === 0 && (
-        <button
-          type="button"
-          onClick={() => togglePanel('all')}
-          title={`${queuedOnlyCount} item(s) aguardando na fila`}
-          aria-label={`${queuedOnlyCount} itens na fila`}
-          className={`${statusChipMuted} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
-        >
-          <span aria-hidden>•</span>
-          <span className="tabular-nums">{queuedOnlyCount} na fila</span>
-        </button>
-      )}
+      {queuedOnlyCount > 0 && failedCount === 0 && runningCount === 0 && (() => {
+        const s = normalizeStatus('pending')
+        return (
+          <button
+            type="button"
+            onClick={() => togglePanel('all')}
+            title={`${queuedOnlyCount} item(s) aguardando na fila`}
+            aria-label={`${queuedOnlyCount} itens aguardando`}
+            className={`${s.chipClass} cursor-pointer hover:opacity-80 transition-opacity min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full`}
+          >
+            <span aria-hidden>{s.icon}</span>
+            <span className="tabular-nums">{queuedOnlyCount} aguardando</span>
+          </button>
+        )
+      })()}
 
       {hasAccountError && (
         <button

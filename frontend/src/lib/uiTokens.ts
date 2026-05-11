@@ -42,7 +42,97 @@ export const statusChip = 'inline-flex items-center gap-1.5 rounded-md px-2 py-0
 export const statusChipSuccess = `${statusChip} bg-success-soft text-success`
 export const statusChipWarning = `${statusChip} bg-warning-soft text-warning`
 export const statusChipDanger = `${statusChip} bg-danger-soft text-danger`
+export const statusChipAccent = `${statusChip} bg-accent-soft text-accent`
 export const statusChipMuted = `${statusChip} bg-surface-2 text-fg-3`
+
+// ─── Status normalization ────────────────────────────────────────────────────
+//
+// Antes desta tabela, cada lugar do app pintava status à mão: a pill externa
+// tratava "running" como âmbar (warning) enquanto o popup pintava o mesmo
+// "running" de roxo (accent). E o backend mistura vocabulário entre fontes —
+// jobs usam "completed/cancelled", Jonfrey usa "success/skipped", a fila web
+// também recebe "queued" do dispatcher. Resultado: usuário via dois rótulos
+// diferentes para o mesmo estado.
+//
+// Aqui a gente força UMA única família semântica:
+//   running   → accent  (em execução, com pulse)
+//   pending   → warning (aguardando — fila, queued, agendado)
+//   success   → success (verde — completed, ok, success, delivered)
+//   failed    → danger  (vermelho — failed, error)
+//   cancelled → muted   (cinza — cancelled)
+//   skipped   → muted   (cinza — skipped, ignored)
+//
+// Backend continua emitindo o vocabulário cru; o front apenas TRADUZ na borda
+// para evitar a confusão de "verde aqui, amarelo ali" reportada pelo user.
+
+export type StatusTone = 'running' | 'pending' | 'success' | 'failed' | 'cancelled' | 'skipped'
+
+export interface NormalizedStatus {
+  tone: StatusTone
+  label: string         // rótulo em PT-BR mostrado ao user
+  icon: string          // emoji ASCII curto (sem SVG)
+  chipClass: string     // pinta a "pill" externa — usar dentro de className
+  pulseDot: boolean     // running mostra um pontinho com animate-pulse
+  dotColorClass: string // cor do pulse — alinhada com o tone
+}
+
+const STATUS_TONE_MAP: Record<string, StatusTone> = {
+  running: 'running',
+  in_progress: 'running',
+  processing: 'running',
+  sending: 'running',
+
+  pending: 'pending',
+  queued: 'pending',
+  scheduled: 'pending',
+  pending_approval: 'pending',
+  waiting: 'pending',
+
+  success: 'success',
+  completed: 'success',
+  done: 'success',
+  ok: 'success',
+  delivered: 'success',
+
+  failed: 'failed',
+  error: 'failed',
+  errored: 'failed',
+
+  cancelled: 'cancelled',
+  canceled: 'cancelled',
+  aborted: 'cancelled',
+
+  skipped: 'skipped',
+  ignored: 'skipped',
+}
+
+const STATUS_TONE_META: Record<StatusTone, { label: string; icon: string; chipClass: string; dotColorClass: string; pulseDot: boolean }> = {
+  running:   { label: 'Em execução', icon: '⏳', chipClass: statusChipAccent,  dotColorClass: 'bg-accent',  pulseDot: true  },
+  pending:   { label: 'Aguardando',  icon: '•',  chipClass: statusChipWarning, dotColorClass: 'bg-warning', pulseDot: false },
+  success:   { label: 'Concluído',   icon: '✓',  chipClass: statusChipSuccess, dotColorClass: 'bg-success', pulseDot: false },
+  failed:    { label: 'Falhou',      icon: '⚠',  chipClass: statusChipDanger,  dotColorClass: 'bg-danger',  pulseDot: false },
+  cancelled: { label: 'Cancelado',   icon: '✕',  chipClass: statusChipMuted,   dotColorClass: 'bg-fg-3',    pulseDot: false },
+  skipped:   { label: 'Ignorado',    icon: '↷',  chipClass: statusChipMuted,   dotColorClass: 'bg-fg-3',    pulseDot: false },
+}
+
+export function normalizeStatus(raw: string | null | undefined): NormalizedStatus {
+  const key = (raw ?? '').toLowerCase().trim()
+  const tone = STATUS_TONE_MAP[key] ?? 'pending'
+  const meta = STATUS_TONE_META[tone]
+  return {
+    tone,
+    label: meta.label,
+    icon: meta.icon,
+    chipClass: meta.chipClass,
+    pulseDot: meta.pulseDot,
+    dotColorClass: meta.dotColorClass,
+  }
+}
+
+export function statusTone(raw: string | null | undefined): StatusTone {
+  const key = (raw ?? '').toLowerCase().trim()
+  return STATUS_TONE_MAP[key] ?? 'pending'
+}
 
 // Layout helpers
 export const pageContainer = 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6'
