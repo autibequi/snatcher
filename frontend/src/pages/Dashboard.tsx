@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Button, KpiCard, Switch } from '../components/ui'
+import { Button, KpiCard, Switch, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
 import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
+import { pageContainer, responsiveKpiGrid } from '../lib/uiTokens'
 import type { InboxItem } from '../components/dashboard/OperationInbox'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -18,19 +19,16 @@ interface JonfreyConfigLite {
 }
 
 interface KPIs {
-  // Campos originais (mantidos por compatibilidade)
   dispatches_24h?: number
   clicks_24h?: number
   revenue_24h?: number
   conversion_pct?: number
-  // Campos novos — deltas e métricas da wave 2
   dispatches_delta_pct?: number
   ctr_avg_pp_delta?: number
   unique_clicks?: number
   health_score?: number
   accounts_normal_count?: number
 }
-
 
 // ── Health score color helper ──────────────────────────────────────────────────
 
@@ -80,8 +78,6 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   })
 
-
-  // Fetch inbox para contar itens
   const { data: inboxItems = [] } = useQuery<InboxItem[]>({
     queryKey: ['dashboard', 'inbox-v2'],
     queryFn: () =>
@@ -92,7 +88,6 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
-  // Fetch upcoming dispatches para pegar primeira ETA
   const { data: dispatches = [] } = useQuery<UpcomingDispatch[]>({
     queryKey: ['dashboard', 'upcoming-dispatches'],
     queryFn: () =>
@@ -121,22 +116,13 @@ export default function Dashboard() {
     },
   })
 
-  // Use backend KPIs or null if not available
   const resolvedKpis = kpis ?? null
-
-  // Disparos 7D
   const dispatches7d = resolvedKpis?.dispatches_24h ?? '—'
   const dispatchesDelta = resolvedKpis?.dispatches_delta_pct
-
-  // CTR médio
   const ctrAvg = resolvedKpis?.conversion_pct
   const ctrDelta = resolvedKpis?.ctr_avg_pp_delta
-
-  // Cliques 7D
   const clicks7d = resolvedKpis?.clicks_24h ?? '—'
   const uniqueClicks = resolvedKpis?.unique_clicks
-
-  // Saúde anti-ban
   const healthScore = resolvedKpis?.health_score
   const accountsNormal = resolvedKpis?.accounts_normal_count
 
@@ -150,73 +136,90 @@ export default function Dashboard() {
         )
       : '—'
 
+  function handleRefresh() {
+    qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
+    qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+    qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
+    qc.invalidateQueries({ queryKey: ['catalog'] })
+    qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+  }
+
+  const nextDispatchEta =
+    dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
+
+  const firstName = user?.name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'você'
+
   return (
-    <div className="px-4 py-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${pageContainer} space-y-6`}>
 
-      {/* ── 1. Linha de contexto + ações (título = Topbar "Dashboard") ───────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p id="dashboard-subtitle" className="text-sm text-fg-3">
-          {renderDynamicSubtitle(
-            inboxItems.length,
-            dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined,
-          )}
-        </p>
-        <div className="flex flex-wrap gap-2 shrink-0 items-center">
-          <div
-            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 mr-1"
-            title="Ciclo agendado do Jonfrey (detalhes em Automations → Jonfrey)"
-          >
-            <span className="text-xs text-fg-2 whitespace-nowrap">Auto-pilot Jonfrey</span>
-            <Switch
-              checked={jonfreyConfig?.enabled ?? false}
-              disabled={jonfreyPilotMut.isPending || jonfreyConfig == null}
-              onChange={v => jonfreyPilotMut.mutate(v)}
-            />
-            <button
-              type="button"
-              className="text-[11px] text-accent hover:underline whitespace-nowrap"
-              onClick={() => navigate('/automations/jonfrey')}
+      {/* ── 1. Cabeçalho ────────────────────────────────────────────────────── */}
+      <PageHeader
+        title={`Bom dia, ${firstName}`}
+        subtitleId="dashboard-subtitle"
+        subtitle={renderDynamicSubtitle(inboxItems.length, nextDispatchEta)}
+        actions={
+          <>
+            <div
+              className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5"
+              title="Ciclo agendado do Jonfrey"
             >
-              config →
-            </button>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            type="button"
-            onClick={() => {
-              qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
-              qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
-              qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
-              qc.invalidateQueries({ queryKey: ['catalog'] })
-              qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
-            }}
-          >
-            ↻ Atualizar
-          </Button>
-          <Button variant="primary" size="sm" type="button" onClick={() => navigate('/compose')}>
-            ✈ Novo disparo
-          </Button>
-        </div>
+              <span className="text-xs text-fg-2 whitespace-nowrap">Auto-pilot</span>
+              <Switch
+                checked={jonfreyConfig?.enabled ?? false}
+                disabled={jonfreyPilotMut.isPending || jonfreyConfig == null}
+                onChange={v => jonfreyPilotMut.mutate(v)}
+              />
+              <button
+                type="button"
+                className="text-[11px] text-accent hover:underline whitespace-nowrap"
+                onClick={() => navigate('/activity?tab=jonfrey')}
+              >
+                config →
+              </button>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={handleRefresh}
+            >
+              ↻ Atualizar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              type="button"
+              onClick={() => navigate('/compose')}
+            >
+              ✈ Novo disparo
+            </Button>
+          </>
+        }
+      />
+
+      {/* ── 2. Quick actions ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" size="sm" type="button" onClick={() => navigate('/compose')}>
+          ✈ Compor
+        </Button>
+        <Button variant="secondary" size="sm" type="button" onClick={() => navigate('/accounts')}>
+          + Conectar conta
+        </Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => navigate('/activity')}>
+          Ver activity →
+        </Button>
       </div>
 
-      {/* ── 2. Inbox | dica LLM (2 colunas) ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        <OperationInbox />
-        <RecommendationCard />
-      </div>
-
-      {/* ── 3. KPIs — 4 cards ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* DISPAROS · 7D */}
-        <button type="button" className="text-left w-full" onClick={() => navigate('/logs')}>
+      {/* ── 3. KPIs — responsivos (2 col mobile / 4 col desktop) ─────────────── */}
+      <div className={responsiveKpiGrid}>
+        <button type="button" className="text-left w-full" onClick={() => navigate('/activity?filter=dispatches')}>
           <KpiCard
             label="Disparos · 7D"
             value={dispatches7d}
             delta={
               dispatchesDelta !== undefined
                 ? {
-                    displayText: `↑${dispatchesDelta}% vs semana anterior`,
+                    displayText: `${dispatchesDelta >= 0 ? '↑' : '↓'}${Math.abs(dispatchesDelta)}% vs semana anterior`,
                     tone: dispatchesDelta >= 0 ? 'success' : 'danger',
                   }
                 : undefined
@@ -224,22 +227,20 @@ export default function Dashboard() {
           />
         </button>
 
-        {/* CTR MÉDIO */}
         <KpiCard
           label="CTR Médio"
           value={ctrAvg !== undefined ? `${Number(ctrAvg).toFixed(1)}%` : '—'}
           delta={
             ctrDelta !== undefined
               ? {
-                  displayText: `↑${ctrDelta.toFixed(1)} pp`,
+                  displayText: `${ctrDelta >= 0 ? '↑' : '↓'}${Math.abs(ctrDelta).toFixed(1)} pp`,
                   tone: ctrDelta >= 0 ? 'success' : 'danger',
                 }
               : undefined
           }
         />
 
-        {/* CLIQUES · 7D */}
-        <button type="button" className="text-left w-full" onClick={() => navigate('/logs')}>
+        <button type="button" className="text-left w-full" onClick={() => navigate('/activity?filter=clicks')}>
           <KpiCard
             label="Cliques · 7D"
             value={clicks7d}
@@ -247,7 +248,6 @@ export default function Dashboard() {
           />
         </button>
 
-        {/* SAÚDE ANTI-BAN */}
         <KpiCard
           label="Saúde Anti-ban"
           value={healthValue as unknown as string}
@@ -259,12 +259,17 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── 4. Grid 2 col: ChannelPerformanceTable | UpcomingDispatches ──────── */}
+      {/* ── 4. Inbox | dica LLM ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <OperationInbox />
+        <RecommendationCard />
+      </div>
+
+      {/* ── 5. Performance | Próximos disparos ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChannelPerformanceTable />
         <UpcomingDispatches />
       </div>
-
 
     </div>
   )
