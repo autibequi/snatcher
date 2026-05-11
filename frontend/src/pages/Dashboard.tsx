@@ -267,7 +267,7 @@ export default function Dashboard() {
 
       {/*
         Antes vinha aqui um <JonfreyDispatchReviewCard />. A lista mudou
-        de casa: agora é uma aba dedicada em /auto-match → "Jonfrey Check".
+        de casa: agora é uma aba dedicada em /automations → "Jonfrey Check".
         O contador de anomalias aparece no nome da aba e o grupo de
         notificações continua recebendo o resumo automaticamente.
       */}

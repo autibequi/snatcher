@@ -4,6 +4,11 @@ import { Link } from 'react-router-dom'
 import { PageHeader, Button, Tabs } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import {
+  JonfreyCheckTab,
+  useJonfreyReview,
+  countJonfreyProblems,
+} from '../components/automatch/JonfreyCheckTab'
+import {
   tableContainer,
   tableRow,
   tableCell,
@@ -445,16 +450,18 @@ function EnviadosTab() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type AutoTab = 'para-enviar' | 'enviados'
-
-const TABS = [
-  { id: 'para-enviar', label: 'Para enviar' },
-  { id: 'enviados',    label: 'Enviados' },
-] as const
+type AutoTab = 'para-enviar' | 'enviados' | 'jonfrey-check'
 
 export default function Automations() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<AutoTab>('para-enviar')
+
+  // Pré-busca a revisão do Jonfrey já no mount da página — assim o badge
+  // de contagem (problemas) aparece na aba mesmo antes do usuário entrar
+  // nela. O hook tem cache de 24h server-side + staleTime longo, então
+  // isso só dispara LLM uma vez por dia (ou no force=1 do botão ↻).
+  const { data: jonfreyReview } = useJonfreyReview()
+  const jonfreyProblemCount = countJonfreyProblems(jonfreyReview)
 
   const runNowMut = useMutation({
     mutationFn: () =>
@@ -470,6 +477,17 @@ export default function Automations() {
     },
     onError: () => alert('Erro ao disparar ciclo Jonfrey.'),
   })
+
+  const tabs = [
+    { id: 'para-enviar',   label: 'Para enviar' },
+    { id: 'enviados',      label: 'Enviados' },
+    {
+      id: 'jonfrey-check',
+      label: 'Jonfrey Check',
+      title: 'Revisão semântica do Jonfrey sobre os disparos das últimas 24h',
+      badge: jonfreyProblemCount,
+    },
+  ]
 
   return (
     <div className={pageContainer + ' flex flex-col gap-4'}>
@@ -489,13 +507,14 @@ export default function Automations() {
       />
 
       <Tabs
-        tabs={TABS.map(t => ({ id: t.id, label: t.label }))}
+        tabs={tabs}
         active={tab}
         onChange={id => setTab(id as AutoTab)}
       />
 
-      {tab === 'para-enviar' && <ParaEnviarTab />}
-      {tab === 'enviados' && <EnviadosTab />}
+      {tab === 'para-enviar'   && <ParaEnviarTab />}
+      {tab === 'enviados'      && <EnviadosTab />}
+      {tab === 'jonfrey-check' && <JonfreyCheckTab />}
     </div>
   )
 }
