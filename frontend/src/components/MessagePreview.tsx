@@ -28,30 +28,43 @@ export function MessagePreview({
   }
 
   if (variant === 'wa-bubble') {
+    // Spec v4: canvas verde-pálido oklch(0.92 0.02 130), bubble branco max 280px, texto escuro,
+    // meta direita "10:42 ✓✓" cinza, imagem aspect-ratio 1.
     return (
-      <div className="rounded-2xl bg-[#0b141a] p-2 sm:p-3 shadow-inner ring-1 ring-black/20">
-        <p className="text-[11px] text-[#8696a0] mb-1.5 ml-1">Você</p>
+      <div
+        className="rounded-2xl p-3 shadow-inner ring-1 ring-black/5"
+        style={{ background: 'oklch(0.92 0.02 130)' }}
+      >
         <div
-          className="bg-[#005c4b] rounded-xl max-w-[min(100%,280px)] ml-auto shadow-lg overflow-hidden ring-1 ring-white/10"
+          className="rounded-xl max-w-[min(100%,280px)] ml-auto overflow-hidden shadow-md ring-1 ring-black/5"
+          style={{ background: 'oklch(0.99 0.005 120)' }}
         >
           {mediaUrl && (
             <img
               src={mediaUrl}
               alt="Mídia"
-              className="w-full max-h-44 object-cover"
+              className="w-full aspect-square object-cover"
               onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           )}
           <div
-            className="p-2.5 sm:p-3 sm:pt-2 overflow-y-auto"
+            className="px-3 py-2 overflow-y-auto"
             style={maxHeight ? { maxHeight } : undefined}
           >
             {text ? (
-              <p className="text-[12px] sm:text-[13px] leading-snug text-white whitespace-pre-wrap break-words">
+              <p
+                className="text-[13px] leading-snug whitespace-pre-wrap break-words"
+                style={{ color: 'oklch(0.22 0.012 270)' }}
+              >
                 {text}
               </p>
             ) : null}
-            <p className="text-[10px] text-emerald-300/90 mt-1.5 text-right tabular-nums">agora ✓✓</p>
+            <p
+              className="text-[11px] mt-1 text-right tabular-nums"
+              style={{ color: 'oklch(0.55 0.012 270)' }}
+            >
+              {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ✓✓
+            </p>
           </div>
         </div>
       </div>
