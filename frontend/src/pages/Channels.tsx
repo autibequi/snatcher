@@ -1,7 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { BarChart, Bar, ResponsiveContainer } from 'recharts'
 import {
   Badge,
   Button,
@@ -11,7 +10,7 @@ import {
   PageHeader,
   PlatformPill,
   SearchSelect,
-  Skeleton,
+  SkeletonTable,
   Switch,
   Textarea,
 } from '../components/ui'
@@ -19,8 +18,11 @@ import { apiClient } from '../lib/apiClient'
 import {
   filterBar,
   pageContainer,
-  responsiveGrid,
-  sectionCard,
+  tableContainer,
+  tableHeaderCell,
+  tableRow,
+  tableCell,
+  tableCellMuted,
 } from '../lib/uiTokens'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -106,100 +108,83 @@ function parseTagList(value: string): string[] {
     .filter(Boolean)
 }
 
-function statusBorderClass(channel: Channel): string {
-  if (!channel.active) return 'border-l-4 border-l-neutral-500'
-  if (channel.member_count !== undefined && channel.member_count < 5)
-    return 'border-l-4 border-l-yellow-500'
-  return 'border-l-4 border-l-green-500'
+function fmtCtr(v: number | undefined): string {
+  if (v === undefined || v === null) return '—'
+  return `${(v * 100).toFixed(1)}%`
 }
 
-// ── Mini bar-chart ────────────────────────────────────────────────────────────
+function fmtRevenue(v: number | undefined): string {
+  if (v === undefined || v === null || v === 0) return '—'
+  return `R$ ${v.toFixed(0)}`
+}
 
-function ChannelMiniChart({ channelId, series }: { channelId: number; series?: number[] }) {
-  const { data: metricsData } = useQuery<{ dispatches_7d_series?: number[] }>({
-    queryKey: ['channel-metrics', channelId],
-    queryFn: () =>
-      apiClient
-        .get(`/api/channels/${channelId}/metrics`)
-        .then(r => r.data)
-        .catch(() => ({})),
-    staleTime: 5 * 60_000,
-    enabled: !series,
-  })
+function fmtCount(v: number | undefined): string {
+  if (v === undefined || v === null) return '0'
+  return String(v)
+}
 
-  const raw = series ?? metricsData?.dispatches_7d_series ?? []
-  const chartData = raw.map((v, i) => ({ day: i, v }))
+// ── Channel table row ─────────────────────────────────────────────────────────
 
-  return (
-    <div className="w-full h-10">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} barSize={4} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-          <Bar dataKey="v" fill="var(--color-accent, #6366f1)" radius={[2, 2, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+function ChannelRow({ channel, onClick }: { channel: Channel; onClick: () => void }) {
+  const statusBadge = channel.active ? (
+    <Badge variant="success" size="sm">ativo</Badge>
+  ) : (
+    <Badge variant="default" size="sm">inativo</Badge>
   )
-}
 
-// ── Channel card ──────────────────────────────────────────────────────────────
-
-function ChannelCard({ channel, onClick }: { channel: Channel; onClick: () => void }) {
   return (
-    <div
+    <tr
+      className={`${tableRow} cursor-pointer`}
       onClick={onClick}
-      className={`${sectionCard} hover:border-border-strong cursor-pointer transition-colors flex flex-col gap-2 ${statusBorderClass(channel)}`}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <p className="font-medium text-fg">{channel.name}</p>
-          {channel.platform && <PlatformPill platform={channel.platform} />}
-        </div>
-        <Badge variant={channel.active ? 'success' : 'default'}>
-          {channel.active ? 'ativo' : 'inativo'}
-        </Badge>
-      </div>
+      {/* Name + description */}
+      <td className={tableCell}>
+        <p className="font-medium text-fg">{channel.name}</p>
+        {channel.description && (
+          <p className="text-xs text-fg-3 mt-0.5 line-clamp-1 max-w-xs">{channel.description}</p>
+        )}
+      </td>
 
-      {/* Description */}
-      {channel.description && (
-        <p className="text-xs text-fg-3 line-clamp-1">{channel.description}</p>
-      )}
+      {/* Platform */}
+      <td className={tableCell}>
+        {channel.platform ? (
+          <PlatformPill platform={channel.platform} size="sm" />
+        ) : (
+          <span className="text-fg-3">—</span>
+        )}
+      </td>
 
-      {/* Mini bar-chart */}
-      <ChannelMiniChart channelId={channel.id} series={channel.dispatches_7d_series} />
-      <p className="text-[10px] text-fg-3 -mt-1">Disparos 7d</p>
+      {/* Status */}
+      <td className={tableCell}>{statusBadge}</td>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-3 gap-2 mt-1">
-        <div>
-          <p className="text-xs text-fg-3">Grupos</p>
-          <p className="text-sm font-medium text-fg">{channel.member_count ?? 0}</p>
-        </div>
-        <div>
-          <p className="text-xs text-fg-3">CTR 30d</p>
-          <p className="text-sm font-medium text-fg">
-            {channel.ctr_30d ? `${(channel.ctr_30d * 100).toFixed(1)}%` : '—'}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-fg-3">Receita 30d</p>
-          <p className="text-sm font-medium text-fg">
-            {channel.revenue_30d ? `R$ ${channel.revenue_30d.toFixed(0)}` : '—'}
-          </p>
-        </div>
-      </div>
+      {/* Groups / members */}
+      <td className={`${tableCell} tabular-nums`}>
+        {fmtCount(channel.member_count)}
+      </td>
+
+      {/* CTR 30d */}
+      <td className={`${tableCellMuted} tabular-nums`}>
+        {fmtCtr(channel.ctr_30d)}
+      </td>
+
+      {/* Revenue 30d */}
+      <td className={`${tableCellMuted} tabular-nums`}>
+        {fmtRevenue(channel.revenue_30d)}
+      </td>
 
       {/* Audience tags */}
-      {channel.audience?.categories?.length ? (
-        <div className="flex gap-1 flex-wrap">
-          {channel.audience.categories.slice(0, 3).map(c => (
-            <Badge key={c} size="sm" variant="accent">
-              {c}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
+      <td className={tableCell}>
+        {channel.audience?.categories?.length ? (
+          <div className="flex gap-1 flex-wrap">
+            {channel.audience.categories.slice(0, 3).map(c => (
+              <Badge key={c} size="sm" variant="accent">{c}</Badge>
+            ))}
+          </div>
+        ) : (
+          <span className="text-fg-3">—</span>
+        )}
+      </td>
+    </tr>
   )
 }
 
@@ -398,8 +383,9 @@ export function SuggestChannelModal({
         { timeout: 90_000 },
       )
       setSuggestion(res.data.suggestion)
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? err?.message ?? 'Erro ao consultar LLM')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      setError(e?.response?.data?.error ?? e?.message ?? 'Erro ao consultar LLM')
     } finally {
       setLoading(false)
     }
@@ -425,8 +411,9 @@ export function SuggestChannelModal({
         },
       })
       onCreated()
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? 'Erro ao criar canal')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } }
+      setError(e?.response?.data?.error ?? 'Erro ao criar canal')
       setCreating(false)
     }
   }
@@ -648,10 +635,10 @@ export default function Channels() {
 
       {/* Content */}
       {isLoading ? (
-        <div className={responsiveGrid}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-lg" />
-          ))}
+        <div className={tableContainer}>
+          <div className="px-4 py-3">
+            <SkeletonTable rows={6} />
+          </div>
         </div>
       ) : !channels.length ? (
         <EmptyState
@@ -665,14 +652,29 @@ export default function Channels() {
           description="Tente outros filtros ou termos de busca."
         />
       ) : (
-        <div className={responsiveGrid}>
-          {filtered.map(ch => (
-            <ChannelCard
-              key={ch.id}
-              channel={ch}
-              onClick={() => navigate(`/channels/${ch.id}`)}
-            />
-          ))}
+        <div className={tableContainer}>
+          <table className="w-full min-w-[640px] border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className={`${tableHeaderCell} w-[30%]`}>Canal</th>
+                <th className={tableHeaderCell}>Plataforma</th>
+                <th className={tableHeaderCell}>Status</th>
+                <th className={tableHeaderCell}>Grupos</th>
+                <th className={tableHeaderCell}>CTR 30d</th>
+                <th className={tableHeaderCell}>Receita 30d</th>
+                <th className={tableHeaderCell}>Categorias</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(ch => (
+                <ChannelRow
+                  key={ch.id}
+                  channel={ch}
+                  onClick={() => navigate(`/channels/${ch.id}`)}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

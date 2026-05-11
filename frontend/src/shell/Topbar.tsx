@@ -230,7 +230,7 @@ export function StatusPill() {
   // Click handler: opens panel for queue states; navigates for others
   function handleClick() {
     if (variant === 'danger' && failedCount > 0) {
-      navigate('/activity?level=error')
+      navigate('/activity?tab=crawl&status=error')
       return
     }
     if (variant === 'danger' && hasAccountError) {

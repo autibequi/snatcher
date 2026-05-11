@@ -1,47 +1,12 @@
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Badge, EmptyState, Skeleton } from '../../components/ui'
+import { EmptyState, Skeleton } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import {
   JonfreyActionCard,
   primaryJonfreyOutcome,
   type JonfreyAction,
 } from '../../components/JonfreyActionCard'
-
-// ── Failures Alert ────────────────────────────────────────────────────────────
-
-function JonfreyFailuresAlert({ actions }: { actions: JonfreyAction[] }) {
-  const failedJonfrey = actions.filter(a => a.status === 'failed')
-  if (failedJonfrey.length === 0) return null
-  return (
-    <div className="bg-surface border border-danger/30 rounded-md overflow-hidden mb-4">
-      <div className="px-4 py-2.5 border-b border-border bg-danger/5">
-        <p className="text-xs font-medium text-danger uppercase tracking-wide">
-          Ações com falha ({failedJonfrey.length})
-        </p>
-      </div>
-      <div className="divide-y divide-border">
-        {failedJonfrey.map(a => (
-          <div key={a.id} className="px-4 py-3 hover:bg-surface-2">
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <span className="text-xs font-mono text-fg">{a.action_type}</span>
-              <Badge variant="danger" size="sm">failed</Badge>
-              <span className="text-[10px] text-fg-3">{a.triggered_by}</span>
-              <span className="text-[10px] text-fg-3 ml-auto">
-                {new Date(a.created_at).toLocaleString('pt-BR')}
-              </span>
-            </div>
-            {a.error_message?.trim() ? (
-              <p className="text-xs text-danger font-mono break-words">{a.error_message}</p>
-            ) : (
-              <p className="text-xs text-fg-3">Sem mensagem de erro detalhada.</p>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -109,7 +74,6 @@ export function JonfreyTab({ q = '', status = '' }: JonfreyTabProps) {
 
   return (
     <div className="space-y-3">
-      <JonfreyFailuresAlert actions={filtered} />
       <p className="text-xs text-fg-3">
         Auditoria do assistente Jonfrey (mesmos registros que em{' '}
         <a href="/automations/jonfrey" className="text-accent hover:underline">

@@ -13,9 +13,6 @@ interface AppConfig {
   dispatch_send_timezone?: string
   dispatch_min_interval_ms?: number
   dispatch_max_per_group_per_hour?: number
-  notify_on_error?: boolean
-  notify_on_new_product?: boolean
-  alert_webhook_url?: string
   [key: string]: unknown
 }
 
@@ -141,37 +138,6 @@ export function SystemTab() {
             autoCapitalize="characters"
           />
           <p className={formHint}>Carrega em todas as rotas via <code>/api/brand</code></p>
-        </div>
-      </div>
-
-      {/* Notificações */}
-      <div className={sectionCard}>
-        <p className={`${sectionTitle} mb-4`}>Notificações</p>
-        <div className="space-y-3">
-          <div className={switchRow}>
-            <p className={formLabel}>Notificar em erros de disparo</p>
-            <Switch
-              checked={(merged.notify_on_error as boolean) ?? true}
-              onChange={v => upd('notify_on_error', v)}
-            />
-          </div>
-          <div className={switchRow}>
-            <p className={formLabel}>Notificar ao encontrar novo produto</p>
-            <Switch
-              checked={(merged.notify_on_new_product as boolean) ?? false}
-              onChange={v => upd('notify_on_new_product', v)}
-            />
-          </div>
-          <div className={formGroup}>
-            <label className={formLabel}>Webhook de alertas (opcional)</label>
-            <input
-              type="url"
-              value={(merged.alert_webhook_url as string) ?? ''}
-              onChange={e => upd('alert_webhook_url', e.target.value)}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-              placeholder="https://hooks.slack.com/..."
-            />
-          </div>
         </div>
       </div>
 

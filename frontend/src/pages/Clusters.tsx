@@ -33,10 +33,24 @@ interface Cluster {
     price_min?: number
     price_max?: number
   }
-  top_categories: string[]
-  top_brands: string[]
+  top_categories: string[] | string | null
+  top_brands: string[] | string | null
   opportunity?: string
   computed_at: string
+}
+
+// ── Normalizers ────────────────────────────────────────────────────────────────
+function toArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter(x => typeof x === 'string')
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v)
+      return Array.isArray(p) ? p : []
+    } catch {
+      return v.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+  return []
 }
 
 type Period = '7d' | '30d' | '90d'
@@ -101,12 +115,12 @@ function ClusterCard({ cluster, colorIdx }: { cluster: Cluster; colorIdx: number
       </div>
 
       {/* Top categories */}
-      {cluster.top_categories?.length > 0 && (
+      {toArray(cluster.top_categories).length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {cluster.top_categories.slice(0, 4).map(cat => (
+          {toArray(cluster.top_categories).slice(0, 4).map(cat => (
             <Badge key={cat} size="sm" variant="accent">{cat}</Badge>
           ))}
-          {cluster.top_brands?.slice(0, 2).map(brand => (
+          {toArray(cluster.top_brands).slice(0, 2).map(brand => (
             <Badge key={brand} size="sm" variant="outline">{brand}</Badge>
           ))}
         </div>
@@ -176,7 +190,7 @@ export default function Clusters() {
         c.metrics.ctr ? (c.metrics.ctr * 100).toFixed(1) : '0',
         c.metrics.cvr ? (c.metrics.cvr * 100).toFixed(1) : '0',
         c.metrics.avg_ticket ? String(Math.round(c.metrics.avg_ticket)) : '0',
-        (c.top_categories ?? []).join('; '),
+        toArray(c.top_categories).join('; '),
       ]),
     ]
     const csv = '﻿' + rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
@@ -201,7 +215,7 @@ export default function Clusters() {
       list = list.filter(c =>
         c.label.toLowerCase().includes(q) ||
         c.description?.toLowerCase().includes(q) ||
-        c.top_categories?.some(x => x.toLowerCase().includes(q))
+        toArray(c.top_categories).some(x => x.toLowerCase().includes(q))
       )
     }
     list.sort((a, b) => {

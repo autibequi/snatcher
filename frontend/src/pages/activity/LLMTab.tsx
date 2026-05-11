@@ -67,13 +67,6 @@ function normalizeLLMLogRows(raw: unknown): LLMLogRow[] {
   })
 }
 
-function llmSnippet(s: string, maxLen = 96): string {
-  const t = s.trim()
-  if (!t) return '—'
-  if (t.length <= maxLen) return t
-  return `${t.slice(0, maxLen)}…`
-}
-
 const LLM_CLUSTER_GAP_MS = 10 * 60 * 1000
 
 function llmBaseOperation(op: string): string {
@@ -373,7 +366,7 @@ export function LLMTab({ q = '' }: LLMTabProps) {
     })
   }, [rows, q])
 
-  const colCount = 11
+  const colCount = 9
 
   return (
     <div className="bg-surface border border-border rounded-lg shadow-sm">
@@ -407,7 +400,7 @@ export function LLMTab({ q = '' }: LLMTabProps) {
         </p>
       ) : (
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-sm min-w-[1020px]">
+          <table className="w-full text-sm min-w-[760px]">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
@@ -431,12 +424,6 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                 <th className="text-right px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide whitespace-nowrap">
                   USD
                 </th>
-                <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
-                  Enviado
-                </th>
-                <th className="text-left px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
-                  Recebido
-                </th>
                 <th className="text-right px-3 py-2.5 text-[11px] text-fg-2 font-semibold uppercase tracking-wide">
                   Tok
                 </th>
@@ -452,8 +439,6 @@ export function LLMTab({ q = '' }: LLMTabProps) {
               {groups.map(g => {
                 const r = g.primary
                 const isExpanded = expandedId === g.id
-                const sentPrev = llmSnippet(r.prompt)
-                const recvPrev = llmSnippet(r.response)
                 const hasStoredPayload =
                   r.prompt.trim().length > 0 || r.response.trim().length > 0
                 const attemptCount = g.attempts.length
@@ -497,24 +482,6 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                       </td>
                       <td className="px-3 py-2.5 text-[11px] text-fg-2 font-mono text-right align-top whitespace-nowrap tabular-nums">
                         ${r.cost_usd.toFixed(4)}
-                      </td>
-                      <td className="px-3 py-2.5 text-[11px] text-fg align-top min-w-0">
-                        <p
-                          className="line-clamp-2 whitespace-pre-wrap break-words"
-                          title={r.prompt.trim() || undefined}
-                        >
-                          {sentPrev}
-                        </p>
-                      </td>
-                      <td className="px-3 py-2.5 text-[11px] align-top min-w-0">
-                        <p
-                          className={`line-clamp-2 whitespace-pre-wrap break-words ${
-                            isRealError ? 'text-danger' : 'text-fg'
-                          }`}
-                          title={r.response.trim() || undefined}
-                        >
-                          {recvPrev}
-                        </p>
                       </td>
                       <td className="px-3 py-2.5 text-[11px] text-fg-2 font-mono text-right align-top whitespace-nowrap tabular-nums">
                         {r.tokens_in}&rarr;{r.tokens_out}
@@ -611,21 +578,21 @@ export function LLMTab({ q = '' }: LLMTabProps) {
                                 </ul>
                               </details>
                             )}
-                            <div className="flex flex-col lg:flex-row gap-3 min-h-[min(70vh,520px)] max-h-[75vh]">
-                              <div className="flex-1 min-w-0 min-h-0 flex flex-col rounded-lg border border-border bg-surface overflow-hidden">
-                                <div className="shrink-0 px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
+                            <div className="flex flex-col gap-3">
+                              <div className="rounded-lg border border-border bg-surface overflow-hidden">
+                                <div className="px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
                                   Mensagem enviada
                                 </div>
-                                <pre className="flex-1 min-h-[220px] lg:min-h-0 overflow-auto p-3 text-xs font-mono text-fg whitespace-pre-wrap break-words leading-relaxed">
+                                <pre className="max-h-[400px] overflow-y-auto p-3 text-xs font-mono text-fg whitespace-pre-wrap break-words leading-relaxed">
                                   {r.prompt.trim() ? r.prompt : '(vazio)'}
                                 </pre>
                               </div>
-                              <div className="flex-1 min-w-0 min-h-0 flex flex-col rounded-lg border border-border bg-surface overflow-hidden">
-                                <div className="shrink-0 px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
+                              <div className="rounded-lg border border-border bg-surface overflow-hidden">
+                                <div className="px-3 py-2 border-b border-border bg-surface-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
                                   Mensagem recebida
                                 </div>
                                 <pre
-                                  className={`flex-1 min-h-[220px] lg:min-h-0 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed ${
+                                  className={`max-h-[400px] overflow-y-auto p-3 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed ${
                                     r.error ? 'text-danger' : 'text-fg'
                                   }`}
                                 >

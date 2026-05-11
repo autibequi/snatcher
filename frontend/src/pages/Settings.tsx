@@ -3,14 +3,18 @@ import { Tabs } from '../components/ui'
 import { pageContainer } from '../lib/uiTokens'
 import { SystemTab } from './settings/SystemTab'
 import { IntegrationsTab } from './settings/IntegrationsTab'
+import { LLMTab } from './settings/LLMTab'
 import { TeamTab } from './settings/TeamTab'
 import { AppearanceTab } from './settings/AppearanceTab'
+import { DangerTab } from './settings/DangerTab'
 
 const TABS = [
   { id: 'system', label: 'Sistema' },
   { id: 'integrations', label: 'Integracoes' },
+  { id: 'llm', label: 'LLM' },
   { id: 'team', label: 'Equipe' },
   { id: 'appearance', label: 'Aparencia' },
+  { id: 'danger', label: 'Danger' },
 ]
 
 const VALID_TABS = new Set(TABS.map(t => t.id))
@@ -42,8 +46,10 @@ export default function Settings() {
         <div className="px-4 py-4 sm:p-6">
           {active === 'system' && <SystemTab />}
           {active === 'integrations' && <IntegrationsTab />}
+          {active === 'llm' && <LLMTab />}
           {active === 'team' && <TeamTab />}
           {active === 'appearance' && <AppearanceTab />}
+          {active === 'danger' && <DangerTab />}
         </div>
       </div>
     </div>
