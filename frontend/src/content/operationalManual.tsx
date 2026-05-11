@@ -75,7 +75,7 @@ export function OperationalManualContent() {
             O sistema visita periodicamente e traz resultados brutos.
           </li>
           <li>
-            <strong className="text-fg">Catálogo:</strong> produtos normalizados (nome, preço, histórico). É a “prateleira” onde escolhes o que enviar.
+            <strong className="text-fg">Catálogo:</strong> produtos normalizados (nome, preço, histórico). É a "prateleira" onde escolhes o que enviar.
             Sem itens no catálogo, não há o que promover — primeiro alimenta crawlers ou importações.
           </li>
           <li>
@@ -128,7 +128,7 @@ export function OperationalManualContent() {
         <ul className="list-disc pl-5 space-y-2">
           <li>
             Em <strong className="text-fg">Contas conectadas</strong>, adicione WhatsApp ou Telegram. Para WA, escaneie o QR quando o sistema pedir; o estado
-            “pronto” pode aparecer como <code className="text-xs bg-surface-2 px-1 rounded">connected</code> ou{' '}
+            "pronto" pode aparecer como <code className="text-xs bg-surface-2 px-1 rounded">connected</code> ou{' '}
             <code className="text-xs bg-surface-2 px-1 rounded">WORKING</code> consoante o provedor — o importante é a sessão ativa para envio.
           </li>
           <li>
@@ -192,7 +192,7 @@ export function OperationalManualContent() {
             <strong className="text-fg">Taxonomia</strong> organiza categorias e padrões para classificar produtos de forma consistente.
           </li>
           <li>
-            <strong className="text-fg">Match</strong> avalia se um produto do catálogo “parece” outro — útil antes de disparar em massa.
+            <strong className="text-fg">Match</strong> avalia se um produto do catálogo "parece" outro — útil antes de disparar em massa.
           </li>
           <li>
             <strong className="text-fg">Curadoria</strong> permite rever ou ajustar itens antes de saírem para grupos, quando o teu fluxo exige controlo humano.

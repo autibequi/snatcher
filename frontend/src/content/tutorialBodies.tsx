@@ -87,7 +87,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="Boas práticas">
         <Ul>
           <li>Se o badge de contas estiver vermelho, resolva em <strong className="text-fg">Contas conectadas</strong> primeiro.</li>
-          <li>Combine com <strong className="text-fg">Logs</strong> quando algo parecer “travado” sem erro óbvio.</li>
+          <li>Combine com <strong className="text-fg">Logs</strong> quando algo parecer "travado" sem erro óbvio.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -396,7 +396,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
         <Ul>
           <li>Credenciais e tags por programa. Sem isso, o link curto não comissiona.</li>
           <li>Configure programas e IDs por marketplace para links curtos comissionarem certo.</li>
-          <li>Composer e automações dependem disso para não mandar link “seco”.</li>
+          <li>Composer e automações dependem disso para não mandar link "seco".</li>
         </Ul>
       </Sec>
     </Shell>

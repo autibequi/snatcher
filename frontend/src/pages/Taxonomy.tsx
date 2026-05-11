@@ -1,7 +1,30 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Badge } from '../components/ui'
+import {
+  Badge,
+  Button,
+  EmptyState,
+  FieldLabel,
+  Input,
+  Modal,
+  PageHeader,
+  Switch,
+  Tabs,
+  Textarea,
+} from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import {
+  pageContainer,
+  tableContainer,
+  tableHeaderCell,
+  tableRow,
+  tableCell,
+  tableCellMuted,
+  formGroup,
+  formHint,
+} from '../lib/uiTokens'
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface TaxonomyEntry {
   id: number
@@ -31,6 +54,15 @@ interface TaxonomyPattern {
 
 type TabKey = 'category' | 'brand' | 'pending' | 'patterns'
 
+const TABS = [
+  { id: 'category', label: 'Categorias' },
+  { id: 'brand', label: 'Marcas' },
+  { id: 'pending', label: 'Pendentes' },
+  { id: 'patterns', label: 'Patterns' },
+]
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function Taxonomy() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('category')
@@ -39,8 +71,19 @@ export default function Taxonomy() {
   const [showCreate, setShowCreate] = useState(false)
   const [selectedTaxonomyId, setSelectedTaxonomyId] = useState<number | null>(null)
 
-  const queryKey = tab === 'pending' ? ['taxonomy', 'pending'] : tab === 'patterns' ? ['patterns', selectedTaxonomyId] : ['taxonomy', tab]
-  const url = tab === 'pending' ? '/api/taxonomy/pending' : tab === 'patterns' ? `/api/taxonomy/patterns?taxonomy_id=${selectedTaxonomyId}` : `/api/taxonomy?type=${tab}`
+  const queryKey =
+    tab === 'pending'
+      ? ['taxonomy', 'pending']
+      : tab === 'patterns'
+        ? ['patterns', selectedTaxonomyId]
+        : ['taxonomy', tab]
+
+  const url =
+    tab === 'pending'
+      ? '/api/taxonomy/pending'
+      : tab === 'patterns'
+        ? `/api/taxonomy/patterns?taxonomy_id=${selectedTaxonomyId}`
+        : `/api/taxonomy?type=${tab}`
 
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey,
@@ -48,8 +91,8 @@ export default function Taxonomy() {
     enabled: tab !== 'patterns' || selectedTaxonomyId !== null,
   })
 
-  const filtered = items.filter(i =>
-    !search || i.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = items.filter(
+    i => !search || i.name.toLowerCase().includes(search.toLowerCase()),
   )
 
   const approveMut = useMutation({
@@ -72,240 +115,85 @@ export default function Taxonomy() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['patterns'] }),
   })
 
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
-        <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
-          + Adicionar
-        </Button>
-      </div>
+  function handleTabChange(id: string) {
+    setTab(id as TabKey)
+    if (id !== 'patterns') setSelectedTaxonomyId(null)
+    setSearch('')
+    setEditingId(null)
+  }
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border mb-4">
-        {(['category', 'brand', 'pending', 'patterns'] as TabKey[]).map(t => (
-          <button
-            key={t}
-            onClick={() => {
-              setTab(t)
-              if (t !== 'patterns') setSelectedTaxonomyId(null)
-            }}
-            className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? 'border-accent text-accent'
-                : 'border-transparent text-fg-2 hover:text-fg'
-            }`}
-          >
-            {t === 'category' ? 'Categorias' : t === 'brand' ? 'Marcas' : t === 'pending' ? 'Pendentes' : 'Patterns'}
-          </button>
-        ))}
-      </div>
+  const showAddButton = tab !== 'patterns' || selectedTaxonomyId !== null
+
+  return (
+    <div className={pageContainer}>
+      <PageHeader
+        title="Taxonomia"
+        subtitle="Categorias, marcas e patterns de deteccao de produtos."
+        className="mb-6"
+        actions={
+          showAddButton ? (
+            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+              Adicionar termo
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <Tabs
+        tabs={TABS}
+        active={tab}
+        onChange={handleTabChange}
+        className="mb-4"
+      />
 
       {tab === 'patterns' ? (
-        // ── Patterns Tab ───────────────────────────────────────────────────────
-        <>
-          <div className="mb-4 flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="text-xs text-fg-2 block mb-1">Selecione uma taxonomia</label>
-              <TaxonomySelector
-                selectedId={selectedTaxonomyId}
-                onSelect={setSelectedTaxonomyId}
-              />
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setShowCreate(true)}
-              disabled={selectedTaxonomyId === null}
-            >
-              + Pattern
-            </Button>
-          </div>
-
-          {selectedTaxonomyId === null ? (
-            <p className="text-sm text-fg-3 py-4 text-center">Selecione uma taxonomia para ver seus patterns</p>
-          ) : isLoading ? (
-            <p className="text-sm text-fg-3">Carregando patterns...</p>
-          ) : items.length === 0 ? (
-            <p className="text-sm text-fg-3 py-4 text-center">Nenhum pattern definido.</p>
-          ) : (
-            <div className="border border-border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface-2 border-b border-border">
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Tipo</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Valor</th>
-                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Peso</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Status</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Origem</th>
-                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase w-32">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((pattern: TaxonomyPattern) => (
-                    <tr key={pattern.id} className="border-b border-border last:border-0 hover:bg-surface-2/50">
-                      <td className="px-4 py-2 font-mono text-xs text-fg">{pattern.kind}</td>
-                      <td className="px-4 py-2 text-fg-2 font-mono text-xs break-all max-w-xs">{pattern.value}</td>
-                      <td className="px-4 py-2 text-right font-mono text-fg-2">{pattern.weight.toFixed(2)}</td>
-                      <td className="px-4 py-2">
-                        <Badge
-                          variant={pattern.active ? 'default' : 'outline'}
-                          size="sm"
-                        >
-                          {pattern.active ? 'Ativo' : 'Inativo'}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2">
-                        <Badge variant={pattern.source === 'manual' ? 'default' : 'warning'} size="sm">
-                          {pattern.source}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <div className="flex justify-end gap-1">
-                          <button
-                            onClick={() => alert('TODO: Editar pattern')}
-                            className="text-xs px-2 py-1 rounded text-fg-2 hover:bg-surface-2"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Excluir este pattern?`)) deletePatternMut.mutate(pattern.id)
-                            }}
-                            className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+        <PatternsTab
+          selectedTaxonomyId={selectedTaxonomyId}
+          onSelect={setSelectedTaxonomyId}
+          items={items as TaxonomyPattern[]}
+          isLoading={isLoading}
+          onDelete={id => {
+            if (confirm('Excluir este pattern?')) deletePatternMut.mutate(id)
+          }}
+          onAdd={() => setShowCreate(true)}
+        />
       ) : (
-        // ── Taxonomy Tab ───────────────────────────────────────────────────────
-        <>
-          <div className="mb-3">
-            <Input
-              placeholder="Buscar..."
-              value={search}
-              onChange={(e: any) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {isLoading ? (
-            <p className="text-sm text-fg-3">Carregando...</p>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-fg-3 py-4 text-center">
-              {tab === 'pending' ? 'Nenhuma sugestão pendente.' : 'Nenhum item.'}
-            </p>
-          ) : (
-            <div className="border border-border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface-2 border-b border-border">
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Nome</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Keywords</th>
-                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase">Detecções</th>
-                    <th className="text-left px-4 py-2 text-xs text-fg-2 font-medium uppercase">Origem</th>
-                    <th className="text-right px-4 py-2 text-xs text-fg-2 font-medium uppercase w-32">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(item =>
-                    editingId === item.id ? (
-                      <EditRow
-                        key={item.id}
-                        item={item}
-                        onCancel={() => setEditingId(null)}
-                        onSaved={() => {
-                          setEditingId(null)
-                          qc.invalidateQueries({ queryKey: ['taxonomy'] })
-                        }}
-                      />
-                    ) : (
-                      <tr key={item.id} className="border-b border-border last:border-0 hover:bg-surface-2/50">
-                        <td className="px-4 py-2 font-medium text-fg">{item.name}</td>
-                        <td className="px-4 py-2 text-fg-2">
-                          <div className="flex flex-wrap gap-1">
-                            {item.keywords.slice(0, 5).map((k: string, i: number) => (
-                              <span key={i} className="text-xs px-1.5 py-0.5 bg-surface-2 rounded border border-border">
-                                {k}
-                              </span>
-                            ))}
-                            {item.keywords.length > 5 && (
-                              <span className="text-xs text-fg-3">+{item.keywords.length - 5}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-fg-2">{item.detect_count}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={item.source === 'manual' ? 'default' : 'warning'} size="sm">
-                            {item.source}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <div className="flex justify-end gap-1">
-                            {tab === 'pending' ? (
-                              <>
-                                <button
-                                  onClick={() => approveMut.mutate(item.id)}
-                                  className="text-xs px-2 py-1 rounded text-success hover:bg-success/10"
-                                >
-                                  Aprovar
-                                </button>
-                                <button
-                                  onClick={() => rejectMut.mutate(item.id)}
-                                  className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
-                                >
-                                  Rejeitar
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => setEditingId(item.id)}
-                                  className="text-xs px-2 py-1 rounded text-fg-2 hover:bg-surface-2"
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (confirm(`Excluir "${item.name}"?`)) deleteMut.mutate(item.id)
-                                  }}
-                                  className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
-                                >
-                                  Excluir
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {showCreate && tab !== 'patterns' && (
-        <CreateModal
-          defaultType={tab === 'pending' ? 'category' : tab}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => {
-            setShowCreate(false)
+        <TaxonomyTab
+          tab={tab}
+          search={search}
+          onSearch={setSearch}
+          isLoading={isLoading}
+          filtered={filtered as TaxonomyEntry[]}
+          editingId={editingId}
+          onEdit={setEditingId}
+          onCancelEdit={() => setEditingId(null)}
+          onSaved={() => {
+            setEditingId(null)
             qc.invalidateQueries({ queryKey: ['taxonomy'] })
+          }}
+          onApprove={id => approveMut.mutate(id)}
+          onReject={id => rejectMut.mutate(id)}
+          onDelete={id => {
+            if (confirm('Excluir este item?')) deleteMut.mutate(id)
           }}
         />
       )}
 
-      {showCreate && tab === 'patterns' && selectedTaxonomyId && (
+      {/* Create taxonomy term modal */}
+      <CreateModal
+        open={showCreate && tab !== 'patterns'}
+        defaultType={tab === 'pending' ? 'category' : (tab as 'category' | 'brand')}
+        onClose={() => setShowCreate(false)}
+        onCreated={() => {
+          setShowCreate(false)
+          qc.invalidateQueries({ queryKey: ['taxonomy'] })
+        }}
+      />
+
+      {/* Create pattern modal */}
+      {selectedTaxonomyId && (
         <CreatePatternModal
+          open={showCreate && tab === 'patterns'}
           taxonomyId={selectedTaxonomyId}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
@@ -318,7 +206,261 @@ export default function Taxonomy() {
   )
 }
 
-// ── Inline edit row ─────────────────────────────────────────────────────────
+// ── Patterns tab ──────────────────────────────────────────────────────────────
+
+function PatternsTab({
+  selectedTaxonomyId,
+  onSelect,
+  items,
+  isLoading,
+  onDelete,
+  onAdd,
+}: {
+  selectedTaxonomyId: number | null
+  onSelect: (id: number) => void
+  items: TaxonomyPattern[]
+  isLoading: boolean
+  onDelete: (id: number) => void
+  onAdd: () => void
+}) {
+  return (
+    <>
+      <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-end">
+        <div className="flex-1">
+          <FieldLabel>Selecione uma taxonomia</FieldLabel>
+          <TaxonomySelector selectedId={selectedTaxonomyId} onSelect={onSelect} />
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onAdd}
+          disabled={selectedTaxonomyId === null}
+        >
+          Adicionar pattern
+        </Button>
+      </div>
+
+      {selectedTaxonomyId === null ? (
+        <EmptyState
+          title="Selecione uma taxonomia"
+          description="Escolha uma taxonomia acima para ver e gerenciar seus patterns."
+        />
+      ) : isLoading ? (
+        <p className="text-sm text-fg-3">Carregando patterns...</p>
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="Nenhum pattern definido"
+          description="Adicione patterns de deteccao para esta taxonomia."
+          cta={{ label: 'Adicionar pattern', onClick: onAdd }}
+        />
+      ) : (
+        <div className={tableContainer}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className={tableHeaderCell}>Tipo</th>
+                <th className={tableHeaderCell}>Valor</th>
+                <th className={`${tableHeaderCell} text-right`}>Peso</th>
+                <th className={tableHeaderCell}>Status</th>
+                <th className={tableHeaderCell}>Origem</th>
+                <th className={`${tableHeaderCell} text-right w-28`}>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(pattern => (
+                <tr key={pattern.id} className={tableRow}>
+                  <td className={`${tableCell} font-mono text-xs`}>{pattern.kind}</td>
+                  <td className={`${tableCellMuted} font-mono text-xs break-all max-w-xs`}>
+                    {pattern.value}
+                  </td>
+                  <td className={`${tableCell} text-right font-mono`}>
+                    {pattern.weight.toFixed(2)}
+                  </td>
+                  <td className={tableCell}>
+                    <Badge variant={pattern.active ? 'default' : 'outline'} size="sm">
+                      {pattern.active ? 'Ativo' : 'Inativo'}
+                    </Badge>
+                  </td>
+                  <td className={tableCell}>
+                    <Badge
+                      variant={pattern.source === 'manual' ? 'default' : 'warning'}
+                      size="sm"
+                    >
+                      {pattern.source}
+                    </Badge>
+                  </td>
+                  <td className={`${tableCell} text-right`}>
+                    <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => alert('TODO: Editar pattern')}
+                        className="text-xs px-2 py-1 rounded text-fg-2 hover:bg-surface-2"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => onDelete(pattern.id)}
+                        className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Taxonomy tab ──────────────────────────────────────────────────────────────
+
+function TaxonomyTab({
+  tab,
+  search,
+  onSearch,
+  isLoading,
+  filtered,
+  editingId,
+  onEdit,
+  onCancelEdit,
+  onSaved,
+  onApprove,
+  onReject,
+  onDelete,
+}: {
+  tab: TabKey
+  search: string
+  onSearch: (v: string) => void
+  isLoading: boolean
+  filtered: TaxonomyEntry[]
+  editingId: number | null
+  onEdit: (id: number) => void
+  onCancelEdit: () => void
+  onSaved: () => void
+  onApprove: (id: number) => void
+  onReject: (id: number) => void
+  onDelete: (id: number) => void
+}) {
+  return (
+    <>
+      <div className="mb-3">
+        <Input
+          placeholder="Buscar por nome..."
+          value={search}
+          onChange={e => onSearch(e.target.value)}
+        />
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-fg-3">Carregando...</p>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title={tab === 'pending' ? 'Nenhuma sugestao pendente' : 'Nenhum item encontrado'}
+          description={search ? 'Tente outro termo de busca.' : undefined}
+        />
+      ) : (
+        <div className={tableContainer}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className={tableHeaderCell}>Nome</th>
+                <th className={`${tableHeaderCell} hidden sm:table-cell`}>Keywords</th>
+                <th className={`${tableHeaderCell} text-right hidden sm:table-cell`}>
+                  Deteccoes
+                </th>
+                <th className={tableHeaderCell}>Origem</th>
+                <th className={`${tableHeaderCell} text-right w-28`}>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(item =>
+                editingId === item.id ? (
+                  <EditRow
+                    key={item.id}
+                    item={item}
+                    onCancel={onCancelEdit}
+                    onSaved={onSaved}
+                  />
+                ) : (
+                  <tr key={item.id} className={tableRow}>
+                    <td className={`${tableCell} font-medium`}>{item.name}</td>
+                    <td className={`${tableCellMuted} hidden sm:table-cell`}>
+                      <div className="flex flex-wrap gap-1">
+                        {item.keywords.slice(0, 5).map((k: string, i: number) => (
+                          <span
+                            key={i}
+                            className="text-xs px-1.5 py-0.5 bg-surface-2 rounded border border-border"
+                          >
+                            {k}
+                          </span>
+                        ))}
+                        {item.keywords.length > 5 && (
+                          <span className="text-xs text-fg-3">+{item.keywords.length - 5}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className={`${tableCell} text-right font-mono hidden sm:table-cell`}>
+                      {item.detect_count}
+                    </td>
+                    <td className={tableCell}>
+                      <Badge
+                        variant={item.source === 'manual' ? 'default' : 'warning'}
+                        size="sm"
+                      >
+                        {item.source}
+                      </Badge>
+                    </td>
+                    <td className={`${tableCell} text-right`}>
+                      <div className="flex justify-end gap-1">
+                        {tab === 'pending' ? (
+                          <>
+                            <button
+                              onClick={() => onApprove(item.id)}
+                              className="text-xs px-2 py-1 rounded text-success hover:bg-success/10"
+                            >
+                              Aprovar
+                            </button>
+                            <button
+                              onClick={() => onReject(item.id)}
+                              className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
+                            >
+                              Rejeitar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => onEdit(item.id)}
+                              className="text-xs px-2 py-1 rounded text-fg-2 hover:bg-surface-2"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => onDelete(item.id)}
+                              className="text-xs px-2 py-1 rounded text-danger hover:bg-danger/10"
+                            >
+                              Excluir
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Inline edit row ───────────────────────────────────────────────────────────
+
 function EditRow({
   item,
   onCancel,
@@ -336,7 +478,10 @@ function EditRow({
     mutationFn: () =>
       apiClient.patch(`/api/taxonomy/${item.id}`, {
         name,
-        keywords: keywords.split(',').map(s => s.trim()).filter(Boolean),
+        keywords: keywords
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean),
         active,
       }),
     onSuccess: onSaved,
@@ -351,19 +496,16 @@ function EditRow({
           onChange={e => setName(e.target.value)}
         />
       </td>
-      <td className="px-4 py-2" colSpan={2}>
+      <td className="px-4 py-2 hidden sm:table-cell" colSpan={2}>
         <input
           className="w-full text-sm border border-border rounded px-2 py-1 bg-surface text-fg"
-          placeholder="separe por vírgula"
+          placeholder="separe por virgula"
           value={keywords}
           onChange={e => setKeywords(e.target.value)}
         />
       </td>
       <td className="px-4 py-2">
-        <label className="flex items-center gap-1 text-xs text-fg-2">
-          <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
-          ativo
-        </label>
+        <Switch checked={active} onChange={setActive} label="ativo" />
       </td>
       <td className="px-4 py-2 text-right">
         <div className="flex justify-end gap-1">
@@ -386,7 +528,8 @@ function EditRow({
   )
 }
 
-// ── Taxonomy Selector ──────────────────────────────────────────────────────
+// ── Taxonomy selector ─────────────────────────────────────────────────────────
+
 function TaxonomySelector({
   selectedId,
   onSelect,
@@ -411,19 +554,22 @@ function TaxonomySelector({
       <option value="">-- Selecionar --</option>
       {items.map(item => (
         <option key={item.id} value={item.id}>
-          {item.name}
+          [{item.type}] {item.name}
         </option>
       ))}
     </select>
   )
 }
 
-// ── Create Pattern Modal ────────────────────────────────────────────────────
+// ── Create pattern modal ──────────────────────────────────────────────────────
+
 function CreatePatternModal({
+  open,
   taxonomyId,
   onClose,
   onCreated,
 }: {
+  open: boolean
   taxonomyId: number
   onClose: () => void
   onCreated: () => void
@@ -441,77 +587,90 @@ function CreatePatternModal({
         weight,
         active: true,
       }),
-    onSuccess: onCreated,
+    onSuccess: () => {
+      setValue('')
+      setWeight(1.0)
+      setKind('word_boundary')
+      onCreated()
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar pattern'),
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-surface border border-border rounded-lg shadow-xl max-w-md w-full">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-fg">Adicionar Pattern</h2>
-          <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Adicionar Pattern"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => createMut.mutate()}
+            loading={createMut.isPending}
+            disabled={!value.trim()}
+          >
+            Criar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className={formGroup}>
+          <FieldLabel>Tipo</FieldLabel>
+          <select
+            value={kind}
+            onChange={e => setKind(e.target.value as typeof kind)}
+            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
+          >
+            <option value="word_boundary">Word Boundary</option>
+            <option value="regex">Regex</option>
+            <option value="exclude_regex">Exclude Regex</option>
+          </select>
+          <p className={formHint}>
+            {kind === 'word_boundary' && 'Match literal com boundary check'}
+            {kind === 'regex' && 'Pattern regex livre'}
+            {kind === 'exclude_regex' && 'Exclui produtos que atendem este regex'}
+          </p>
         </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Tipo</label>
-            <select
-              value={kind}
-              onChange={e => setKind(e.target.value as any)}
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-            >
-              <option value="word_boundary">Word Boundary</option>
-              <option value="regex">Regex</option>
-              <option value="exclude_regex">Exclude Regex</option>
-            </select>
-            <p className="text-xs text-fg-3 mt-1">
-              word_boundary: match literal com boundary check | regex: pattern regex | exclude_regex: exclui matches
-            </p>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Valor</label>
-            <input
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg font-mono"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder={kind === 'regex' ? '^\\d+x.*' : 'iPhone'}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Peso</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-              value={weight}
-              onChange={e => setWeight(parseFloat(e.target.value))}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => createMut.mutate()}
-              loading={createMut.isPending}
-              disabled={!value.trim()}
-            >
-              Criar
-            </Button>
-          </div>
+
+        <div className={formGroup}>
+          <FieldLabel>Valor</FieldLabel>
+          <Input
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder={kind === 'regex' ? '^\\d+x.*' : 'iPhone'}
+            className="font-mono"
+          />
+        </div>
+
+        <div className={formGroup}>
+          <FieldLabel>Peso</FieldLabel>
+          <Input
+            type="number"
+            step="0.1"
+            min="0"
+            value={weight}
+            onChange={e => setWeight(parseFloat(e.target.value))}
+          />
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
-// ── Create modal ────────────────────────────────────────────────────────────
+// ── Create taxonomy modal ─────────────────────────────────────────────────────
+
 function CreateModal({
+  open,
   defaultType,
   onClose,
   onCreated,
 }: {
+  open: boolean
   defaultType: 'category' | 'brand'
   onClose: () => void
   onCreated: () => void
@@ -525,68 +684,77 @@ function CreateModal({
       apiClient.post('/api/taxonomy', {
         type,
         name,
-        keywords: keywords.split(',').map(s => s.trim()).filter(Boolean),
+        keywords: keywords
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean),
         active: true,
       }),
-    onSuccess: onCreated,
+    onSuccess: () => {
+      setName('')
+      setKeywords('')
+      onCreated()
+    },
     onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar'),
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-surface border border-border rounded-lg shadow-xl max-w-md w-full">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-fg">Adicionar entrada</h2>
-          <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">×</button>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Adicionar termo"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => createMut.mutate()}
+            loading={createMut.isPending}
+            disabled={!name.trim()}
+          >
+            Criar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className={formGroup}>
+          <FieldLabel>Tipo</FieldLabel>
+          <select
+            value={type}
+            onChange={e => setType(e.target.value as 'category' | 'brand')}
+            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
+          >
+            <option value="category">Categoria</option>
+            <option value="brand">Marca</option>
+          </select>
         </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Tipo</label>
-            <select
-              value={type}
-              onChange={e => setType(e.target.value as any)}
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-            >
-              <option value="category">Categoria</option>
-              <option value="brand">Marca</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Nome</label>
-            <input
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="ex: Drones, Apple"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Keywords (separe por vírgula)</label>
-            <textarea
-              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
-              rows={3}
-              value={keywords}
-              onChange={e => setKeywords(e.target.value)}
-              placeholder="drone, dji, mavic, mini 4..."
-            />
-            <p className="text-xs text-fg-3 mt-1">
-              O crawler usa essas keywords pra detectar produtos desta categoria/marca
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => createMut.mutate()}
-              loading={createMut.isPending}
-              disabled={!name.trim()}
-            >
-              Criar
-            </Button>
-          </div>
+
+        <div className={formGroup}>
+          <FieldLabel required>Nome</FieldLabel>
+          <Input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="ex: Drones, Apple"
+          />
+        </div>
+
+        <div className={formGroup}>
+          <FieldLabel>Keywords (separe por virgula)</FieldLabel>
+          <Textarea
+            value={keywords}
+            onChange={e => setKeywords(e.target.value)}
+            placeholder="drone, dji, mavic, mini 4..."
+            rows={3}
+          />
+          <p className={formHint}>
+            O crawler usa essas keywords para detectar produtos desta categoria/marca.
+          </p>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

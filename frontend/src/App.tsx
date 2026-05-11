@@ -95,7 +95,9 @@ const Manual = lazy(() => import('./pages/Manual'))
 const ManualTutorialPage = lazy(() => import('./pages/ManualTutorialPage'))
 
 const Setup = lazy(() => import('./pages/Setup'))
-const DevAtoms = lazy(() => import('./pages/DevAtoms'))
+const DevAtoms = import.meta.env.DEV
+  ? lazy(() => import('./pages/DevAtoms'))
+  : null
 
 // Redireciona para /setup se nenhum usuário existir ainda
 function SetupGuard({ children }: { children: ReactNode }) {
@@ -169,7 +171,7 @@ export default function App() {
               <Route path="automations/jonfrey" element={<Navigate to="/activity?tab=jonfrey" replace />} />
               <Route path="automations/pending" element={<Navigate to="/activity?tab=pending" replace />} />
 
-              <Route path="_dev/atoms" element={<DevAtoms />} />
+              {import.meta.env.DEV && DevAtoms && <Route path="_dev/atoms" element={<DevAtoms />} />}
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>

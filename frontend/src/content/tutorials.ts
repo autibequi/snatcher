@@ -5,7 +5,7 @@ export interface ManualTutorialDef {
   title: string
   description: string
   icon: string
-  /** Rota da app para o link “Ir para…” (omitido no manual operacional). */
+  /** Rota da app para o link "Ir para…" (omitido no manual operacional). */
   path?: string
 }
 

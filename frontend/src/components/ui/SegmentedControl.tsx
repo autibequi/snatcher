@@ -14,7 +14,7 @@ interface SegmentedControlProps<T extends string> {
 }
 
 /**
- * Botões em linha estilo “pill”: um valor ativo com realce accent.
+ * Botões em linha estilo "pill": um valor ativo com realce accent.
  */
 export function SegmentedControl<T extends string>({
   value,
