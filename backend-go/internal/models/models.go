@@ -167,6 +167,11 @@ type AppConfig struct {
 	IntervalBetweenChannelsSec int  `db:"interval_between_channels_sec" json:"interval_between_channels"`
 	DailyLimitPerAccount       int  `db:"daily_limit_per_account" json:"daily_limit_per_account"`
 	RotateAccounts             bool `db:"rotate_accounts" json:"rotate_accounts"`
+
+	// Grupo de notificação das automatizações — migration 0135.
+	// Quando setado, o notifier posta resumos (Jonfrey, dispatches, erros) nesse grupo via Evolution.
+	// FK SET NULL: se o grupo for deletado/arquivado, o campo silencia automaticamente.
+	NotificationsGroupID NullInt64 `db:"notifications_group_id" json:"notifications_group_id,omitempty"`
 }
 
 type AutoMatchLog struct {

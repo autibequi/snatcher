@@ -13,13 +13,15 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/store"
 )
 
 // RunDispatchWorker processa dispatch_targets pendentes chamando a Evolution API.
 // Deve ser chamado periodicamente pelo scheduler.
+// notif pode ser nil — quando setado, posta resumo no grupo de notificação após cada dispatch concluir.
 // Retorna quantos targets foram lidos da fila neste ciclo (0 = fila vazia ou erro ao listar).
-func RunDispatchWorker(ctx context.Context, st store.Store) int {
+func RunDispatchWorker(ctx context.Context, st store.Store, notif *notifier.Notifier) int {
 	cfg, err := st.GetConfig()
 	if err != nil {
 		slog.Error("dispatch worker: get config", "err", err)
@@ -88,7 +90,7 @@ func RunDispatchWorker(ctx context.Context, st store.Store) int {
 			slog.Warn("dispatch worker: rate limit por grupo, target adiado", "target_id", t.ID, "dispatch_id", t.DispatchID, "group_id", t.GroupID, "delivered_60min", deliveredByGroup[t.GroupID], "limit", maxPerGroupPerHour)
 			continue // deixa pending — próximo ciclo tenta de novo
 		}
-		if processTarget(ctx, st, t, cfg, waAccounts, &rrCursor) {
+		if processTarget(ctx, st, t, cfg, waAccounts, &rrCursor, notif) {
 			deliveredByGroup[t.GroupID]++
 		}
 	}
@@ -246,12 +248,12 @@ func mergeEvolutionFromConfig(cfg models.AppConfig, acc *models.WAAccount) (base
 }
 
 // processTarget envia um target; retorna true só se marcou delivered (para rate limit por grupo).
-func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount, rrCursor *int) bool {
+func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget, cfg models.AppConfig, waAccounts []models.WAAccount, rrCursor *int, notif *notifier.Notifier) bool {
 	dispatch, err := st.GetDispatch(t.DispatchID)
 	if err != nil {
 		slog.Error("dispatch worker: dispatch não encontrado", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "dispatch não encontrado")
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 
@@ -259,13 +261,13 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if err != nil {
 		slog.Error("dispatch worker: grupo não encontrado", "target_id", t.ID, "group_id", t.GroupID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo não encontrado")
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 	if !group.JID.Valid || group.JID.String == "" {
 		slog.Error("dispatch worker: grupo sem JID (WhatsApp)", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "grupo sem JID configurado")
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 
@@ -273,7 +275,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if credErr != nil {
 		slog.Error("dispatch worker: credenciais Evolution", "target_id", t.ID, "group_id", t.GroupID, "dispatch_id", t.DispatchID, "err", credErr)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", credErr.Error())
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 
@@ -284,7 +286,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 		if err := st.CheckAndIncrementWA(accountID); err != nil {
 			slog.Error("dispatch worker: throttle conta WA", "account", accountID, "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 			_ = st.UpdateDispatchTargetStatus(t.ID, "failed", fmt.Sprintf("throttle: %v", err))
-			checkAllFinished(st, t.DispatchID)
+			checkAllFinished(st, t.DispatchID, notif)
 			return false
 		}
 	}
@@ -296,7 +298,7 @@ func processTarget(ctx context.Context, st store.Store, t models.DispatchTarget,
 	if err := json.Unmarshal(dispatch.Message, &msg); err != nil {
 		slog.Error("dispatch worker: payload message JSON inválido", "target_id", t.ID, "dispatch_id", t.DispatchID, "err", err)
 		_ = st.UpdateDispatchTargetStatus(t.ID, "failed", "message JSON inválido")
-		checkAllFinished(st, t.DispatchID)
+		checkAllFinished(st, t.DispatchID, notif)
 		return false
 	}
 	text := msg.Text

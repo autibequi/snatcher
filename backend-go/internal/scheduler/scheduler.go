@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"snatcher/backendv2/internal/clusters"
 	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/store"
 	"time"
@@ -20,12 +21,19 @@ type Scheduler struct {
 	llmCli   llm.Client
 	storeRef store.Store
 	jonfreyTick func(ctx context.Context) // injetado via SetJonfreyTick — evita ciclo de import
+	notif    *notifier.Notifier // pode ser nil — todas as chamadas tratam isso
 }
 
 // SetJonfreyTick registra o callback que executa todas as actions habilitadas do Jonfrey.
 // Chamado pelo main.go após o handler do Jonfrey ser construído.
 func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context)) {
 	sc.jonfreyTick = fn
+}
+
+// SetNotifier registra o notifier de eventos operacionais (relatórios, dispatches).
+// Pode ser chamado depois do New(); workers checam nil internamente.
+func (sc *Scheduler) SetNotifier(n *notifier.Notifier) {
+	sc.notif = n
 }
 
 type Status struct {
@@ -72,7 +80,7 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(15*time.Second),
-			gocron.NewTask(func() { _ = RunDispatchWorker(ctx, sc.storeRef) }),
+			gocron.NewTask(func() { _ = RunDispatchWorker(ctx, sc.storeRef, sc.notif) }),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {
@@ -96,7 +104,7 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(15*time.Second),
-			gocron.NewTask(func() { RunAutoMatchWorker(ctx, sc.storeRef) }),
+			gocron.NewTask(func() { RunAutoMatchWorker(ctx, sc.storeRef, sc.notif) }),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

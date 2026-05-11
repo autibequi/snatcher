@@ -10,13 +10,14 @@ import (
 
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/store"
 )
 
 // RunAutoMatchWorker executa o ciclo de auto-match: busca produtos recentes,
 // calcula score com todos os canais e dispara para os grupos dos canais com score >= threshold.
-func RunAutoMatchWorker(ctx context.Context, st store.Store) {
-	_ = runAutoMatchCycle(ctx, st, time.Now(), false, nil)
+func RunAutoMatchWorker(ctx context.Context, st store.Store, notif *notifier.Notifier) {
+	_ = runAutoMatchCycle(ctx, st, time.Now(), false, nil, notif)
 }
 
 // sortProductsByBestAutoMatchScore replica a prioridade «melhor score primeiro» da prévia por canal,

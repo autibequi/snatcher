@@ -7,10 +7,14 @@ import (
 	"sort"
 	"time"
 
+	"fmt"
+	"strings"
+
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/curation"
 	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -29,7 +33,7 @@ type AutoMatchPlannedRow struct {
 // SimulateAutoMatchCycle replica o ciclo do worker sem persistir dispatches nem logs (sem criar short links).
 func SimulateAutoMatchCycle(ctx context.Context, st store.Store, now time.Time) ([]AutoMatchPlannedRow, error) {
 	var planned []AutoMatchPlannedRow
-	err := runAutoMatchCycle(ctx, st, now, true, &planned)
+	err := runAutoMatchCycle(ctx, st, now, true, &planned, nil)
 	return planned, err
 }
 
@@ -57,7 +61,8 @@ func pickGroupsForDispatch(groups []models.RedesignGroup, maxGroups int, startId
 
 // runAutoMatchCycle é o núcleo compartilhado entre o worker real e a prévia.
 // dryRun=true: não grava BD nem chama GetOrCreateShortLink; acumula planned.
-func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRun bool, plannedOut *[]AutoMatchPlannedRow) error {
+// notif pode ser nil — quando não-nil, posta resumo no grupo de notificação se houve dispatches criados.
+func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRun bool, plannedOut *[]AutoMatchPlannedRow, notif *notifier.Notifier) error {
 	_ = ctx // reservado para cancelamento futuro
 	cfg, err := st.GetConfig()
 	if err != nil {
@@ -200,6 +205,13 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 	}
 
 	sentByChannel := make(map[int64]int, len(channelsByID))
+	// Resumo legível pra notificação. Cada item: "CanalX → ProdutoY (N grupos)".
+	type cycleHit struct {
+		channelName string
+		productName string
+		groupCount  int
+	}
+	var cycleHits []cycleHit
 	skip := struct {
 		NoAutoForScore     int
 		ChannelFilter      int
@@ -449,6 +461,11 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 
 			slog.Info("auto match: dispatched", "product", p.CanonicalName, "channel", s.ChannelName, "score", s.Value)
 			sentByChannel[s.ChannelID]++
+			cycleHits = append(cycleHits, cycleHit{
+				channelName: s.ChannelName,
+				productName: p.CanonicalName,
+				groupCount:  len(targets),
+			})
 			if err := st.UpdateAutoMatchNextGroupIdx(s.ChannelID, nextGroupIdx); err != nil {
 				slog.Warn("auto match: update group rotation cursor", "channel_id", s.ChannelID, "err", err)
 			} else {
@@ -491,6 +508,41 @@ func runAutoMatchCycle(ctx context.Context, st store.Store, now time.Time, dryRu
 		)
 	} else {
 		slog.Info("auto match: cycle finished", "dispatches_created", nDisp)
+		if notif != nil && len(cycleHits) > 0 {
+			// Resumo enxuto — máx 8 linhas pra não inundar o grupo. Limita por
+			// segurança porque um ciclo pode produzir 30+ dispatches.
+			const maxLines = 8
+			lines := make([]string, 0, len(cycleHits)+2)
+			lines = append(lines, fmt.Sprintf("📦 *%d dispatch%s criado%s pelo auto-match:*",
+				nDisp, pluralS(nDisp), pluralS(nDisp)))
+			for i, h := range cycleHits {
+				if i >= maxLines {
+					lines = append(lines, fmt.Sprintf("…e mais %d", len(cycleHits)-maxLines))
+					break
+				}
+				lines = append(lines, fmt.Sprintf("• %s → %s (%d grupo%s)",
+					truncShort(h.channelName, 32), truncShort(h.productName, 60),
+					h.groupCount, pluralS(h.groupCount)))
+			}
+			notif.Notify(notifier.KindAutoMatchSummary, strings.Join(lines, "\n"), "", 0)
+		}
 	}
 	return nil
+}
+
+// pluralS retorna "s" pra plural simples em pt-BR.
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// truncShort corta texto preservando palavras quando possível, com elipse.
+func truncShort(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
 }
