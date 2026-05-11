@@ -1,13 +1,43 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
-} from 'recharts'
-import { Badge, Button, KpiCard, Skeleton, EmptyState } from '../components/ui'
+  Badge,
+  Button,
+  EmptyState,
+  KpiCard,
+  Modal,
+  PageHeader,
+  Skeleton,
+} from '../components/ui'
 import { apiClient } from '../lib/apiClient'
-import { usePublicLinkPrefix, usePublicLinkBaseURL } from '../hooks/useBrand'
+import { usePublicLinkBaseURL, usePublicLinkPrefix } from '../hooks/useBrand'
+import {
+  responsiveKpiGrid,
+  sectionCard,
+  sectionHeader,
+  sectionTitle,
+  tableCell,
+  tableCellMuted,
+  tableContainer,
+  tableHeaderCell,
+  tableRow,
+} from '../lib/uiTokens'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Group {
+  id: number
+  name: string
+  status?: 'active' | 'paused' | 'full' | 'banned'
+  platform?: string
+}
+
+interface FallbackGroup {
+  group_id: number
+  group_name?: string
+  priority: number
+  status?: Group['status']
+}
 
 interface PublicLink {
   id: number
@@ -19,13 +49,7 @@ interface PublicLink {
   clicks_30d: number
   clicks_7d?: number
   current_target?: string
-  fallback_chain?: FallbackGroup[]
-}
-
-interface FallbackGroup {
-  group_id: number
-  group_name?: string
-  priority: number
+  fallback_chain?: FallbackGroup[] | string
 }
 
 interface Channel {
@@ -35,159 +59,16 @@ interface Channel {
   active?: boolean
 }
 
-interface DayBucket {
-  day: string
-  [slug: string]: number | string
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const SLUG_COLORS = ['#6366f1', '#22d3ee', '#4ade80', '#f97316', '#f43f5e', '#a78bfa', '#facc15']
-
-const DAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-
-// ── Mock analytics fallback ───────────────────────────────────────────────────
-
-function buildMockChart(links: PublicLink[]): DayBucket[] {
-  return DAY_LABELS.map((day, i) => {
-    const bucket: DayBucket = { day }
-    links.forEach(l => {
-      const base = l.clicks_7d ?? Math.round(l.clicks_30d / 4)
-      bucket[l.slug] = Math.max(0, Math.round((base / 7) * (0.7 + Math.random() * 0.6)))
-    })
-    return bucket
-  })
-}
-
-// ── QR fallback ───────────────────────────────────────────────────────────────
-
-function QrImage({ url }: { url: string }) {
-  const src = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(url)}&size=120x120&format=png`
-  return <img src={src} alt="QR code" className="w-28 h-28 rounded-md border border-border" />
-}
-
-// ── CreateLinkModal ───────────────────────────────────────────────────────────
-
-function CreateLinkModal({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient()
-  const linkPrefix = usePublicLinkPrefix()
-  const [form, setForm] = React.useState({
-    slug: '',
-    channel_id: '',
-    redirect_strategy: 'first_active',
-  })
-  const [saving, setSaving] = React.useState(false)
-
-  const { data: channels = [] } = useQuery<Channel[]>({
-    queryKey: ['channels-select'],
-    queryFn: () =>
-      apiClient.get('/api/channels').then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? []))),
-  })
-
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault()
-    if (!form.slug.trim() || !form.channel_id) return
-    setSaving(true)
-    try {
-      await apiClient.post('/api/public-links', {
-        slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        channel_id: Number(form.channel_id),
-        fallback_chain: [],
-        redirect_strategy: form.redirect_strategy,
-        active: true,
-      })
-      qc.invalidateQueries({ queryKey: ['public-links'] })
-      onClose()
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      alert(msg || 'Erro ao criar link')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
-      <div
-        className="bg-surface border border-border rounded-lg p-6 w-full max-w-md shadow-modal"
-        onClick={e => e.stopPropagation()}
-      >
-        <h3 className="font-semibold text-fg mb-4">Novo link público</h3>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Slug (a-z, números, hífen) *</label>
-            <div className="flex items-center border border-border rounded-md overflow-hidden focus-within:border-accent">
-              <span className="px-2.5 py-1.5 text-sm text-fg-3 bg-surface-2 whitespace-nowrap">{linkPrefix}</span>
-              <input
-                required
-                value={form.slug}
-                onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
-                className="flex-1 text-sm px-2 py-1.5 bg-surface text-fg outline-none"
-                placeholder="suplementos"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Canal *</label>
-            <select
-              required
-              value={form.channel_id}
-              onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            >
-              <option value="">Selecionar canal...</option>
-              {channels.map(ch => (
-                <option key={ch.id} value={ch.id}>{ch.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-fg-2 block mb-1">Estratégia de fallback</label>
-            <select
-              value={form.redirect_strategy}
-              onChange={e => setForm(f => ({ ...f, redirect_strategy: e.target.value }))}
-              className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-            >
-              <option value="first_active">Primeiro ativo</option>
-              <option value="least_full">Menos cheio</option>
-              <option value="round_robin">Round robin</option>
-            </select>
-          </div>
-          <p className="text-xs text-fg-3">A cadeia de fallback pode ser configurada após criar o link.</p>
-          <div className="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-sm px-4 py-2 rounded-md bg-surface-2 text-fg-2"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="text-sm px-4 py-2 rounded-md bg-accent text-white disabled:opacity-50"
-            >
-              {saving ? 'Criando...' : 'Criar link'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ── FallbackChainPanel ────────────────────────────────────────────────────────
-
-function parseChain(raw: any): FallbackGroup[] {
+function parseChain(raw: PublicLink['fallback_chain']): FallbackGroup[] {
   if (Array.isArray(raw)) return raw as FallbackGroup[]
   if (typeof raw === 'string' && raw) {
     try {
-      // tenta JSON direto
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) return parsed
     } catch {
       try {
-        // fallback: backend antigo enviava base64 do JSON
         const decoded = atob(raw)
         const parsed = JSON.parse(decoded)
         if (Array.isArray(parsed)) return parsed
@@ -197,62 +78,112 @@ function parseChain(raw: any): FallbackGroup[] {
   return []
 }
 
-function FallbackChainPanel({ link, channels }: { link: PublicLink; channels: Channel[] }) {
-  const qc = useQueryClient()
-  const [showAddDropdown, setShowAddDropdown] = React.useState(false)
-  const chain: FallbackGroup[] = parseChain(link.fallback_chain)
+function strategyLabel(s: string): string {
+  return s === 'first_active' ? 'Primeiro ativo'
+    : s === 'least_full' ? 'Menos cheio'
+    : s === 'round_robin' ? 'Round-robin'
+    : s
+}
 
-  const saveMut = useMutation({
-    mutationFn: (newChain: FallbackGroup[]) =>
-      apiClient.patch(`/api/public-links/${link.id}`, { fallback_chain: newChain }).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['public-links'] }),
-  })
+function GroupStatusBadge({ status }: { status?: Group['status'] }) {
+  if (!status || status === 'active') return null
+  const map: Record<string, [string, string]> = {
+    paused:  ['Pausado', 'warning'],
+    full:    ['Cheio',   'danger'],
+    banned:  ['Banido',  'danger'],
+  }
+  const [label, variant] = map[status] ?? [status, 'default']
+  return <Badge variant={variant as any} className="ml-1">{label}</Badge>
+}
 
-  const removeGroup = (groupId: number) => {
-    const updated = chain
-      .filter(g => g.group_id !== groupId)
-      .map((g, i) => ({ ...g, priority: i + 1 }))
-    saveMut.mutate(updated)
+// ── FallbackChainEditor ───────────────────────────────────────────────────────
+
+interface FallbackChainEditorProps {
+  chain: FallbackGroup[]
+  groups: Group[]
+  saving: boolean
+  onChange: (chain: FallbackGroup[]) => void
+}
+
+function FallbackChainEditor({ chain, groups, saving, onChange }: FallbackChainEditorProps) {
+  const [showAdd, setShowAdd] = React.useState(false)
+  const [search, setSearch] = React.useState('')
+
+  const move = (idx: number, dir: -1 | 1) => {
+    const next = [...chain]
+    const target = idx + dir
+    if (target < 0 || target >= next.length) return
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    onChange(next.map((g, i) => ({ ...g, priority: i + 1 })))
   }
 
-  const addGroup = (ch: Channel) => {
-    setShowAddDropdown(false)
-    const already = chain.some(g => g.group_id === ch.id)
-    if (already) return
-    const updated = [...chain, { group_id: ch.id, group_name: ch.name, priority: chain.length + 1 }]
-    saveMut.mutate(updated)
+  const remove = (groupId: number) => {
+    onChange(
+      chain
+        .filter(g => g.group_id !== groupId)
+        .map((g, i) => ({ ...g, priority: i + 1 })),
+    )
   }
+
+  const add = (group: Group) => {
+    setShowAdd(false)
+    setSearch('')
+    if (chain.some(g => g.group_id === group.id)) return
+    onChange([
+      ...chain,
+      { group_id: group.id, group_name: group.name, priority: chain.length + 1, status: group.status },
+    ])
+  }
+
+  const inChainIds = new Set(chain.map(g => g.group_id))
+  const filteredGroups = groups.filter(
+    g => !inChainIds.has(g.id) && g.name.toLowerCase().includes(search.toLowerCase()),
+  )
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
+    <div className="space-y-2">
+      {/* Add group bar */}
+      <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">Cadeia de fallback</p>
-        <div className="relative">
-          <Button variant="ghost" size="sm" onClick={() => setShowAddDropdown(v => !v)}>
-            + Adicionar
-          </Button>
-          {showAddDropdown && (
-            <div className="absolute right-0 top-8 z-30 w-48 bg-surface border border-border rounded-md shadow-lg py-1">
-              {channels.length === 0 ? (
-                <p className="text-xs text-fg-3 px-3 py-2">Nenhum canal disponível</p>
-              ) : (
-                channels.map(ch => (
-                  <button
-                    key={ch.id}
-                    onClick={() => addGroup(ch)}
-                    className="w-full text-left text-sm px-3 py-1.5 hover:bg-surface-2 text-fg"
-                  >
-                    {ch.name}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
+        <Button variant="ghost" size="sm" onClick={() => setShowAdd(v => !v)} disabled={saving}>
+          + Adicionar grupo
+        </Button>
       </div>
 
+      {showAdd && (
+        <div className={`${sectionCard} space-y-2`}>
+          <input
+            autoFocus
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar grupo..."
+            className="w-full h-7 px-2.5 text-xs rounded-md border border-border bg-surface text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <div className="max-h-40 overflow-y-auto space-y-0.5">
+            {filteredGroups.length === 0 ? (
+              <p className="text-xs text-fg-3 py-1 text-center">Nenhum grupo disponível</p>
+            ) : (
+              filteredGroups.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => add(g)}
+                  className="w-full flex items-center gap-2 text-left text-xs px-2 py-1.5 rounded-md hover:bg-surface-2 text-fg"
+                >
+                  <span className="flex-1 truncate">{g.name}</span>
+                  <GroupStatusBadge status={g.status} />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Chain list */}
       {chain.length === 0 ? (
-        <p className="text-xs text-fg-3 py-2">Nenhum grupo na cadeia. Adicione canais como destino de fallback.</p>
+        <p className="text-xs text-fg-3 py-2">
+          Nenhum grupo na cadeia. Adicione grupos como destinos de fallback.
+        </p>
       ) : (
         <ol className="space-y-1">
           {chain.map((g, idx) => (
@@ -260,32 +191,76 @@ function FallbackChainPanel({ link, channels }: { link: PublicLink; channels: Ch
               key={g.group_id}
               className="flex items-center gap-2 bg-surface-2 border border-border rounded-md px-3 py-2"
             >
-              {/* drag handle visual */}
-              <span className="text-fg-3 cursor-grab select-none text-xs">&#9776;</span>
-              <span className="text-xs text-fg-3 w-4">{idx + 1}.</span>
+              <span className="text-xs text-fg-3 w-5 tabular-nums text-right select-none">
+                {idx + 1}.
+              </span>
               <span className="flex-1 text-sm text-fg truncate">{g.group_name ?? `grupo #${g.group_id}`}</span>
+              <GroupStatusBadge status={g.status} />
+              <div className="flex flex-col gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0 || saving}
+                  className="text-fg-3 hover:text-fg disabled:opacity-25 leading-none text-xs p-0.5 rounded"
+                  title="Subir"
+                >
+                  &#9650;
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === chain.length - 1 || saving}
+                  className="text-fg-3 hover:text-fg disabled:opacity-25 leading-none text-xs p-0.5 rounded"
+                  title="Descer"
+                >
+                  &#9660;
+                </button>
+              </div>
               <button
-                onClick={() => removeGroup(g.group_id)}
-                className="text-fg-3 hover:text-danger text-xs ml-1"
+                type="button"
+                onClick={() => remove(g.group_id)}
+                disabled={saving}
+                className="text-fg-3 hover:text-danger text-sm leading-none ml-1 disabled:opacity-25"
                 title="Remover"
               >
-                ×
+                &times;
               </button>
             </li>
           ))}
         </ol>
       )}
+
+      <p className="text-xs text-fg-3">
+        O servidor redireciona para o primeiro grupo aberto, com vagas e ativo. A ordem da cadeia determina a prioridade.
+      </p>
     </div>
   )
 }
 
-// ── LinkDetailPanel ───────────────────────────────────────────────────────────
+// ── EditLinkModal ─────────────────────────────────────────────────────────────
 
-function LinkDetailPanel({ link, channels, onClose }: { link: PublicLink; channels: Channel[]; onClose: () => void }) {
-  const [showQr, setShowQr] = React.useState(false)
-  const [copied, setCopied] = React.useState(false)
+interface EditLinkModalProps {
+  link: PublicLink
+  groups: Group[]
+  onClose: () => void
+}
+
+function EditLinkModal({ link, groups, onClose }: EditLinkModalProps) {
+  const qc = useQueryClient()
   const baseURL = usePublicLinkBaseURL()
   const fullUrl = `${baseURL}/${link.slug}`
+  const [copied, setCopied] = React.useState(false)
+  const [chain, setChain] = React.useState<FallbackGroup[]>(() => parseChain(link.fallback_chain))
+  const [strategy, setStrategy] = React.useState(link.redirect_strategy)
+
+  const saveMut = useMutation({
+    mutationFn: (payload: { fallback_chain: FallbackGroup[]; redirect_strategy: string }) =>
+      apiClient.patch(`/api/public-links/${link.id}`, payload).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['public-links'] })
+      onClose()
+    },
+  })
 
   const copyUrl = () => {
     navigator.clipboard?.writeText(fullUrl).then(() => {
@@ -294,133 +269,255 @@ function LinkDetailPanel({ link, channels, onClose }: { link: PublicLink; channe
     })
   }
 
+  const hasChanges =
+    JSON.stringify(chain) !== JSON.stringify(parseChain(link.fallback_chain)) ||
+    strategy !== link.redirect_strategy
+
   return (
-    <div className="bg-surface border border-border rounded-md p-4 flex flex-col gap-4">
-      {/* header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-fg-2 uppercase tracking-wide">URL pública</p>
-        <button onClick={onClose} className="text-fg-3 hover:text-fg text-xs">fechar ×</button>
-      </div>
-      <p className="text-xs text-fg-3">
-        compartilhe livremente — sobrevive a mudanças de grupo
-      </p>
-
-      {/* url row */}
-      <div className="flex items-center gap-2 bg-surface-2 border border-border rounded-md px-3 py-2">
-        <span className="flex-1 text-sm text-fg font-mono truncate">{fullUrl}</span>
-        <Button variant="secondary" size="sm" onClick={copyUrl}>
-          {copied ? 'Copiado!' : 'Copiar'}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => setShowQr(v => !v)}>
-          QR
-        </Button>
-      </div>
-
-      {/* qr code */}
-      {showQr && (
-        <div className="flex justify-center py-2">
-          <QrImage url={fullUrl} />
+    <Modal
+      open
+      title={`Editar /${link.slug}`}
+      onClose={onClose}
+      panelClassName="max-w-lg"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={saveMut.isPending}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!hasChanges || saveMut.isPending}
+            loading={saveMut.isPending}
+            onClick={() => saveMut.mutate({ fallback_chain: chain, redirect_strategy: strategy })}
+          >
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {/* URL row */}
+        <div>
+          <p className="text-xs font-medium text-fg-2 uppercase tracking-wide mb-2">URL pública</p>
+          <div className="flex items-center gap-2 bg-surface-2 border border-border rounded-md px-3 py-2">
+            <span className="flex-1 text-sm text-fg font-mono truncate">{fullUrl}</span>
+            <Button variant="secondary" size="sm" onClick={copyUrl}>
+              {copied ? 'Copiado!' : 'Copiar'}
+            </Button>
+          </div>
         </div>
-      )}
 
-      {/* how it works */}
-      <p className="text-xs text-fg-3">
-        <span className="font-medium text-fg-2">Como funciona:</span> ao clicar, o servidor consulta
-        a fila de fallback abaixo e redireciona para o primeiro grupo aberto, com vagas e ativo. O
-        cliente nunca vê o link real do WhatsApp.
-      </p>
+        {/* Strategy */}
+        <div>
+          <label className="text-xs font-medium text-fg-2 uppercase tracking-wide block mb-1.5">
+            Estratégia de roteamento
+          </label>
+          <select
+            value={strategy}
+            onChange={e => setStrategy(e.target.value)}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="first_active">Primeiro ativo</option>
+            <option value="least_full">Menos cheio</option>
+            <option value="round_robin">Round-robin</option>
+          </select>
+        </div>
 
-      {/* fallback chain */}
-      <FallbackChainPanel link={link} channels={channels} />
+        {/* Fallback chain editor */}
+        <FallbackChainEditor
+          chain={chain}
+          groups={groups}
+          saving={saveMut.isPending}
+          onChange={setChain}
+        />
+      </div>
+    </Modal>
+  )
+}
+
+// ── CreateLinkModal ───────────────────────────────────────────────────────────
+
+interface CreateLinkModalProps {
+  channels: Channel[]
+  onClose: () => void
+}
+
+function CreateLinkModal({ channels, onClose }: CreateLinkModalProps) {
+  const qc = useQueryClient()
+  const linkPrefix = usePublicLinkPrefix()
+  const [form, setForm] = React.useState({
+    slug: '',
+    channel_id: '',
+    redirect_strategy: 'first_active',
+  })
+  const [error, setError] = React.useState('')
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      apiClient.post('/api/public-links', {
+        slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        channel_id: Number(form.channel_id),
+        fallback_chain: [],
+        redirect_strategy: form.redirect_strategy,
+        active: true,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['public-links'] })
+      onClose()
+    },
+    onError: (err: any) => {
+      setError(err?.response?.data?.error ?? 'Erro ao criar link')
+    },
+  })
+
+  const canSubmit = form.slug.trim() !== '' && form.channel_id !== ''
+
+  return (
+    <Modal
+      open
+      title="Novo link público"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={createMut.isPending}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit || createMut.isPending}
+            loading={createMut.isPending}
+            onClick={() => createMut.mutate()}
+          >
+            Criar link
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && <p className="text-xs text-danger">{error}</p>}
+
+        {/* Slug */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-fg-2">Slug (a-z, números, hífen) *</label>
+          <div className="flex items-center border border-border rounded-md overflow-hidden focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+            <span className="px-2.5 py-1.5 text-xs text-fg-3 bg-surface-2 whitespace-nowrap border-r border-border">
+              {linkPrefix}
+            </span>
+            <input
+              autoFocus
+              value={form.slug}
+              onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
+              className="flex-1 text-sm px-2.5 py-1.5 bg-surface text-fg outline-none"
+              placeholder="suplementos"
+            />
+          </div>
+        </div>
+
+        {/* Canal */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-fg-2">Canal *</label>
+          <select
+            value={form.channel_id}
+            onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">Selecionar canal...</option>
+            {channels.map(ch => (
+              <option key={ch.id} value={ch.id}>
+                {ch.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Estratégia */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-fg-2">Estratégia de fallback</label>
+          <select
+            value={form.redirect_strategy}
+            onChange={e => setForm(f => ({ ...f, redirect_strategy: e.target.value }))}
+            className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="first_active">Primeiro ativo</option>
+            <option value="least_full">Menos cheio</option>
+            <option value="round_robin">Round-robin</option>
+          </select>
+        </div>
+
+        <p className="text-xs text-fg-3">
+          A cadeia de fallback pode ser configurada após criar o link.
+        </p>
+      </div>
+    </Modal>
+  )
+}
+
+// ── InlineFallbackChain (tabela) ──────────────────────────────────────────────
+
+function InlineFallbackChain({ chain }: { chain: FallbackGroup[] }) {
+  if (chain.length === 0) {
+    return <span className="text-xs text-danger">sem fallback</span>
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {chain.map((g, i) => (
+        <span key={g.group_id} className="inline-flex items-center gap-0.5 text-xs">
+          <span className="text-fg-3 tabular-nums">{i + 1}.</span>
+          <span className="text-fg">{g.group_name ?? `#${g.group_id}`}</span>
+          {g.status && g.status !== 'active' && (
+            <GroupStatusBadge status={g.status} />
+          )}
+          {i < chain.length - 1 && <span className="text-fg-3 mx-0.5">→</span>}
+        </span>
+      ))}
     </div>
   )
 }
 
-// ── ClicksChart ───────────────────────────────────────────────────────────────
+// ── DeleteConfirmModal ────────────────────────────────────────────────────────
 
-function ClicksChart({ links }: { links: PublicLink[] }) {
-  const { data: chartData } = useQuery<DayBucket[]>({
-    queryKey: ['public-links-analytics', links.map(l => l.id).join(',')],
-    queryFn: async () => {
-      // Try real endpoint; fall back to mock on any error
-      try {
-        const results = await Promise.all(
-          links.map(l =>
-            apiClient
-              .get<{ days: number[] }>(`/api/public-links/${l.id}/analytics`)
-              .then(r => ({ slug: l.slug, days: r.data.days }))
-              .catch(() => ({
-                slug: l.slug,
-                days: Array.from({ length: 7 }, () =>
-                  Math.max(0, Math.round(((l.clicks_7d ?? Math.round(l.clicks_30d / 4)) / 7) * (0.7 + Math.random() * 0.6)))
-                ),
-              }))
-          )
-        )
-        return DAY_LABELS.map((day, i) => {
-          const bucket: DayBucket = { day }
-          results.forEach(r => { bucket[r.slug] = r.days[i] ?? 0 })
-          return bucket
-        })
-      } catch {
-        return buildMockChart(links)
-      }
+interface DeleteConfirmModalProps {
+  link: PublicLink
+  onClose: () => void
+}
+
+function DeleteConfirmModal({ link, onClose }: DeleteConfirmModalProps) {
+  const qc = useQueryClient()
+  const deleteMut = useMutation({
+    mutationFn: () => apiClient.delete(`/api/public-links/${link.id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['public-links'] })
+      onClose()
     },
-    enabled: links.length > 0,
-    staleTime: 60_000,
   })
 
-  const data = chartData ?? buildMockChart(links)
-  const total7d = data.reduce((acc, b) => {
-    let daySum = 0
-    links.forEach(l => { daySum += (b[l.slug] as number) ?? 0 })
-    return acc + daySum
-  }, 0)
-
   return (
-    <div className="bg-surface border border-border rounded-md p-4">
-      <div className="flex items-start justify-between mb-1">
-        <div>
-          <p className="text-sm font-medium text-fg">Cliques por dia · últimos 7 dias</p>
-          <p className="text-xs text-fg-3 mt-0.5">
-            {total7d.toLocaleString('pt-BR')} total
-          </p>
-        </div>
-        {/* mini legend */}
-        <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end">
-          {links.slice(0, 6).map((l, i) => (
-            <span key={l.id} className="flex items-center gap-1 text-xs text-fg-2">
-              <span
-                className="inline-block w-2.5 h-2.5 rounded-sm"
-                style={{ background: SLUG_COLORS[i % SLUG_COLORS.length] }}
-              />
-              /{l.slug}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <ResponsiveContainer width="100%" height={160}>
-        <BarChart data={data} margin={{ top: 16, right: 0, left: -24, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #2a2d3e)" vertical={false} />
-          <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--color-fg-3, #888)' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: 'var(--color-fg-3, #888)' }} axisLine={false} tickLine={false} />
-          <Tooltip
-            contentStyle={{ background: 'var(--color-surface, #1a1d2e)', border: '1px solid var(--color-border, #2a2d3e)', borderRadius: 6, fontSize: 12 }}
-            labelStyle={{ color: 'var(--color-fg, #e2e8f0)' }}
-          />
-          {links.map((l, i) => (
-            <Bar
-              key={l.id}
-              dataKey={l.slug}
-              stackId="clicks"
-              fill={SLUG_COLORS[i % SLUG_COLORS.length]}
-              radius={i === links.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
-            />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <Modal
+      open
+      title="Excluir link público"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={deleteMut.isPending}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={deleteMut.isPending}
+            onClick={() => deleteMut.mutate()}
+          >
+            Excluir
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-fg">
+        Deseja excluir o link <span className="font-mono font-medium">/{link.slug}</span>? Esta ação é irreversível.
+      </p>
+    </Modal>
   )
 }
 
@@ -430,19 +527,36 @@ export default function PublicLinks() {
   const qc = useQueryClient()
   const linkPrefix = usePublicLinkPrefix()
   const linkBaseURL = usePublicLinkBaseURL()
-  const [showCreateModal, setShowCreateModal] = React.useState(false)
-  const [selectedId, setSelectedId] = React.useState<number | null>(null)
+
+  const [showCreate, setShowCreate] = React.useState(false)
+  const [editingLink, setEditingLink] = React.useState<PublicLink | null>(null)
+  const [deletingLink, setDeletingLink] = React.useState<PublicLink | null>(null)
 
   const { data: links = [], isLoading } = useQuery<PublicLink[]>({
     queryKey: ['public-links'],
     queryFn: () =>
-      apiClient.get('/api/public-links').then(r => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+      apiClient
+        .get('/api/public-links')
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
   })
 
   const { data: channels = [] } = useQuery<Channel[]>({
     queryKey: ['channels-select'],
     queryFn: () =>
-      apiClient.get('/api/channels').then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? []))),
+      apiClient
+        .get('/api/channels')
+        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? []))),
+  })
+
+  // Groups for fallback chain editor
+  const { data: groups = [] } = useQuery<Group[]>({
+    queryKey: ['groups-select'],
+    queryFn: () =>
+      apiClient
+        .get('/api/groups')
+        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? [])))
+        .catch(() => []),
   })
 
   const toggleMut = useMutation({
@@ -453,178 +567,189 @@ export default function PublicLinks() {
 
   // ── KPI derivations ──────────────────────────────────────────────────────────
   const activeCount = links.filter(l => l.active).length
-  const clicks7d = links.reduce((s, l) => s + (l.clicks_7d ?? 0), 0)
   const clicks30d = links.reduce((s, l) => s + l.clicks_30d, 0)
-  const ctrAvg = links.length > 0
-    ? Math.round(links.reduce((s, l) => s + (l.clicks_30d / Math.max(1, 30)), 0) / links.length)
-    : 0
   const noFallback = links.filter(l => parseChain(l.fallback_chain).length === 0).length
-
-  const selectedLink = links.find(l => l.id === selectedId) ?? null
+  const avgClicksPerDay = links.length > 0
+    ? Math.round(links.reduce((s, l) => s + l.clicks_30d / 30, 0) / links.length)
+    : 0
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-5">
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-fg-3">
-            URL estável que <strong>sempre</strong> resolve para um grupo válido. Quando o grupo
-            enche ou é arquivado, o link automaticamente passa pro próximo da fila — o link sobrevive
-            como <em>referência</em>, não cola num grupo específico.
-          </p>
-        </div>
-        <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)} className="flex-shrink-0 whitespace-nowrap">
-          + Novo link público
-        </Button>
-      </div>
+      <PageHeader
+        title="Links públicos"
+        subtitle="URL estável que sempre resolve para um grupo válido — sobrevive a trocas de grupo."
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+            + Novo link
+          </Button>
+        }
+      />
 
-      {/* ── KPI cards ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* ── KPIs ── */}
+      <div className={responsiveKpiGrid}>
         <KpiCard label="Links ativos" value={activeCount} />
+        <KpiCard label="Cliques 30d" value={clicks30d.toLocaleString('pt-BR')} />
         <KpiCard
-          label="Cliques 7d"
-          value={clicks7d > 0 ? clicks7d.toLocaleString('pt-BR') : clicks30d.toLocaleString('pt-BR')}
-          subtitle={clicks7d > 0 ? undefined : '(30d)'}
+          label="Média / link / dia"
+          value={avgClicksPerDay}
+          subtitle="cliques/dia por link"
         />
-        <KpiCard label="CTR médio / dia" value={`${ctrAvg}`} subtitle="cliques/dia por link" />
         <KpiCard
           label="Links com risco"
           value={noFallback}
           subtitle="sem fallback configurado"
-          delta={noFallback > 0 ? { value: -1, tone: 'danger', displayText: 'sem fallback' } : undefined}
+          delta={
+            noFallback > 0
+              ? { value: -1, tone: 'danger', displayText: 'sem fallback' }
+              : undefined
+          }
         />
       </div>
 
-      {/* ── Links automáticos por canal ── */}
-      {channels.filter(c => c.slug && c.active !== false).length > 0 && (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border">
-            <p className="text-sm font-medium text-fg">Links automáticos por canal</p>
-            <p className="text-xs text-fg-3 mt-0.5">Cada canal tem uma página pública com os grupos disponíveis para entrar</p>
-          </div>
-          <div className="divide-y divide-border">
-            {channels.filter(c => c.slug && c.active !== false).map(c => {
-              const url = `${linkBaseURL}/canal/${c.slug}`
-              return (
-                <div key={c.id} className="flex items-center justify-between px-4 py-2 gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-fg truncate">{c.name}</p>
-                    <a href={url} target="_blank" rel="noopener" className="text-xs text-accent hover:underline font-mono truncate block">{url}</a>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(url) }}>Copiar</Button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Stacked bar chart ── */}
-      {links.length > 0 && !isLoading && <ClicksChart links={links} />}
-
-      {/* ── Split layout: table + detail ── */}
+      {/* ── Table ── */}
       {isLoading ? (
         <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full" />
           ))}
         </div>
-      ) : !links.length ? (
+      ) : links.length === 0 ? (
         <EmptyState
           title="Nenhum link público"
           description="Crie links estáveis com fallback automático entre grupos."
-          cta={{ label: 'Criar link', onClick: () => setShowCreateModal(true) }}
+          cta={{ label: '+ Novo link', onClick: () => setShowCreate(true) }}
         />
       ) : (
-        <div className="flex gap-4 items-start">
-          {/* ── Links table ── */}
-          <div className="flex-1 min-w-0 bg-surface border border-border rounded-md overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border">
-              <p className="text-sm font-medium text-fg">Todos os links · {links.length}</p>
-            </div>
-            <table className="w-full text-sm">
+        <div className={`${sectionCard} p-0 overflow-hidden`}>
+          <div className={`${sectionHeader} px-4 py-3 border-b border-border mb-0`}>
+            <p className={sectionTitle}>Todos os links &middot; {links.length}</p>
+          </div>
+
+          {/* Responsive: overflow-x on mobile */}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-2">
-                  {['Slug', 'Estratégia', 'Cliques', 'Status', ''].map(h => (
-                    <th key={h} className="text-left px-3 py-2 text-xs text-fg-2 font-medium">{h}</th>
-                  ))}
+                  <th className={tableHeaderCell}>Slug / URL</th>
+                  <th className={tableHeaderCell}>Canal</th>
+                  <th className={tableHeaderCell}>Cadeia de fallback</th>
+                  <th className={tableHeaderCell}>Estratégia</th>
+                  <th className={tableHeaderCell}>Cliques 30d</th>
+                  <th className={tableHeaderCell}>Status</th>
+                  <th className={tableHeaderCell}></th>
                 </tr>
               </thead>
               <tbody>
-                {links.map(l => (
-                  <tr
-                    key={l.id}
-                    onClick={() => setSelectedId(id => (id === l.id ? null : l.id))}
-                    className={`border-b border-border last:border-0 cursor-pointer transition-colors ${
-                      selectedId === l.id ? 'bg-accent/10' : 'hover:bg-surface-2'
-                    }`}
-                  >
-                    <td className="px-3 py-2.5">
-                      <p className="font-medium text-fg">{linkPrefix}{l.slug}</p>
-                      {l.channel_name && (
-                        <p className="text-xs text-fg-3 mt-0.5">
-                          canal <span className="font-medium text-fg-2">{l.channel_name}</span>
-                          {l.clicks_30d > 0 && ` · ${l.clicks_30d.toLocaleString('pt-BR')} cliques 30d`}
-                          {l.current_target && (
-                            <> · apontando agora para <span className="font-medium text-fg-2">{l.current_target}</span></>
-                          )}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-fg-2 text-xs">{l.redirect_strategy}</td>
-                    <td className="px-3 py-2.5 text-fg text-xs">{l.clicks_30d.toLocaleString('pt-BR')}</td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant={l.active ? 'success' : 'default'}>
-                        {l.active ? 'ativo' : 'inativo'}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigator.clipboard?.writeText(`${linkBaseURL}/${l.slug}`)}
-                          title="Copiar URL"
-                        >
-                          Copiar
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedId(id => (id === l.id ? null : l.id))}
-                          title="Ver QR e cadeia"
-                        >
-                          QR
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleMut.mutate({ id: l.id, active: !l.active })}
-                        >
-                          {l.active ? 'Pausar' : 'Ativar'}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {links.map(link => {
+                  const chain = parseChain(link.fallback_chain)
+                  const fullUrl = `${linkBaseURL}/${link.slug}`
+                  return (
+                    <tr key={link.id} className={tableRow}>
+                      {/* Slug + copy */}
+                      <td className={tableCell}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-medium text-fg">
+                            {linkPrefix}{link.slug}
+                          </span>
+                          <button
+                            type="button"
+                            title="Copiar URL"
+                            onClick={() => navigator.clipboard?.writeText(fullUrl)}
+                            className="text-fg-3 hover:text-accent shrink-0 p-0.5 rounded"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="2" strokeLinejoin="round"/>
+                              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                        </div>
+                        {link.current_target && (
+                          <p className="text-xs text-fg-3 mt-0.5">
+                            agora em <span className="text-fg-2">{link.current_target}</span>
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Canal */}
+                      <td className={tableCellMuted}>
+                        {link.channel_name ?? <span className="text-fg-3">—</span>}
+                      </td>
+
+                      {/* Fallback chain inline */}
+                      <td className={tableCell}>
+                        <InlineFallbackChain chain={chain} />
+                      </td>
+
+                      {/* Strategy */}
+                      <td className={tableCellMuted}>
+                        {strategyLabel(link.redirect_strategy)}
+                      </td>
+
+                      {/* Clicks */}
+                      <td className={tableCell}>
+                        {link.clicks_30d.toLocaleString('pt-BR')}
+                      </td>
+
+                      {/* Status badge */}
+                      <td className={tableCell}>
+                        <Badge variant={link.active ? 'success' : 'default'}>
+                          {link.active ? 'ativo' : 'inativo'}
+                        </Badge>
+                      </td>
+
+                      {/* Actions */}
+                      <td className={`${tableCell} text-right`}>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingLink(link)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              toggleMut.mutate({ id: link.id, active: !link.active })
+                            }
+                          >
+                            {link.active ? 'Pausar' : 'Ativar'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeletingLink(link)}
+                            className="hover:text-danger"
+                          >
+                            Excluir
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
-
-          {/* ── Detail panel ── */}
-          {selectedLink !== null && (
-            <div className="w-80 shrink-0">
-              <LinkDetailPanel
-                link={selectedLink}
-                channels={channels}
-                onClose={() => setSelectedId(null)}
-              />
-            </div>
-          )}
         </div>
       )}
 
-      {showCreateModal && <CreateLinkModal onClose={() => setShowCreateModal(false)} />}
+      {/* ── Modals ── */}
+      {showCreate && (
+        <CreateLinkModal channels={channels} onClose={() => setShowCreate(false)} />
+      )}
+      {editingLink && (
+        <EditLinkModal
+          link={editingLink}
+          groups={groups}
+          onClose={() => setEditingLink(null)}
+        />
+      )}
+      {deletingLink && (
+        <DeleteConfirmModal link={deletingLink} onClose={() => setDeletingLink(null)} />
+      )}
     </div>
   )
 }

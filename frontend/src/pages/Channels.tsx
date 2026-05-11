@@ -2,8 +2,28 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
-import { Badge, Button, Input, Modal, PlatformPill, Skeleton, Switch, Textarea } from '../components/ui'
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  Modal,
+  PageHeader,
+  PlatformPill,
+  SearchSelect,
+  Skeleton,
+  Switch,
+  Textarea,
+} from '../components/ui'
 import { apiClient } from '../lib/apiClient'
+import {
+  filterBar,
+  pageContainer,
+  responsiveGrid,
+  sectionCard,
+} from '../lib/uiTokens'
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface Channel {
   id: number
@@ -36,6 +56,23 @@ interface ChannelFormData {
   }
 }
 
+interface ChannelSuggestion {
+  name: string
+  description: string
+  audience_categories: string[]
+  audience_brands: string[]
+  audience_min_price: number
+  audience_max_price: number
+  audience_min_drop: number
+  send_start_hour: number
+  send_end_hour: number
+  digest_mode: boolean
+  rationale: string
+  target_profile: string
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
 const defaultForm: ChannelFormData = {
   name: '',
   description: '',
@@ -50,6 +87,18 @@ const defaultForm: ChannelFormData = {
   },
 }
 
+const PLATFORM_OPTIONS = [
+  { value: 'wa', label: 'WhatsApp' },
+  { value: 'tg', label: 'Telegram' },
+]
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Ativo' },
+  { value: 'paused', label: 'Inativo' },
+]
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function parseTagList(value: string): string[] {
   return value
     .split(',')
@@ -57,10 +106,16 @@ function parseTagList(value: string): string[] {
     .filter(Boolean)
 }
 
+function statusBorderClass(channel: Channel): string {
+  if (!channel.active) return 'border-l-4 border-l-neutral-500'
+  if (channel.member_count !== undefined && channel.member_count < 5)
+    return 'border-l-4 border-l-yellow-500'
+  return 'border-l-4 border-l-green-500'
+}
 
-// ── Inline mini bar-chart ─────────────────────────────────────────────────────
+// ── Mini bar-chart ────────────────────────────────────────────────────────────
+
 function ChannelMiniChart({ channelId, series }: { channelId: number; series?: number[] }) {
-  // try to fetch metrics; fallback to passed series or mock
   const { data: metricsData } = useQuery<{ dispatches_7d_series?: number[] }>({
     queryKey: ['channel-metrics', channelId],
     queryFn: () =>
@@ -85,6 +140,70 @@ function ChannelMiniChart({ channelId, series }: { channelId: number; series?: n
     </div>
   )
 }
+
+// ── Channel card ──────────────────────────────────────────────────────────────
+
+function ChannelCard({ channel, onClick }: { channel: Channel; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      className={`${sectionCard} hover:border-border-strong cursor-pointer transition-colors flex flex-col gap-2 ${statusBorderClass(channel)}`}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <p className="font-medium text-fg">{channel.name}</p>
+          {channel.platform && <PlatformPill platform={channel.platform} />}
+        </div>
+        <Badge variant={channel.active ? 'success' : 'default'}>
+          {channel.active ? 'ativo' : 'inativo'}
+        </Badge>
+      </div>
+
+      {/* Description */}
+      {channel.description && (
+        <p className="text-xs text-fg-3 line-clamp-1">{channel.description}</p>
+      )}
+
+      {/* Mini bar-chart */}
+      <ChannelMiniChart channelId={channel.id} series={channel.dispatches_7d_series} />
+      <p className="text-[10px] text-fg-3 -mt-1">Disparos 7d</p>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-3 gap-2 mt-1">
+        <div>
+          <p className="text-xs text-fg-3">Grupos</p>
+          <p className="text-sm font-medium text-fg">{channel.member_count ?? 0}</p>
+        </div>
+        <div>
+          <p className="text-xs text-fg-3">CTR 30d</p>
+          <p className="text-sm font-medium text-fg">
+            {channel.ctr_30d ? `${(channel.ctr_30d * 100).toFixed(1)}%` : '—'}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-fg-3">Receita 30d</p>
+          <p className="text-sm font-medium text-fg">
+            {channel.revenue_30d ? `R$ ${channel.revenue_30d.toFixed(0)}` : '—'}
+          </p>
+        </div>
+      </div>
+
+      {/* Audience tags */}
+      {channel.audience?.categories?.length ? (
+        <div className="flex gap-1 flex-wrap">
+          {channel.audience.categories.slice(0, 3).map(c => (
+            <Badge key={c} size="sm" variant="accent">
+              {c}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+// ── Create modal ──────────────────────────────────────────────────────────────
 
 function CreateChannelModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
@@ -252,206 +371,15 @@ function CreateChannelModal({ open, onClose }: { open: boolean; onClose: () => v
   )
 }
 
-// ── Status border color ───────────────────────────────────────────────────────
-function statusBorderClass(channel: Channel): string {
-  // warning heuristic: member_count 0 or very low ctr
-  if (!channel.active) return 'border-l-4 border-l-neutral-500'
-  if (channel.member_count !== undefined && channel.member_count < 5) return 'border-l-4 border-l-yellow-500'
-  return 'border-l-4 border-l-green-500'
-}
+// ── Suggest modal ─────────────────────────────────────────────────────────────
 
-function ChannelCard({ channel, onClick, index }: { channel: Channel; onClick: () => void; index: number }) {
-  return (
-    <div
-      onClick={onClick}
-      className={`bg-surface border border-border rounded-md p-4 hover:border-border-strong cursor-pointer transition-colors flex flex-col gap-2 ${statusBorderClass(channel)}`}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <p className="font-medium text-fg">{channel.name}</p>
-          {channel.platform && (
-            <PlatformPill platform={channel.platform} />
-          )}
-        </div>
-        <Badge variant={channel.active ? 'success' : 'default'}>
-          {channel.active ? 'ativo' : 'inativo'}
-        </Badge>
-      </div>
-
-      {/* Description */}
-      {channel.description && (
-        <p className="text-xs text-fg-3 line-clamp-1">{channel.description}</p>
-      )}
-
-      {/* Mini bar-chart — dispatches 7d */}
-      <ChannelMiniChart channelId={channel.id} series={channel.dispatches_7d_series} />
-      <p className="text-[10px] text-fg-3 -mt-1">Disparos 7d</p>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-3 gap-2 mt-1">
-        <div>
-          <p className="text-xs text-fg-3">Membros</p>
-          <p className="text-sm font-medium text-fg">{channel.member_count ?? 0}</p>
-        </div>
-        <div>
-          <p className="text-xs text-fg-3">CTR 30d</p>
-          <p className="text-sm font-medium text-fg">{channel.ctr_30d ? `${(channel.ctr_30d * 100).toFixed(1)}%` : '—'}</p>
-        </div>
-        <div>
-          <p className="text-xs text-fg-3">Receita 30d</p>
-          <p className="text-sm font-medium text-fg">{channel.revenue_30d ? `R$ ${channel.revenue_30d.toFixed(0)}` : '—'}</p>
-        </div>
-      </div>
-
-      {/* Tags */}
-      {channel.audience?.categories?.length ? (
-        <div className="flex gap-1 flex-wrap">
-          {channel.audience.categories.slice(0, 3).map(c => (
-            <Badge key={c} size="sm" variant="accent">{c}</Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-// ── Placeholder card "+ Novo canal" ──────────────────────────────────────────
-function NewChannelPlaceholder({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="bg-surface border-2 border-dashed border-border rounded-md p-4 hover:border-accent hover:bg-accent/5 transition-colors flex flex-col items-center justify-center gap-2 min-h-[160px] w-full cursor-pointer"
-    >
-      <span className="text-3xl text-fg-3">+</span>
-      <span className="text-sm text-fg-3 font-medium">Novo canal</span>
-    </button>
-  )
-}
-
-export default function Channels() {
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const [showModal, setShowModal] = React.useState(false)
-  const [showSuggestModal, setShowSuggestModal] = React.useState(false)
-
-  const { data: channels = [], isLoading } = useQuery<Channel[]>({
-    queryKey: ['channels'],
-    queryFn: () => apiClient.get('/api/channels').then(r => Array.isArray(r.data) ? r.data : (r.data?.items ?? [])),
-  })
-
-  return (
-    <div className="p-6">
-      <div className="flex items-center gap-2 justify-end mb-4">
-        <Button variant="secondary" size="sm" onClick={() => setShowSuggestModal(true)}>
-          ✨ Sugerir canal
-        </Button>
-        <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-          + Novo canal
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-2">{Array.from({length:4}).map((_,i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
-      ) : !channels.length ? (
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="w-full border-2 border-dashed border-border rounded-md py-10 text-sm text-fg-3 hover:border-accent hover:text-accent transition-colors"
-        >
-          + Novo canal
-        </button>
-      ) : (
-        <div className="bg-surface border border-border rounded-md overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                {['Canal', 'Status', 'Membros', 'CTR 30d', 'Receita 30d', 'Disparos 7d', 'Categorias', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-fg-2 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {channels.map(ch => (
-                <tr
-                  key={ch.id}
-                  className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer transition-colors"
-                  onClick={() => navigate(`/channels/${ch.id}`)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-fg">{ch.name}</span>
-                      {ch.platform && <PlatformPill platform={ch.platform} />}
-                    </div>
-                    {ch.description && <p className="text-xs text-fg-3 truncate max-w-xs mt-0.5">{ch.description}</p>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={ch.active ? 'success' : 'default'} size="sm">
-                      {ch.active ? 'ativo' : 'inativo'}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-fg">{ch.member_count ?? 0}</td>
-                  <td className="px-4 py-3 text-fg">{ch.ctr_30d ? `${(ch.ctr_30d * 100).toFixed(1)}%` : '—'}</td>
-                  <td className="px-4 py-3 text-fg">{ch.revenue_30d ? `R$ ${ch.revenue_30d.toFixed(0)}` : '—'}</td>
-                  <td className="px-4 py-3">
-                    <ChannelMiniChart channelId={ch.id} series={ch.dispatches_7d_series} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1 flex-wrap">
-                      {ch.audience?.categories?.slice(0, 3).map(c => (
-                        <Badge key={c} size="sm" variant="accent">{c}</Badge>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-xs text-accent hover:underline">Abrir →</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-2.5 border-t border-border">
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); setShowModal(true) }}
-              className="text-sm text-fg-3 hover:text-accent"
-            >
-              + Novo canal
-            </button>
-          </div>
-        </div>
-      )}
-
-      <CreateChannelModal open={showModal} onClose={() => setShowModal(false)} />
-      {showSuggestModal && (
-        <SuggestChannelModal
-          onClose={() => setShowSuggestModal(false)}
-          onCreated={() => { setShowSuggestModal(false); qc.invalidateQueries({ queryKey: ['channels'] }) }}
-        />
-      )}
-    </div>
-  )
-}
-
-// ── Suggest Channel Modal ─────────────────────────────────────────────────────
-
-interface ChannelSuggestion {
-  name: string
-  description: string
-  audience_categories: string[]
-  audience_brands: string[]
-  audience_min_price: number
-  audience_max_price: number
-  audience_min_drop: number
-  send_start_hour: number
-  send_end_hour: number
-  digest_mode: boolean
-  rationale: string
-  target_profile: string
-}
-
-export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function SuggestChannelModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: () => void
+}) {
   const [intent, setIntent] = React.useState('')
   const [mode, setMode] = React.useState<'' | 'next' | 'expand'>('')
   const [suggestion, setSuggestion] = React.useState<ChannelSuggestion | null>(null)
@@ -460,9 +388,15 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
   const [error, setError] = React.useState('')
 
   const handleSuggest = async () => {
-    setLoading(true); setError(''); setSuggestion(null)
+    setLoading(true)
+    setError('')
+    setSuggestion(null)
     try {
-      const res = await apiClient.post('/api/channels/suggest', { intent, mode }, { timeout: 90_000 })
+      const res = await apiClient.post(
+        '/api/channels/suggest',
+        { intent, mode },
+        { timeout: 90_000 },
+      )
       setSuggestion(res.data.suggestion)
     } catch (err: any) {
       setError(err?.response?.data?.error ?? err?.message ?? 'Erro ao consultar LLM')
@@ -498,11 +432,19 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border border-border rounded-lg p-6 w-full max-w-lg shadow-modal"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-fg">✨ Sugerir canal com IA</h3>
-          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg">×</button>
+          <h3 className="font-semibold text-fg">Sugerir canal com IA</h3>
+          <button type="button" onClick={onClose} className="text-fg-3 hover:text-fg text-lg">
+            x
+          </button>
         </div>
 
         <div className="space-y-3 mb-4">
@@ -516,9 +458,23 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
           <div>
             <label className="text-xs text-fg-2 block mb-1">Estratégia</label>
             <div className="flex gap-2">
-              {([['', 'Auto'], ['next', '🔗 Próximo'], ['expand', '🚀 Nova audiência']] as const).map(([m, label]) => (
-                <button key={m} type="button" onClick={() => setMode(m as '' | 'next' | 'expand')}
-                  className={`flex-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${mode === m ? 'border-accent bg-accent/10 text-accent' : 'border-border text-fg-2 hover:bg-surface-2'}`}>
+              {(
+                [
+                  ['', 'Auto'],
+                  ['next', 'Proximo'],
+                  ['expand', 'Nova audiencia'],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m as '' | 'next' | 'expand')}
+                  className={`flex-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${
+                    mode === m
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-border text-fg-2 hover:bg-surface-2'
+                  }`}
+                >
                   {label}
                 </button>
               ))}
@@ -526,8 +482,15 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
           </div>
         </div>
 
-        <Button type="button" variant="primary" className="w-full mb-4" onClick={handleSuggest} disabled={loading} loading={loading}>
-          {loading ? '⏳ Consultando IA com produtos e canais atuais...' : '✨ Gerar sugestão'}
+        <Button
+          type="button"
+          variant="primary"
+          className="w-full mb-4"
+          onClick={handleSuggest}
+          disabled={loading}
+          loading={loading}
+        >
+          {loading ? 'Consultando IA com produtos e canais atuais...' : 'Gerar sugestao'}
         </Button>
 
         {error && <p className="text-sm text-danger mb-3">{error}</p>}
@@ -543,18 +506,26 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <p className="text-fg-2 mb-0.5">Categorias</p>
-                <p className="font-mono text-fg">{(suggestion.audience_categories || []).join(', ') || '—'}</p>
+                <p className="font-mono text-fg">
+                  {(suggestion.audience_categories || []).join(', ') || '—'}
+                </p>
               </div>
               <div>
                 <p className="text-fg-2 mb-0.5">Marcas preferidas</p>
-                <p className="font-mono text-fg">{(suggestion.audience_brands || []).join(', ') || 'todas'}</p>
+                <p className="font-mono text-fg">
+                  {(suggestion.audience_brands || []).join(', ') || 'todas'}
+                </p>
               </div>
               <div>
                 <p className="text-fg-2 mb-0.5">Faixa de preço</p>
                 <p className="font-mono text-fg">
-                  {suggestion.audience_min_price > 0 ? `R$ ${suggestion.audience_min_price}` : 'sem min'}
-                  {' — '}
-                  {suggestion.audience_max_price > 0 ? `R$ ${suggestion.audience_max_price}` : 'sem max'}
+                  {suggestion.audience_min_price > 0
+                    ? `R$ ${suggestion.audience_min_price}`
+                    : 'sem min'}{' '}
+                  —{' '}
+                  {suggestion.audience_max_price > 0
+                    ? `R$ ${suggestion.audience_max_price}`
+                    : 'sem max'}
                 </p>
               </div>
               <div>
@@ -563,26 +534,158 @@ export function SuggestChannelModal({ onClose, onCreated }: { onClose: () => voi
               </div>
               <div>
                 <p className="text-fg-2 mb-0.5">Horário de envio</p>
-                <p className="font-mono text-fg">{suggestion.send_start_hour}h – {suggestion.send_end_hour}h</p>
+                <p className="font-mono text-fg">
+                  {suggestion.send_start_hour}h – {suggestion.send_end_hour}h
+                </p>
               </div>
               <div>
                 <p className="text-fg-2 mb-0.5">Modo</p>
-                <p className="font-mono text-fg">{suggestion.digest_mode ? 'digest diário' : 'envio imediato'}</p>
+                <p className="font-mono text-fg">
+                  {suggestion.digest_mode ? 'digest diário' : 'envio imediato'}
+                </p>
               </div>
             </div>
             <div className="flex gap-2 pt-2 border-t border-border">
-              <button type="button" onClick={() => { setSuggestion(null); setError('') }}
-                className="flex-1 text-sm px-3 py-1.5 border border-border rounded-md text-fg-2 hover:bg-surface">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuggestion(null)
+                  setError('')
+                }}
+                className="flex-1 text-sm px-3 py-1.5 border border-border rounded-md text-fg-2 hover:bg-surface"
+              >
                 Gerar nova
               </button>
-              <button type="button" onClick={handleCreate} disabled={creating}
-                className="flex-1 text-sm bg-success text-white rounded-md px-3 py-1.5 hover:opacity-90 disabled:opacity-50">
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={creating}
+                className="flex-1 text-sm bg-success text-white rounded-md px-3 py-1.5 hover:opacity-90 disabled:opacity-50"
+              >
                 {creating ? 'Criando...' : '+ Criar canal'}
               </button>
             </div>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function Channels() {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [showModal, setShowModal] = React.useState(false)
+  const [showSuggestModal, setShowSuggestModal] = React.useState(false)
+  const [filterPlatform, setFilterPlatform] = React.useState('')
+  const [filterStatus, setFilterStatus] = React.useState('')
+  const [search, setSearch] = React.useState('')
+
+  const { data: channels = [], isLoading } = useQuery<Channel[]>({
+    queryKey: ['channels'],
+    queryFn: () =>
+      apiClient
+        .get('/api/channels')
+        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? []))),
+  })
+
+  const filtered = React.useMemo(() => {
+    return channels.filter(ch => {
+      if (filterPlatform && ch.platform !== filterPlatform) return false
+      if (filterStatus === 'active' && !ch.active) return false
+      if (filterStatus === 'paused' && ch.active) return false
+      if (search.trim()) {
+        const q = search.toLowerCase()
+        if (!ch.name.toLowerCase().includes(q)) return false
+      }
+      return true
+    })
+  }, [channels, filterPlatform, filterStatus, search])
+
+  return (
+    <div className={pageContainer}>
+      {/* Page header */}
+      <PageHeader
+        title="Canais"
+        subtitle="Publicos logicos por audiencia"
+        className="mb-4"
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setShowSuggestModal(true)}>
+              Sugerir canal
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+              + Novo canal
+            </Button>
+          </>
+        }
+      />
+
+      {/* Sticky filter bar */}
+      <div className={`${filterBar} -mx-3 sm:-mx-4 mb-4`}>
+        <SearchSelect
+          options={PLATFORM_OPTIONS}
+          value={filterPlatform}
+          onChange={setFilterPlatform}
+          placeholder="Plataforma"
+        />
+        <SearchSelect
+          options={STATUS_OPTIONS}
+          value={filterStatus}
+          onChange={setFilterStatus}
+          placeholder="Status"
+        />
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar canal..."
+          className="text-sm border border-border rounded-md px-2.5 py-1 bg-surface text-fg h-8 focus:outline-none focus:border-accent min-w-[160px] max-w-[220px]"
+        />
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className={responsiveGrid}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-48 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : !channels.length ? (
+        <EmptyState
+          title="Nenhum canal criado"
+          description="Crie seu primeiro canal para comecar a distribuir produtos por audiencia."
+          cta={{ label: '+ Novo canal', onClick: () => setShowModal(true) }}
+        />
+      ) : !filtered.length ? (
+        <EmptyState
+          title="Nenhum canal encontrado"
+          description="Tente outros filtros ou termos de busca."
+        />
+      ) : (
+        <div className={responsiveGrid}>
+          {filtered.map(ch => (
+            <ChannelCard
+              key={ch.id}
+              channel={ch}
+              onClick={() => navigate(`/channels/${ch.id}`)}
+            />
+          ))}
+        </div>
+      )}
+
+      <CreateChannelModal open={showModal} onClose={() => setShowModal(false)} />
+      {showSuggestModal && (
+        <SuggestChannelModal
+          onClose={() => setShowSuggestModal(false)}
+          onCreated={() => {
+            setShowSuggestModal(false)
+            qc.invalidateQueries({ queryKey: ['channels'] })
+          }}
+        />
+      )}
     </div>
   )
 }
