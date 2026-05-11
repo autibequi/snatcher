@@ -28,7 +28,11 @@ type reviewDispatchItem struct {
 	ShortID    string `json:"short_id"`
 	Group      string `json:"group"`
 	Product    string `json:"product"`
-	Assessment string `json:"assessment"` // ok | problema | produto_errado | pendente
+	// Assessment: ok | problema | produto_errado | duplicado | pendente.
+	// "duplicado" foi adicionado para sinalizar quando o mesmo produto bateu
+	// no mesmo grupo várias vezes no período — sintoma típico de loop do
+	// auto-match ou de falta de cooldown por canal.
+	Assessment string `json:"assessment"`
 	Note       string `json:"note"`
 }
 
@@ -133,14 +137,17 @@ func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Requ
 }
 
 // notifyJonfreyReview posta no grupo de notificações um resumo da revisão.
-// Lista veredictos críticos (produto_errado / problema), até 6 itens.
+// Lista veredictos críticos (produto_errado / duplicado / problema), até 6 itens.
+// Veredicto "duplicado" entra junto porque indica auto-match em loop — barulho
+// no grupo destinatário e gasto de janela de envio.
 func (h *JonfreyHandler) notifyJonfreyReview(resp reviewDispatchesResp, forced bool) {
 	if h.notif == nil {
 		return
 	}
 	var problems []reviewDispatchItem
 	for _, it := range resp.Items {
-		if it.Assessment == "produto_errado" || it.Assessment == "problema" {
+		switch it.Assessment {
+		case "produto_errado", "duplicado", "problema":
 			problems = append(problems, it)
 		}
 	}
@@ -156,9 +163,14 @@ func (h *JonfreyHandler) notifyJonfreyReview(resp reviewDispatchesResp, forced b
 				lines = append(lines, fmt.Sprintf("…e mais %d", len(problems)-maxItems))
 				break
 			}
-			tag := "⚠"
-			if it.Assessment == "produto_errado" {
+			var tag string
+			switch it.Assessment {
+			case "produto_errado":
 				tag = "❌"
+			case "duplicado":
+				tag = "🔁"
+			default:
+				tag = "⚠"
 			}
 			lines = append(lines, fmt.Sprintf("%s %s | %s — %s",
 				tag, truncShortS(it.Group, 24), truncShortS(it.Product, 36), truncShortS(it.Note, 80)))
@@ -275,14 +287,38 @@ func (h *JonfreyHandler) fetchReviewDispatchRows(ctx context.Context, periodHour
 
 // heuristicReviewDispatches gera uma avaliação determinística sem LLM.
 // Regras simples — só pra que o front tenha algo útil quando o LLM estiver fora.
+//
+// Pré-passo: conta repetições por (product+group) caseless. Itens N≥2 viram
+// "duplicado" — mesma detecção que pedimos pro LLM, mas determinística aqui.
+// Mantemos a primeira ocorrência com seu veredicto natural (ok/problema/...);
+// só as subsequentes ficam como "duplicado" para não perder o sinal de match.
 func heuristicReviewDispatches(rows []reviewDispatchRow, period int) reviewDispatchesResp {
+	type pgKey struct{ p, g string }
+	dupCount := make(map[pgKey]int, len(rows))
+	for _, r := range rows {
+		p := strings.ToLower(strings.TrimSpace(strDeref(r.ProductName)))
+		g := strings.ToLower(strings.TrimSpace(strDeref(r.ChannelName)))
+		if p == "" || g == "" {
+			continue
+		}
+		dupCount[pgKey{p, g}]++
+	}
+
+	seenDup := make(map[pgKey]bool, len(dupCount))
 	items := make([]reviewDispatchItem, 0, len(rows))
 	suspect := 0
+	dupHits := 0
 	for _, r := range rows {
 		group := strDeref(r.ChannelName)
 		product := strDeref(r.ProductName)
 		assessment := "ok"
 		note := ""
+
+		key := pgKey{
+			p: strings.ToLower(strings.TrimSpace(product)),
+			g: strings.ToLower(strings.TrimSpace(group)),
+		}
+		isDupCandidate := key.p != "" && key.g != "" && dupCount[key] > 1
 
 		switch {
 		case r.Status == "failed":
@@ -302,6 +338,16 @@ func heuristicReviewDispatches(rows []reviewDispatchRow, period int) reviewDispa
 			suspect++
 		}
 
+		if isDupCandidate && assessment == "ok" {
+			if seenDup[key] {
+				assessment = "duplicado"
+				note = fmt.Sprintf("%s repetido %dx em %q no período", product, dupCount[key], group)
+				dupHits++
+			} else {
+				seenDup[key] = true
+			}
+		}
+
 		items = append(items, reviewDispatchItem{
 			DispatchID: r.DispatchID,
 			ShortID:    r.ShortID,
@@ -312,7 +358,8 @@ func heuristicReviewDispatches(rows []reviewDispatchRow, period int) reviewDispa
 		})
 	}
 
-	headline := fmt.Sprintf("Heurística: %d disparos nas últimas %dh, %d com sinal de problema.", len(rows), period, suspect)
+	headline := fmt.Sprintf("Heurística: %d disparos em %dh, %d com sinal de problema, %d duplicados.",
+		len(rows), period, suspect, dupHits)
 	return reviewDispatchesResp{
 		Headline:    headline,
 		Items:       items,
@@ -366,27 +413,37 @@ func llmReviewDispatches(ctx context.Context, cli llm.Client, rows []reviewDispa
 Para cada dispatch abaixo decida se o AUTO-MATCH escolheu o grupo certo para o produto.
 A questão central é semântica: o nicho aparente do GRUPO (pelo nome) bate com o nicho do PRODUTO (pelo nome + marca + tags)?
 
+ALÉM DISSO, OLHE PRA REPETIÇÕES: o array vem inteiro do período (24h), então você
+consegue ver se MESMO produto foi enviado pra MESMO grupo várias vezes ou se um
+mesmo grupo recebeu o mesmo nome de produto repetido. Isso é sintoma de auto-match
+em loop / cooldown quebrado e o usuário quer ser avisado.
+
 Heurísticas:
 - Nome do grupo costuma indicar tema (ex.: "Tech BR" → eletrônicos; "Cozinha Pro" → utensílios; "Beleza & Cia" → cosméticos).
 - Marca + tags reforçam a categoria. Score (0-100) é o match heurístico já calculado pelo sistema.
 - Composições manuais (composer ≠ "auto") merecem benefício da dúvida — não são culpa do auto-match.
+- Para detectar duplicata, agrupe por (product, group) ignorando caixa e pequenas variações
+  de nome/quebras. Se aparecer 2+ vezes no período é "duplicado". A primeira ocorrência
+  pode receber outro veredicto (ok/problema/produto_errado); as subsequentes vêm como "duplicado"
+  com nota explicando "{N}x no mesmo grupo no período".
 
 Avaliação por item:
 - "ok"             : produto bate o nicho do grupo (mesmo que score moderado, se o tema casa).
 - "problema"       : casamento fraco/duvidoso — grupo de tema vago, tags pobres, marca neutra OU score muito baixo.
 - "produto_errado" : claramente fora do nicho — ex.: produto de cozinha enviado em grupo de games; cosmético em grupo de eletrônicos.
+- "duplicado"      : MESMO produto JÁ apareceu para o MESMO grupo em outro item da lista (envio repetido no período, gera spam).
 - "pendente"       : impossível avaliar — falta grupo OU produto na linha (composição manual sem auto_match_log, ou dispatch incompleto).
 
-Em cada NOTE (≤120 chars) cite o nome do produto e do grupo de forma curta e diga POR QUÊ ("Furadeira em grupo de moda → fora do nicho", "Notebook em Tech BR → bate", etc).
+Em cada NOTE (≤120 chars) cite o nome do produto e do grupo de forma curta e diga POR QUÊ ("Furadeira em grupo de moda → fora do nicho", "Notebook em Tech BR → bate", "Mouse repetido 3x em Tech BR — cooldown furou", etc).
 
 %d dispatches últimas %dh (JSON):
 %s
 
 Retorne JSON estrito:
 {
-  "headline": "1 frase curta sobre a saúde do auto-disparo no período (quantos bateram, quantos parecem fora)",
+  "headline": "1 frase curta sobre a saúde do auto-disparo no período (quantos bateram, quantos parecem fora, e se houve duplicação)",
   "items": [
-    {"dispatch_id":123,"short_id":"abc","group":"...","product":"...","assessment":"ok|problema|produto_errado|pendente","note":"até 120 chars citando os nomes"}
+    {"dispatch_id":123,"short_id":"abc","group":"...","product":"...","assessment":"ok|problema|produto_errado|duplicado|pendente","note":"até 120 chars citando os nomes"}
   ]
 }
 Inclua TODOS os %d dispatches no array items, sem cortar.`,
@@ -430,7 +487,7 @@ Inclua TODOS os %d dispatches no array items, sem cortar.`,
 //   - note com tamanho limitado;
 //   - cada dispatch do sample retornado pelo menos uma vez (preenche faltantes com "pendente").
 func sanitizeReviewItems(items []reviewDispatchItem, sample []reviewDispatchRow) []reviewDispatchItem {
-	allowedAssess := map[string]bool{"ok": true, "problema": true, "produto_errado": true, "pendente": true}
+	allowedAssess := map[string]bool{"ok": true, "problema": true, "produto_errado": true, "duplicado": true, "pendente": true}
 	bySampleID := make(map[int64]reviewDispatchRow, len(sample))
 	for _, r := range sample {
 		bySampleID[r.DispatchID] = r

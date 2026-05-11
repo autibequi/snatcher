@@ -2,6 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { apiClient } from '../lib/apiClient'
 import { Skeleton } from '../components/ui/Skeleton'
+import {
+  JonfreyCheckTab,
+  useJonfreyReview,
+  countJonfreyProblems,
+} from '../components/automatch/JonfreyCheckTab'
 
 interface AutoMatchLog {
   id: number
@@ -121,13 +126,34 @@ function HoverPreview({ productId, channelId }: { productId: number; channelId: 
   )
 }
 
+// ── AutoMatch (página com abas) ──────────────────────────────────────────────
+//
+// Antes era uma página única. Hoje tem 2 abas:
+//   • "Auto Match"     → status + parâmetros + preview + log de disparos auto.
+//   • "Jonfrey Check N" → revisão semântica das últimas 24h (Jonfrey LLM).
+//
+// O contador N na aba Jonfrey Check é a soma de itens com veredicto
+// "problema | produto_errado | duplicado". Reaproveita o MESMO request usado
+// dentro da aba (react-query deduplica pela queryKey), então abrir/fechar a
+// aba não dispara LLM de novo até estar fora do TTL (1h, server-side cache).
+
+type AutoMatchTab = 'auto' | 'jonfrey'
+
 export default function AutoMatch() {
   const qc = useQueryClient()
+  const [tab, setTab] = useState<AutoMatchTab>('auto')
+
+  // Pré-carrega Jonfrey review pra que o badge da aba apareça mesmo antes de
+  // clicar nela. O staleTime do hook (5min) + cache server-side (1h) evitam
+  // chamadas LLM redundantes — primeiro acesso paga, demais são cache.
+  const { data: jonfreyReview } = useJonfreyReview()
+  const jonfreyProblemCount = countJonfreyProblems(jonfreyReview)
 
   const { data, isLoading, refetch: refetchStatus } = useQuery<AutoMatchStatus>({
     queryKey: ['auto-match'],
     queryFn: () => apiClient.get('/api/auto-match').then(r => r.data),
     refetchInterval: 30_000,
+    enabled: tab === 'auto', // só atualiza poll quando a aba está visível
   })
 
   const { data: previewData, refetch: refetchPreview, isFetching: previewFetching } = useQuery<{ items: PreviewItem[]; threshold: number; max_per_run: number }>({
@@ -199,7 +225,7 @@ export default function AutoMatch() {
   })
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <p className="text-sm text-fg-3">
@@ -207,6 +233,61 @@ export default function AutoMatch() {
         </p>
       </div>
 
+      {/* Tabs */}
+      <div className="border-b border-border flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setTab('auto')}
+          className={`relative px-3 py-2 text-sm transition-colors ${
+            tab === 'auto'
+              ? 'text-fg font-medium'
+              : 'text-fg-3 hover:text-fg-2'
+          }`}
+        >
+          Auto Match
+          {tab === 'auto' && (
+            <span className="absolute inset-x-2 -bottom-px h-0.5 bg-accent" aria-hidden />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('jonfrey')}
+          className={`relative px-3 py-2 text-sm transition-colors flex items-center gap-1.5 ${
+            tab === 'jonfrey'
+              ? 'text-fg font-medium'
+              : 'text-fg-3 hover:text-fg-2'
+          }`}
+          title="Revisão semântica do Jonfrey sobre os disparos das últimas 24h"
+        >
+          Jonfrey Check
+          {jonfreyProblemCount > 0 && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-soft text-warning font-mono tabular-nums"
+              title={`${jonfreyProblemCount} disparo(s) com sinal de anomalia`}
+            >
+              {jonfreyProblemCount}
+            </span>
+          )}
+          {tab === 'jonfrey' && (
+            <span className="absolute inset-x-2 -bottom-px h-0.5 bg-accent" aria-hidden />
+          )}
+        </button>
+      </div>
+
+      {tab === 'jonfrey' ? (
+        <JonfreyCheckTab />
+      ) : (
+        <AutoMatchTabContent />
+      )}
+    </div>
+  )
+
+  // Conteúdo original da aba "Auto Match" — extraído como função interna
+  // pra manter o JSX legível e o early-return da aba Jonfrey acima.
+  // Usa as variáveis declaradas no escopo do componente.
+  function AutoMatchTabContent() {
+    return (
+      <div className="space-y-8">
       {/* Painel de Aprovações Pendentes */}
       {pendingApprovals.length > 0 && (
         <div className="bg-warning/5 border border-warning/30 rounded-md overflow-hidden">
@@ -486,6 +567,7 @@ export default function AutoMatch() {
           </table>
         )}
       </div>
-    </div>
-  )
+      </div>
+    )
+  }
 }

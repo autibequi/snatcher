@@ -5,7 +5,6 @@ import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
 import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
-import { JonfreyDispatchReviewCard } from '../components/dashboard/JonfreyDispatchReviewCard'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
 import { pageContainer, responsiveKpiGrid } from '../lib/uiTokens'
@@ -266,8 +265,12 @@ export default function Dashboard() {
         <RecommendationCard />
       </div>
 
-      {/* ── 4b. Revisao Jonfrey · ultimas 24h ────────────────────────────────── */}
-      <JonfreyDispatchReviewCard />
+      {/*
+        Antes vinha aqui um <JonfreyDispatchReviewCard />. A lista mudou
+        de casa: agora é uma aba dedicada em /auto-match → "Jonfrey Check".
+        O contador de anomalias aparece no nome da aba e o grupo de
+        notificações continua recebendo o resumo automaticamente.
+      */}
 
       {/* ── 5. Performance | Próximos disparos ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
