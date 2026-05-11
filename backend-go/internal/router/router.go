@@ -282,6 +282,7 @@ func Build(
 		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
 		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
 		r.Post("/api/jonfrey/run", jonfrey.RunAction)
+		r.Get("/api/jonfrey/review-dispatches", jonfrey.ReviewDispatchesGet)
 		r.Post("/api/jonfrey/review-dispatches", jonfrey.ReviewDispatches)
 		r.Get("/api/jonfrey/config", jonfrey.GetConfig)
 		r.Put("/api/jonfrey/config", jonfrey.UpdateConfig)

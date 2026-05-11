@@ -61,46 +61,90 @@ const (
 	reviewDispatchesMaxHours    = 168 // 7 dias
 	reviewDispatchesLLMTimeout  = 90 * time.Second
 	reviewDispatchesHTTPTimeout = 120 * time.Second
+	reviewDispatchesCacheTTL    = 1 * time.Hour
 )
 
 // ReviewDispatches POST /api/jonfrey/review-dispatches
 // Body: { "period_hours": 24 }
 // Resposta: { headline, items[], generated_at }
+//
+// Mantido por compat. Caminho preferido é o GET (auto-load + cache).
 func (h *JonfreyHandler) ReviewDispatches(w http.ResponseWriter, r *http.Request) {
 	var req reviewDispatchesReq
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	period := req.PeriodHours
-	if period < reviewDispatchesMinHours {
-		period = 24
+	period := normalizeReviewPeriod(req.PeriodHours)
+
+	ctx, cancel := context.WithTimeout(r.Context(), reviewDispatchesHTTPTimeout)
+	defer cancel()
+
+	resp, err := h.computeReviewDispatches(ctx, period)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	if period > reviewDispatchesMaxHours {
-		period = reviewDispatchesMaxHours
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// ReviewDispatchesGet GET /api/jonfrey/review-dispatches?force=1
+// Mesmo padrão do /api/dashboard/recommendation: TTL 1h em memória,
+// força regeneração via ?force=1. Período fixo 24h (use POST se quiser outro).
+func (h *JonfreyHandler) ReviewDispatchesGet(w http.ResponseWriter, r *http.Request) {
+	force := r.URL.Query().Get("force") == "1"
+
+	if !force {
+		h.reviewMu.Lock()
+		cached := h.reviewCache
+		cachedAt := h.reviewCachedAt
+		h.reviewMu.Unlock()
+
+		if cached != nil && time.Since(cachedAt) < reviewDispatchesCacheTTL {
+			out := *cached
+			out.CachedFor = int(reviewDispatchesCacheTTL.Seconds() - time.Since(cachedAt).Seconds())
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), reviewDispatchesHTTPTimeout)
 	defer cancel()
 
+	resp, err := h.computeReviewDispatches(ctx, 24)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	now := time.Now()
+	resp.CachedFor = int(reviewDispatchesCacheTTL.Seconds())
+
+	h.reviewMu.Lock()
+	cp := resp
+	h.reviewCache = &cp
+	h.reviewCachedAt = now
+	h.reviewMu.Unlock()
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// computeReviewDispatches roda a query + LLM (com fallback heurístico).
+// Não toca cache — quem mexe no cache é o caller (GET). POST nunca cacheia.
+func (h *JonfreyHandler) computeReviewDispatches(ctx context.Context, period int) (reviewDispatchesResp, error) {
 	rows, err := h.fetchReviewDispatchRows(ctx, period)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, fmt.Sprintf("falha ao listar dispatches: %v", err))
-		return
+		return reviewDispatchesResp{}, fmt.Errorf("falha ao listar dispatches: %w", err)
 	}
 
 	if len(rows) == 0 {
-		writeJSON(w, http.StatusOK, reviewDispatchesResp{
-			Headline:    fmt.Sprintf("Nenhum dispatch nas últimas %dh.", period),
+		return reviewDispatchesResp{
+			Headline:    fmt.Sprintf("Nenhum disparo nas últimas %dh — auto-disparo provavelmente está em pausa ou fila vazia.", period),
 			Items:       []reviewDispatchItem{},
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		})
-		return
+		}, nil
 	}
 
-	// LLM opcional — sem ele, devolve resultado heurístico (sinaliza dispatches sem grupo/produto).
 	cli := h.getLLMClient()
 	if cli == nil {
-		resp := heuristicReviewDispatches(rows, period)
-		writeJSON(w, http.StatusOK, resp)
-		return
+		return heuristicReviewDispatches(rows, period), nil
 	}
 
 	resp, err := llmReviewDispatches(ctx, cli, rows, period)
@@ -109,7 +153,17 @@ func (h *JonfreyHandler) ReviewDispatches(w http.ResponseWriter, r *http.Request
 		resp = heuristicReviewDispatches(rows, period)
 		resp.Headline = "Análise heurística (LLM indisponível): " + resp.Headline
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
+}
+
+func normalizeReviewPeriod(period int) int {
+	if period < reviewDispatchesMinHours {
+		return 24
+	}
+	if period > reviewDispatchesMaxHours {
+		return reviewDispatchesMaxHours
+	}
+	return period
 }
 
 func (h *JonfreyHandler) getLLMClient() llm.Client {
@@ -244,25 +298,32 @@ func llmReviewDispatches(ctx context.Context, cli llm.Client, rows []reviewDispa
 		return reviewDispatchesResp{}, fmt.Errorf("marshal sample: %w", err)
 	}
 
-	prompt := fmt.Sprintf(`Você é o Jonfrey: revisor de dispatches de promoções.
+	prompt := fmt.Sprintf(`Você é o Jonfrey: auditor do AUTO-DISPARO de promoções.
 
-Analisa cada dispatch abaixo e avalia se o PRODUTO bate com o GRUPO/CANAL de destino.
-Sinais úteis: nome do canal indica nicho (ex.: "Tech BR" deve receber eletrônicos; "Cozinha" deve receber utensílios). Tags/marca do produto reforçam a categoria. score=match heurístico (0-100).
+Para cada dispatch abaixo decida se o AUTO-MATCH escolheu o grupo certo para o produto.
+A questão central é semântica: o nicho aparente do GRUPO (pelo nome) bate com o nicho do PRODUTO (pelo nome + marca + tags)?
 
-Critérios de avaliação:
-- "ok"            : produto coerente com o canal.
-- "problema"      : indicação fraca/duvidosa (canal vago, score baixo, tags pobres).
-- "produto_errado": produto claramente fora do nicho do canal.
-- "pendente"      : sem grupo OU sem produto (composição manual ou dispatch incompleto) — não dá pra avaliar.
+Heurísticas:
+- Nome do grupo costuma indicar tema (ex.: "Tech BR" → eletrônicos; "Cozinha Pro" → utensílios; "Beleza & Cia" → cosméticos).
+- Marca + tags reforçam a categoria. Score (0-100) é o match heurístico já calculado pelo sistema.
+- Composições manuais (composer ≠ "auto") merecem benefício da dúvida — não são culpa do auto-match.
+
+Avaliação por item:
+- "ok"             : produto bate o nicho do grupo (mesmo que score moderado, se o tema casa).
+- "problema"       : casamento fraco/duvidoso — grupo de tema vago, tags pobres, marca neutra OU score muito baixo.
+- "produto_errado" : claramente fora do nicho — ex.: produto de cozinha enviado em grupo de games; cosmético em grupo de eletrônicos.
+- "pendente"       : impossível avaliar — falta grupo OU produto na linha (composição manual sem auto_match_log, ou dispatch incompleto).
+
+Em cada NOTE (≤120 chars) cite o nome do produto e do grupo de forma curta e diga POR QUÊ ("Furadeira em grupo de moda → fora do nicho", "Notebook em Tech BR → bate", etc).
 
 %d dispatches últimas %dh (JSON):
 %s
 
 Retorne JSON estrito:
 {
-  "headline": "frase curta resumindo a saúde dos disparos do período",
+  "headline": "1 frase curta sobre a saúde do auto-disparo no período (quantos bateram, quantos parecem fora)",
   "items": [
-    {"dispatch_id":123,"short_id":"abc","group":"...","product":"...","assessment":"ok|problema|produto_errado|pendente","note":"até 80 chars"}
+    {"dispatch_id":123,"short_id":"abc","group":"...","product":"...","assessment":"ok|problema|produto_errado|pendente","note":"até 120 chars citando os nomes"}
   ]
 }
 Inclua TODOS os %d dispatches no array items, sem cortar.`,
@@ -335,7 +396,7 @@ func sanitizeReviewItems(items []reviewDispatchItem, sample []reviewDispatchRow)
 		if product == "" {
 			product = strDeref(row.ProductName)
 		}
-		note := truncateRune(strings.TrimSpace(it.Note), 240)
+		note := truncateRune(strings.TrimSpace(it.Note), 200)
 		out = append(out, reviewDispatchItem{
 			DispatchID: it.DispatchID,
 			ShortID:    row.ShortID,
