@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Input, Modal, Switch, Skeleton, EmptyState, KpiCard, Textarea } from '../../components/ui'
+import { Button, Input, Modal, Switch, Skeleton, EmptyState, KpiCard, Textarea } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import { useWSEvent } from '../../lib/useWS'
 import { tblDense, thDense, thDenseRight, tdDense, tdDenseRight, trDense } from '../../lib/uiTokens'

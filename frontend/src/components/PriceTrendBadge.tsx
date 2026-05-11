@@ -42,8 +42,8 @@ export const PriceTrendBadge: FC<PriceTrendBadgeProps> = ({ variantId, window = 
 
   const { score, p25, p50, p75, current } = stats
 
-  let cls = 'bg-surface-2 text-fg-3'
-  let label = 'sem info'
+  let cls: string
+  let label: string
 
   if (score >= 0.7) {
     cls = 'bg-success-soft text-success border border-success/25'

@@ -548,9 +548,14 @@ export default function Catalog() {
     staleTime: 60_000,
   })
 
-  React.useEffect(() => {
+  // Reset page when filtros mudam — pattern oficial React (sem useEffect):
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const filterKey = JSON.stringify({ search, source, statusFilter, advState })
+  const [prevFilterKey, setPrevFilterKey] = React.useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
     setPage(0)
-  }, [search, source, statusFilter, advState])
+  }
 
   const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number; new_today?: number }>({
     queryKey: ['catalog', search, source, statusFilter, advState, page],
@@ -578,20 +583,20 @@ export default function Catalog() {
     staleTime: 30_000,
   })
 
-  const rawProducts = catalogData?.items ?? []
   const totalProducts = catalogData?.total ?? 0
   const newToday = catalogData?.new_today
   const totalPages = Math.ceil(totalProducts / PAGE_SIZE)
 
   const products = React.useMemo(() => {
-    const filtered = rawProducts.filter(p => {
+    const raw = catalogData?.items ?? []
+    const filtered = raw.filter(p => {
       const price = p.lowest_price ?? 0
       if (advState.priceMin && price < Number(advState.priceMin)) return false
       if (advState.priceMax && price > Number(advState.priceMax)) return false
       return true
     })
     return sortProducts(filtered, sortKey)
-  }, [rawProducts, advState.priceMin, advState.priceMax, sortKey])
+  }, [catalogData, advState.priceMin, advState.priceMax, sortKey])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
