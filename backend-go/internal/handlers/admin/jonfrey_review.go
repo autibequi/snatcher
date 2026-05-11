@@ -35,6 +35,9 @@ type reviewDispatchesResp struct {
 	Headline    string               `json:"headline"`
 	Items       []reviewDispatchItem `json:"items"`
 	GeneratedAt string               `json:"generated_at"`
+	// Segundos restantes até o cache expirar (mesmo padrão do /dashboard/recommendation).
+	// 0 quando vier sem cache (ex.: heurística sem LLM ou regeneração forçada).
+	CachedFor int `json:"cached_for_seconds,omitempty"`
 }
 
 // reviewDispatchRow espelha o JOIN dispatches × auto_match_logs × channel × catalogproduct.

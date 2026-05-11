@@ -34,6 +34,13 @@ type JonfreyHandler struct {
 	// Ciclo agendado (scheduler): um batch por vez — evita dois RunCycle sobrepostos e LastRunAt incorreto.
 	schedCycleMu   sync.Mutex
 	schedCycleBusy bool
+
+	// Cache da revisão Jonfrey · 24h (GET /api/jonfrey/review-dispatches).
+	// TTL curto (1h) — período-base é 24h, mas no caminho feliz queremos refrescar
+	// ao longo do dia para pegar dispatches novos sem cobrar LLM a cada tela.
+	reviewMu       sync.Mutex
+	reviewCache    *reviewDispatchesResp
+	reviewCachedAt time.Time
 }
 
 // flexMergeID decodifica merge_id do LLM como número JSON ou string ("123").
