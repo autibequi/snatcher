@@ -3,11 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   Badge, Button, Skeleton, EmptyState, PageHeader, Tabs,
+  Sparkline, Tile, SearchSelect,
 } from '../components/ui'
 import { PriceTrendBadge } from '../components/PriceTrendBadge'
 import { apiClient } from '../lib/apiClient'
 import { pushCatalogProductView } from '../lib/gtm'
-import { responsiveGrid, sectionCard } from '../lib/uiTokens'
+import {
+  pageContainer,
+  tblDense, thDense, thDenseRight, tdDense, tdDenseRight,
+  trDense, rowSelected, rowDimmed,
+  filterBar,
+} from '../lib/uiTokens'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +25,12 @@ interface Product {
   lowest_price?: number
   lowest_price_source?: string
   lowest_price_url?: string
+  /** Preço original / "de" — quando backend retornar */
+  original_price?: number
+  /** Pontos para sparkline (8 últimos preços) */
+  price_history?: number[]
+  /** Estoque humano-legível ("em estoque", "últimas unidades", "esgotado") */
+  stock?: string
   tags?: string[] | string
   inactive?: boolean
   curation_status?: string
@@ -29,18 +41,34 @@ interface Product {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  amz:         { label: 'Amazon',       color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  amazon:      { label: 'Amazon',       color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  ml:          { label: 'Mercado Livre',color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
-  mercadolivre:{ label: 'Mercado Livre',color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
-  magalu:      { label: 'Magalu',       color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
-  shopee:      { label: 'Shopee',       color: 'bg-orange-600/15 text-orange-300 border-orange-600/30' },
-  aliexpress:  { label: 'AliExpress',   color: 'bg-red-500/15 text-red-400 border-red-500/30' },
-  kabum:       { label: 'KaBuM!',       color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  americanas:  { label: 'Americanas',   color: 'bg-red-600/15 text-red-300 border-red-600/30' },
-  casasbahia:  { label: 'Casas Bahia',  color: 'bg-blue-600/15 text-blue-300 border-blue-600/30' },
-  manual:      { label: 'Manual',       color: 'bg-fg-3/15 text-fg-2 border-border' },
+const SOURCE_ALIAS: Record<string, string> = {
+  amz: 'amazon', amazon: 'amazon',
+  ml: 'mercadolivre', mercadolivre: 'mercadolivre',
+  magalu: 'magalu',
+  shopee: 'shopee',
+  aliexpress: 'aliexpress',
+  kabum: 'kabum',
+  americanas: 'americanas',
+  casasbahia: 'casasbahia',
+  manual: 'manual',
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  amazon: 'Amazon',
+  mercadolivre: 'Mercado Livre',
+  magalu: 'Magalu',
+  shopee: 'Shopee',
+  aliexpress: 'AliExpress',
+  kabum: 'KaBuM',
+  americanas: 'Americanas',
+  casasbahia: 'Casas Bahia',
+  manual: 'Manual',
+}
+
+function sourceLabel(s?: string) {
+  if (!s) return ''
+  const k = SOURCE_ALIAS[s.toLowerCase()] ?? s.toLowerCase()
+  return SOURCE_LABEL[k] ?? s
 }
 
 function parseTags(raw: string[] | string | undefined | null): string[] {
@@ -48,8 +76,6 @@ function parseTags(raw: string[] | string | undefined | null): string[] {
   if (Array.isArray(raw)) return raw
   try { return JSON.parse(raw as string) } catch { return [] }
 }
-
-const WEIGHT_RE = /\b(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|lb))\b/gi
 
 function formatTitle(raw: string, brand?: string): string {
   let s = raw.replace(/\s+/g, ' ').trim()
@@ -60,224 +86,251 @@ function formatTitle(raw: string, brand?: string): string {
   return s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
-function extractWeight(title: string): string | null {
-  const m = title.match(WEIGHT_RE)
-  return m ? m[0] : null
+function brl(v: number): string {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-// ── Sidebar filter components ─────────────────────────────────────────────────
-
-function FilterSection({
-  label, active, children,
-}: { label: string; active?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(true)
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between mb-1.5 group"
-      >
-        <span className={`text-[11px] font-semibold uppercase tracking-wide ${active ? 'text-accent' : 'text-fg-3'}`}>
-          {label}{active ? ' \xb7' : ''}
-        </span>
-        <span className={`text-fg-3 text-[10px] transition-transform ${open ? '' : '-rotate-90'}`}>{'▾'}</span>
-      </button>
-      {open && children}
-    </div>
-  )
+function discountPct(price: number, original?: number): number | null {
+  if (!original || original <= price) return null
+  return Math.round(((original - price) / original) * 100)
 }
 
-function FilterList({
-  items, value, onSelect, allLabel = 'Todos', formatLabel,
-}: {
-  items: string[]
-  value: string
-  onSelect: (v: string) => void
-  allLabel?: string
-  formatLabel?: (s: string) => string
-}) {
-  const [q, setQ] = React.useState('')
-  const TOP = 5
-  const filtered = q ? items.filter(i => i.toLowerCase().includes(q.toLowerCase())) : items
-  const visible = q ? filtered : filtered.slice(0, TOP)
-  const hasMore = !q && items.length > TOP
-  const labelFor = formatLabel ?? ((s: string) => s)
+// ── Sort options ──────────────────────────────────────────────────────────────
 
-  return (
-    <div className="space-y-0.5">
-      <button
-        type="button"
-        onClick={() => onSelect('')}
-        className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${!value ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
-      >
-        {allLabel}
-      </button>
-      {visible.map(item => (
-        <button
-          key={item}
-          type="button"
-          onClick={() => onSelect(item === value ? '' : item)}
-          className={`w-full text-left text-xs px-2 py-1 rounded transition-colors truncate ${value === item ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
-          title={item}
-        >
-          {labelFor(item)}
-        </button>
-      ))}
-      {(hasMore || q) && (
-        <input
-          type="text"
-          placeholder="Buscar..."
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          className="w-full text-xs border border-border rounded px-2 py-1 bg-surface text-fg outline-none focus:border-accent mt-1"
-        />
-      )}
-    </div>
-  )
-}
+type SortKey = 'discount_desc' | 'price_asc' | 'name_asc' | 'created_desc'
 
-interface SidebarProps {
-  search: string; onSearch: (v: string) => void
-  source: string; onSource: (v: string) => void; sources: string[]
-  categoryFilter: string; onCategoryFilter: (v: string) => void; categories: string[]
-  subcategoryFilter: string; onSubcategoryFilter: (v: string) => void; subcategories: string[]
-  brandFilter: string; onBrandFilter: (v: string) => void; brands: string[]
-  priceMin: string; onPriceMin: (v: string) => void
-  priceMax: string; onPriceMax: (v: string) => void
-  statusFilter: string; onStatusFilter: (v: string) => void
-  showInactive: boolean; onShowInactive: (v: boolean) => void
-  onClear: () => void; hasActiveFilters: boolean
-  total: number; page: number; totalPages: number
-}
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'discount_desc', label: 'Maior desconto' },
+  { value: 'price_asc',     label: 'Menor preço' },
+  { value: 'name_asc',      label: 'Nome (A→Z)' },
+  { value: 'created_desc',  label: 'Mais recente' },
+]
 
-function CatalogSidebar({
-  search, onSearch,
-  source, onSource, sources,
-  categoryFilter, onCategoryFilter, categories,
-  subcategoryFilter, onSubcategoryFilter, subcategories,
-  brandFilter, onBrandFilter, brands,
-  priceMin, onPriceMin, priceMax, onPriceMax,
-  statusFilter, onStatusFilter,
-  showInactive, onShowInactive,
-  onClear, hasActiveFilters,
-  total, page, totalPages,
-}: SidebarProps) {
-  const sourceLabelFn = (s: string) => {
-    const meta = SOURCE_LABELS[s.toLowerCase()]
-    if (meta?.label) return meta.label
-    if (s === 'mercadolivre') return 'Mercado Livre'
-    if (s === 'casasbahia') return 'Casas Bahia'
-    return s
+function sortProducts(items: Product[], key: SortKey): Product[] {
+  const arr = items.slice()
+  switch (key) {
+    case 'price_asc':
+      return arr.sort((a, b) => (a.lowest_price ?? Infinity) - (b.lowest_price ?? Infinity))
+    case 'name_asc':
+      return arr.sort((a, b) => (a.canonical_name ?? '').localeCompare(b.canonical_name ?? ''))
+    case 'created_desc':
+      return arr.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+    case 'discount_desc':
+    default:
+      return arr.sort((a, b) => {
+        const da = discountPct(a.lowest_price ?? 0, a.original_price) ?? -1
+        const db = discountPct(b.lowest_price ?? 0, b.original_price) ?? -1
+        return db - da
+      })
   }
+}
+
+// ── Advanced filters drawer (categoria/marca/preço/inativos) ──────────────────
+
+interface AdvFiltersState {
+  categoryFilter: string
+  subcategoryFilter: string
+  brandFilter: string
+  priceMin: string
+  priceMax: string
+  showInactive: boolean
+}
+
+function AdvancedFiltersDrawer({
+  open, onClose,
+  state, setState,
+  categories, subcategories, brands,
+}: {
+  open: boolean
+  onClose: () => void
+  state: AdvFiltersState
+  setState: React.Dispatch<React.SetStateAction<AdvFiltersState>>
+  categories: string[]
+  subcategories: string[]
+  brands: string[]
+}) {
+  if (!open) return null
+  const set = <K extends keyof AdvFiltersState>(k: K, v: AdvFiltersState[K]) =>
+    setState(s => ({ ...s, [k]: v }))
 
   return (
-    <aside className="flex-1 overflow-y-auto flex flex-col gap-4 px-3 py-4">
-      <input
-        type="text"
-        placeholder="Buscar produto..."
-        value={search}
-        onChange={e => onSearch(e.target.value)}
-        className="w-full text-xs border border-border rounded px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-40 bg-black/40 border-0 cursor-default"
+        aria-label="Fechar filtros avançados"
+        onClick={onClose}
       />
-
-      <FilterSection label="Status" active={!!statusFilter}>
-        {[
-          { v: '',              l: 'Todos' },
-          { v: 'novos',        l: 'Novos (7d)' },
-          { v: 'curados',      l: 'Curados' },
-          { v: 'disparados_7d',l: 'Disparados 7d' },
-        ].map(({ v, l }) => (
+      <aside className="fixed top-0 right-0 z-50 h-full w-[min(90vw,22rem)] bg-surface border-l border-border shadow-modal flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-fg">Filtros avançados</h2>
           <button
-            key={v || '_all'}
             type="button"
-            onClick={() => onStatusFilter(v)}
-            className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${statusFilter === v ? 'bg-accent/10 text-accent font-medium' : 'text-fg-2 hover:bg-surface-2'}`}
-          >
-            {l}
-          </button>
-        ))}
-      </FilterSection>
-
-      {sources.length > 0 && (
-        <FilterSection label="Fonte" active={!!source}>
-          <FilterList
-            items={sources}
-            value={source}
-            onSelect={onSource}
-            allLabel="Todas"
-            formatLabel={sourceLabelFn}
-          />
-        </FilterSection>
-      )}
-
-      {categories.length > 0 && (
-        <FilterSection label="Categoria" active={!!categoryFilter}>
-          <FilterList items={categories} value={categoryFilter} onSelect={onCategoryFilter} allLabel="Todas" />
-        </FilterSection>
-      )}
-
-      {brands.length > 0 && (
-        <FilterSection label="Marca" active={!!brandFilter}>
-          <FilterList items={brands} value={brandFilter} onSelect={onBrandFilter} allLabel="Todas" />
-        </FilterSection>
-      )}
-
-      {subcategories.length > 0 && (
-        <FilterSection label="Subcategoria" active={!!subcategoryFilter}>
-          <FilterList items={subcategories} value={subcategoryFilter} onSelect={onSubcategoryFilter} allLabel="Todas" />
-        </FilterSection>
-      )}
-
-      <FilterSection label="Preco (R$)" active={!!(priceMin || priceMax)}>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="number" min="0" placeholder="Min" value={priceMin}
-            onChange={e => onPriceMin(e.target.value)}
-            className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          />
-          <span className="text-fg-3 text-xs flex-shrink-0">-</span>
-          <input
-            type="number" min="0" placeholder="Max" value={priceMax}
-            onChange={e => onPriceMax(e.target.value)}
-            className="w-full text-xs border border-border rounded px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent"
-          />
+            onClick={onClose}
+            className="text-fg-3 hover:text-fg p-1 text-sm"
+            aria-label="Fechar"
+          >✕</button>
         </div>
-      </FilterSection>
 
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={showInactive}
-          onChange={e => onShowInactive(e.target.checked)}
-          className="accent-accent"
-        />
-        <span className="text-xs text-fg-2">Mostrar inativos</span>
-      </label>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {categories.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-1.5">Categoria</p>
+              <SearchSelect
+                options={[{ value: '', label: 'Todas' }, ...categories.map(c => ({ value: c, label: c }))]}
+                value={state.categoryFilter}
+                onChange={v => set('categoryFilter', v)}
+                placeholder="Todas"
+              />
+            </div>
+          )}
+          {subcategories.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-1.5">Subcategoria</p>
+              <SearchSelect
+                options={[{ value: '', label: 'Todas' }, ...subcategories.map(c => ({ value: c, label: c }))]}
+                value={state.subcategoryFilter}
+                onChange={v => set('subcategoryFilter', v)}
+                placeholder="Todas"
+              />
+            </div>
+          )}
+          {brands.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-1.5">Marca</p>
+              <SearchSelect
+                options={[{ value: '', label: 'Todas' }, ...brands.map(c => ({ value: c, label: c }))]}
+                value={state.brandFilter}
+                onChange={v => set('brandFilter', v)}
+                placeholder="Todas"
+              />
+            </div>
+          )}
 
-      {hasActiveFilters && (
-        <button type="button" onClick={onClear} className="text-xs text-danger hover:underline text-left">
-          x Limpar filtros
-        </button>
-      )}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-1.5">Preço (R$)</p>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number" min="0" placeholder="Mín" value={state.priceMin}
+                onChange={e => set('priceMin', e.target.value)}
+                className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              />
+              <span className="text-fg-3 text-xs flex-shrink-0">—</span>
+              <input
+                type="number" min="0" placeholder="Máx" value={state.priceMax}
+                onChange={e => set('priceMax', e.target.value)}
+                className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              />
+            </div>
+          </div>
 
-      <div className="mt-auto pt-2 border-t border-border text-[11px] text-fg-3">
-        <p><strong className="text-fg">{total}</strong> produto{total !== 1 ? 's' : ''}</p>
-        {totalPages > 1 && <p>pag. {page + 1}/{totalPages}</p>}
-      </div>
-    </aside>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={state.showInactive}
+              onChange={e => set('showInactive', e.target.checked)}
+              className="accent-accent"
+            />
+            <span className="text-sm text-fg-2">Mostrar inativos</span>
+          </label>
+        </div>
+
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setState({
+              categoryFilter: '',
+              subcategoryFilter: '',
+              brandFilter: '',
+              priceMin: '',
+              priceMax: '',
+              showInactive: false,
+            })}
+            className="text-xs text-danger hover:underline"
+          >
+            Limpar
+          </button>
+          <Button variant="primary" size="sm" onClick={onClose}>Aplicar</Button>
+        </div>
+      </aside>
+    </>
   )
 }
 
-// ── Product card for grid ─────────────────────────────────────────────────────
+// ── Selection bar flutuante ───────────────────────────────────────────────────
 
-function CatalogProductCard({
-  product, isSelected, onToggle, onSend, onDelete, onCurate,
+function SelectionBar({
+  count, onClear, onCompose, onAddTags, onMoveToChannel,
+}: {
+  count: number
+  onClear: () => void
+  onCompose: () => void
+  onAddTags?: () => void
+  onMoveToChannel?: () => void
+}) {
+  if (count === 0) return null
+  return (
+    <div
+      role="region"
+      aria-label="Ações em massa"
+      className="fixed left-1/2 -translate-x-1/2 z-40 min-w-[560px] max-w-[calc(100vw-2rem)] flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg"
+      style={{
+        bottom: 18,
+        background: 'oklch(0.20 0.015 270)',
+        color: 'oklch(0.96 0.01 270)',
+      }}
+    >
+      <span className="text-sm whitespace-nowrap">
+        ✓ <span className="font-semibold tabular-nums">{count}</span> produto{count !== 1 ? 's' : ''} selecionado{count !== 1 ? 's' : ''}
+      </span>
+      <span className="opacity-30 text-xs">·</span>
+      {onAddTags && (
+        <button
+          type="button"
+          onClick={onAddTags}
+          className="text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+        >
+          Adicionar tags
+        </button>
+      )}
+      {onMoveToChannel && (
+        <button
+          type="button"
+          onClick={onMoveToChannel}
+          className="text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+        >
+          Mover para canal
+        </button>
+      )}
+      <span className="flex-1 border-t border-dashed border-white/15 mx-2" />
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-xs px-2 py-1 rounded-md text-white/70 hover:text-white"
+      >
+        Limpar
+      </button>
+      <button
+        type="button"
+        onClick={onCompose}
+        className="text-xs px-2.5 py-1 rounded-md font-semibold text-white bg-accent hover:bg-accent-hover transition-colors"
+      >
+        ✈ Compor disparo
+      </button>
+    </div>
+  )
+}
+
+// ── Catalog Row ───────────────────────────────────────────────────────────────
+
+function CatalogRow({
+  product, isSelected, onToggle, onView, onSend, onDelete, onCurate,
   curating, deleting,
 }: {
   product: Product
   isSelected: boolean
   onToggle: () => void
+  onView: () => void
   onSend: () => void
   onDelete: () => void
   onCurate: (status: 'curated' | 'rejected') => void
@@ -286,167 +339,166 @@ function CatalogProductCard({
 }) {
   const rawTitle = product.canonical_name ?? 'Produto'
   const title = formatTitle(rawTitle, product.brand)
-  const weight = extractWeight(rawTitle)
   const price = product.lowest_price ?? 0
-  const src = product.lowest_price_source ?? ''
+  const original = product.original_price
+  const disc = discountPct(price, original)
   const tags = parseTags(product.tags)
-  const isInactive = product.inactive === true
+  const inactive = product.inactive === true
+  const src = product.lowest_price_source ?? ''
+  const sLabel = sourceLabel(src)
+  const history = product.price_history && product.price_history.length > 1 ? product.price_history.slice(-8) : null
+
+  const rowCls = [
+    trDense,
+    isSelected ? rowSelected : '',
+    inactive ? rowDimmed : '',
+  ].join(' ')
 
   return (
-    <div
-      className={`${sectionCard} flex flex-col gap-2 relative transition-colors ${isSelected ? 'ring-2 ring-accent' : ''} ${isInactive ? 'opacity-60' : ''}`}
-    >
-      {/* Checkbox + image row */}
-      <div className="flex items-start gap-2">
+    <tr className={rowCls}>
+      <td className={`${tdDense} w-[40px]`}>
         <input
           type="checkbox"
           checked={isSelected}
           onChange={onToggle}
-          className="accent-accent mt-1 flex-shrink-0"
+          className="accent-accent"
+          aria-label={`Selecionar ${title}`}
         />
-        <div className="w-12 h-12 bg-surface-2 rounded overflow-hidden flex-shrink-0">
-          {product.image_url ? (
-            <img src={product.image_url} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <span className="flex items-center justify-center h-full text-xl">*</span>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-fg line-clamp-2 leading-tight">{title}</p>
-          {product.brand && (
-            <span className="text-xs bg-surface-2 border border-border text-fg-2 px-1.5 py-0.5 rounded font-medium mt-0.5 inline-block">
-              {product.brand}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Tags + weight */}
-      {(weight || tags.length > 0) && (
-        <div className="flex flex-wrap gap-1">
-          {weight && (
-            <span className="text-xs bg-accent/10 text-accent border border-accent/20 px-1.5 py-0.5 rounded-full font-medium">
-              {weight}
-            </span>
-          )}
-          {tags.slice(0, 3).map(tag => (
-            <span
-              key={tag}
-              className="text-xs bg-surface-2 text-fg-3 border border-border px-1.5 py-0.5 rounded-full"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Price + source + trend */}
-      <div className="flex items-center gap-2 flex-wrap mt-auto">
-        {price > 0 ? (
-          <span className="font-semibold text-fg whitespace-nowrap">
-            R$ {price.toFixed(2)}
-          </span>
-        ) : (
-          <span className="text-fg-3 text-xs">sem preco</span>
-        )}
-        {src && (
-          <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${SOURCE_LABELS[src]?.color ?? 'bg-surface-2 text-fg-2 border-border'}`}>
-            {SOURCE_LABELS[src]?.label ?? src}
-          </span>
-        )}
-        <PriceTrendBadge variantId={product.id} />
-      </div>
-
-      {/* Badges: inactive, inspected */}
-      <div className="flex items-center gap-1.5 flex-wrap text-xs">
-        {isInactive && <Badge variant="outline" size="sm">inativo</Badge>}
-        {product.inspected ? (
-          <span title={product.inspection_notes ?? 'Auditado por LLM'} className="text-success font-medium">ok inspecionado</span>
-        ) : (
-          <span className="text-fg-3">o nao auditado</span>
-        )}
-        {product.curation_status && product.curation_status !== 'pending' && (
-          <Badge variant="outline" size="sm">{product.curation_status}</Badge>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-border">
-        {product.curation_status === 'pending' && (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              className="bg-green-600 hover:bg-green-700"
-              loading={curating}
-              onClick={() => onCurate('curated')}
-            >
-              Curar
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={curating}
-              onClick={() => onCurate('rejected')}
-            >
-              Rejeitar
-            </Button>
-          </>
-        )}
-        <Button variant="primary" size="sm" onClick={onSend}>
-          Enviar
-        </Button>
-        {product.lowest_price_url && (
-          <a
-            href={product.lowest_price_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-fg-3 hover:text-accent p-1 text-xs"
-            title={`Abrir na ${SOURCE_LABELS[src]?.label ?? src}`}
-          >
-            link
-          </a>
-        )}
+      </td>
+      <td className={`${tdDense} max-w-0`}>
         <button
           type="button"
-          title="Excluir produto"
-          onClick={onDelete}
-          disabled={deleting}
-          className="text-fg-3 hover:text-danger p-1 disabled:opacity-40 ml-auto text-xs"
+          onClick={onView}
+          className="flex items-center gap-2.5 text-left w-full group min-w-0"
+          title={title}
         >
-          del
+          <Tile imageUrl={product.image_url} alt={title}>📦</Tile>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-fg truncate group-hover:text-accent transition-colors">
+              {title}
+            </p>
+            <p className="text-[12px] text-fg-3 truncate">
+              {product.brand ?? '—'}{product.stock ? ` · ${product.stock}` : ''}
+            </p>
+          </div>
         </button>
-      </div>
-    </div>
+      </td>
+      <td className={tdDense}>
+        {sLabel ? <Badge variant="default">{sLabel}</Badge> : <span className="text-fg-3 text-xs">—</span>}
+      </td>
+      <td className={`${tdDenseRight} whitespace-nowrap`}>
+        {price > 0 ? (
+          <div className="leading-tight">
+            <div className="font-semibold text-success tabular-nums">R$ {brl(price)}</div>
+            {original && original > price ? (
+              <div className="text-[11px] text-fg-3 tabular-nums line-through">R$ {brl(original)}</div>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-fg-3 text-xs">sem preço</span>
+        )}
+      </td>
+      <td className={tdDense}>
+        {disc !== null ? (
+          <Badge variant="success">−{disc}%</Badge>
+        ) : (
+          <PriceTrendBadge variantId={product.id} />
+        )}
+      </td>
+      <td className={tdDense}>
+        {history ? (
+          <Sparkline values={history} />
+        ) : (
+          <span className="text-fg-3 text-xs">—</span>
+        )}
+      </td>
+      <td className={tdDense}>
+        <div className="flex items-center gap-1 flex-wrap">
+          {tags.slice(0, 2).map(t => (
+            <span
+              key={t}
+              className="text-[11px] px-1.5 py-0.5 rounded-md bg-surface-2 text-fg-3 border border-border"
+            >
+              #{t}
+            </span>
+          ))}
+          {tags.length > 2 && (
+            <span className="text-[11px] text-fg-3">+{tags.length - 2}</span>
+          )}
+        </div>
+      </td>
+      <td className={`${tdDense} w-[120px]`}>
+        <div className="flex items-center justify-end gap-1">
+          {product.curation_status === 'pending' && (
+            <button
+              type="button"
+              onClick={() => onCurate('curated')}
+              disabled={curating}
+              title="Curar produto"
+              className="text-success hover:bg-success-soft p-1 rounded disabled:opacity-40 text-sm"
+            >
+              ✓
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onSend}
+            title="Compor disparo"
+            className="text-fg-2 hover:text-accent hover:bg-accent-soft p-1 rounded text-sm"
+          >
+            ✈
+          </button>
+          {product.lowest_price_url && (
+            <a
+              href={product.lowest_price_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-fg-2 hover:text-accent p-1 rounded text-sm"
+              title={`Abrir em ${sLabel}`}
+            >
+              🔗
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            title="Excluir produto"
+            className="text-fg-3 hover:text-danger hover:bg-danger-soft p-1 rounded disabled:opacity-40 text-sm"
+          >
+            🗑
+          </button>
+        </div>
+      </td>
+    </tr>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 48
+const PAGE_SIZE = 50
 
 export default function Catalog() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  // Filters state
   const [search, setSearch] = React.useState('')
   const [source, setSource] = React.useState('')
-  const [tagFilter, setTagFilter] = React.useState('')
-  const [categoryFilter, setCategoryFilter] = React.useState('')
-  const [subcategoryFilter, setSubcategoryFilter] = React.useState('')
-  const [brandFilter, setBrandFilter] = React.useState('')
-  const [priceMin, setPriceMin] = React.useState('')
-  const [priceMax, setPriceMax] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState('')
-  const [showInactive, setShowInactive] = React.useState(false)
+  const [sortKey, setSortKey] = React.useState<SortKey>('discount_desc')
   const [page, setPage] = React.useState(0)
-
-  // UI state
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
-  const [mobileFiltersOpen, setMobileFiltersOpen] = React.useState(false)
+  const [advOpen, setAdvOpen] = React.useState(false)
 
-  // Mutations
+  const [advState, setAdvState] = React.useState<AdvFiltersState>({
+    categoryFilter: '',
+    subcategoryFilter: '',
+    brandFilter: '',
+    priceMin: '',
+    priceMax: '',
+    showInactive: false,
+  })
+
   const curateMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'curated' | 'rejected' }) =>
       apiClient.patch(`/api/catalog/${id}`, { curation_status: status }),
@@ -460,7 +512,6 @@ export default function Catalog() {
     onError: () => alert('Erro ao excluir produto'),
   })
 
-  // GTM on selection
   const handleGtmView = React.useCallback((p: Product) => {
     const rawTitle = p.canonical_name ?? 'Produto'
     const title = formatTitle(rawTitle, typeof p.brand === 'string' ? p.brand : undefined)
@@ -476,54 +527,52 @@ export default function Catalog() {
     })
   }, [])
 
-  // Data queries
   const { data: categories = [] } = useQuery<string[]>({
     queryKey: ['catalog', 'categories'],
     queryFn: () => apiClient.get('/api/catalog/categories').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 60_000,
   })
-
   const { data: subcategories = [] } = useQuery<string[]>({
     queryKey: ['catalog', 'subcategories'],
     queryFn: () => apiClient.get('/api/catalog/subcategories').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 60_000,
   })
-
   const { data: sources = [] } = useQuery<string[]>({
     queryKey: ['catalog', 'sources'],
     queryFn: () => apiClient.get('/api/catalog/sources').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 60_000,
   })
-
   const { data: brands = [] } = useQuery<string[]>({
     queryKey: ['catalog', 'brands'],
     queryFn: () => apiClient.get('/api/catalog/brands').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
     staleTime: 60_000,
   })
 
-  // Reset page on filter change
   React.useEffect(() => {
     setPage(0)
-  }, [search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter])
+  }, [search, source, statusFilter, advState])
 
-  const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number }>({
-    queryKey: ['catalog', search, source, tagFilter, categoryFilter, subcategoryFilter, brandFilter, showInactive, statusFilter, page],
+  const { data: catalogData, isLoading } = useQuery<{ items: Product[]; total: number; new_today?: number }>({
+    queryKey: ['catalog', search, source, statusFilter, advState, page],
     queryFn: () => {
       const params = new URLSearchParams()
-      if (search)           params.set('search', search)
-      if (source)           params.set('source', source)
-      if (tagFilter)        params.set('tag', tagFilter)
-      if (categoryFilter)   params.set('primary_category', categoryFilter)
-      if (subcategoryFilter)params.set('subcategory', subcategoryFilter)
-      if (brandFilter)      params.set('brand', brandFilter)
-      if (statusFilter)     params.set('status', statusFilter)
-      if (showInactive)     params.set('include_inactive', 'true')
+      if (search)                    params.set('search', search)
+      if (source)                    params.set('source', source)
+      if (advState.categoryFilter)   params.set('primary_category', advState.categoryFilter)
+      if (advState.subcategoryFilter)params.set('subcategory', advState.subcategoryFilter)
+      if (advState.brandFilter)      params.set('brand', advState.brandFilter)
+      if (statusFilter)              params.set('status', statusFilter)
+      if (advState.showInactive)     params.set('include_inactive', 'true')
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String(page * PAGE_SIZE))
       return apiClient.get(`/api/catalog?${params}`).then(r => {
         const d = r.data
         if (Array.isArray(d)) return { items: d, total: d.length }
-        return { items: d?.items ?? d?.products ?? [], total: d?.total ?? 0 }
+        return {
+          items: d?.items ?? d?.products ?? [],
+          total: d?.total ?? 0,
+          new_today: d?.new_today,
+        }
       })
     },
     staleTime: 30_000,
@@ -531,63 +580,46 @@ export default function Catalog() {
 
   const rawProducts = catalogData?.items ?? []
   const totalProducts = catalogData?.total ?? 0
+  const newToday = catalogData?.new_today
   const totalPages = Math.ceil(totalProducts / PAGE_SIZE)
 
-  // Client-side price filter
-  const products = rawProducts.filter(p => {
-    const price = p.lowest_price ?? 0
-    if (priceMin && price < Number(priceMin)) return false
-    if (priceMax && price > Number(priceMax)) return false
-    return true
-  })
+  const products = React.useMemo(() => {
+    const filtered = rawProducts.filter(p => {
+      const price = p.lowest_price ?? 0
+      if (advState.priceMin && price < Number(advState.priceMin)) return false
+      if (advState.priceMax && price > Number(advState.priceMax)) return false
+      return true
+    })
+    return sortProducts(filtered, sortKey)
+  }, [rawProducts, advState.priceMin, advState.priceMax, sortKey])
 
-  // Selection helpers
   const toggleSelect = (id: number) => {
     setSelected(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
 
   const toggleAll = () => {
-    if (selected.size === products.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(products.map(p => p.id)))
-    }
+    if (selected.size === products.length) setSelected(new Set())
+    else setSelected(new Set(products.map(p => p.id)))
   }
 
-  const hasActiveFilters = !!(search || source || tagFilter || categoryFilter || subcategoryFilter || brandFilter || priceMin || priceMax || statusFilter)
+  const sourceOptions = React.useMemo(() => {
+    const opts = sources.map(s => ({ value: s, label: sourceLabel(s) }))
+    return [{ value: '', label: 'Todas as fontes' }, ...opts]
+  }, [sources])
 
-  const clearFilters = () => {
-    setSearch(''); setSource(''); setTagFilter(''); setCategoryFilter('')
-    setSubcategoryFilter(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setStatusFilter('')
-  }
+  const advCount =
+    (advState.categoryFilter ? 1 : 0)
+    + (advState.subcategoryFilter ? 1 : 0)
+    + (advState.brandFilter ? 1 : 0)
+    + (advState.priceMin ? 1 : 0)
+    + (advState.priceMax ? 1 : 0)
+    + (advState.showInactive ? 1 : 0)
 
-  // Close mobile filters on desktop resize
-  React.useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
-    const onChange = () => { if (mq.matches) setMobileFiltersOpen(false) }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-
-  const sidebarProps = {
-    search, onSearch: setSearch,
-    source, onSource: setSource, sources,
-    categoryFilter, onCategoryFilter: setCategoryFilter, categories,
-    subcategoryFilter, onSubcategoryFilter: setSubcategoryFilter, subcategories,
-    brandFilter, onBrandFilter: setBrandFilter, brands,
-    priceMin, onPriceMin: setPriceMin,
-    priceMax, onPriceMax: setPriceMax,
-    statusFilter, onStatusFilter: setStatusFilter,
-    showInactive, onShowInactive: setShowInactive,
-    onClear: clearFilters, hasActiveFilters,
-    total: totalProducts, page, totalPages,
-  }
-
-  // Tabs for state quick-filter (from design handoff)
   const tabs = [
     { id: '', label: 'Todos' },
     { id: 'novos', label: 'Novos (7d)' },
@@ -595,193 +627,194 @@ export default function Catalog() {
     { id: 'disparados_7d', label: 'Disparados 7d' },
   ]
 
-  return (
-    <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
-      {/* Mobile overlay */}
-      {mobileFiltersOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/40 md:hidden border-0 cursor-default"
-          aria-label="Fechar filtros"
-          onClick={() => setMobileFiltersOpen(false)}
-        />
-      )}
+  const subtitle =
+    totalProducts === 0
+      ? 'Nenhum produto coletado ainda'
+      : `${totalProducts.toLocaleString('pt-BR')} produto${totalProducts !== 1 ? 's' : ''} coletados${newToday ? ` · ${newToday} novos hoje` : ''}`
 
-      {/* Sidebar */}
-      <div
-        id="catalog-filter-panel"
-        className={[
-          'flex flex-col flex-shrink-0 border-r border-border bg-surface overflow-hidden',
-          'fixed inset-y-0 left-0 z-50 w-[min(85vw,20rem)] transition-transform duration-200 ease-out',
-          'md:static md:z-auto md:w-52 md:translate-x-0 md:inset-auto',
-          mobileFiltersOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
-        ].join(' ')}
-      >
-        <div className="flex md:hidden items-center justify-between px-3 py-2 border-b border-border flex-shrink-0 bg-surface">
-          <span className="text-sm font-semibold text-fg">Filtros</span>
-          <button
-            type="button"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-fg-2 hover:text-fg hover:bg-surface-2"
-            aria-label="Fechar filtros"
-            onClick={() => setMobileFiltersOpen(false)}
-          >
-            X
-          </button>
-        </div>
-        <CatalogSidebar {...sidebarProps} />
+  return (
+    <div className={pageContainer}>
+      <PageHeader
+        title="Catálogo"
+        subtitle={subtitle}
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/catalog/manual')}>
+              + Adicionar manual
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={selected.size === 0}
+              onClick={() => navigate(`/compose?productIds=${Array.from(selected).join(',')}`)}
+            >
+              ✈ Disparar selecionados ({selected.size})
+            </Button>
+          </>
+        }
+      />
+
+      <div className="mt-3">
+        <Tabs
+          tabs={tabs}
+          active={statusFilter}
+          onChange={v => { setStatusFilter(v); setPage(0) }}
+        />
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-border px-4 py-3 bg-surface">
-          <PageHeader
-            title="Catalogo"
-            subtitle={`${totalProducts} produto${totalProducts !== 1 ? 's' : ''} coletados`}
-            actions={
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => navigate('/catalog/manual')}
-                >
-                  + Adicionar manual
-                </Button>
-                {selected.size > 0 && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => navigate(`/compose?productIds=${Array.from(selected).join(',')}`)}
-                  >
-                    Disparar ({selected.size})
-                  </Button>
-                )}
-              </>
-            }
+      {/* Filter bar — card próprio, flex-wrap */}
+      <div className={`${filterBar} -mx-3 sm:-mx-4 mt-2 mb-4`}>
+        <div className="flex items-center gap-2 flex-1 min-w-[180px] max-w-[420px] bg-surface-2 rounded-md px-2.5 h-8">
+          <span className="text-fg-3 text-sm" aria-hidden="true">🔍</span>
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por nome, marca, tag…"
+            className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-3"
           />
+        </div>
+        <SearchSelect
+          options={sourceOptions}
+          value={source}
+          onChange={setSource}
+          placeholder="Todas as fontes"
+        />
+        <SearchSelect
+          options={SORT_OPTIONS}
+          value={sortKey}
+          onChange={v => setSortKey(v as SortKey)}
+          placeholder="Ordenar"
+        />
+        <button
+          type="button"
+          onClick={() => setAdvOpen(true)}
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-md border border-border-strong bg-transparent text-fg-2 hover:bg-surface-2 transition-colors"
+        >
+          + Filtros
+          {advCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded-full bg-accent text-[10px] font-bold text-white tabular-nums">
+              {advCount}
+            </span>
+          )}
+        </button>
+      </div>
 
-          {/* Tabs */}
-          <div className="mt-3">
-            <Tabs
-              tabs={tabs}
-              active={statusFilter}
-              onChange={v => { setStatusFilter(v); setPage(0) }}
+      {/* Tabela densa */}
+      <div className="rounded-lg border border-border bg-surface overflow-hidden">
+        {isLoading ? (
+          <div className="px-4 py-3 space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="p-2">
+            <EmptyState
+              title="Nenhum produto"
+              description={
+                search || source || statusFilter || advCount > 0
+                  ? 'Ajuste os filtros para ver mais resultados.'
+                  : 'Configure um crawler para começar a coletar produtos.'
+              }
+              cta={
+                search || source || statusFilter || advCount > 0
+                  ? undefined
+                  : { label: 'Ir para Crawlers', onClick: () => navigate('/crawlers') }
+              }
             />
           </div>
-        </div>
-
-        {/* Mobile filter button */}
-        <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-border bg-surface flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setMobileFiltersOpen(true)}
-            className="min-h-[44px] px-3 py-2 rounded-md border border-border bg-surface-2 text-sm font-medium text-fg hover:bg-surface flex items-center gap-2"
-            aria-expanded={mobileFiltersOpen}
-            aria-controls="catalog-filter-panel"
-          >
-            Filtros
-            {hasActiveFilters && (
-              <span className="h-2 w-2 rounded-full bg-accent shrink-0" aria-label="Ha filtros ativos" />
-            )}
-          </button>
-          {products.length > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-fg-2 ml-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selected.size === products.length && products.length > 0}
-                onChange={toggleAll}
-                className="accent-accent"
-              />
-              Selecionar todos
-            </label>
-          )}
-        </div>
-
-        {/* Bulk select bar on desktop */}
-        {products.length > 0 && (
-          <div className="hidden md:flex items-center gap-2 px-4 py-1.5 border-b border-border bg-surface flex-shrink-0">
-            <label className="flex items-center gap-1.5 text-xs text-fg-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selected.size === products.length && products.length > 0}
-                onChange={toggleAll}
-                className="accent-accent"
-              />
-              Selecionar todos ({products.length})
-            </label>
-            {selected.size > 0 && (
-              <span className="text-xs text-accent font-medium ml-2">
-                {selected.size} selecionado{selected.size !== 1 ? 's' : ''}
-              </span>
-            )}
+        ) : (
+          <div className="overflow-x-auto">
+            <table className={tblDense}>
+              <thead>
+                <tr>
+                  <th className={`${thDense} w-[40px]`}>
+                    <input
+                      type="checkbox"
+                      className="accent-accent"
+                      checked={selected.size === products.length && products.length > 0}
+                      onChange={toggleAll}
+                      aria-label="Selecionar todos"
+                    />
+                  </th>
+                  <th className={thDense}>Produto</th>
+                  <th className={thDense}>Fonte</th>
+                  <th className={thDenseRight}>Preço</th>
+                  <th className={thDense}>Desconto</th>
+                  <th className={thDense}>Histórico</th>
+                  <th className={thDense}>Tags</th>
+                  <th className={`${thDense} text-right`}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map(p => (
+                  <CatalogRow
+                    key={p.id}
+                    product={p}
+                    isSelected={selected.has(p.id)}
+                    onToggle={() => {
+                      toggleSelect(p.id)
+                      handleGtmView(p)
+                    }}
+                    onView={() => navigate(`/match?productId=${p.id}`)}
+                    onSend={() => navigate(`/compose?productIds=${p.id}`)}
+                    onDelete={() => {
+                      const rawTitle = p.canonical_name ?? 'Produto'
+                      const title = formatTitle(rawTitle, p.brand)
+                      if (confirm(`Excluir "${title}"?`)) deleteMutation.mutate(p.id)
+                    }}
+                    onCurate={status => curateMutation.mutate({ id: p.id, status })}
+                    curating={curateMutation.isPending && curateMutation.variables?.id === p.id}
+                    deleting={deleteMutation.isPending && deleteMutation.variables === p.id}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {/* Grid content */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {isLoading ? (
-            <div className={responsiveGrid}>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-48 w-full" />
-              ))}
-            </div>
-          ) : products.length === 0 ? (
-            <EmptyState
-              title="Nenhum produto"
-              description="Configure um crawler para comecar a coletar produtos."
-              cta={{ label: 'Ir para Crawlers', onClick: () => navigate('/crawlers') }}
-            />
-          ) : (
-            <div className={responsiveGrid}>
-              {products.map(p => (
-                <CatalogProductCard
-                  key={p.id}
-                  product={p}
-                  isSelected={selected.has(p.id)}
-                  onToggle={() => {
-                    toggleSelect(p.id)
-                    handleGtmView(p)
-                  }}
-                  onSend={() => navigate(`/match?productId=${p.id}`)}
-                  onDelete={() => {
-                    const rawTitle = p.canonical_name ?? 'Produto'
-                    const title = formatTitle(rawTitle, p.brand)
-                    if (confirm(`Excluir "${title}"?`)) deleteMutation.mutate(p.id)
-                  }}
-                  onCurate={status => curateMutation.mutate({ id: p.id, status })}
-                  curating={curateMutation.isPending && curateMutation.variables?.id === p.id}
-                  deleting={deleteMutation.isPending && deleteMutation.variables === p.id}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-0 py-4 mt-4 border-t border-border">
-              <button
-                type="button"
-                disabled={page === 0}
-                onClick={() => setPage(p => p - 1)}
-                className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
-              >
-                Anterior
-              </button>
-              <span className="text-xs text-fg-3">
-                Pagina {page + 1} de {totalPages} - {totalProducts} produtos
-              </span>
-              <button
-                type="button"
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage(p => p + 1)}
-                className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
-              >
-                Proxima
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+            <button
+              type="button"
+              disabled={page === 0}
+              onClick={() => setPage(p => p - 1)}
+              className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              ← Anterior
+            </button>
+            <span className="text-xs text-fg-3 tabular-nums">
+              Página {page + 1} de {totalPages} · {totalProducts.toLocaleString('pt-BR')} produtos
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(p => p + 1)}
+              className="text-sm text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              Próxima →
+            </button>
+          </div>
+        )}
       </div>
+
+      <AdvancedFiltersDrawer
+        open={advOpen}
+        onClose={() => setAdvOpen(false)}
+        state={advState}
+        setState={setAdvState}
+        categories={categories}
+        subcategories={subcategories}
+        brands={brands}
+      />
+
+      <SelectionBar
+        count={selected.size}
+        onClear={() => setSelected(new Set())}
+        onCompose={() => navigate(`/compose?productIds=${Array.from(selected).join(',')}`)}
+      />
     </div>
   )
 }

@@ -13,16 +13,15 @@ import {
   SkeletonTable,
   Switch,
   Textarea,
+  Tile,
 } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import {
   filterBar,
   pageContainer,
   tableContainer,
-  tableHeaderCell,
-  tableRow,
-  tableCell,
-  tableCellMuted,
+  tblDense, thDense, thDenseRight, tdDense, tdDenseRight,
+  trDense, rowDimmed,
 } from '../lib/uiTokens'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -108,72 +107,94 @@ function parseTagList(value: string): string[] {
     .filter(Boolean)
 }
 
-function fmtCtr(v: number | undefined): string {
-  if (v === undefined || v === null) return '—'
-  return `${(v * 100).toFixed(1)}%`
-}
-
-function fmtRevenue(v: number | undefined): string {
-  if (v === undefined || v === null || v === 0) return '—'
-  return `R$ ${v.toFixed(0)}`
-}
-
 function fmtCount(v: number | undefined): string {
   if (v === undefined || v === null) return '0'
-  return String(v)
+  return v.toLocaleString('pt-BR')
 }
 
 // ── Channel table row ─────────────────────────────────────────────────────────
 
-function ChannelRow({ channel, onClick }: { channel: Channel; onClick: () => void }) {
-  const statusBadge = channel.active ? (
-    <Badge variant="success" size="sm">ativo</Badge>
-  ) : (
-    <Badge variant="default" size="sm">inativo</Badge>
-  )
+function ChannelRow({ channel, onClick, onSettings }: { channel: Channel; onClick: () => void; onSettings?: () => void }) {
+  const inactive = !channel.active
+  const initial = (channel.name || '?').trim().charAt(0).toUpperCase()
+  const platform = (channel.platform ?? 'wa').toLowerCase()
+  const minDrop = channel.audience?.min_drop
+  const groupsCount = (channel as Channel & { groups_count?: number }).groups_count
+  const cats = channel.audience?.categories ?? []
 
   return (
     <tr
-      className={`${tableRow} cursor-pointer`}
+      className={`${trDense} cursor-pointer ${inactive ? rowDimmed : ''}`}
       onClick={onClick}
     >
-      {/* Name + description */}
-      <td className={tableCell}>
-        <p className="font-medium text-fg">{channel.name}</p>
-        {channel.description && (
-          <p className="text-xs text-fg-3 mt-0.5 line-clamp-1 max-w-xs">{channel.description}</p>
+      {/* Canal — tile + nome */}
+      <td className={tdDense}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Tile>{initial}</Tile>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-fg truncate">{channel.name}</p>
+            {channel.description && (
+              <p className="text-[12px] text-fg-3 truncate max-w-xs">{channel.description}</p>
+            )}
+          </div>
+        </div>
+      </td>
+
+      {/* Plataforma */}
+      <td className={tdDense}>
+        <PlatformPill platform={platform === 'tg' ? 'tg' : 'wa'} />
+      </td>
+
+      {/* Membros */}
+      <td className={tdDenseRight}>{fmtCount(channel.member_count)}</td>
+
+      {/* Grupos */}
+      <td className={tdDenseRight}>{groupsCount !== undefined ? String(groupsCount) : '—'}</td>
+
+      {/* Desconto mínimo */}
+      <td className={tdDenseRight}>
+        {minDrop !== undefined && minDrop !== null ? `${minDrop}%` : '—'}
+      </td>
+
+      {/* Categorias */}
+      <td className={tdDense}>
+        {cats.length ? (
+          <div className="flex gap-1 flex-wrap">
+            {cats.slice(0, 3).map(c => (
+              <Badge key={c} size="sm" variant="accent">{c}</Badge>
+            ))}
+            {cats.length > 3 && (
+              <span className="text-[11px] text-fg-3 self-center">+{cats.length - 3}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-fg-3 text-xs">—</span>
         )}
       </td>
 
       {/* Status */}
-      <td className={tableCell}>{statusBadge}</td>
-
-      {/* Groups / members */}
-      <td className={`${tableCell} tabular-nums`}>
-        {fmtCount(channel.member_count)}
-      </td>
-
-      {/* CTR 30d */}
-      <td className={`${tableCellMuted} tabular-nums`}>
-        {fmtCtr(channel.ctr_30d)}
-      </td>
-
-      {/* Revenue 30d */}
-      <td className={`${tableCellMuted} tabular-nums`}>
-        {fmtRevenue(channel.revenue_30d)}
-      </td>
-
-      {/* Audience tags */}
-      <td className={tableCell}>
-        {channel.audience?.categories?.length ? (
-          <div className="flex gap-1 flex-wrap">
-            {channel.audience.categories.slice(0, 3).map(c => (
-              <Badge key={c} size="sm" variant="accent">{c}</Badge>
-            ))}
-          </div>
+      <td className={tdDense}>
+        {channel.active ? (
+          <Badge variant="success" size="sm">ativo</Badge>
         ) : (
-          <span className="text-fg-3">—</span>
+          <Badge variant="default" size="sm">pausado</Badge>
         )}
+      </td>
+
+      {/* Ações */}
+      <td className={`${tdDense} w-[60px] text-right`}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onSettings?.()
+          }}
+          className="text-fg-3 hover:text-fg p-1 rounded text-sm"
+          title="Configurações"
+          aria-label="Configurações"
+        >
+          ⚙
+        </button>
       </td>
     </tr>
   )
@@ -644,15 +665,17 @@ export default function Channels() {
         />
       ) : (
         <div className={tableContainer}>
-          <table className="w-full min-w-[640px] border-collapse">
+          <table className={`${tblDense} min-w-[820px]`}>
             <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className={`${tableHeaderCell} w-[30%]`}>Canal</th>
-                <th className={tableHeaderCell}>Status</th>
-                <th className={tableHeaderCell}>Grupos</th>
-                <th className={tableHeaderCell}>CTR 30d</th>
-                <th className={tableHeaderCell}>Receita 30d</th>
-                <th className={tableHeaderCell}>Categorias</th>
+              <tr>
+                <th className={`${thDense} w-[28%]`}>Canal</th>
+                <th className={thDense}>Plataforma</th>
+                <th className={thDenseRight}>Membros</th>
+                <th className={thDenseRight}>Grupos</th>
+                <th className={thDenseRight}>Desc. mín.</th>
+                <th className={thDense}>Categorias</th>
+                <th className={thDense}>Status</th>
+                <th className={`${thDense} w-[60px] text-right`}>⚙</th>
               </tr>
             </thead>
             <tbody>
@@ -661,6 +684,7 @@ export default function Channels() {
                   key={ch.id}
                   channel={ch}
                   onClick={() => navigate(`/channels/${ch.id}`)}
+                  onSettings={() => navigate(`/channels/${ch.id}?edit=1`)}
                 />
               ))}
             </tbody>

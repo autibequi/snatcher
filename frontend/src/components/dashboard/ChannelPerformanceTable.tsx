@@ -1,66 +1,26 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Skeleton } from '../ui'
+import { Skeleton, Sparkline } from '../ui'
 import { apiClient } from '../../lib/apiClient'
+import { tblDense, thDense, thDenseRight, tdDense, tdDenseRight, trDense } from '../../lib/uiTokens'
 
 export interface ChannelPerf {
   channel_id: string | number
   channel_name: string
   dispatches: number
   ctr: number
+  clicks?: number
   /** Valores diários para sparkline (7 pontos idealmente) */
   daily_dispatches: number[]
 }
 
-
-// ── Sparkline SVG inline — sem dependências externas ──────────────────────────
-
-interface SparklineProps {
-  values: number[]
-  width?: number
-  height?: number
-  color?: string
+// CTR thresholds — spec v4:
+//   ≥3% verde · ≥2% padrão · <2% âmbar
+function ctrTone(ctr: number): string {
+  if (ctr >= 3) return 'text-success font-semibold'
+  if (ctr >= 2) return 'text-fg-2'
+  return 'text-warning font-medium'
 }
-
-function Sparkline({ values, width = 80, height = 28, color = '#6366f1' }: SparklineProps) {
-  if (values.length < 2) return null
-
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = max - min || 1
-
-  const pad = 2
-  const innerW = width - pad * 2
-  const innerH = height - pad * 2
-
-  const points = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * innerW
-    const y = pad + innerH - ((v - min) / range) * innerH
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  })
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <polyline
-        points={points.join(' ')}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        fill="none"
-      />
-    </svg>
-  )
-}
-
-// ── Componente principal ───────────────────────────────────────────────────────
 
 export function ChannelPerformanceTable() {
   const navigate = useNavigate()
@@ -76,69 +36,55 @@ export function ChannelPerformanceTable() {
   })
 
   return (
-    <div className="bg-surface border border-border rounded-md overflow-hidden">
-      {/* Header */}
+    <div className="bg-surface border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-border">
-        <p className="text-sm font-medium text-fg">Performance por canal · 7 dias</p>
+        <p className="text-sm font-semibold text-fg">Performance por canal · 7D</p>
       </div>
 
-      {/* Body */}
       {isLoading ? (
         <div className="p-4 space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
+      ) : channels.length === 0 ? (
+        <div className="px-4 py-8 text-center text-fg-3 text-sm">
+          Sem dados de performance no período.
+        </div>
       ) : (
         <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[520px]">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-                Canal
-              </th>
-              <th className="text-right px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-                Disparos
-              </th>
-              <th className="text-right px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-                CTR
-              </th>
-              <th className="px-4 py-2.5 text-xs text-fg-2 font-medium uppercase tracking-wide">
-                Tendência
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {channels.map((c, idx) => (
-              <tr
-                key={c.channel_id}
-                className={`hover:bg-surface-2 cursor-pointer transition-colors ${
-                  idx < channels.length - 1 ? 'border-b border-border' : ''
-                }`}
-                onClick={() => navigate(`/channels/${c.channel_id}`)}
-              >
-                <td className="px-4 py-2.5 font-medium text-fg">{c.channel_name}</td>
-                <td className="px-4 py-2.5 text-right text-fg tabular-nums">{c.dispatches}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">
-                  <span
-                    className={
-                      c.ctr >= 5
-                        ? 'text-success font-medium'
-                        : c.ctr >= 3
-                        ? 'text-fg-2'
-                        : 'text-danger'
-                    }
-                  >
-                    {c.ctr.toFixed(1)}%
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <Sparkline values={c.daily_dispatches} />
-                </td>
+          <table className={`${tblDense} min-w-[520px]`}>
+            <thead>
+              <tr>
+                <th className={thDense}>Canal</th>
+                <th className={thDenseRight}>Disparos</th>
+                <th className={thDenseRight}>CTR</th>
+                <th className={thDenseRight}>Cliques</th>
+                <th className={`${thDense} w-[110px]`}>Tendência</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {channels.map(c => (
+                <tr
+                  key={c.channel_id}
+                  className={`${trDense} cursor-pointer`}
+                  onClick={() => navigate(`/channels/${c.channel_id}`)}
+                >
+                  <td className={`${tdDense} font-medium text-fg`}>{c.channel_name}</td>
+                  <td className={tdDenseRight}>{c.dispatches.toLocaleString('pt-BR')}</td>
+                  <td className={tdDenseRight}>
+                    <span className={ctrTone(c.ctr)}>{c.ctr.toFixed(1)}%</span>
+                  </td>
+                  <td className={tdDenseRight}>
+                    {c.clicks !== undefined ? c.clicks.toLocaleString('pt-BR') : '—'}
+                  </td>
+                  <td className={tdDense}>
+                    <Sparkline values={c.daily_dispatches.slice(-8)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

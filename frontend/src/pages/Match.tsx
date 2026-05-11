@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Skeleton, EmptyState, PageHeader, Button } from '../components/ui'
+import { Skeleton, EmptyState, PageHeader, Button, Badge, ScoreChip } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { ProductFocusCard, Product } from '../components/match/ProductFocusCard'
 import { ProductSwitcher } from '../components/match/ProductSwitcher'
@@ -12,11 +12,8 @@ import {
   adaptChannelScore,
 } from '../components/match/GroupRankItem'
 import {
-  tableHeaderCell,
-  tableRow,
-  tableCell,
-  tableCellMuted,
   tableContainer,
+  tblDense, thDense, tdDense, trDense, rowDimmed,
 } from '../lib/uiTokens'
 
 // ── Score breakdown modal ─────────────────────────────────────────────────────
@@ -278,19 +275,23 @@ function ProductDetailMatch({ productId }: { productId: string }) {
 
 // ── Página principal (sem productId → melhores matches do sistema) ──────────────
 
+interface PreviewMatchItem {
+  product_id: number
+  channel_id: number
+  product_name: string
+  channel_name: string
+  score: number
+  already_sent: boolean
+  /** Razões (top 3 mostradas como badges verdes) — opcional do backend */
+  reasons?: string[]
+}
+
 function BestMatchesView() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
   const { data, isLoading, refetch, isFetching } = useQuery<{
-    items: Array<{
-      product_id: number
-      channel_id: number
-      product_name: string
-      channel_name: string
-      score: number
-      already_sent: boolean
-    }>
+    items: PreviewMatchItem[]
     threshold: number
   }>({
     queryKey: ['auto-match-preview'],
@@ -298,11 +299,20 @@ function BestMatchesView() {
     staleTime: 30_000,
   })
 
-  const items = React.useMemo(() => {
+  const allItems = React.useMemo(() => {
     const list = data?.items ?? []
     return [...list].sort((a, b) => b.score - a.score)
   }, [data?.items])
-  const threshold = data?.threshold ?? 50
+
+  const backendThreshold = data?.threshold ?? 50
+  // Slider local — começa no threshold do backend mas o user pode ajustar.
+  const [minScore, setMinScore] = React.useState<number>(backendThreshold)
+  React.useEffect(() => { setMinScore(backendThreshold) }, [backendThreshold])
+
+  const items = React.useMemo(
+    () => allItems.filter(it => it.score >= minScore),
+    [allItems, minScore],
+  )
 
   const [toast, setToast] = React.useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
 
@@ -314,8 +324,9 @@ function BestMatchesView() {
       window.setTimeout(() => setToast(null), 3000)
       qc.invalidateQueries({ queryKey: ['auto-match-preview'] })
     },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      const msg = e?.response?.data?.error ?? e?.message ?? 'erro desconhecido'
       setToast({ kind: 'error', msg: '✗ ' + msg })
       window.setTimeout(() => setToast(null), 5000)
     },
@@ -336,86 +347,111 @@ function BestMatchesView() {
       <div className="px-4 pt-4 pb-3 border-b border-border flex-shrink-0 sm:px-6 sm:pt-6 sm:pb-4">
         <PageHeader
           title="Melhores Matches"
-          subtitle={`Score ≥ ${threshold} · roteamento manual em`}
+          subtitle={`${items.length}/${allItems.length} com score ≥ ${minScore}`}
           actions={
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="text-xs text-accent hover:underline"
-            >
-              {isFetching ? '⏳' : '↻ recalcular'}
-            </button>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-fg-2">
+                Score ≥{' '}
+                <span className="font-bold text-fg w-7 text-right tabular-nums">{minScore}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={minScore}
+                  onChange={e => setMinScore(Number(e.target.value))}
+                  className="w-32 accent-accent"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="text-xs text-accent hover:underline disabled:opacity-40"
+              >
+                {isFetching ? '⏳ recalculando…' : '↻ Recalcular'}
+              </button>
+            </div>
           }
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {isLoading ? (
-          <div className="p-4 sm:p-6 space-y-3">
+          <div className="space-y-3">
             {[1, 2, 3, 4, 5].map(i => (
-              <Skeleton key={i} className="h-14 w-full" />
+              <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center p-8 sm:p-12">
+          <div className="flex items-center justify-center py-12">
             <EmptyState
               title="Nenhum match com score suficiente"
-              description={`Não há produtos com score ≥ ${threshold}. Configure canais com audiência ou adicione mais produtos.`}
+              description={`Não há produtos com score ≥ ${minScore}. Reduza o filtro ou configure canais com audiência.`}
               cta={{ label: 'Configurar Auto Match', onClick: () => navigate('/auto-match') }}
             />
           </div>
         ) : (
           <div className={tableContainer}>
-            <table className="w-full text-sm">
+            <table className={`${tblDense} min-w-[760px]`}>
               <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <th className={`${tableHeaderCell} pl-6`}>Produto</th>
-                  <th className={tableHeaderCell}>Canal</th>
-                  <th className={tableHeaderCell}>Score</th>
-                  <th className={tableHeaderCell} />
+                <tr>
+                  <th className={`${thDense} w-[34%]`}>Produto</th>
+                  <th className={thDense}>Canal</th>
+                  <th className={thDense}>Razões</th>
+                  <th className={`${thDense} w-[80px]`}>Score</th>
+                  <th className={`${thDense} w-[110px] text-right`}>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => (
-                  <tr
-                    key={i}
-                    className={`${tableRow} ${item.already_sent ? 'opacity-60' : ''}`}
-                  >
-                    <td className={`${tableCell} pl-6`}>
-                      <p className="font-medium truncate max-w-xs">{item.product_name}</p>
-                      {item.already_sent && (
-                        <p className="text-xs text-fg-3">enviado nas últimas 6h</p>
-                      )}
-                    </td>
-                    <td className={tableCellMuted}>{item.channel_name}</td>
-                    <td className={tableCell}>
-                      <span
-                        className={`font-semibold ${
-                          item.score >= 70 ? 'text-success' : 'text-warning'
-                        }`}
-                      >
-                        {item.score.toFixed(0)}
-                      </span>
-                    </td>
-                    <td className={`${tableCell} text-right pr-4`}>
-                      {!item.already_sent && (
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() =>
-                            dispatchMut.mutate({
-                              product_id: item.product_id,
-                              channel_id: item.channel_id,
-                            })
-                          }
-                          disabled={dispatchMut.isPending}
-                        >
-                          ✈ Disparar
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item, i) => {
+                  const reasons = (item.reasons ?? []).slice(0, 3)
+                  return (
+                    <tr
+                      key={i}
+                      className={`${trDense} ${item.already_sent ? rowDimmed : ''}`}
+                    >
+                      <td className={tdDense}>
+                        <p className="font-medium text-fg truncate max-w-xs">{item.product_name}</p>
+                        {item.already_sent && (
+                          <p className="text-[11px] text-fg-3">enviado nas últimas 6h</p>
+                        )}
+                      </td>
+                      <td className={`${tdDense} text-fg-2`}>{item.channel_name}</td>
+                      <td className={tdDense}>
+                        {reasons.length > 0 ? (
+                          <div className="flex gap-1 flex-wrap">
+                            {reasons.map(r => (
+                              <Badge key={r} variant="success" size="sm">✓ {r}</Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-fg-3 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className={tdDense}>
+                        <ScoreChip value={item.score} />
+                      </td>
+                      <td className={`${tdDense} text-right`}>
+                        {!item.already_sent && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() =>
+                              dispatchMut.mutate({
+                                product_id: item.product_id,
+                                channel_id: item.channel_id,
+                              })
+                            }
+                            disabled={dispatchMut.isPending}
+                          >
+                            ✈ Disparar
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

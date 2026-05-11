@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Skeleton } from '../ui'
+import { Skeleton, Tile } from '../ui'
 import { apiClient } from '../../lib/apiClient'
 
 export interface UpcomingDispatch {
@@ -73,13 +73,11 @@ export function UpcomingDispatches() {
   })
 
   return (
-    <div className="bg-surface border border-border rounded-md overflow-hidden">
-      {/* Header */}
+    <div className="bg-surface border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-border">
-        <p className="text-sm font-medium text-fg">Próximos disparos agendados</p>
+        <p className="text-sm font-semibold text-fg">Próximos disparos</p>
       </div>
 
-      {/* Body */}
       {isLoading ? (
         <div className="p-4 space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -90,30 +88,29 @@ export function UpcomingDispatches() {
         <div className="px-4 py-8 text-sm text-fg-3 text-center">Nenhum disparo agendado.</div>
       ) : (
         <div>
-          {dispatches.map((d, idx) => (
-            <div
-              key={d.id}
-              className={`flex items-center gap-3.5 px-4 py-3.5 ${
-                idx < dispatches.length - 1 ? 'border-b border-border' : ''
-              }`}
-            >
-              {/* Ícone ✈ */}
-              <div className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center text-base bg-accent/10 text-accent">
-                ✈
-              </div>
+          {dispatches.map((d, idx) => {
+            const eta = formatRelativeEta(d.scheduled_at)
+            const isImminent = /^em (instantes|\d+ min$|\dh)/.test(eta)
+            return (
+              <div
+                key={d.id}
+                className={`flex items-center gap-3 px-4 py-3 hover:bg-surface-2 transition-colors ${
+                  idx < dispatches.length - 1 ? 'border-b border-border' : ''
+                }`}
+              >
+                <Tile className="bg-accent-soft text-accent">✈</Tile>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-fg truncate">{d.name}</p>
-                <p className="text-xs text-fg-3 truncate">{d.subtitle}</p>
-              </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-fg truncate">{d.name}</p>
+                  <p className="text-[12px] text-fg-3 truncate">{d.subtitle}</p>
+                </div>
 
-              {/* ETA */}
-              <div className="text-xs text-fg-2 tabular-nums flex-shrink-0">
-                {formatRelativeEta(d.scheduled_at)}
+                <div className={`text-xs tabular-nums flex-shrink-0 ${isImminent ? 'text-accent font-semibold' : 'text-fg-2'}`}>
+                  {eta}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
