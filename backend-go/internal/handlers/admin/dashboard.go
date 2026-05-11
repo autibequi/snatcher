@@ -12,6 +12,7 @@ import (
 
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/store"
 
 	"github.com/jmoiron/sqlx"
@@ -21,6 +22,7 @@ type DashboardHandler struct {
 	store store.Store
 	db    *sqlx.DB
 	llmFn func() llm.Client
+	notif *notifier.Notifier // pode ser nil
 
 	recoMu     sync.Mutex
 	recoCache  *recommendationResp
@@ -40,6 +42,7 @@ func NewDashboardHandler(st store.Store, db *sqlx.DB) *DashboardHandler {
 }
 
 func (h *DashboardHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
+func (h *DashboardHandler) SetNotifier(n *notifier.Notifier) { h.notif = n }
 
 // GET /api/dashboard/kpis — retorna KPIs com deltas WoW + saúde anti-ban.
 //
@@ -871,6 +874,29 @@ JSON estrito:
 	h.recoCache = &parsed
 	h.recoCachedAt = now
 	h.recoMu.Unlock()
+
+	// Notifica grupo configurado em Settings — só quando regenerou (este path
+	// é cache miss ou force=1). Dedup curto pra cobrir refresh acidental.
+	if h.notif != nil {
+		dedupKey := "dashboard-recommendation"
+		if force {
+			dedupKey += ":force"
+		}
+		body := "📌 " + parsed.Headline
+		if parsed.Reason != "" {
+			body += "\n" + parsed.Reason
+		}
+		if len(parsed.Actions) > 0 {
+			body += "\nAções:"
+			for i, a := range parsed.Actions {
+				if i >= 3 {
+					break
+				}
+				body += "\n• " + a
+			}
+		}
+		h.notif.Notify(notifier.KindJonfreyRecommend, body, dedupKey, 30*time.Minute)
+	}
 
 	writeJSON(w, http.StatusOK, parsed)
 }

@@ -14,6 +14,7 @@ import (
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/middleware"
+	"snatcher/backendv2/internal/notifier"
 	"snatcher/backendv2/internal/pipeline"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/scheduler"
@@ -87,6 +88,14 @@ func Build(
 	linksH        := adminhnd.NewLinksHandler(st)
 	automations   := adminhnd.NewAutomationsHandler(st)
 	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
+	// Notifier compartilhado: handlers + scheduler postam resumos no grupo
+	// configurado em Settings → Notificações. Sem grupo configurado = no-op.
+	notif := notifier.New(st)
+	jonfrey.SetNotifier(notif)
+	dash.SetNotifier(notif)
+	if sched != nil {
+		sched.SetNotifier(notif)
+	}
 	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled
 	if sched != nil {
 		sched.SetJonfreyTick(jonfrey.RunCycle)
