@@ -68,7 +68,8 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			daily_limit_per_account=:daily_limit_per_account,
 			rotate_accounts=:rotate_accounts,
 			dispatch_min_interval_ms=:dispatch_min_interval_ms,
-			dispatch_wa_rr_cursor=:dispatch_wa_rr_cursor
+			dispatch_wa_rr_cursor=:dispatch_wa_rr_cursor,
+			dispatch_max_per_group_per_hour=:dispatch_max_per_group_per_hour
 		WHERE id = 1`, cfg)
 	return err
 }

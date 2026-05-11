@@ -5,6 +5,7 @@ import { apiClient } from '../../lib/apiClient'
 import { dispatchOriginLabel } from '../../lib/dispatchOrigin'
 import { useWSEvent } from '../../lib/useWS'
 import { tableContainer, tableRow } from '../../lib/uiTokens'
+import { MessagePreview } from '../../components/MessagePreview'
 
 // ── Dispatch status tooltips ──────────────────────────────────────────────────
 
@@ -273,17 +274,14 @@ function DispatchDrawer({ dispatch, onClose }: { dispatch: Dispatch; onClose: ()
           </div>
         )}
 
-        {dispatch.message?.text && (
+        {(dispatch.message?.text || dispatch.message?.media_url) && (
           <div>
             <p className="text-xs text-fg-3 mb-2">Preview WhatsApp</p>
-            <div className="bg-[#0b141a] rounded-lg p-3">
-              <div className="bg-[#005c4b] rounded-lg p-3 max-w-xs ml-auto shadow">
-                <p className="text-sm text-white whitespace-pre-wrap break-words">{dispatch.message.text}</p>
-                <p className="text-xs text-green-300 mt-1 text-right opacity-60">
-                  {new Date(dispatch.created_at).toLocaleString('pt-BR')} ✓✓
-                </p>
-              </div>
-            </div>
+            <MessagePreview
+              text={dispatch.message?.text}
+              mediaUrl={dispatch.message?.media_url}
+              variant="card"
+            />
           </div>
         )}
       </div>
@@ -455,20 +453,32 @@ export function DispatchesTab({
                     title={isDraft ? 'Clique para continuar editando este rascunho' : undefined}
                   >
                     <td className="p-3">
-                      {msgText ? (
-                        <>
-                          <p className="text-sm text-fg line-clamp-2">{msgText.slice(0, 100)}</p>
-                          <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-xs text-fg-3 italic">(sem texto)</p>
-                          <p className="text-xs text-fg-3 font-mono">{d.short_id ?? d.id}</p>
-                        </>
-                      )}
-                      {isDraft && (
-                        <span className="text-xs text-accent mt-0.5 block">clique para continuar edição</span>
-                      )}
+                      <div className="flex items-start gap-2">
+                        {d.message?.media_url && (
+                          <img
+                            src={d.message.media_url}
+                            alt=""
+                            className="w-10 h-10 rounded object-cover flex-shrink-0 border border-border"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        )}
+                        <div className="min-w-0">
+                          {msgText ? (
+                            <>
+                              <p className="text-sm text-fg line-clamp-2">{msgText.slice(0, 100)}</p>
+                              <p className="text-xs text-fg-3 font-mono mt-0.5">{d.short_id ?? d.id}</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs text-fg-3 italic">(sem texto)</p>
+                              <p className="text-xs text-fg-3 font-mono">{d.short_id ?? d.id}</p>
+                            </>
+                          )}
+                          {isDraft && (
+                            <span className="text-xs text-accent mt-0.5 block">clique para continuar edição</span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="p-3">
                       <TypeBadge type={rowType} />

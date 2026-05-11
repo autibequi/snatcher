@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Input, Modal, Skeleton, EmptyState, Switch } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import { relativeTime } from './MarketplaceTab'
+import { MessagePreview } from '../../components/MessagePreview'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -336,19 +337,11 @@ function SpyGroupDetail({
         ) : (
           messages.map(m => (
             <div key={m.id} className="bg-surface-2 rounded-md p-3">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-medium text-accent">{m.sender || 'desconhecido'}</p>
                 <p className="text-xs text-fg-3">{new Date(m.collected_at).toLocaleString('pt-BR')}</p>
               </div>
-              {m.media_url && (
-                <img
-                  src={m.media_url}
-                  alt=""
-                  className="w-full max-h-32 object-cover rounded mb-2"
-                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                />
-              )}
-              <p className="text-sm text-fg whitespace-pre-wrap break-words">{m.text}</p>
+              <MessagePreview text={m.text} mediaUrl={m.media_url} variant="inline" maxHeight={200} />
             </div>
           ))
         )}

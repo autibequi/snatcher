@@ -22,7 +22,7 @@ interface Cluster {
   id: number
   label: string
   description?: string
-  member_channels: number[]
+  member_channels: number[] | string | null
   members_count?: number
   metrics: {
     ctr?: number
@@ -48,6 +48,19 @@ function toArray(v: unknown): string[] {
       return Array.isArray(p) ? p : []
     } catch {
       return v.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+  return []
+}
+
+function toNumberArray(v: unknown): number[] {
+  if (Array.isArray(v)) return v.filter(x => typeof x === 'number').map(x => x)
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v)
+      return Array.isArray(p) ? p.filter(x => typeof x === 'number') : []
+    } catch {
+      return v.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     }
   }
   return []
@@ -127,22 +140,25 @@ function ClusterCard({ cluster, colorIdx }: { cluster: Cluster; colorIdx: number
       )}
 
       {/* Channel chips */}
-      {cluster.member_channels?.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {cluster.member_channels.slice(0, 6).map(cid => (
-            <Link
-              key={cid}
-              to={`/channels/${cid}`}
-              className="text-xs px-1.5 py-0.5 rounded border border-border text-fg-3 hover:text-accent hover:border-accent transition-colors"
-            >
-              #{cid}
-            </Link>
-          ))}
-          {cluster.member_channels.length > 6 && (
-            <span className="text-xs text-fg-3">+{cluster.member_channels.length - 6}</span>
-          )}
-        </div>
-      )}
+      {(() => {
+        const channels = toNumberArray(cluster.member_channels)
+        return channels.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {channels.slice(0, 6).map(cid => (
+              <Link
+                key={cid}
+                to={`/channels/${cid}`}
+                className="text-xs px-1.5 py-0.5 rounded border border-border text-fg-3 hover:text-accent hover:border-accent transition-colors"
+              >
+                #{cid}
+              </Link>
+            ))}
+            {channels.length > 6 && (
+              <span className="text-xs text-fg-3">+{channels.length - 6}</span>
+            )}
+          </div>
+        ) : null
+      })()}
 
       {/* Opportunity */}
       {cluster.opportunity && (

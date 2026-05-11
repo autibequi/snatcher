@@ -4,19 +4,23 @@ import { Link } from 'react-router-dom'
 import { Badge, Skeleton, TooltipIcon } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import { tableContainer } from '../../lib/uiTokens'
+import { MessagePreview } from '../../components/MessagePreview'
 
-// ── WhatsApp message preview ───────────────────────────────────────────────────
-function WAMessagePreview({ text, onClose }: { text: string; onClose: () => void }) {
+// ── WhatsApp message preview modal ────────────────────────────────────────────
+function WAMessagePreviewModal({
+  text,
+  mediaUrl,
+  onClose,
+}: {
+  text: string
+  mediaUrl?: string | null
+  onClose: () => void
+}) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
         <p className="text-xs text-center text-white/60 mb-3">Preview WhatsApp · clique fora para fechar</p>
-        <div className="bg-[#0b141a] rounded-xl p-4 shadow-2xl">
-          <div className="bg-[#005c4b] rounded-xl p-3 ml-auto max-w-[90%] shadow">
-            <p className="text-sm text-white whitespace-pre-wrap break-words">{text || '...'}</p>
-            <p className="text-xs text-green-300 mt-1.5 text-right opacity-60">agora</p>
-          </div>
-        </div>
+        <MessagePreview text={text} mediaUrl={mediaUrl} variant="card" />
       </div>
     </div>
   )
@@ -50,7 +54,7 @@ interface HistoryTabProps {
 
 export function HistoryTab({ channelId }: HistoryTabProps) {
   const id = channelId
-  const [previewText, setPreviewText] = React.useState<string | null>(null)
+  const [previewMsg, setPreviewMsg] = React.useState<{ text: string; mediaUrl?: string | null } | null>(null)
 
   // Dispatches history
   const { data: entries = [], isLoading: entriesLoading } = useQuery({
@@ -89,17 +93,35 @@ export function HistoryTab({ channelId }: HistoryTabProps) {
 
   const renderDispatchRow = (e: any, i: number) => {
     let msgText = ''
-    try { msgText = typeof e.message === 'string' ? JSON.parse(e.message)?.text ?? '' : e.message_text ?? '' } catch {}
+    let msgMediaUrl: string | null = null
+    try {
+      const parsed = typeof e.message === 'string' ? JSON.parse(e.message) : null
+      msgText = parsed?.text ?? e.message_text ?? ''
+      msgMediaUrl = parsed?.media_url ?? e.media_url ?? null
+    } catch {
+      msgText = e.message_text ?? ''
+      msgMediaUrl = e.media_url ?? null
+    }
     const groupName = e.group_name || `grupo #${e.group_id}`
     return (
       <tr
         key={`${e.dispatch_id}-${i}`}
         className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer"
-        onClick={() => setPreviewText(msgText)}
+        onClick={() => setPreviewMsg({ text: msgText, mediaUrl: msgMediaUrl })}
         title="Clique para ver preview WA"
       >
         <td className="px-4 py-2.5 text-fg max-w-xs">
-          <p className="truncate text-xs">{msgText || `#${e.dispatch_id}`}</p>
+          <div className="flex items-center gap-2">
+            {msgMediaUrl && (
+              <img
+                src={msgMediaUrl}
+                alt=""
+                className="w-8 h-8 rounded object-cover flex-shrink-0 border border-border"
+                onError={e2 => { (e2.target as HTMLImageElement).style.display = 'none' }}
+              />
+            )}
+            <p className="truncate text-xs">{msgText || `#${e.dispatch_id}`}</p>
+          </div>
         </td>
         <td className="px-4 py-2.5 text-fg-2 text-xs">{groupName}</td>
         <td className="px-4 py-2.5">
@@ -114,7 +136,13 @@ export function HistoryTab({ channelId }: HistoryTabProps) {
 
   return (
     <div className="space-y-5">
-      {previewText !== null && <WAMessagePreview text={previewText} onClose={() => setPreviewText(null)} />}
+      {previewMsg !== null && (
+        <WAMessagePreviewModal
+          text={previewMsg.text}
+          mediaUrl={previewMsg.mediaUrl}
+          onClose={() => setPreviewMsg(null)}
+        />
+      )}
 
       {/* Próximos candidatos (match preview) */}
       <div className="border border-border rounded-md overflow-hidden">

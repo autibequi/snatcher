@@ -2,6 +2,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../ui'
 import { apiClient } from '../../lib/apiClient'
+import { MessagePreview } from '../MessagePreview'
 
 interface Ad {
   id: number
@@ -241,11 +242,8 @@ export function AdsSection() {
             const dim = !ad.enabled || expired
             return (
               <div key={ad.id} className={`px-4 py-3 flex items-start gap-3 ${dim ? 'opacity-60' : ''}`}>
-                {ad.image_url && (
-                  <img src={ad.image_url} alt="" className="w-12 h-12 rounded object-cover bg-surface-2 flex-shrink-0" />
-                )}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
                     <p className="text-sm font-medium text-fg truncate">{ad.name}</p>
                     {expired && (
                       <span className="text-[10px] text-fg-3 bg-surface-2 border border-border rounded px-1.5 py-0.5">expirado</span>
@@ -257,8 +255,8 @@ export function AdsSection() {
                       <span className="text-[10px] text-success bg-success/10 border border-success/30 rounded px-1.5 py-0.5">ativo</span>
                     )}
                   </div>
-                  <p className="text-xs text-fg-3 mt-1 line-clamp-2 font-mono">{ad.message_text}</p>
-                  <div className="text-[10px] text-fg-3 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  <MessagePreview text={ad.message_text} mediaUrl={ad.image_url} variant="inline" maxHeight={200} />
+                  <div className="text-[10px] text-fg-3 mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
                     <span>cron: <code className="text-fg-2">{ad.schedule_cron}</code></span>
                     <span>canais: {ad.channel_ids.length}</span>
                     <span>{ad.dispatch_count} disparos · último {fmtDate(ad.last_dispatched_at)}</span>

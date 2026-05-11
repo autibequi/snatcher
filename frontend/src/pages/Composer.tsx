@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Button, Spinner, PlatformPill, PageHeader } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { formGroup, formLabel, formHint, sectionCard, switchRow, pageContainer } from '../lib/uiTokens'
+import { MessagePreview } from '../components/MessagePreview'
 
 interface Channel {
   id: number
@@ -468,47 +469,36 @@ export default function Composer() {
   const VARIABLES = ['{produto}', '{de}', '{por}', '{desconto}', '{link}']
 
   /** Só o cartão WhatsApp — no telefone fica sticky no topo; no desktop vai na lateral. */
+  const curPreviewImg =
+    productImages.length > 0
+      ? productImages[previewIndex % productImages.length]
+      : productImage
+
   const previewWACard = (
     <div className="rounded-xl border border-border bg-gradient-to-b from-surface to-surface-2/80 p-3 sm:p-4 shadow-sm ring-1 ring-border/60">
       <div className="flex items-center justify-between gap-2 mb-2 md:mb-3">
         <p className="text-xs font-semibold text-fg uppercase tracking-wide">Preview</p>
         <span className="text-[10px] text-fg-3 font-medium px-2 py-0.5 rounded-full bg-surface border border-border">Ao vivo</span>
       </div>
-      <div className="rounded-2xl bg-[#0b141a] p-2 sm:p-3 shadow-inner ring-1 ring-black/20">
-        <p className="text-[11px] text-[#8696a0] mb-1.5 ml-1">Você</p>
-        <div className="bg-[#005c4b] rounded-xl max-w-[min(100%,280px)] ml-auto shadow-lg overflow-hidden ring-1 ring-white/10">
-          {(() => {
-            const curImg = productImages.length > 0 ? productImages[previewIndex % productImages.length] : productImage
-            return curImg ? (
-              <img
-                src={curImg}
-                alt="Produto"
-                className="w-full max-h-32 md:max-h-44 object-cover"
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-            ) : null
-          })()}
-          <div className="p-2.5 sm:p-3 sm:pt-2 max-h-[28vh] md:max-h-none overflow-y-auto">
-            <p className="text-[12px] sm:text-[13px] leading-snug text-white whitespace-pre-wrap break-words">
-              {previewText || '…'}
-            </p>
-            <p className="text-[10px] text-emerald-300/90 mt-1.5 text-right tabular-nums">agora ✓✓</p>
-          </div>
+      <MessagePreview
+        text={previewText || '…'}
+        mediaUrl={curPreviewImg || null}
+        variant="wa-bubble"
+        maxHeight={typeof window !== 'undefined' && window.innerWidth < 768 ? 120 : undefined}
+      />
+      {productImages.length > 1 && (
+        <div className="flex items-center justify-center gap-1.5 mt-2 sm:mt-3">
+          {productImages.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setPreviewIndex(i)}
+              className={`h-2 rounded-full transition-all ${i === previewIndex % productImages.length ? 'w-5 bg-accent' : 'w-2 bg-fg-3/35 hover:bg-fg-3/55'}`}
+              aria-label={`Produto ${i + 1}`}
+            />
+          ))}
         </div>
-        {productImages.length > 1 && (
-          <div className="flex items-center justify-center gap-1.5 mt-2 sm:mt-3">
-            {productImages.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setPreviewIndex(i)}
-                className={`h-2 rounded-full transition-all ${i === previewIndex % productImages.length ? 'w-5 bg-accent' : 'w-2 bg-fg-3/35 hover:bg-fg-3/55'}`}
-                aria-label={`Produto ${i + 1}`}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 

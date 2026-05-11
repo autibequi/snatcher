@@ -1,9 +1,11 @@
 import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { Tabs } from '../components/ui'
+import { PageHeader } from '../components/ui/PageHeader'
 import { pageContainer } from '../lib/uiTokens'
 import { SystemTab } from './settings/SystemTab'
 import { IntegrationsTab } from './settings/IntegrationsTab'
 import { LLMTab } from './settings/LLMTab'
+import { JonfreyTab } from './settings/JonfreyTab'
 import { TeamTab } from './settings/TeamTab'
 import { AppearanceTab } from './settings/AppearanceTab'
 import { DangerTab } from './settings/DangerTab'
@@ -12,6 +14,7 @@ const TABS = [
   { id: 'system', label: 'Sistema' },
   { id: 'integrations', label: 'Integracoes' },
   { id: 'llm', label: 'LLM' },
+  { id: 'jonfrey', label: 'Jonfrey' },
   { id: 'team', label: 'Equipe' },
   { id: 'appearance', label: 'Aparencia' },
   { id: 'danger', label: 'Danger' },
@@ -37,6 +40,7 @@ export default function Settings() {
 
   return (
     <div className={pageContainer}>
+      <PageHeader title="Configurações" className="mb-4" />
       <div className="bg-surface border border-border rounded-lg overflow-hidden">
         <Tabs
           tabs={TABS}
@@ -47,6 +51,7 @@ export default function Settings() {
           {active === 'system' && <SystemTab />}
           {active === 'integrations' && <IntegrationsTab />}
           {active === 'llm' && <LLMTab />}
+          {active === 'jonfrey' && <JonfreyTab />}
           {active === 'team' && <TeamTab />}
           {active === 'appearance' && <AppearanceTab />}
           {active === 'danger' && <DangerTab />}

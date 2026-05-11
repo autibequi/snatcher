@@ -2,8 +2,6 @@ import { useRef, useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
-import { usePageTitle } from '../contexts/PageTitleContext'
-import { pageTitleFromPath } from './pageTitleFromPath'
 import {
   statusChipSuccess,
   statusChipWarning,
@@ -11,6 +9,7 @@ import {
   statusChipMuted,
 } from '../lib/uiTokens'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
+import { resolveTutorialSlugFromPath } from '../content/tutorials'
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -462,6 +461,30 @@ export function StatusPill() {
   )
 }
 
+// ─── HelpManualButton ────────────────────────────────────────────────────────
+
+function HelpManualButton() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  function handleClick() {
+    const slug = resolveTutorialSlugFromPath(location.pathname)
+    navigate(`/manual/${slug}`)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label="Abrir manual"
+      title="Manual desta página"
+      className="rounded-md p-1.5 text-fg-3 hover:text-fg hover:bg-surface-2 transition-colors font-semibold leading-none text-sm"
+    >
+      ?
+    </button>
+  )
+}
+
 // ─── Topbar ──────────────────────────────────────────────────────────────────
 
 interface TopbarProps {
@@ -469,11 +492,6 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick }: TopbarProps) {
-  const location = useLocation()
-  const { override } = usePageTitle()
-  const baseTitle = pageTitleFromPath(location.pathname)
-  const title = override ?? baseTitle
-
   return (
     <header className="sticky top-0 z-30 flex items-center min-h-14 h-14 px-3 sm:px-4 bg-bg/95 backdrop-blur border-b border-border flex-shrink-0 gap-2 sm:gap-3">
       {/* Hamburger — mobile only */}
@@ -486,18 +504,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         ☰
       </button>
 
-      {/* Page title + search */}
+      {/* Search */}
       <div className="flex-1 flex items-center gap-2 sm:gap-3 min-w-0">
-        {title ? (
-          <h1 className="text-sm font-semibold text-fg truncate shrink-0 max-w-[min(42vw,9rem)] sm:max-w-[200px] md:max-w-[240px]">
-            {title}
-          </h1>
-        ) : null}
         <SearchBar />
       </div>
 
       {/* Single consolidated status zone */}
       <StatusPill />
+
+      {/* Help manual button */}
+      <HelpManualButton />
 
       {/* Theme toggle — always rightmost */}
       <ThemeToggle />

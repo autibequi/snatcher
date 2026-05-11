@@ -1126,7 +1126,7 @@ func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCou
 		SELECT group_id, COUNT(*) AS count
 		FROM dispatch_targets
 		WHERE status = 'delivered'
-		  AND COALESCE(delivered_at, updated_at, created_at) > now() - ($1 || ' minutes')::interval
+		  AND COALESCE(delivered_at, created_at) > now() - ($1 || ' minutes')::interval
 		GROUP BY group_id`, minutes)
 	return out, err
 }
