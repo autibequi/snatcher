@@ -150,30 +150,6 @@ type AppConfig struct {
 	NotificationsGroupID NullInt64 `db:"notifications_group_id" json:"notifications_group_id,omitempty"`
 }
 
-type AutoMatchLog struct {
-	ID         int64     `db:"id" json:"id"`
-	ProductID  int64     `db:"product_id" json:"product_id"`
-	ChannelID  int64     `db:"channel_id" json:"channel_id"`
-	DispatchID int64     `db:"dispatch_id" json:"dispatch_id"`
-	Score      float64   `db:"score" json:"score"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-
-	// Joinados para exibição
-	ProductName string `db:"product_name" json:"product_name,omitempty"`
-	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
-	GroupNames  string `db:"group_names" json:"group_names,omitempty"` // CSV dos grupos que receberam o disparo
-	// Timeline Automações / GET auto-match — origem do dispatch (manual vs auto-match)
-	ComposedBy string `db:"composed_by" json:"composed_by,omitempty"`
-
-	// migration 0113 — breakdown e false positive tracking
-	ScoreBreakdown        []byte         `db:"score_breakdown" json:"-"` // JSONB raw
-	MatchReasons          pq.StringArray `db:"match_reasons" json:"match_reasons,omitempty"`
-	FalsePositive         *bool          `db:"false_positive" json:"false_positive,omitempty"`
-	FalsePositiveReason   string         `db:"false_positive_reason" json:"false_positive_reason,omitempty"`
-	FalsePositiveMarkedAt NullTime       `db:"false_positive_marked_at" json:"false_positive_marked_at,omitempty"`
-}
-
-
 // AccountV2 é a conta WhatsApp v2 (tabela accounts) com afinidade fixa a modem.
 // Substitui WAAccount após F10. Sem campos Evolution per-account — use appconfig global.
 type AccountV2 struct {
@@ -189,21 +165,6 @@ type AccountV2 struct {
 // IsActive returns true when the account is operational (not banned or quarantined).
 func (a AccountV2) IsActive() bool {
 	return a.Status != "banned" && a.Status != "quarantine"
-}
-
-// DEPRECATED — dropped in F10/F12. Tabela tgaccount mantida até migração DROP.
-type TGAccount struct {
-	ID           int64      `db:"id" json:"id"`
-	Name         string     `db:"name" json:"name"`
-	BotToken     NullString `db:"bot_token" json:"bot_token,omitempty"`
-	BotUsername  NullString `db:"bot_username" json:"bot_username,omitempty"`
-	GroupPrefix  NullString `db:"group_prefix" json:"group_prefix,omitempty"`
-	LastUpdateID NullInt64  `db:"last_update_id" json:"last_update_id,omitempty"`
-	Active       bool       `db:"active" json:"active"`
-	Role         string     `db:"role" json:"role"`
-	DailyLimit   int        `db:"daily_limit" json:"daily_limit"`
-	SentToday    int        `db:"sent_today" json:"sent_today"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 }
 
 type SearchTerm struct {
@@ -360,108 +321,6 @@ func MergeCrawlMetadataJSON(existing, incoming []byte) []byte {
 	return out
 }
 
-type CatalogProduct struct {
-	ID                int64       `db:"id" json:"id"`
-	CanonicalName     string      `db:"canonical_name" json:"canonical_name"`
-	Brand             NullString  `db:"brand" json:"brand,omitempty"`
-	Weight            NullString  `db:"weight" json:"weight,omitempty"`
-	ImageURL          NullString  `db:"image_url" json:"image_url,omitempty"`
-	LowestPrice       NullFloat64 `db:"lowest_price" json:"lowest_price,omitempty"`
-	LowestPriceURL    NullString  `db:"lowest_price_url" json:"lowest_price_url,omitempty"`
-	LowestPriceSource NullString  `db:"lowest_price_source" json:"lowest_price_source,omitempty"`
-	Tags              string      `db:"tags" json:"tags"`
-	CreatedAt         time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt         time.Time   `db:"updated_at" json:"updated_at"`
-	// migration 0084
-	CurationStatus string `db:"curation_status" json:"curation_status"`
-	// migration 0091 — purge 404/3-strikes
-	ConsecutiveFailures int  `db:"consecutive_failures" json:"consecutive_failures"`
-	Inactive            bool `db:"inactive" json:"inactive"`
-	// migration 0095 — tamanho/quantidade para dedup e agrupamento
-	Quantity string `db:"quantity" json:"quantity"`
-	// migration 0102 — auditoria por LLM
-	Inspected       bool       `db:"inspected" json:"inspected"`
-	InspectedAt     NullTime   `db:"inspected_at" json:"inspected_at,omitempty"`
-	InspectionNotes NullString `db:"inspection_notes" json:"inspection_notes,omitempty"`
-	// migration 0112 — atributos estruturados (cor, tamanho, voltagem, etc)
-	Attributes []byte `db:"attributes" json:"-"` // JSONB raw
-}
-
-func (p *CatalogProduct) GetTags() []string {
-	var tags []string
-	_ = json.Unmarshal([]byte(p.Tags), &tags)
-	return tags
-}
-
-// MarshalJSON serializa Tags como []string (em vez de string JSON) para a resposta HTTP.
-func (p CatalogProduct) MarshalJSON() ([]byte, error) {
-	type shadow struct {
-		ID                  int64           `json:"id"`
-		CanonicalName       string          `json:"canonical_name"`
-		Brand               NullString      `json:"brand,omitempty"`
-		Weight              NullString      `json:"weight,omitempty"`
-		ImageURL            NullString      `json:"image_url,omitempty"`
-		LowestPrice         NullFloat64     `json:"lowest_price,omitempty"`
-		LowestPriceURL      NullString      `json:"lowest_price_url,omitempty"`
-		LowestPriceSource   NullString      `json:"lowest_price_source,omitempty"`
-		Tags                []string        `json:"tags"`
-		CreatedAt           time.Time       `json:"created_at"`
-		UpdatedAt           time.Time       `json:"updated_at"`
-		CurationStatus      string          `json:"curation_status"`
-		ConsecutiveFailures int             `json:"consecutive_failures"`
-		Inactive            bool            `json:"inactive"`
-		Quantity            string          `json:"quantity"`
-		Inspected           bool            `json:"inspected"`
-		InspectedAt         NullTime        `json:"inspected_at,omitempty"`
-		InspectionNotes     NullString      `json:"inspection_notes,omitempty"`
-		Attributes          json.RawMessage `json:"attributes,omitempty"`
-	}
-	return json.Marshal(shadow{
-		ID: p.ID, CanonicalName: p.CanonicalName, Brand: p.Brand,
-		Weight: p.Weight, ImageURL: p.ImageURL, LowestPrice: p.LowestPrice,
-		LowestPriceURL: p.LowestPriceURL, LowestPriceSource: p.LowestPriceSource,
-		Tags: p.GetTags(), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
-		CurationStatus: p.CurationStatus, ConsecutiveFailures: p.ConsecutiveFailures,
-		Inactive: p.Inactive, Quantity: p.Quantity,
-		Inspected: p.Inspected, InspectedAt: p.InspectedAt, InspectionNotes: p.InspectionNotes,
-		Attributes: json.RawMessage(p.Attributes),
-	})
-}
-
-func (p *CatalogProduct) SetTags(tags []string) {
-	b, _ := json.Marshal(tags)
-	p.Tags = string(b)
-}
-
-func (p *CatalogProduct) AddTag(tag string) {
-	tags := p.GetTags()
-	for _, t := range tags {
-		if t == tag {
-			return
-		}
-	}
-	p.SetTags(append(tags, tag))
-}
-
-type CatalogVariant struct {
-	ID               int64      `db:"id" json:"id"`
-	CatalogProductID int64      `db:"catalog_product_id" json:"catalog_product_id"`
-	Title            string     `db:"title" json:"title"`
-	VariantLabel     NullString `db:"variant_label" json:"variant_label,omitempty"`
-	Price            float64    `db:"price" json:"price"`
-	URL              string     `db:"url" json:"url"`
-	ShortID          NullString `db:"short_id" json:"short_id,omitempty"`
-	ImageURL         NullString `db:"image_url" json:"image_url,omitempty"`
-	Source           string     `db:"source" json:"source"`
-	FirstSeenAt      time.Time  `db:"first_seen_at" json:"first_seen_at"`
-	LastSeenAt       time.Time  `db:"last_seen_at" json:"last_seen_at"`
-	// Match metadata (migration 0104) — confidence do merge no momento da criação.
-	MatchConfidence NullFloat64 `db:"match_confidence" json:"match_confidence,omitempty"`
-	MatchMethod     NullString  `db:"match_method" json:"match_method,omitempty"`
-	// Metadata enriquecido (migration 0105) — descrição, rating, vendedor, frete, etc.
-	Metadata []byte `db:"metadata" json:"-"`
-}
-
 type PriceHistoryV2 struct {
 	ID         int64     `db:"id" json:"id"`
 	VariantID  int64     `db:"variant_id" json:"variant_id"`
@@ -479,13 +338,6 @@ type VariantStats struct {
 	Count   int      `json:"count"`
 	Window  string   `json:"window"`
 	Reason  *string  `json:"reason,omitempty"` // reason score is null (e.g., "insufficient_data", "no_variance")
-}
-
-type GroupingKeyword struct {
-	ID      int64  `db:"id" json:"id"`
-	Keyword string `db:"keyword" json:"keyword"`
-	Tag     string `db:"tag" json:"tag"`
-	Active  bool   `db:"active" json:"active"`
 }
 
 // Audience define o perfil de audiência de um canal.
@@ -517,109 +369,6 @@ type AudienceWeights struct {
 	Drop     float64 `json:"drop"`
 	Price    float64 `json:"price"`
 	History  float64 `json:"history"`
-}
-
-type Channel struct {
-	ID              int64      `db:"id" json:"id"`
-	Name            string     `db:"name" json:"name"`
-	Description     string     `db:"description" json:"description"`
-	Slug            NullString `db:"slug" json:"slug,omitempty"`
-	MessageTemplate NullString `db:"message_template" json:"message_template,omitempty"`
-	SendStartHour   int        `db:"send_start_hour" json:"send_start_hour"`
-	SendEndHour     int        `db:"send_end_hour" json:"send_end_hour"`
-	DigestMode      bool       `db:"digest_mode" json:"digest_mode"`
-	DigestMaxItems  int        `db:"digest_max_items" json:"digest_max_items"`
-	Active          bool       `db:"active" json:"active"`
-	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
-	// Audience fields (migration 0050)
-	Audience    Audience `db:"-" json:"audience"`
-	AudienceRaw []byte   `db:"audience" json:"-"` // JSONB raw para sqlx
-	MemberCount int64    `db:"member_count" json:"member_count"`
-	CTR30d      float64  `db:"ctr_30d" json:"ctr_30d"`
-	CVR30d      float64  `db:"cvr_30d" json:"cvr_30d"`
-	Revenue30d  float64  `db:"revenue_30d" json:"revenue_30d"`
-}
-
-// UnmarshalAudience desserializa AudienceRaw para Audience.
-func (c *Channel) UnmarshalAudience() error {
-	if len(c.AudienceRaw) == 0 {
-		return nil
-	}
-	return json.Unmarshal(c.AudienceRaw, &c.Audience)
-}
-
-// MarshalAudience serializa Audience para AudienceRaw.
-func (c *Channel) MarshalAudience() error {
-	b, err := json.Marshal(c.Audience)
-	if err != nil {
-		return err
-	}
-	c.AudienceRaw = b
-	return nil
-}
-
-type ChannelTarget struct {
-	ID        int64      `db:"id" json:"id"`
-	ChannelID int64      `db:"channel_id" json:"channel_id"`
-	Provider  string     `db:"provider" json:"provider"`
-	ChatID    string     `db:"chat_id" json:"chat_id"`
-	Name      NullString `db:"name" json:"name,omitempty"`
-	InviteURL NullString `db:"invite_url" json:"invite_url,omitempty"`
-	Status    string     `db:"status" json:"status"`
-}
-
-type ChannelTargetAccount struct {
-	ID        int64     `db:"id" json:"id"`
-	TargetID  int64     `db:"target_id" json:"target_id"`
-	AccountID int64     `db:"account_id" json:"account_id"`
-	Role      string    `db:"role" json:"role"` // 'primary' or 'fallback'
-	Priority  int       `db:"priority" json:"priority"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-}
-
-type ChannelRule struct {
-	ID            int64       `db:"id" json:"id"`
-	ChannelID     int64       `db:"channel_id" json:"channel_id"`
-	MatchType     string      `db:"match_type" json:"match_type"`
-	MatchValue    NullString  `db:"match_value" json:"match_value,omitempty"`
-	MaxPrice      NullFloat64 `db:"max_price" json:"max_price,omitempty"`
-	NotifyNew     bool        `db:"notify_new" json:"notify_new"`
-	NotifyDrop    bool        `db:"notify_drop" json:"notify_drop"`
-	NotifyLowest  bool        `db:"notify_lowest" json:"notify_lowest"`
-	DropThreshold float64     `db:"drop_threshold" json:"drop_threshold"`
-	Active        bool        `db:"active" json:"active"`
-}
-
-type ChannelAutomation struct {
-	ID        int64 `db:"id" json:"id"`
-	ChannelID int64 `db:"channel_id" json:"channel_id"`
-	Enabled   bool  `db:"enabled" json:"enabled"`
-
-	AutoMatchEnabled bool        `db:"auto_match_enabled" json:"auto_match_enabled"`
-	Threshold        NullFloat64 `db:"threshold" json:"threshold,omitempty"`
-	MaxPerRun        NullInt64   `db:"max_per_run" json:"max_per_run,omitempty"`
-	CooldownHours    int         `db:"cooldown_hours" json:"cooldown_hours"`
-
-	EventsEnabled bool    `db:"events_enabled" json:"events_enabled"`
-	NotifyNew     bool    `db:"notify_new" json:"notify_new"`
-	NotifyDrop    bool    `db:"notify_drop" json:"notify_drop"`
-	NotifyLowest  bool    `db:"notify_lowest" json:"notify_lowest"`
-	DropThreshold float64 `db:"drop_threshold" json:"drop_threshold"`
-
-	MatchType  string      `db:"match_type" json:"match_type"`
-	MatchValue NullString  `db:"match_value" json:"match_value,omitempty"`
-	MaxPrice   NullFloat64 `db:"max_price" json:"max_price,omitempty"`
-
-	PausedUntil NullTime  `db:"paused_until" json:"paused_until,omitempty"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
-
-	// migration 0131 — limite de grupos por dispatch + rotação entre ciclos
-	MaxGroupsPerDispatch   int `db:"max_groups_per_dispatch" json:"max_groups_per_dispatch"`
-	AutoMatchNextGroupIdx  int `db:"auto_match_next_group_idx" json:"auto_match_next_group_idx"`
-
-	// Joinado para listagem
-	ChannelName string `db:"channel_name" json:"channel_name,omitempty"`
 }
 
 type SentMessageV2 struct {
@@ -938,12 +687,3 @@ type TaxonomyPattern struct {
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// migration 0112 — CatalogProductTaxonomy: linking products to taxonomies com roles
-type CatalogProductTaxonomy struct {
-	ProductID  int64     `db:"product_id" json:"product_id"`
-	TaxonomyID int64     `db:"taxonomy_id" json:"taxonomy_id"`
-	Role       string    `db:"role" json:"role"` // primary_category, subcategory, brand, attribute_color, attribute_size, attribute_voltage, attribute_capacity, attribute_other
-	Confidence float64   `db:"confidence" json:"confidence"`
-	Source     string    `db:"source" json:"source"` // pipeline, manual, llm
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}

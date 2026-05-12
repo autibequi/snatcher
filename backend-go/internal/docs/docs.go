@@ -169,7 +169,7 @@ const docTemplate = `{
                                 "items": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/snatcher_backendv2_internal_models.CatalogProduct"
+                                        "type": "object"
                                     }
                                 },
                                 "limit": {
@@ -229,12 +229,12 @@ const docTemplate = `{
                             "type": "object",
                             "properties": {
                                 "product": {
-                                    "$ref": "#/definitions/snatcher_backendv2_internal_models.CatalogProduct"
+                                    "type": "object"
                                 },
                                 "variants": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/snatcher_backendv2_internal_models.CatalogVariant"
+                                        "type": "object"
                                     }
                                 }
                             }
@@ -298,7 +298,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/snatcher_backendv2_internal_models.Channel"
+                            "type": "object"
                         }
                     },
                     "400": {
@@ -524,120 +524,6 @@ const docTemplate = `{
                 },
                 "sources": {
                     "type": "string"
-                }
-            }
-        },
-        "snatcher_backendv2_internal_models.CatalogProduct": {
-            "type": "object",
-            "properties": {
-                "brand": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "canonical_name": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "image_url": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "lowest_price": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullFloat64"
-                },
-                "lowest_price_source": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "lowest_price_url": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "tags": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "weight": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                }
-            }
-        },
-        "snatcher_backendv2_internal_models.CatalogVariant": {
-            "type": "object",
-            "properties": {
-                "catalog_product_id": {
-                    "type": "integer"
-                },
-                "first_seen_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "image_url": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "last_seen_at": {
-                    "type": "string"
-                },
-                "price": {
-                    "type": "number"
-                },
-                "short_id": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "url": {
-                    "type": "string"
-                },
-                "variant_label": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                }
-            }
-        },
-        "snatcher_backendv2_internal_models.Channel": {
-            "type": "object",
-            "properties": {
-                "active": {
-                    "type": "boolean"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "digest_max_items": {
-                    "type": "integer"
-                },
-                "digest_mode": {
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "message_template": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "send_end_hour": {
-                    "type": "integer"
-                },
-                "send_start_hour": {
-                    "type": "integer"
-                },
-                "slug": {
-                    "$ref": "#/definitions/snatcher_backendv2_internal_models.NullString"
                 }
             }
         },

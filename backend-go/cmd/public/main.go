@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"snatcher/backendv2/internal/db"
@@ -65,27 +64,14 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(chimw.Timeout(15 * time.Second))
 
-		// ── Home: lista de canais ─────────────────────────────────────────────
+		// ── Home: lista de canais (Channel removed in v2) ────────────────────
 		r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-			channels, _ := st.ListChannels()
-			renderHome(w, channels)
+			renderHome(w, nil)
 		})
 
-		// ── Detalhe de canal: lista de grupos ─────────────────────────────────
+		// ── Detalhe de canal (Channel removed in v2) ──────────────────────────
 		r.Get("/canais/{id}", func(w http.ResponseWriter, req *http.Request) {
-			idStr := chi.URLParam(req, "id")
-			id, err := strconv.ParseInt(idStr, 10, 64)
-			if err != nil {
-				http.NotFound(w, req)
-				return
-			}
-			channel, err := st.GetChannel(id)
-			if err != nil {
-				http.NotFound(w, req)
-				return
-			}
-			targets, _ := st.ListChannelTargets(id)
-			renderChannel(w, channel, targets)
+			http.NotFound(w, req)
 		})
 
 		// ── Redirects ─────────────────────────────────────────────────────────
@@ -103,9 +89,6 @@ func main() {
 			fmt.Fprint(w, `{"status":"ok"}`)
 		})
 
-		// ── API Public: Channels ───────────────────────────────────────────────
-		r.Get("/api/public/channels", publichnd.ListChannels(st))
-		r.Get("/api/public/channels/{slug}", publichnd.GetChannelBySlug(st))
 	})
 
 	slog.Info("public server starting", "port", port)

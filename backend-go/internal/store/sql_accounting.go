@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"log/slog"
 	"snatcher/backendv2/internal/models"
 	"time"
 
@@ -88,16 +87,6 @@ func (s *SQLStore) ApplyGlobalDailyLimitToAccounts(limit int) error {
 	}
 	_, err := s.db.Exec(`UPDATE tgaccount SET daily_limit = $1`, limit)
 	return err
-}
-
-func (s *SQLStore) CreateAutoMatchLog(log models.AutoMatchLog) (int64, error) {
-	var id int64
-	err := s.db.QueryRow(`
-		INSERT INTO auto_match_logs (product_id, channel_id, dispatch_id, score)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id`,
-		log.ProductID, log.ChannelID, log.DispatchID, log.Score).Scan(&id)
-	return id, err
 }
 
 // AutoMatchProductChannelInFlight implementa anti-duplicata antes de CreateDispatch.
@@ -214,150 +203,6 @@ func (s *SQLStore) GetChannelStats(channelID int64) (ChannelStats, error) {
 	return stats, nil
 }
 
-func (s *SQLStore) ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	var out []models.AutoMatchLog
-	// Mantém TODOS os logs no cooldown — evita duplicatas em cada ciclo. Para desbloquear
-	// cooldown stale (ex: dispatches abandonados), use Jonfrey → reset_stale_cooldown.
-	err := s.db.Select(&out, `
-		SELECT l.id, l.product_id, l.channel_id, l.dispatch_id, l.score, l.created_at,
-		       COALESCE(l.score_breakdown, '{}'::jsonb) AS score_breakdown,
-		       COALESCE(l.match_reasons, '{}'::text[]) AS match_reasons,
-		       l.false_positive, l.false_positive_reason, l.false_positive_marked_at,
-		       COALESCE(p.canonical_name, '') as product_name,
-		       COALESCE(c.name, '') as channel_name,
-		       COALESCE(
-		           (SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-		            FROM dispatch_targets dt
-		            JOIN groups g ON g.id = dt.group_id
-		            WHERE dt.dispatch_id = l.dispatch_id),
-		           ''
-		       ) AS group_names
-		FROM auto_match_logs l
-		LEFT JOIN catalogproduct p ON p.id = l.product_id
-		LEFT JOIN channel c ON c.id = l.channel_id
-		ORDER BY l.created_at DESC LIMIT $1`, limit)
-	return out, err
-}
-
-func (s *SQLStore) ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error) {
-	if limit <= 0 {
-		limit = 200
-	}
-	out, err := s.listAutoMatchLogsSincePrimary(since, limit)
-	if err != nil {
-		slog.Warn("ListAutoMatchLogsSince: primary query failed, using fallback", "err", err)
-		return s.listAutoMatchLogsSinceFallback(since, limit)
-	}
-	return out, nil
-}
-
-// listAutoMatchLogsSincePrimary: último aml por dispatch + metadados do dispatch (sem SELECT * no lateral).
-func (s *SQLStore) listAutoMatchLogsSincePrimary(since time.Time, limit int) ([]models.AutoMatchLog, error) {
-	var out []models.AutoMatchLog
-	err := s.db.Select(&out, `
-		SELECT
-			COALESCE(aml.id, -d.id) AS id,
-			COALESCE(d.product_id, aml.product_id, 0) AS product_id,
-			COALESCE(ch.channel_id, aml.channel_id, 0) AS channel_id,
-			d.id AS dispatch_id,
-			COALESCE(aml.score, (-1.0)::double precision) AS score,
-			d.created_at,
-			COALESCE(aml.score_breakdown, '{}'::jsonb) AS score_breakdown,
-			COALESCE(aml.match_reasons, '{}'::text[]) AS match_reasons,
-			aml.false_positive,
-			COALESCE(aml.false_positive_reason, '') AS false_positive_reason,
-			aml.false_positive_marked_at,
-			COALESCE(p.canonical_name, '') AS product_name,
-			COALESCE(c.name, '') AS channel_name,
-			COALESCE(
-				(SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-				 FROM dispatch_targets dt
-				 JOIN groups g ON g.id = dt.group_id
-				 WHERE dt.dispatch_id = d.id),
-				''
-			) AS group_names,
-			COALESCE(d.composed_by, '') AS composed_by
-		FROM dispatches d
-		LEFT JOIN LATERAL (
-			SELECT
-				id, product_id, channel_id, dispatch_id, score,
-				score_breakdown, match_reasons, false_positive, false_positive_reason, false_positive_marked_at
-			FROM auto_match_logs l
-			WHERE l.dispatch_id = d.id
-			ORDER BY l.created_at DESC NULLS LAST, l.id DESC
-			LIMIT 1
-		) aml ON true
-		LEFT JOIN catalogproduct p ON p.id = COALESCE(d.product_id, aml.product_id)
-		LEFT JOIN LATERAL (
-			SELECT g.channel_id
-			FROM dispatch_targets dt
-			JOIN groups g ON g.id = dt.group_id
-			WHERE dt.dispatch_id = d.id
-			ORDER BY dt.id
-			LIMIT 1
-		) ch ON true
-		LEFT JOIN channel c ON c.id = COALESCE(ch.channel_id, aml.channel_id)
-		WHERE d.created_at >= $1
-		  AND d.status <> 'draft'
-		ORDER BY d.created_at DESC
-		LIMIT $2`, since, limit)
-	return out, err
-}
-
-// listAutoMatchLogsSinceFallback: só dispatches + joins baratos — cobre fila sem dispatch_targets ainda e evita timeline vazia se a query principal falhar no scan.
-func (s *SQLStore) listAutoMatchLogsSinceFallback(since time.Time, limit int) ([]models.AutoMatchLog, error) {
-	var out []models.AutoMatchLog
-	err := s.db.Select(&out, `
-		SELECT
-			-d.id AS id,
-			COALESCE(d.product_id, 0) AS product_id,
-			COALESCE(
-				(SELECT g.channel_id
-				 FROM dispatch_targets dt
-				 JOIN groups g ON g.id = dt.group_id
-				 WHERE dt.dispatch_id = d.id
-				 ORDER BY dt.id
-				 LIMIT 1),
-				0
-			) AS channel_id,
-			d.id AS dispatch_id,
-			(-1.0)::double precision AS score,
-			d.created_at,
-			'{}'::jsonb AS score_breakdown,
-			'{}'::text[] AS match_reasons,
-			NULL::boolean AS false_positive,
-			''::text AS false_positive_reason,
-			NULL::timestamptz AS false_positive_marked_at,
-			COALESCE((SELECT canonical_name FROM catalogproduct p WHERE p.id = d.product_id), '') AS product_name,
-			COALESCE(
-				(SELECT c.name
-				 FROM dispatch_targets dt
-				 JOIN groups g ON g.id = dt.group_id
-				 JOIN channel c ON c.id = g.channel_id
-				 WHERE dt.dispatch_id = d.id
-				 ORDER BY dt.id
-				 LIMIT 1),
-				''
-			) AS channel_name,
-			COALESCE(
-				(SELECT STRING_AGG(g.name, ', ' ORDER BY g.name)
-				 FROM dispatch_targets dt
-				 JOIN groups g ON g.id = dt.group_id
-				 WHERE dt.dispatch_id = d.id),
-				''
-			) AS group_names,
-			COALESCE(d.composed_by, '') AS composed_by
-		FROM dispatches d
-		WHERE d.created_at >= $1
-		  AND d.status <> 'draft'
-		ORDER BY d.created_at DESC
-		LIMIT $2`, since, limit)
-	return out, err
-}
-
 // GetHistoricalCTRForGroup calcula CTR = SUM(click_count) / COUNT(dispatches) para o
 // grupo no contexto da categoria do produto (match via tags JSONB do catalog product).
 // Retorna nil se o número de dispatches qualificados for menor que minDispatches.
@@ -406,32 +251,6 @@ func (s *SQLStore) GetAccountV2(id int64) (models.AccountV2, error) {
 	var a models.AccountV2
 	err := s.db.Get(&a, `SELECT id, phone, modem_id, status, daily_send_quota, last_sent_at, consecutive_failures FROM accounts WHERE id = $1`, id)
 	return a, err
-}
-
-func (s *SQLStore) ListTGAccounts() ([]models.TGAccount, error) {
-	var out []models.TGAccount
-	err := s.db.Select(&out, `SELECT * FROM tgaccount ORDER BY id`)
-	return out, err
-}
-
-func (s *SQLStore) GetTGAccount(id int64) (models.TGAccount, error) {
-	var a models.TGAccount
-	err := s.db.Get(&a, `SELECT * FROM tgaccount WHERE id = $1`, id)
-	return a, err
-}
-
-func (s *SQLStore) CreateTGAccount(a models.TGAccount) (int64, error) {
-	return insertReturningID(s.db, `
-		INSERT INTO tgaccount (name, bot_token, bot_username, group_prefix, active)
-		VALUES (:name, :bot_token, :bot_username, :group_prefix, :active)`, a)
-}
-
-func (s *SQLStore) UpdateTGAccount(a models.TGAccount) error {
-	_, err := s.db.NamedExec(`
-		UPDATE tgaccount SET name=:name, bot_token=:bot_token, bot_username=:bot_username,
-			group_prefix=:group_prefix, last_update_id=:last_update_id, active=:active
-		WHERE id = :id`, a)
-	return err
 }
 
 func (s *SQLStore) DeleteTGAccount(id int64) error {

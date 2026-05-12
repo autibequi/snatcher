@@ -312,7 +312,6 @@ func Build(
 		r.Get("/api/curation/stats", curation.Stats)
 		r.Patch("/api/curation/{id}/taxonomy", curation.AssignTaxonomy)
 		r.Post("/api/curation/{id}/reject", curation.Reject)
-		r.Post("/api/curation/auto-heuristic", curation.AutoHeuristic)
 		// AutoLLM e InspectAll são async — handler retorna 202 imediatamente, job roda em goroutine
 		r.Post("/api/curation/auto-llm", curation.AutoLLM)
 		r.Post("/api/curation/inspect-all", curation.InspectAll)
@@ -330,8 +329,6 @@ func Build(
 		r.Post("/api/match-logs/{log_id}/false-positive", matchLogs.MarkFalsePositive)
 		r.Post("/api/match-logs/{log_id}/score-breakdown", matchLogs.UpdateScoreBreakdown)
 		r.Put("/api/match-logs/products/{product_id}/attributes", matchLogs.UpdateProductAttributes)
-		r.Get("/api/match-logs/variants/{source}/{sub_id}", matchLogs.GetVariantBySourceSubID)
-
 		// Short Links
 		r.Post("/api/links/shorten", linksH.Shorten)
 

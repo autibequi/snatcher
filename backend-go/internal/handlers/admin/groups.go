@@ -106,16 +106,7 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	enriched.ChannelsCount = channelsCount
 
 	if g.ChannelID.Valid {
-		if ch, err := h.store.GetChannel(g.ChannelID.Int64); err == nil {
-			enriched.ChannelName = ch.Name
-			if len(ch.Audience.Categories) > 0 || len(ch.Audience.Brands) > 0 {
-				enriched.AudienceStatus = "perfil"
-			} else {
-				enriched.AudienceStatus = "sem_perfil"
-			}
-		} else {
-			enriched.AudienceStatus = "sem_perfil"
-		}
+		enriched.AudienceStatus = "sem_perfil"
 	} else {
 		enriched.AudienceStatus = "sem_perfil"
 	}
@@ -123,10 +114,6 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	if g.WAAccountID.Valid {
 		if acc, err := h.store.GetAccountV2(g.WAAccountID.Int64); err == nil {
 			enriched.AccountLabel = acc.Phone
-		}
-	} else if g.TGAccountID.Valid {
-		if acc, err := h.store.GetTGAccount(g.TGAccountID.Int64); err == nil {
-			enriched.AccountLabel = acc.Name
 		}
 	}
 
@@ -334,10 +321,6 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if clear {
 			existing.ChannelID = models.NullInt64{}
 		} else {
-			if _, err := h.store.GetChannel(setID); err != nil {
-				writeErr(w, http.StatusBadRequest, "canal invalido")
-				return
-			}
 			existing.ChannelID = models.NullInt64{NullInt64: sql.NullInt64{Int64: setID, Valid: true}}
 		}
 	}
@@ -676,11 +659,6 @@ func (h *GroupsHandler) SuggestAudience(w http.ResponseWriter, r *http.Request) 
 	}
 
 	channelName := ""
-	if g.ChannelID.Valid {
-		if ch, err := h.store.GetChannel(g.ChannelID.Int64); err == nil {
-			channelName = ch.Name
-		}
-	}
 
 	prompt := fmt.Sprintf(`Você é especialista em audiências de grupos WhatsApp/Telegram de ofertas brasileiros.
 

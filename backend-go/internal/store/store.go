@@ -54,10 +54,6 @@ type Store interface {
 	// AccountV2 — contas WA v2 (tabela accounts). Substituem WAAccount após F10.
 	ListAccountsV2() ([]models.AccountV2, error)
 	GetAccountV2(id int64) (models.AccountV2, error)
-	ListTGAccounts() ([]models.TGAccount, error)
-	GetTGAccount(id int64) (models.TGAccount, error)
-	CreateTGAccount(a models.TGAccount) (int64, error)
-	UpdateTGAccount(a models.TGAccount) error
 	DeleteTGAccount(id int64) error
 
 	// Throttle (check and increment daily message limits)
@@ -98,63 +94,14 @@ type Store interface {
 	UpdateCrawlLog(l models.CrawlLog) error
 	ListCrawlLogs(termID int64, limit int) ([]models.CrawlLog, error)
 
-	// Catalog
-	ListCatalogProducts(limit, offset int, includeInactive bool) ([]models.CatalogProduct, error)
-	// ListCatalogProductsAfterCursor ordena por id ASC após cursor (auto-match justo).
-	ListCatalogProductsAfterCursor(limit int, afterID int64, includeInactive bool) ([]models.CatalogProduct, error)
-	// ListCatalogProductsForHeuristicBatch pending/incompletos para worker de heurística (id ASC).
-	ListCatalogProductsForHeuristicBatch(afterID int64, limit int) ([]models.CatalogProduct, error)
+	// Catalog v1 identifiers (interface stubs — impls removed in F12)
 	SetAutoMatchProductCursor(cursor int64) error
 	SetCurationHeuristicCheckpoint(at time.Time, lastProductID int64) error
 	DeactivateCatalogProductsWithoutPrice() (int64, error)
-	SearchCatalogProducts(q string, limit int) ([]models.CatalogProduct, error)
-	CountCatalogProducts() (int64, error)
-	GetCatalogProduct(id int64) (models.CatalogProduct, error)
-	CreateCatalogProduct(p models.CatalogProduct) (int64, error)
-	UpdateCatalogProduct(p models.CatalogProduct) error
-	DeleteCatalogProduct(id int64) error
-	GetVariantByURL(url string) (models.CatalogVariant, bool, error)
-	GetVariantByShortID(shortID string) (models.CatalogVariant, bool, error)
-	GetCatalogVariant(id int64) (models.CatalogVariant, error)
 	GetShortIDByURL(url string) string
-	CreateCatalogVariant(v models.CatalogVariant) (int64, error)
-	UpdateCatalogVariant(v models.CatalogVariant) error
-	ListVariantsByProduct(productID int64) ([]models.CatalogVariant, error)
-	// HydrateVariantPricesFromHistory preenche variant.Price com o último preço em pricehistoryv2 quando Price<=0.
-	HydrateVariantPricesFromHistory(variants []models.CatalogVariant) error
 	InsertPriceHistoryV2(h models.PriceHistoryV2) error
 	ListPriceHistoryV2(variantID int64) ([]models.PriceHistoryV2, error)
 	GetVariantStats(variantID int64, windowDays int) (*models.VariantStats, error)
-	ListGroupingKeywords() ([]models.GroupingKeyword, error)
-	CreateGroupingKeyword(k models.GroupingKeyword) (int64, error)
-	UpdateGroupingKeyword(k models.GroupingKeyword) error
-	DeleteGroupingKeyword(id int64) error
-	GetRecentlyUpdatedProducts(since time.Time) ([]models.CatalogProduct, error)
-
-	// Channels
-	ListChannels() ([]models.Channel, error)
-	GetChannel(id int64) (models.Channel, error)
-	GetChannelBySlug(slug string) (models.Channel, error)
-	CreateChannel(c models.Channel) (int64, error)
-	UpdateChannel(c models.Channel) error
-	DeleteChannel(id int64) error
-	ListChannelsByCategory(category string) ([]models.Channel, error)
-	ListChannelsForProduct(category, brand string, price, drop float64) ([]models.Channel, error)
-	ListChannelTargets(channelID int64) ([]models.ChannelTarget, error)
-	GetChannelTarget(id int64) (models.ChannelTarget, error)
-	ListAllChannelTargets() ([]models.ChannelTarget, error)
-	CreateChannelTarget(t models.ChannelTarget) (int64, error)
-	UpdateChannelTarget(t models.ChannelTarget) error
-	DeleteChannelTarget(id int64) error
-	ListChannelRules(channelID int64) ([]models.ChannelRule, error)
-	CreateChannelRule(r models.ChannelRule) (int64, error)
-	UpdateChannelRule(r models.ChannelRule) error
-	DeleteChannelRule(id int64) error
-	GetChannelAutomation(channelID int64) (*models.ChannelAutomation, error)
-	UpsertChannelAutomation(a models.ChannelAutomation) error
-	UpdateAutoMatchNextGroupIdx(channelID int64, idx int) error
-	ListChannelAutomations(enabledOnly bool) ([]models.ChannelAutomation, error)
-	ListAutoMatchLogsByChannel(channelID int64, limit int) ([]models.AutoMatchLog, error)
 	WasSentRecently(productID, targetID int64, since time.Time) (bool, error)
 	RecordSent(s models.SentMessageV2) error
 
@@ -163,10 +110,6 @@ type Store interface {
 
 	// Analytics
 	GetAnalyticsSummary(since time.Time, days int) (map[string]any, error)
-
-	// Coverage (multi-WA)
-	ListAccountsForTarget(targetID int64) ([]models.ChannelTargetAccount, error)
-	GetAccountsByTargetWithRole(targetID int64, role string) ([]models.ChannelTargetAccount, error)
 
 	// RedesignGroups
 	ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error)
@@ -245,17 +188,12 @@ type Store interface {
 	DispatchIDsWithDelivered(dispatchIDs []int64) map[int64]bool
 
 	// Auto Match
-	CreateAutoMatchLog(log models.AutoMatchLog) (int64, error)
-	ListAutoMatchLogs(limit int) ([]models.AutoMatchLog, error)
 	// AutoMatchProductChannelInFlight bloqueia duplicar fila (produto+canal com dispatch/target pendente).
 	AutoMatchProductChannelInFlight(productID, channelID int64) (bool, error)
 	// AutoMatchHasRecentPairLog cooldown por par produto+canal (qualquer log recente).
 	AutoMatchHasRecentPairLog(productID, channelID int64, since time.Time) (bool, error)
 	// SetDispatchWaRRCursor persiste cursor round-robin WA no dispatch worker.
 	SetDispatchWaRRCursor(cursor int) error
-	// ListAutoMatchLogsSince: timeline por dispatches na janela (created_at), enriquecida com auto_match_logs.
-	// sem linha de log (órfãos), mesma janela temporal — para timeline na UI.
-	ListAutoMatchLogsSince(since time.Time, limit int) ([]models.AutoMatchLog, error)
 	// CountAutoMatchDispatchesSince conta dispatches criados pelo worker auto-match (composed_by=auto-match).
 	CountAutoMatchDispatchesSince(since time.Time) (int64, error)
 
@@ -271,18 +209,12 @@ type Store interface {
 	IncrementShortLinkClickCount(shortID string)
 	GetShortLinkByID(shortID string) (destURL string, source string, found bool)
 
-	// Channel stats (cliques reais, disparos, série diária)
-	GetChannelStats(channelID int64) (ChannelStats, error)
 
 	// OperationalContext agrega canais ativos, crawlers, cobertura do catálogo e lacunas (prompts LLM).
 	GetOperationalContext(ctx context.Context) (OperationalContext, error)
 
 	// AffiliateConversions
 	InsertAffiliateConversion(c models.AffiliateConversion) (int64, error)
-
-	// Catalog com filtros
-	FilterCatalogProducts(f CatalogFilters) ([]models.CatalogProduct, int64, error)
-	ListPendingCurationProducts(limit int) ([]models.CatalogProduct, error)
 
 	// Rate limit / backpressure
 	CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCount, error)
@@ -326,16 +258,9 @@ type Store interface {
 
 	// Product Taxonomy (PR-1: triage-refactor)
 	UpsertProductTaxonomy(productID, taxonomyID int64, role string, confidence float64, source string) error
-	ListProductTaxonomies(productID int64) ([]models.CatalogProductTaxonomy, error)
-
-	// Auto Match Log false positives and breakdown (PR-1: triage-refactor)
-	MarkAutoMatchFalsePositive(logID int64, reason string) error
-	ListFalsePositiveLogs(sinceDays int) ([]models.AutoMatchLog, error)
-	UpdateAutoMatchScoreBreakdown(logID int64, breakdown []byte, reasons []string) error
 
 	// Product attributes (PR-1: triage-refactor)
 	UpdateProductAttributesJSON(productID int64, attrs []byte) error
-	GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error)
 	CountChannelClicksLast30d(channelID int64) (int, error)
 
 	// Catalog v2 — pipeline canônico (F03+)

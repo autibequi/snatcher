@@ -549,24 +549,6 @@ func (h *DashboardHandler) AutomationDiagnostics(w http.ResponseWriter, r *http.
 
 	channelsTextNoTax := 0
 	var channelsMismatchSamples []map[string]any
-	chans, _ := h.store.ListChannels()
-	for _, ch := range chans {
-		if !ch.Active {
-			continue
-		}
-		a := ch.Audience
-		hasTextCat := len(a.Categories) > 0
-		hasTax := len(a.IncludeCategoryIDs) > 0 || len(a.IncludeSubcategoryIDs) > 0
-		if hasTextCat && !hasTax {
-			channelsTextNoTax++
-			if len(channelsMismatchSamples) < 8 {
-				channelsMismatchSamples = append(channelsMismatchSamples, map[string]any{
-					"channel_id": ch.ID,
-					"name":       ch.Name,
-				})
-			}
-		}
-	}
 
 	jfCfg, _ := h.store.GetJonfreyConfig()
 	type jfRow struct {

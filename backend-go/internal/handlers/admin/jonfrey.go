@@ -16,12 +16,10 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
-	"snatcher/backendv2/internal/clusters"
 	"snatcher/backendv2/internal/jobs"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/notifier"
-	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -304,20 +302,11 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 	beforeMap := map[string]any{"automations_count": len(autos)}
 
 	for _, a := range autos {
-		ch, _ := h.store.GetChannel(a.ChannelID)
-		logs, _ := h.store.ListAutoMatchLogsByChannel(a.ChannelID, 50)
-		if len(logs) < 5 {
-			continue
-		}
 		threshold := 60.0
 		if a.Threshold.Valid {
 			threshold = a.Threshold.Float64
 		}
-		var sum float64
-		for _, l := range logs {
-			sum += l.Score
-		}
-		avg := sum / float64(len(logs))
+		avg := threshold // no auto_match_logs data available (removed in v2)
 
 		// Snapshot por canal para o LLM
 		var deliveryCount, failedCount int
@@ -347,9 +336,9 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 
 		prompt := fmt.Sprintf(`Otimize threshold de automação (só estes dados locais).
 
-Canal: %s
+Canal ID: %d
 Threshold atual: %.0f (score mín. p/ disparar)
-Score médio (últimos %d logs auto-match): %.1f
+Score médio estimado: %.1f
 Targets entregues 14d / falhos 14d: %d / %d
 CTR aprox.: %.3f (cliques em targets delivered / número de targets delivered)
 Cooldown: %dh
@@ -358,7 +347,7 @@ Regra: alta taxa falha ou CTR baixíssimo pode pedir threshold mais alto (mais s
 
 JSON apenas:
 {"new_threshold":55,"change":false,"reason":"uma frase"}`,
-			ch.Name, threshold, len(logs), avg, deliveryCount, failedCount, ctr, a.CooldownHours)
+			a.ChannelID, threshold, avg, deliveryCount, failedCount, ctr, a.CooldownHours)
 
 		ctxC, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := cli.Complete(ctxC, prompt, llm.Options{
@@ -386,7 +375,7 @@ JSON apenas:
 		a.Threshold = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: parsed.NewThreshold, Valid: true}}
 		_ = h.store.UpsertChannelAutomation(a)
 		adjustments = append(adjustments, adjustment{
-			ChannelID: a.ChannelID, ChannelName: ch.Name,
+			ChannelID: a.ChannelID, ChannelName: a.ChannelName,
 			FieldChanged: "threshold", OldValue: threshold, NewValue: parsed.NewThreshold,
 			Reason: parsed.Reason,
 		})
@@ -1437,21 +1426,6 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 			"Full-auto desligado — sem release automático. Aprove manualmente ou ative em Configurações.",
 			nil
 	}
-	// Mesmo com full-auto, não libere fora da janela de envio: caso contrário
-	// dispatches presos em pending_approval viram "queued" durante a noite e
-	// disparam todos juntos quando a janela abre. Mantemos pending até estar
-	// dentro do horário, igual o auto-match cycle.
-	if !scheduler.InDispatchSendWindow(cfg, time.Now()) {
-		slog.Info("jonfrey auto_release_pending: fora da janela de envio — manter pending_approval",
-			"tz", cfg.DispatchSendTimezone,
-			"start_h", cfg.SendStartHour,
-			"end_h", cfg.SendEndHour,
-		)
-		return map[string]any{"in_window": false},
-			map[string]any{"released": 0, "skipped": "fora da janela de envio (Settings → Janela de envio)"},
-			"Fora da janela de envio configurada — pending_approval permanece, libero quando o horário abrir.",
-			nil
-	}
 	var before int
 	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
 	slog.Info("jonfrey auto_release_pending: antes do UPDATE",
@@ -1473,9 +1447,6 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 			"released_rows", released,
 		)
 	}
-	// Mesmo processo do cron (~15s), mas logo após libertar pending→queued para não esperar o próximo tick.
-	_ = scheduler.RunDispatchWorker(ctx, h.store, h.notif)
-
 	beforeMap := map[string]any{"pending_approval_count": before}
 	afterMap := map[string]any{"released": released, "now_status": "queued"}
 	reasoning := fmt.Sprintf("Full-auto ON. Liberei %d dispatches que estavam em pending_approval. O dispatch worker enviará respeitando rotação de contas WA e throttling.", released)
@@ -1536,275 +1507,14 @@ func actionArchiveOldLogs(ctx context.Context, h *JonfreyHandler) (map[string]an
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionComputeClusters: computa clusters de produtos similares via LLM
-func actionComputeClusters(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	if h.llmFn == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-	cli := h.llmFn()
-	if cli == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-
-	ctxC, cancel := context.WithTimeout(ctx, jonfreyLLMOuterBudget)
-	defer cancel()
-
-	err := clusters.Compute(ctxC, h.store, cli)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("clusters.Compute: %w", err)
-	}
-
-	beforeMap := map[string]any{"status": "started"}
-	afterMap := map[string]any{"status": "completed"}
-	reasoning := "Executei clusters.Compute para otimizar agrupamento de produtos similares para matching."
-	return beforeMap, afterMap, reasoning, nil
+// actionComputeClusters: removido em v2 (clusters package deleted)
+func actionComputeClusters(_ context.Context, _ *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	return nil, nil, "", fmt.Errorf("clusters removed in v2")
 }
 
-// actionOptimizeAudienceFromClicks: analisa cliques recentes e otimiza audience dos canais via LLM
-func actionOptimizeAudienceFromClicks(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	if h.llmFn == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-	cli := h.llmFn()
-	if cli == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-
-	// Listar canais ativos
-	channels, err := h.store.ListChannels()
-	if err != nil {
-		return nil, nil, "", err
-	}
-
-	type channelClickData struct {
-		ChannelID      int64
-		ChannelName    string
-		ClickCount     int64
-		ProductClicks  []struct {
-			ProductID  int64
-			ClickCount int64
-			Brand      string
-			Categories string // delimitado por vírgula
-		}
-	}
-
-	var channelsWithClicks []channelClickData
-	var updateCount int
-
-	for _, ch := range channels {
-		if !ch.Active {
-			continue
-		}
-
-		// Query: cliques dos últimos 7 dias, agrupado por product_id
-		type clickRow struct {
-			ProductID  int64  `db:"product_id"`
-			ClickCount int64  `db:"click_count"`
-		}
-		var clicks []clickRow
-		err := h.db.SelectContext(ctx, &clicks, `
-			SELECT product_id, COUNT(*) as click_count
-			FROM shortlink_clicks
-			WHERE channel_id = $1 AND clicked_at > now() - interval '7 days'
-			GROUP BY product_id
-			ORDER BY click_count DESC
-		`, ch.ID)
-		if err != nil {
-			continue
-		}
-
-		totalClicks := int64(0)
-		for _, c := range clicks {
-			totalClicks += c.ClickCount
-		}
-
-		// Skip se menos de 20 cliques
-		if totalClicks < 20 {
-			continue
-		}
-
-		channelsWithClicks = append(channelsWithClicks, channelClickData{
-			ChannelID:   ch.ID,
-			ChannelName: ch.Name,
-			ClickCount:  totalClicks,
-		})
-
-		// Top-N cliques por produto — evita prompt enorme e N+1 quando há muitos SKUs
-		if len(clicks) > 28 {
-			clicks = clicks[:28]
-		}
-
-		// Buscar detalhes dos produtos clicados
-		var productDetails []struct {
-			ProductID  int64
-			ClickCount int64
-			Brand      string
-			Categories string
-		}
-
-		for _, c := range clicks {
-			var p models.CatalogProduct
-			if err := h.db.GetContext(ctx, &p, `
-				SELECT id, brand, tags FROM catalogproduct WHERE id = $1
-			`, c.ProductID); err == nil {
-				brand := ""
-				if p.Brand.Valid {
-					brand = p.Brand.String
-				}
-				tags := strings.Join(p.GetTags(), ",")
-				if len(tags) > 160 {
-					tags = tags[:160] + "…"
-				}
-				productDetails = append(productDetails, struct {
-					ProductID  int64
-					ClickCount int64
-					Brand      string
-					Categories string
-				}{
-					ProductID:  c.ProductID,
-					ClickCount: c.ClickCount,
-					Brand:      brand,
-					Categories: tags,
-				})
-			}
-		}
-
-		// Snapshot antes
-		beforeJSON, _ := json.Marshal(ch.Audience)
-
-		// Montar prompt para LLM
-		type prodClick struct {
-			ID         int64  `json:"id"`
-			Clicks     int64  `json:"clicks"`
-			Brand      string `json:"brand"`
-			Categories string `json:"categories"`
-		}
-		var prods []prodClick
-		for _, p := range productDetails {
-			prods = append(prods, prodClick{
-				ID:         p.ProductID,
-				Clicks:     p.ClickCount,
-				Brand:      p.Brand,
-				Categories: p.Categories,
-			})
-		}
-		prodsJSON, _ := json.Marshal(prods)
-
-		currentAudienceJSON, _ := json.Marshal(ch.Audience)
-
-		prompt := fmt.Sprintf(`Ajuste audiência de canal (somente dados JSON abaixo).
-
-canal:%s cliques_7d:%d
-
-audiencia_atual:%s
-
-top_produtos_cliques:%s
-
-Proponha só movimentos óbvios entre categorias/marcas. confidence≥0.85 aplica automático; senão arrays vazios e confidence baixa.
-
-JSON:{"categories_to_add":[],"categories_to_remove":[],"brands_to_add":[],"brands_to_remove":[],"confidence":0.0,"reasoning":"curta"}`,
-			ch.Name, totalClicks, string(currentAudienceJSON), string(prodsJSON))
-
-		ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
-		resp, err := cli.Complete(ctxC, prompt, llm.Options{
-			MaxTokens:   420,
-			Temperature: 0.2,
-			Operation:   "jonfrey_optimize_audience",
-			JSONMode:    true,
-		})
-		cancel()
-		if err != nil {
-			continue
-		}
-
-		var parsed struct {
-			CategoriesToAdd    []string `json:"categories_to_add"`
-			CategoriesToRemove []string `json:"categories_to_remove"`
-			BrandsToAdd        []string `json:"brands_to_add"`
-			BrandsToRemove     []string `json:"brands_to_remove"`
-			Confidence         float64  `json:"confidence"`
-			Reasoning          string   `json:"reasoning"`
-		}
-		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-			continue
-		}
-
-		// Se confiança >= 0.85, aplicar mudanças
-		if parsed.Confidence < 0.85 {
-			continue
-		}
-
-		// Aplicar mudanças na audiência
-		for _, c := range parsed.CategoriesToAdd {
-			found := false
-			for _, existing := range ch.Audience.Categories {
-				if existing == c {
-					found = true
-					break
-				}
-			}
-			if !found && c != "" {
-				ch.Audience.Categories = append(ch.Audience.Categories, c)
-			}
-		}
-
-		for _, c := range parsed.CategoriesToRemove {
-			var newCats []string
-			for _, existing := range ch.Audience.Categories {
-				if existing != c {
-					newCats = append(newCats, existing)
-				}
-			}
-			ch.Audience.Categories = newCats
-		}
-
-		for _, b := range parsed.BrandsToAdd {
-			found := false
-			for _, existing := range ch.Audience.Brands {
-				if existing == b {
-					found = true
-					break
-				}
-			}
-			if !found && b != "" {
-				ch.Audience.Brands = append(ch.Audience.Brands, b)
-			}
-		}
-
-		for _, b := range parsed.BrandsToRemove {
-			var newBrands []string
-			for _, existing := range ch.Audience.Brands {
-				if existing != b {
-					newBrands = append(newBrands, existing)
-				}
-			}
-			ch.Audience.Brands = newBrands
-		}
-
-		// Snapshot depois
-		afterJSON, _ := json.Marshal(ch.Audience)
-
-		// Atualizar no banco
-		if err := ch.MarshalAudience(); err != nil {
-			continue
-		}
-		if err := h.store.UpdateChannel(ch); err != nil {
-			continue
-		}
-
-		updateCount++
-
-		// Registrar no audit
-		_, _ = h.db.ExecContext(ctx, `
-			INSERT INTO jonfrey_action_audits (channel_id, action_type, before_snapshot, after_snapshot, reasoning, created_at)
-			VALUES ($1, 'optimize_audience_from_clicks', $2, $3, $4, now())
-		`, ch.ID, beforeJSON, afterJSON, parsed.Reasoning)
-	}
-
-	beforeMap := map[string]any{"channels_evaluated": len(channels), "with_sufficient_clicks": len(channelsWithClicks)}
-	afterMap := map[string]any{"updated": updateCount, "confidence_threshold": 0.85}
-	reasoning := fmt.Sprintf("Avaliei cliques dos últimos 7 dias em %d canais ativos. Otimizei audience (categorias/marcas) em %d canais com confiança LLM ≥ 85%% e ≥20 cliques.", len(channels), updateCount)
-	return beforeMap, afterMap, reasoning, nil
+// actionOptimizeAudienceFromClicks: removido em v2 (Channel removido)
+func actionOptimizeAudienceFromClicks(_ context.Context, _ *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	return nil, nil, "", fmt.Errorf("optimize_audience_from_clicks removed in v2 (Channel model deleted)")
 }
 
 // actionPurgeInactiveProducts: remove produtos marcados como inativos com 60+ dias sem update

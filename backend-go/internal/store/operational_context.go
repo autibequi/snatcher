@@ -100,59 +100,6 @@ func normMarketplaceKey(s string) string {
 	return s
 }
 
-// audienceCrawlerGaps heurística: categorias declaradas na audiência sem substring nos queries dos crawlers.
-func audienceCrawlerGaps(channels []models.Channel, terms []models.SearchTerm, max int) []string {
-	var queries []string
-	for _, t := range terms {
-		if !t.Active {
-			continue
-		}
-		queries = append(queries, strings.ToLower(strings.TrimSpace(t.Query)))
-		for _, q := range t.GetQueries() {
-			q = strings.ToLower(strings.TrimSpace(q))
-			if q != "" {
-				queries = append(queries, q)
-			}
-		}
-	}
-	joined := " " + strings.Join(queries, " ") + " "
-
-	var out []string
-	for _, ch := range channels {
-		if !ch.Active {
-			continue
-		}
-		for _, cat := range ch.Audience.Categories {
-			cat = strings.TrimSpace(strings.ToLower(cat))
-			if len(cat) < 3 {
-				continue
-			}
-			tokens := strings.Fields(cat)
-			ok := false
-			for _, tok := range tokens {
-				if len(tok) < 3 {
-					continue
-				}
-				if strings.Contains(joined, tok) {
-					ok = true
-					break
-				}
-			}
-			if !ok && strings.Contains(joined, cat) {
-				ok = true
-			}
-			if ok {
-				continue
-			}
-			out = append(out, fmt.Sprintf("canal %q lista categoria %q nos crawlers não há query óbvia cobrindo esse termo", ch.Name, cat))
-			if len(out) >= max {
-				return out
-			}
-		}
-	}
-	return out
-}
-
 func sourceCoveredByCrawlers(source string, crawlerUnion map[string]bool) bool {
 	s := strings.TrimSpace(source)
 	if s == "" || len(crawlerUnion) == 0 {

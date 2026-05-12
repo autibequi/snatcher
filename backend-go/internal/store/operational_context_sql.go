@@ -35,10 +35,6 @@ func (s *SQLStore) GetOperationalContext(ctx context.Context) (OperationalContex
 		oc.TopCatalogMarketplaces = append(oc.TopCatalogMarketplaces, fmt.Sprintf("%s:%d", r.Source, r.N))
 	}
 
-	channels, err := s.ListChannels()
-	if err != nil {
-		return oc, err
-	}
 	terms, err := s.ListSearchTerms()
 	if err != nil {
 		return oc, err
@@ -58,23 +54,7 @@ func (s *SQLStore) GetOperationalContext(ctx context.Context) (OperationalContex
 	}
 	sort.Strings(oc.CrawlerSourcesUnion)
 
-	for _, ch := range channels {
-		if !ch.Active {
-			continue
-		}
-		oc.ActiveChannels++
-		a := ch.Audience
-		cats := strings.Join(trimSlice(a.Categories, 8), ", ")
-		if cats == "" {
-			cats = "(sem categorias em texto — confira IDs de taxonomia)"
-		}
-		taxN := len(a.IncludeCategoryIDs) + len(a.IncludeSubcategoryIDs)
-		line := fmt.Sprintf("- %s | categorias: %s | IDs taxonomia: %d | preço R$%.0f–%.0f",
-			ch.Name, cats, taxN, a.MinPrice, a.MaxPrice)
-		if len(oc.ChannelLines) < 28 {
-			oc.ChannelLines = append(oc.ChannelLines, line)
-		}
-	}
+	// Channel enrichment removed (Channel removed in v2 cleanup)
 
 	for _, t := range terms {
 		if !t.Active {
@@ -91,7 +71,6 @@ func (s *SQLStore) GetOperationalContext(ctx context.Context) (OperationalContex
 	if len(rows) > 0 {
 		oc.MarketplaceGaps = marketplaceVolumeGaps(rows, unionMap, 0.04)
 	}
-	oc.AudienceCrawlerGaps = audienceCrawlerGaps(channels, terms, 16)
 
 	return oc, nil
 }

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/llm"
-	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/prompts"
 )
 
@@ -57,11 +56,11 @@ func NewServiceWithRegistry(cli llm.Client, reg *prompts.Registry) *Service {
 	return &Service{cli: cli, registry: reg}
 }
 
-// Preview gera copy de disparo para um produto + canal opcional.
+// Preview gera copy de disparo para um produto.
 //
 // Usa o prompt registry para renderizar o prompt "compose" ativo.
 // Timeout interno de 8s; em caso de falha retorna fallback humano sem error.
-func (s *Service) Preview(ctx context.Context, product ProductInput, channel *models.Channel) (Suggestion, error) {
+func (s *Service) Preview(ctx context.Context, product ProductInput, _ any) (Suggestion, error) {
 	p, err := s.registry.Active("compose")
 	if err != nil {
 		return s.fallback(product), nil
@@ -69,9 +68,8 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, channel *mo
 
 	type renderData struct {
 		Product ProductInput
-		Channel *models.Channel
 	}
-	rendered, err := p.Render(renderData{Product: product, Channel: channel})
+	rendered, err := p.Render(renderData{Product: product})
 	if err != nil {
 		return Suggestion{}, fmt.Errorf("prompt render error: %w", err)
 	}

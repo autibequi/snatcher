@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"snatcher/backendv2/internal/algo"
-	"snatcher/backendv2/internal/clusters"
 	"snatcher/backendv2/internal/curator"
 	"snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/jobs"
@@ -76,35 +75,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 	)
 	if err != nil {
 		return err
-	}
-
-	// Curadoria só por script (keywords + patterns), sem LLM — tick frequente; intervalo em appconfig.
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(30*time.Second),
-			gocron.NewTask(func() { RunCurationHeuristicWorker(ctx, sc.storeRef, time.Now()) }),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Job semanal de clusters (segunda-feira 03:00 UTC)
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 3 * * 1", false),
-			gocron.NewTask(func() {
-				jobCtx := context.Background()
-				if err := clusters.Compute(jobCtx, sc.storeRef, sc.llmCli); err != nil {
-					slog.Error("clusters job failed", "err", err)
-				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
 	}
 
 	// Job do Jonfrey — executa actions habilitadas a cada 1 min se enabled

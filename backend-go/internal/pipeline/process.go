@@ -108,8 +108,6 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 		return nil
 	}
 
-	keywords, _ := st.ListGroupingKeywords()
-
 	// Carrega itens do catálogo v2 para fuzzy match
 	catalogItems, err := st.ListCatalogV2ForMatch(10000)
 	if err != nil {
@@ -120,7 +118,7 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := processResult(ctx, st, r, catalogItems, keywords); err != nil {
+		if err := processResult(ctx, st, r, catalogItems); err != nil {
 			slog.Error("process result", "id", r.ID, "err", err)
 		}
 	}
@@ -133,7 +131,6 @@ func processResult(
 	st store.Store,
 	r models.CrawlResult,
 	catalogItems []store.CatalogV2Item,
-	keywords []models.GroupingKeyword,
 ) error {
 	// Pipeline canônico v2: grava raw_item antes de qualquer processamento.
 	writeRawItem(ctx, st, r)
@@ -315,51 +312,3 @@ func findBestMatchV2(canonical, weight string, items []store.CatalogV2Item) (*st
 	return best, bestScore, "llm_tiebreaker"
 }
 
-// applyKeywords aplica keywords de agrupamento a um CatalogProduct (v1 — mantido para compat até F12).
-func applyKeywords(st store.Store, p *models.CatalogProduct, title string, keywords []models.GroupingKeyword) {
-	titleLower := strings.ToLower(title)
-	changed := false
-	for _, kw := range keywords {
-		if !kw.Active {
-			continue
-		}
-		if MatchesWordBoundary(titleLower, strings.ToLower(kw.Keyword)) {
-			existing := p.GetTags()
-			found := false
-			for _, t := range existing {
-				if t == kw.Tag {
-					found = true
-					break
-				}
-			}
-			if !found {
-				p.AddTag(kw.Tag)
-				changed = true
-			}
-		}
-	}
-	if changed {
-		_ = st.UpdateCatalogProduct(*p)
-	}
-}
-
-// updateLowestPrice atualiza o lowest_price de um CatalogProduct v1 (mantido até F12).
-func updateLowestPrice(st store.Store, productID int64) {
-	variants, err := st.ListVariantsByProduct(productID)
-	if err != nil || len(variants) == 0 {
-		return
-	}
-	_ = st.HydrateVariantPricesFromHistory(variants)
-
-	p, err := st.GetCatalogProduct(productID)
-	if err != nil {
-		return
-	}
-
-	p = store.MergeEffectiveLowestPrice(p, variants)
-	if !p.LowestPrice.Valid {
-		return
-	}
-
-	_ = st.UpdateCatalogProduct(p)
-}
