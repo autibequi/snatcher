@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/db"
-	"snatcher/backendv2/internal/handlers"
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/redirect"
@@ -51,16 +50,14 @@ func main() {
 
 	st := store.New(database)
 	rd := redirect.New(database, st)
-	canalH := handlers.NewCanal(st)
-
+	
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 
 	// Evolution pode demorar ao buscar invite na primeira visita — timeout maior que o restante do servidor.
-	r.With(chimw.Timeout(55 * time.Second)).Get("/canal/{slug}", canalH.GroupPicker)
-
+	
 	r.Group(func(r chi.Router) {
 		r.Use(chimw.Timeout(15 * time.Second))
 
@@ -135,18 +132,7 @@ func publicLinkHandler(st store.Store) http.HandlerFunc {
 			return
 		}
 
-		// Buscar grupos ativos do canal
-		targets, _ := st.ListChannelTargets(link.ChannelID)
-		for _, t := range targets {
-			if t.Status == "ok" && t.InviteURL.Valid && t.InviteURL.String != "" {
-				dest := t.InviteURL.String
-				if redirect.WriteHTMLRedirectWithGTM(w, redirect.GTMContainerID(st), dest) {
-					return
-				}
-				http.Redirect(w, r, dest, http.StatusFound)
-				return
-			}
-		}
+		// canal targets removed in unify-v1-v2
 		http.Error(w, "nenhum grupo ativo disponível", http.StatusGone)
 	}
 }
