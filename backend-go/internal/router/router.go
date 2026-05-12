@@ -304,15 +304,6 @@ func Build(
 		r.Post("/api/taxonomy/{id}/approve", taxonomy.Approve)
 		r.Post("/api/taxonomy/{id}/reject", taxonomy.Reject)
 
-		// Curation — produtos sem inferência automática (cadastro manual)
-		r.Get("/api/curation/needs-taxonomy", curation.List)
-		r.Get("/api/curation/stats", curation.Stats)
-		r.Patch("/api/curation/{id}/taxonomy", curation.AssignTaxonomy)
-		r.Post("/api/curation/{id}/reject", curation.Reject)
-		// AutoLLM e InspectAll são async — handler retorna 202 imediatamente, job roda em goroutine
-		r.Post("/api/curation/auto-llm", curation.AutoLLM)
-		r.Post("/api/curation/inspect-all", curation.InspectAll)
-
 		// PR-1: Taxonomy Patterns (triage-refactor)
 		r.Get("/api/taxonomy/patterns", taxonomyPatterns.ListTaxonomyPatterns)
 		r.Get("/api/taxonomy/patterns/active", taxonomyPatterns.ListAllActivePatterns)
