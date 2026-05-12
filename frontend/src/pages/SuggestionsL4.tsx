@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 interface Suggestion {
   id: number
@@ -19,7 +20,7 @@ export default function SuggestionsL4() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/admin/suggestions?status=pending')
+      const r = await authFetch('/api/admin/suggestions?status=pending')
       const data = await r.json()
       setItems(data || [])
     } finally {
@@ -32,13 +33,13 @@ export default function SuggestionsL4() {
   }, [])
 
   const approve = async (id: number) => {
-    await fetch(`/api/admin/suggestions/${id}/approve`, { method: 'POST' })
+    await authFetch(`/api/admin/suggestions/${id}/approve`, { method: 'POST' })
     load()
   }
 
   const dismiss = async (id: number) => {
     const reason = prompt('Motivo da rejeição (opcional):') || ''
-    await fetch(`/api/admin/suggestions/${id}/dismiss?reason=${encodeURIComponent(reason)}`, { method: 'POST' })
+    await authFetch(`/api/admin/suggestions/${id}/dismiss?reason=${encodeURIComponent(reason)}`, { method: 'POST' })
     load()
   }
 
