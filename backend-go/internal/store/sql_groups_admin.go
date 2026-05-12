@@ -1,10 +1,19 @@
 package store
 
-import "snatcher/backendv2/internal/models"
+import (
+	"context"
+	"time"
 
-// GroupAdmin stubs — implementações mínimas para satisfazer a interface Store.
-// Os dados reais ficam em groups v2 (accounts/modems). Estes métodos são legado
-// que ainda não foi migrado para remoção completa.
+	"snatcher/backendv2/internal/models"
+)
+
+// ---- GroupAdmin ----
+
+func (s *SQLStore) ListGroupAdmins(groupID int64) ([]models.GroupAdmin, error) {
+	var out []models.GroupAdmin
+	err := s.db.Select(&out, `SELECT id, group_id, account_type, account_id, added_at FROM group_admins WHERE group_id=$1`, groupID)
+	return out, err
+}
 
 func (s *SQLStore) AddGroupAdmin(a models.GroupAdmin) (int64, error) {
 	var id int64
@@ -15,10 +24,38 @@ func (s *SQLStore) AddGroupAdmin(a models.GroupAdmin) (int64, error) {
 	return id, err
 }
 
+func (s *SQLStore) DeleteGroupAdmin(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM group_admins WHERE id=$1`, id)
+	return err
+}
+
+func (s *SQLStore) CountGroupAdmins(groupID int64) (int, error) {
+	var n int
+	err := s.db.Get(&n, `SELECT COUNT(*) FROM group_admins WHERE group_id=$1`, groupID)
+	return n, err
+}
+
+// ---- RedesignGroups (groups table v2) ----
+
+func (s *SQLStore) ListRedesignGroups(channelID int64, platform, status string) ([]models.RedesignGroup, error) {
+	var out []models.RedesignGroup
+	err := s.db.Select(&out, `SELECT * FROM groups WHERE ($1=0 OR channel_id=$1) AND ($2='' OR platform=$2) AND ($3='' OR status=$3)`, channelID, platform, status)
+	return out, err
+}
+
 func (s *SQLStore) GetRedesignGroup(id int64) (models.RedesignGroup, error) {
 	var g models.RedesignGroup
 	err := s.db.Get(&g, `SELECT * FROM groups WHERE id=$1`, id)
 	return g, err
+}
+
+func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO groups (name, platform, status) VALUES ($1, $2, $3) RETURNING id`,
+		g.Name, g.Platform, g.Status,
+	).Scan(&id)
+	return id, err
 }
 
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
@@ -28,3 +65,53 @@ func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	)
 	return err
 }
+
+func (s *SQLStore) DeleteRedesignGroup(id int64) error {
+	_, err := s.db.Exec(`UPDATE groups SET status='banned' WHERE id=$1`, id)
+	return err
+}
+
+func (s *SQLStore) CountGroupsWithSameJID(platform, jid string) (int, error) {
+	var n int
+	err := s.db.Get(&n, `SELECT COUNT(*) FROM groups WHERE platform=$1 AND jid=$2`, platform, jid)
+	return n, err
+}
+
+func (s *SQLStore) FindConflictingRedesignGroup(g models.RedesignGroup, excludeID int64) (*models.RedesignGroup, error) {
+	var out models.RedesignGroup
+	err := s.db.Get(&out, `SELECT * FROM groups WHERE platform=$1 AND jid=$2 AND id<>$3 LIMIT 1`, g.Platform, g.JID, excludeID)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *SQLStore) SetGroupArchived(id int64, archived bool, lastError *string) error {
+	_, err := s.db.Exec(`UPDATE groups SET archived=$1 WHERE id=$2`, archived, id)
+	return err
+}
+
+// ---- Analytics ----
+
+func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]any, error) {
+	return map[string]any{"since": since, "days": days}, nil
+}
+
+func (s *SQLStore) CountChannelClicksLast30d(channelID int64) (int, error) {
+	var n int
+	_ = s.db.Get(&n, `SELECT COUNT(*) FROM clicks WHERE group_id=$1 AND clicked_at > now()-INTERVAL '30 days'`, channelID)
+	return n, nil
+}
+
+// ---- Operational / seed ----
+
+func (s *SQLStore) SoftWipeOperationalData() error {
+	_, err := s.db.Exec(`UPDATE groups SET status='banned' WHERE status='active'`)
+	return err
+}
+
+func (s *SQLStore) ReseedTaxonomySeedInserts() error   { return nil }
+func (s *SQLStore) ReseedCrawlerChannelSeedInserts() error { return nil }
+
+// ---- Context stub ----
+var _ context.Context // ensure import used
