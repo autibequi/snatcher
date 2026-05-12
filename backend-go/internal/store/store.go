@@ -51,11 +51,9 @@ type Store interface {
 	ApplyGlobalDailyLimitToAccounts(limit int) error
 	// Atualiza só o marcador de ciclo do worker (migration 0123).
 	TouchAutoMatchWorkerRun(at time.Time) error
-	ListWAAccounts() ([]models.WAAccount, error)
-	GetWAAccount(id int64) (models.WAAccount, error)
-	CreateWAAccount(a models.WAAccount) (int64, error)
-	UpdateWAAccount(a models.WAAccount) error
-	DeleteWAAccount(id int64) error
+	// AccountV2 — contas WA v2 (tabela accounts). Substituem WAAccount após F10.
+	ListAccountsV2() ([]models.AccountV2, error)
+	GetAccountV2(id int64) (models.AccountV2, error)
 	ListTGAccounts() ([]models.TGAccount, error)
 	GetTGAccount(id int64) (models.TGAccount, error)
 	CreateTGAccount(a models.TGAccount) (int64, error)
@@ -63,7 +61,6 @@ type Store interface {
 	DeleteTGAccount(id int64) error
 
 	// Throttle (check and increment daily message limits)
-	CheckAndIncrementWA(accountID int64) error
 	CheckAndIncrementTG(accountID int64) error
 
 	// SearchTerms
@@ -89,6 +86,12 @@ type Store interface {
 	CountCrawlResultsByTerm(termID int64) (int64, error)
 	MarkCrawlResultProcessed(id int64, variantID int64) error
 	URLAlreadyCrawled(searchTermID int64, url string) (bool, error)
+	// InsertRawItem grava um CrawlResult em raw_items (pipeline canônico v2).
+	// Tolerante a erro — nunca bloqueia o fluxo principal.
+	InsertRawItem(r models.CrawlResult, payload []byte) error
+	// InsertDiscardedItem grava um item rejeitado em discarded_items (pipeline canônico v2).
+	// Tolerante a erro — nunca bloqueia o fluxo principal.
+	InsertDiscardedItem(r models.CrawlResult, payload []byte, reason string) error
 
 	// CrawlLogs
 	InsertCrawlLog(l models.CrawlLog) (int64, error)
@@ -155,24 +158,8 @@ type Store interface {
 	WasSentRecently(productID, targetID int64, since time.Time) (bool, error)
 	RecordSent(s models.SentMessageV2) error
 
-	// Broadcast
-	CreateBroadcast(b models.BroadcastMessage) (int64, error)
-	UpdateBroadcast(b models.BroadcastMessage) error
-	ListBroadcasts(limit int) ([]models.BroadcastMessage, error)
-
 	// Analytics
 	CountClicksByProduct(productID int64) (int64, error)
-	InsertClickLog(l models.ClickLog) error
-
-	// Legacy
-	ListGroups() ([]models.Group, error)
-	GetGroup(id int64) (models.Group, error)
-	ListProductsByGroup(groupID int64, limit int) ([]models.Product, error)
-	GetProductByShortID(shortID string) (models.Product, bool, error)
-
-	// TelegramChat
-	UpsertTelegramChat(c models.TelegramChat) error
-	ListTelegramChats() ([]models.TelegramChat, error)
 
 	// Analytics
 	GetAnalyticsSummary(since time.Time, days int) (map[string]any, error)
@@ -225,9 +212,6 @@ type Store interface {
 	DeletePublicLink(id int64) error
 	IncrementRoundRobinIdx(id int64, newIdx int) error
 	IncrementPublicLinkClicks(id int64) error
-
-	// Channel history
-	ListChannelDispatchHistory(channelID int64, limit int) ([]models.ChannelHistoryEntry, error)
 
 	// Clusters
 	ListClusters() ([]models.Cluster, error)
@@ -335,15 +319,6 @@ type Store interface {
 	// JonfreyLastRunByActionType última linha terminada por action_type (finished_at + status).
 	JonfreyLastRunByActionType() (map[string]models.JonfreyLastRunSummary, error)
 
-	// Ads — disparos recorrentes customizados
-	ListAds(activeOnly bool) ([]models.Ad, error)
-	GetAd(id int64) (models.Ad, error)
-	CreateAd(a models.Ad) (int64, error)
-	UpdateAd(a models.Ad) error
-	DeleteAd(id int64) error
-	MarkAdDispatched(id int64) error
-	IncrementAdClicks(shortID string, n int) error
-
 	// Taxonomy Patterns (PR-1: triage-refactor)
 	ListTaxonomyPatterns(taxonomyIDs []int64, kinds []string) ([]models.TaxonomyPattern, error)
 	ListAllActivePatterns() ([]models.TaxonomyPattern, error)
@@ -362,4 +337,10 @@ type Store interface {
 	UpdateProductAttributesJSON(productID int64, attrs []byte) error
 	GetVariantBySourceSubID(source, subid string) (models.CatalogVariant, bool, error)
 	CountChannelClicksLast30d(channelID int64) (int, error)
+
+	// Catalog v2 — pipeline canônico (F03+)
+	UpsertCatalogItem(p CatalogV2UpsertParams) (string, error)
+	GetCatalogItemByDedupKey(dedupKey string) (CatalogV2Item, bool, error)
+	GetCatalogItemByURL(canonicalURL string) (CatalogV2Item, bool, error)
+	ListCatalogV2ForMatch(limit int) ([]CatalogV2Item, error)
 }

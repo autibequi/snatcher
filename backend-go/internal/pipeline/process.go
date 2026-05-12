@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +11,24 @@ import (
 	"snatcher/backendv2/internal/store"
 	"strings"
 )
+
+// writeRawItem persiste um CrawlResult em raw_items (pipeline canônico v2).
+// Tolerante a erro — nunca bloqueia o fluxo principal.
+func writeRawItem(ctx context.Context, st store.Store, r models.CrawlResult) {
+	payload, _ := json.Marshal(r)
+	if err := st.InsertRawItem(r, payload); err != nil {
+		slog.Debug("pipeline: writeRawItem", "err", err)
+	}
+}
+
+// writeDiscardedItem persiste um item rejeitado em discarded_items (pipeline canônico v2).
+// Tolerante a erro — nunca bloqueia o fluxo principal.
+func writeDiscardedItem(ctx context.Context, st store.Store, r models.CrawlResult, reason string) {
+	payload, _ := json.Marshal(r)
+	if err := st.InsertDiscardedItem(r, payload, reason); err != nil {
+		slog.Debug("pipeline: writeDiscardedItem", "err", err)
+	}
+}
 
 // Thresholds de match em zonas:
 // - HIGH:  ≥ 0.90 + peso/quantity batem → auto-merge (match_method=fuzzy_high)
@@ -81,7 +98,7 @@ func buildAttributesJSON(hits []match.TaxonomyHit) []byte {
 	return data
 }
 
-// ProcessCrawlResults normaliza CrawlResults não processados e os associa ao catálogo.
+// ProcessCrawlResults normaliza CrawlResults não processados e os associa ao catálogo v2.
 func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 	results, err := st.ListUnprocessedCrawlResults()
 	if err != nil {
@@ -93,29 +110,20 @@ func ProcessCrawlResults(ctx context.Context, st store.Store) error {
 
 	keywords, _ := st.ListGroupingKeywords()
 
-	// Carrega todos os produtos do catálogo para fuzzy match
-	products, err := st.ListCatalogProducts(10000, 0, true)
+	// Carrega itens do catálogo v2 para fuzzy match
+	catalogItems, err := st.ListCatalogV2ForMatch(10000)
 	if err != nil {
 		return err
 	}
-
-	// Track which products were successfully found in this crawl
-	successfulProductIDs := make(map[int64]bool)
 
 	for _, r := range results {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if productID, err := processResult(ctx, st, r, products, keywords); err != nil {
+		if err := processResult(ctx, st, r, catalogItems, keywords); err != nil {
 			slog.Error("process result", "id", r.ID, "err", err)
-		} else if productID > 0 {
-			successfulProductIDs[productID] = true
 		}
 	}
-
-	// Não incrementa falhas aqui — buscas por keyword não garantem redescobrir
-	// todos os produtos existentes. Falhas só devem ser incrementadas via scraper
-	// direto de URL, não por ausência em resultado de busca.
 
 	return nil
 }
@@ -124,138 +132,117 @@ func processResult(
 	ctx context.Context,
 	st store.Store,
 	r models.CrawlResult,
-	products []models.CatalogProduct,
+	catalogItems []store.CatalogV2Item,
 	keywords []models.GroupingKeyword,
-) (int64, error) {
-	// PASSO 1: Dedup por (source, source_subid)
+) error {
+	// Pipeline canônico v2: grava raw_item antes de qualquer processamento.
+	writeRawItem(ctx, st, r)
+
+	imageURL := ""
+	if r.ImageURL.Valid {
+		imageURL = r.ImageURL.String
+	}
+
+	// PASSO 1: Dedup por (source, source_subid) via catalog v2 dedup_key
 	if r.SourceSubID.Valid && r.SourceSubID.String != "" {
-		variant, found, err := st.GetVariantBySourceSubID(r.Source, r.SourceSubID.String)
+		dedupKey := store.DedupKeyV2(r.Source, r.SourceSubID.String)
+		item, found, err := st.GetCatalogItemByDedupKey(dedupKey)
 		if err == nil && found {
-			origMeta := variant.Metadata
-			merged := models.MergeCrawlMetadataJSON(variant.Metadata, r.Metadata)
-			metaChanged := string(merged) != string(origMeta)
-			variant.Metadata = merged
-			priceChanged := variant.Price != r.Price
-			if priceChanged {
-				variant.Price = r.Price
-			}
-			if priceChanged || metaChanged {
-				_ = st.UpdateCatalogVariant(variant)
-			}
-			if priceChanged {
-				_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
-					VariantID: variant.ID,
-					Price:     r.Price,
+			// Atualiza preço/hash se necessário
+			newHash := store.ContentHashV2(item.Title, r.Price, imageURL)
+			if newHash != item.ContentHash || r.Price != item.PriceCurrent {
+				_, _ = st.UpsertCatalogItem(store.CatalogV2UpsertParams{
+					DedupKey:     dedupKey,
+					ShortID:      item.ShortID,
+					SourceID:     item.SourceID,
+					Title:        item.Title,
+					PriceCurrent: r.Price,
+					CanonicalURL: item.CanonicalURL,
+					ImageURL:     imageURL,
 				})
-				updateLowestPrice(st, variant.CatalogProductID)
 			}
-			_ = st.ResetProductFailures(variant.CatalogProductID)
-			return variant.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, variant.ID)
+			return st.MarkCrawlResultProcessed(r.ID, item.ID)
 		}
 	}
 
-	// PASSO 2: Dedup por URL canônica
+	// PASSO 2: Dedup por URL canônica via catalog v2
 	canonURL := canonicalizeURL(r.URL)
-	variant, found, err := st.GetVariantByURL(canonURL)
+	item, found, err := st.GetCatalogItemByURL(canonURL)
 	if err == nil && found {
-		origMeta := variant.Metadata
-		merged := models.MergeCrawlMetadataJSON(variant.Metadata, r.Metadata)
-		metaChanged := string(merged) != string(origMeta)
-		variant.Metadata = merged
-		priceChanged := variant.Price != r.Price
-		if priceChanged {
-			variant.Price = r.Price
-		}
-		if priceChanged || metaChanged {
-			_ = st.UpdateCatalogVariant(variant)
-		}
-		if priceChanged {
-			_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
-				VariantID: variant.ID,
-				Price:     r.Price,
+		newHash := store.ContentHashV2(item.Title, r.Price, imageURL)
+		if newHash != item.ContentHash || r.Price != item.PriceCurrent {
+			_, _ = st.UpsertCatalogItem(store.CatalogV2UpsertParams{
+				DedupKey:     item.DedupKey,
+				ShortID:      item.ShortID,
+				SourceID:     item.SourceID,
+				Title:        item.Title,
+				PriceCurrent: r.Price,
+				CanonicalURL: item.CanonicalURL,
+				ImageURL:     imageURL,
 			})
-			updateLowestPrice(st, variant.CatalogProductID)
 		}
-		_ = st.ResetProductFailures(variant.CatalogProductID)
-		return variant.CatalogProductID, st.MarkCrawlResultProcessed(r.ID, variant.ID)
+		return st.MarkCrawlResultProcessed(r.ID, item.ID)
 	}
 
 	// Descarta resultados sem preço
 	if r.Price <= 0 {
-		return 0, st.MarkCrawlResultProcessed(r.ID, 0)
+		writeDiscardedItem(ctx, st, r, "no_price")
+		return st.MarkCrawlResultProcessed(r.ID, 0)
 	}
 
-	// PASSO 3: Fuzzy match com 3 zonas
+	// PASSO 3: Fuzzy match com 3 zonas usando catalog v2
 	canonical := NormalizeTitle(r.Title)
 	weight := ExtractWeight(r.Title)
-	variantLabel := ExtractVariantLabel(r.Title)
 
-	matchedProduct, matchScore, matchMethod := findBestMatch(canonical, weight, products)
+	matchedItem, matchScore, matchMethod := findBestMatchV2(canonical, weight, catalogItems)
 
-	var productID int64
-
-	switch {
-	case matchScore >= 0.90 && matchedProduct != nil:
-		// High confidence: create variant em produto existente
-		productID = matchedProduct.ID
-		matchMethod = "fuzzy_high"
-	case matchScore >= 0.65 && matchedProduct != nil:
-		// Gray zone: chama LLM tiebreaker para decidir merge vs new
-		decision, targetID, reason := callLLMTiebreaker(ctx, canonical, weight, r.Title, r.Price, matchedProduct, matchScore)
-		if decision == "merge" && targetID > 0 {
-			productID = targetID
-			matchMethod = "llm_tiebreaker_merge"
-		} else {
-			// Fallback: criar novo produto
-			matchMethod = "llm_tiebreaker_new"
-			p := models.CatalogProduct{
-				CanonicalName: canonical,
-				Tags:          "[]",
-				Quantity:      ExtractQuantity(r.Title),
-			}
-			if weight != "" {
-				p.Weight = models.NullString{NullString: sql.NullString{String: weight, Valid: true}}
-			}
-			if r.ImageURL.Valid {
-				p.ImageURL = r.ImageURL
-			}
-			newID, err := st.CreateCatalogProduct(p)
-			if err != nil {
-				return 0, err
-			}
-			productID = newID
-			p.ID = newID
-			products = append(products, p)
-			matchedProduct = &products[len(products)-1]
-		}
-		if reason != "" {
-			slog.Debug("LLM tiebreaker result", "decision", decision, "reason", reason, "target_id", targetID)
-		}
-	default:
-		// Score < 0.65 OU nenhum match: criar novo produto
-		matchMethod = "new_product"
-		p := models.CatalogProduct{
-			CanonicalName: canonical,
-			Tags:          "[]",
-			Quantity:      ExtractQuantity(r.Title),
-		}
-		if weight != "" {
-			p.Weight = models.NullString{NullString: sql.NullString{String: weight, Valid: true}}
-		}
-		if r.ImageURL.Valid {
-			p.ImageURL = r.ImageURL
-		}
-		newID, err := st.CreateCatalogProduct(p)
-		if err != nil {
-			return 0, err
-		}
-		productID = newID
-		p.ID = newID
-		products = append(products, p)
-		matchedProduct = &products[len(products)-1]
+	// Determina dedup_key canônico para o novo item: source:source_subid (se disponível) ou source:canonURL
+	var dedupKey string
+	if r.SourceSubID.Valid && r.SourceSubID.String != "" {
+		dedupKey = store.DedupKeyV2(r.Source, r.SourceSubID.String)
+	} else {
+		dedupKey = store.DedupKeyV2(r.Source, canonURL)
 	}
 
-	// PASSO 4: Enrich tags via patterns
+	var upsertTitle string
+	switch {
+	case matchScore >= 0.90 && matchedItem != nil:
+		// High confidence: usa título do item existente (match canônico)
+		matchMethod = "fuzzy_high"
+		upsertTitle = matchedItem.Title
+	case matchScore >= 0.65 && matchedItem != nil:
+		// Gray zone: decide via heurística conservadora
+		decision, targetTitle, reason := callLLMTiebreakerV2(ctx, canonical, weight, r.Title, r.Price, matchedItem, matchScore)
+		if decision == "merge" && targetTitle != "" {
+			matchMethod = "llm_tiebreaker_merge"
+			upsertTitle = targetTitle
+		} else {
+			matchMethod = "llm_tiebreaker_new"
+			upsertTitle = r.Title
+		}
+		if reason != "" {
+			slog.Debug("LLM tiebreaker result", "decision", decision, "reason", reason)
+		}
+	default:
+		// Score < 0.65 OU nenhum match: novo item
+		matchMethod = "new_product"
+		upsertTitle = r.Title
+	}
+
+	// PASSO 4: Upsert em catalog v2
+	catalogID, err := st.UpsertCatalogItem(store.CatalogV2UpsertParams{
+		DedupKey:     dedupKey,
+		SourceID:     r.Source,
+		Title:        upsertTitle,
+		PriceCurrent: r.Price,
+		CanonicalURL: canonURL,
+		ImageURL:     imageURL,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Enriquece via patterns (taxonomia — best-effort, tolerante a erro)
 	_ = patternCache.Refresh(st)
 	var crawlMeta models.CrawlMetadata
 	if len(r.Metadata) > 0 {
@@ -266,72 +253,69 @@ func processResult(
 	}, " "))
 	hits := patternCache.MatchAllPatterns(strings.TrimSpace(canonical + " " + r.Title + " " + metaBits))
 
-	refreshedProduct, _ := st.GetCatalogProduct(productID)
+	// Carrega item recém-inserido para obter seu ID numérico para MarkCrawlResultProcessed
+	newItem, _, _ := st.GetCatalogItemByDedupKey(dedupKey)
 
-	// Upsert cada hit em catalogproduct_taxonomy
-	for _, hit := range hits {
-		role := mapTaxonomyTypeToRole(hit.TaxonomyType, hit.ParentID)
-		_ = st.UpsertProductTaxonomy(productID, hit.TaxonomyID, role, hit.Confidence, "pipeline")
+	// Registra patterns (mapeamento taxonomia — v1 tables ainda existem até F12)
+	if newItem.ID > 0 {
+		// Não há product_id em catalog v2 — pula enriquecimento de taxonomia por produto
+		// (F05 migra handlers; F12 limpa sql_catalog.go)
+		_ = hits
+		_ = catalogID
+		_ = matchMethod
 	}
 
-	// PASSO 5: Sincroniza attributes JSONB
-	attrs := buildAttributesJSON(hits)
-	_ = st.UpdateProductAttributesJSON(productID, attrs)
-
-	// PASSO 6: Curation status
-	hasPrimary := false
-	hasBrand := false
-	for _, hit := range hits {
-		if hit.TaxonomyType == "category" && (hit.ParentID == nil || *hit.ParentID == 0) {
-			hasPrimary = true
-		}
-		if hit.TaxonomyType == "brand" {
-			hasBrand = true
-		}
-	}
-
-	if hasPrimary && hasBrand {
-		refreshedProduct.CurationStatus = "auto"
-	} else {
-		refreshedProduct.CurationStatus = "pending"
-	}
-	_ = st.UpdateCatalogProduct(refreshedProduct)
-
-	// Cria variante
-	v := models.CatalogVariant{
-		CatalogProductID: productID,
-		Title:            r.Title,
-		Price:            r.Price,
-		URL:              canonURL,
-		ImageURL:         r.ImageURL,
-		Source:           r.Source,
-		MatchConfidence:  models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: matchScore, Valid: matchScore > 0}},
-		MatchMethod:      models.NullString{NullString: sql.NullString{String: matchMethod, Valid: matchMethod != ""}},
-		Metadata:         r.Metadata,
-	}
-	if variantLabel != "" {
-		v.VariantLabel = models.NullString{NullString: sql.NullString{String: variantLabel, Valid: true}}
-	}
-	variantID, err := st.CreateCatalogVariant(v)
-	if err != nil {
-		return 0, err
-	}
-
-	// Histórico de preço
-	_ = st.InsertPriceHistoryV2(models.PriceHistoryV2{
-		VariantID: variantID,
-		Price:     r.Price,
-	})
-
-	// Atualiza lowest_price
-	updateLowestPrice(st, productID)
-
-	// Reset failure count
-	_ = st.ResetProductFailures(productID)
-
-	return productID, st.MarkCrawlResultProcessed(r.ID, variantID)
+	return st.MarkCrawlResultProcessed(r.ID, newItem.ID)
 }
 
+// callLLMTiebreakerV2 decide se um item em zona cinza deve ser merge ou novo (catalog v2).
+// Retorna (decision, targetTitle, reasoning).
+func callLLMTiebreakerV2(ctx context.Context, canonicalNew, weightNew, titleNew string, priceNew float64, candidate *store.CatalogV2Item, matchScore float64) (string, string, string) {
+	if matchScore >= 0.85 {
+		return "merge", candidate.Title, fmt.Sprintf("high confidence merge (score=%.2f)", matchScore)
+	}
+	return "new", "", fmt.Sprintf("low confidence in gray zone (score=%.2f)", matchScore)
+}
+
+// findBestMatchV2 retorna o item de catalog v2 com maior score Levenshtein.
+// Mantém a mesma lógica de zonas que findBestMatch, operando sobre CatalogV2Item.
+//
+// Lógica de zonas:
+//
+//	score ≥ 0.90 + weight bate (ou ambos vazios) → fuzzy_high (merge automático)
+//	score ≥ 0.90 + weight conflita               → llm_tiebreaker (LLM decide)
+//	0.65 ≤ score < 0.90                          → llm_tiebreaker (zona cinza)
+//	score < 0.65                                 → nil (item novo)
+func findBestMatchV2(canonical, weight string, items []store.CatalogV2Item) (*store.CatalogV2Item, float64, string) {
+	var best *store.CatalogV2Item
+	bestScore := 0.0
+	for i := range items {
+		// Normaliza título do item v2 para comparação
+		normalizedTitle := NormalizeTitle(items[i].Title)
+		score := FuzzyScore(canonical, normalizedTitle)
+		if score > bestScore {
+			bestScore = score
+			best = &items[i]
+		}
+	}
+	if best == nil || bestScore < matchGrayLow {
+		return nil, bestScore, ""
+	}
+
+	// Weight check — extrai peso do título do item v2 para comparar
+	weightMatch := true
+	bestWeight := ExtractWeight(best.Title)
+	if weight != "" && bestWeight != "" {
+		weightMatch = strings.EqualFold(strings.TrimSpace(weight), strings.TrimSpace(bestWeight))
+	}
+
+	if bestScore >= matchHighConfidence && weightMatch {
+		return best, bestScore, "fuzzy_high"
+	}
+	return best, bestScore, "llm_tiebreaker"
+}
+
+// applyKeywords aplica keywords de agrupamento a um CatalogProduct (v1 — mantido para compat até F12).
 func applyKeywords(st store.Store, p *models.CatalogProduct, title string, keywords []models.GroupingKeyword) {
 	titleLower := strings.ToLower(title)
 	changed := false
@@ -359,6 +343,7 @@ func applyKeywords(st store.Store, p *models.CatalogProduct, title string, keywo
 	}
 }
 
+// updateLowestPrice atualiza o lowest_price de um CatalogProduct v1 (mantido até F12).
 func updateLowestPrice(st store.Store, productID int64) {
 	variants, err := st.ListVariantsByProduct(productID)
 	if err != nil || len(variants) == 0 {
@@ -377,64 +362,4 @@ func updateLowestPrice(st store.Store, productID int64) {
 	}
 
 	_ = st.UpdateCatalogProduct(p)
-}
-
-// callLLMTiebreaker decide se um produto em zona cinza (0.65-0.90 score) deve ser merge ou novo.
-// Retorna (decision, targetProductID, reasoning).
-// decision pode ser "merge" ou "new"; targetProductID > 0 se merge.
-func callLLMTiebreaker(ctx context.Context, canonicalNew, weightNew, titleNew string, priceNew float64, candidate *models.CatalogProduct, matchScore float64) (string, int64, string) {
-	// Para agora, implementamos fallback conservador: só merge se score ≥ 0.85.
-	// Idealmente aqui chamaríamos LLM, mas precisaríamos passar llm.Client como parâmetro.
-	// Por enquanto, retornamos "new" para zona cinza baixa e confiamos em score ≥ 0.85.
-
-	if matchScore >= 0.85 {
-		// Score alto na zona cinza: assume merge
-		return "merge", candidate.ID, fmt.Sprintf("high confidence merge (score=%.2f)", matchScore)
-	}
-
-	// Score baixo na zona cinza: cria novo produto
-	return "new", 0, fmt.Sprintf("low confidence in gray zone (score=%.2f)", matchScore)
-}
-
-// findBestMatch retorna o produto candidato com maior score Levenshtein, junto com:
-// - score (0..1)
-// - método: "fuzzy_high" (auto-merge, score≥0.90 e weight match), "llm_tiebreaker" (gray zone), ""
-//
-// Lógica de zonas:
-//   score ≥ 0.90 + weight bate (ou ambos vazios) → fuzzy_high (merge automático)
-//   score ≥ 0.90 + weight conflita               → llm_tiebreaker (LLM decide)
-//   0.65 ≤ score < 0.90                          → llm_tiebreaker (zona cinza)
-//   score < 0.65                                 → nil (produto novo)
-//
-// O caller (processResult) chama LLM se método == "llm_tiebreaker"; caso LLM
-// confirme não-match, sobe pra produto novo.
-func findBestMatch(canonical, weight string, products []models.CatalogProduct) (*models.CatalogProduct, float64, string) {
-	var best *models.CatalogProduct
-	bestScore := 0.0
-	for i := range products {
-		score := FuzzyScore(canonical, products[i].CanonicalName)
-		if score > bestScore {
-			bestScore = score
-			best = &products[i]
-		}
-	}
-	if best == nil || bestScore < matchGrayLow {
-		return nil, bestScore, ""
-	}
-
-	// Weight check — se ambos têm peso e divergem, downgrada pra zona cinza.
-	weightMatch := true
-	bestWeight := ""
-	if best.Weight.Valid {
-		bestWeight = best.Weight.String
-	}
-	if weight != "" && bestWeight != "" {
-		weightMatch = strings.EqualFold(strings.TrimSpace(weight), strings.TrimSpace(bestWeight))
-	}
-
-	if bestScore >= matchHighConfidence && weightMatch {
-		return best, bestScore, "fuzzy_high"
-	}
-	// Zona cinza: score alto mas peso conflita, OU score 0.65-0.90.
-	return best, bestScore, "llm_tiebreaker"
 }

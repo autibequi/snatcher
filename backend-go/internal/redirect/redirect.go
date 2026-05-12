@@ -1,11 +1,8 @@
 package redirect
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"net/http"
-	"net/url"
-	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 	"strings"
 	"sync"
@@ -17,7 +14,6 @@ import (
 
 const (
 	productTTL = 1 * time.Hour
-	configTTL  = 5 * time.Minute
 	// ProductRedirectCacheMaxAge — TTL para Cache-Control / CDN-Cache-Control em redirects de produto (/r/, /v/).
 	ProductRedirectCacheMaxAge = 7 * 24 * 3600 // 7 dias
 )
@@ -27,17 +23,10 @@ type productEntry struct {
 	expiresAt   time.Time
 }
 
-type configEntry struct {
-	affiliates map[string]string // source_id -> tracking_id
-	validAt    time.Time
-}
-
 type Redirector struct {
 	db    *sqlx.DB
 	store store.Store
 	cache sync.Map
-	cfgMu sync.RWMutex
-	cfgV  configEntry
 	fraud *FraudFilter
 }
 
@@ -54,47 +43,8 @@ func SetProductRedirectCacheHeaders(h http.Header) {
 }
 
 func (rd *Redirector) Prewarm() {
-	affiliates, err := rd.store.ListAffiliates(nil)
-	if err != nil {
-		return
-	}
-
-	affMap := make(map[string]string)
-	for _, a := range affiliates {
-		if a.Active {
-			affMap[a.SourceID] = a.TrackingID
-		}
-	}
-
-	rows, err := rd.db.Query(
-		`SELECT short_id, url, source FROM product WHERE short_id IS NOT NULL AND short_id != ''`,
-	)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-
-	expires := time.Now().Add(productTTL)
-	n := 0
-	for rows.Next() {
-		var shortID, rawURL, source string
-		if err := rows.Scan(&shortID, &rawURL, &source); err != nil {
-			continue
-		}
-
-		var amzTag, mlToolID string
-		if source == "amazon" {
-			amzTag = affMap["amz"]
-		} else if source == "mercadolivre" {
-			mlToolID = affMap["ml"]
-		}
-
-		rd.cache.Store(shortID, productEntry{
-			redirectURL: affiliateURL(rawURL, source, amzTag, mlToolID),
-			expiresAt:   expires,
-		})
-		n++
-	}
+	// Prewarm carrega apenas short_links — tabela product removida em F07.
+	// (sem pré-carga de short_links por ora: entradas são cacheadas on-demand em resolve)
 }
 
 func (rd *Redirector) Handler() http.HandlerFunc {
@@ -136,9 +86,7 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 		rd.cache.Delete(shortID)
 	}
 
-	amzTag, mlToolID := rd.getConfig()
-
-	// Novo sistema: tabela short_links — dest_url já inclui afiliado (BuildLink antes do insert).
+	// Canônico: tabela short_links — dest_url já inclui afiliado (BuildLink antes do insert).
 	if destURL, _, ok := rd.store.PeekShortLinkByID(shortID); ok {
 		rd.cache.Store(shortID, productEntry{
 			redirectURL: destURL,
@@ -147,50 +95,7 @@ func (rd *Redirector) resolve(shortID string) (string, bool) {
 		return destURL, true
 	}
 
-	// Legado: tabela product
-	p, found, err := rd.store.GetProductByShortID(shortID)
-	if err != nil || !found {
-		return "", false
-	}
-
-	dest := affiliateURL(p.URL, p.Source, amzTag, mlToolID)
-	rd.cache.Store(shortID, productEntry{
-		redirectURL: dest,
-		expiresAt:   time.Now().Add(productTTL),
-	})
-	return dest, true
-}
-
-func (rd *Redirector) getConfig() (amzTag, mlToolID string) {
-	rd.cfgMu.RLock()
-	if time.Now().Before(rd.cfgV.validAt) {
-		a, m := rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
-		rd.cfgMu.RUnlock()
-		return a, m
-	}
-	rd.cfgMu.RUnlock()
-
-	rd.cfgMu.Lock()
-	defer rd.cfgMu.Unlock()
-
-	if time.Now().Before(rd.cfgV.validAt) {
-		return rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
-	}
-
-	affiliates, err := rd.store.ListAffiliates(nil)
-	if err == nil && len(affiliates) > 0 {
-		aff := make(map[string]string)
-		for _, a := range affiliates {
-			if a.Active {
-				aff[a.SourceID] = a.TrackingID
-			}
-		}
-		rd.cfgV = configEntry{
-			affiliates: aff,
-			validAt:    time.Now().Add(configTTL),
-		}
-	}
-	return rd.cfgV.affiliates["amz"], rd.cfgV.affiliates["ml"]
+	return "", false
 }
 
 func (rd *Redirector) logClick(r *http.Request, shortID string) {
@@ -203,106 +108,49 @@ func (rd *Redirector) logClick(r *http.Request, shortID string) {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		ip = strings.SplitN(xff, ",", 2)[0]
 	}
-	ipHash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))[:16]
 	ua := r.UserAgent()
-	ref := r.Referer()
 
-	// Extrai host do Referer para domain_host (clicks table)
+	// Extrai host do Request para domain_host (clicks table)
 	domainHost := r.Host
 	if domainHost == "" {
 		domainHost = "unknown"
 	}
 
-	// 1) Tenta legado: tabela product → clicklog (com FK product_id)
-	if p, found, err := rd.store.GetProductByShortID(shortID); err == nil && found {
-		_ = rd.store.InsertClickLog(models.ClickLog{
-			ProductID: p.ID,
-			IPHash:    ipHash,
-			UserAgent: ua,
-			Referrer:  ref,
-		})
-		// Best-effort write em clicks (nova tabela canônica)
-		_, _ = rd.db.Exec(`
-			INSERT INTO clicks (short_id, catalog_id, domain_host, group_id, user_agent, ip)
-			VALUES ($1, NULL, $2, NULL, $3, $4::inet)
-			ON CONFLICT DO NOTHING`,
-			shortID, domainHost, ua, ip)
+	if _, _, ok := rd.store.PeekShortLinkByID(shortID); !ok {
 		return
 	}
 
-	// 2) Sistema novo: short_links → registra em shortlink_clicks com produto/canal/dispatch resolvidos
-	if destURL, source, ok := rd.store.PeekShortLinkByID(shortID); ok {
-		// Resolve último dispatch que usou este short_id no affiliate_link, pega product_id+channel_id
-		// Útil para clusterização e analytics por canal/produto.
-		var dispCtx struct {
-			ProductID  *int64 `db:"product_id"`
-			ChannelID  *int64 `db:"channel_id"`
-			DispatchID *int64 `db:"dispatch_id"`
-		}
-		_ = rd.db.Get(&dispCtx, `
-			SELECT d.product_id, aml.channel_id, d.id AS dispatch_id
-			FROM dispatches d
-			LEFT JOIN auto_match_logs aml ON aml.dispatch_id = d.id
-			WHERE d.affiliate_link LIKE '%/v/' || $1
-			ORDER BY d.created_at DESC
-			LIMIT 1`, shortID)
+	rd.store.IncrementShortLinkClickCount(shortID)
 
-		_, _ = rd.db.Exec(`
-			INSERT INTO shortlink_clicks (short_id, source, dest_url, product_id, channel_id, dispatch_id, ip_hash, user_agent, referrer)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			shortID, source, destURL, dispCtx.ProductID, dispCtx.ChannelID, dispCtx.DispatchID, ipHash, ua, ref)
-		rd.store.IncrementShortLinkClickCount(shortID)
-
-		// Resolve group_id via dispatches para popular clicks.group_id
-		var groupID *int64
-		_ = rd.db.Get(&groupID, `
-			SELECT d.group_id FROM dispatches d
-			WHERE d.affiliate_link LIKE '%/v/' || $1
-			ORDER BY d.created_at DESC LIMIT 1`, shortID)
-
-		// Best-effort write em clicks (nova tabela canônica)
-		_, _ = rd.db.Exec(`
-			INSERT INTO clicks (short_id, catalog_id, domain_host, group_id, user_agent, ip)
-			VALUES ($1, NULL, $2, $3, $4, $5::inet)`,
-			shortID, domainHost, groupID, ua, ip)
+	// Resolve catalog_id e group_id via send_log v2 (pipeline canônico — F07).
+	// Usa o envio mais recente associado a este short_id via catalog.short_id.
+	var logCtx struct {
+		CatalogID *int64 `db:"catalog_id"`
+		GroupID   *int64 `db:"group_id"`
 	}
+	_ = rd.db.Get(&logCtx, `
+		SELECT sl.catalog_id, sl.group_id
+		FROM send_log sl
+		JOIN catalog c ON c.id = sl.catalog_id
+		WHERE c.short_id = $1
+		ORDER BY sl.sent_at DESC
+		LIMIT 1`, shortID)
+
+	// Grava em clicks (tabela canônica v2).
+	_, _ = rd.db.Exec(`
+		INSERT INTO clicks (short_id, catalog_id, domain_host, group_id, user_agent, ip)
+		VALUES ($1, $2, $3, $4, $5, $6::inet)`,
+		shortID, logCtx.CatalogID, domainHost, logCtx.GroupID, ua, ip)
 }
 
-// EnqueueClickLog grava clicklog ou shortlink_clicks de forma assíncrona (um incremento em short_links por evento).
+// EnqueueClickLog grava click de forma assíncrona (clicks v2 + IncrementShortLinkClickCount).
 func (rd *Redirector) EnqueueClickLog(r *http.Request, shortID string) {
 	go rd.logClick(r, shortID)
 }
 
 // ---------------------------------------------------------------------------
-// Helpers (extraídos do redirect/main.go)
+// Helpers
 // ---------------------------------------------------------------------------
-
-func affiliateURL(rawURL, source, amzTag, mlToolID string) string {
-	switch source {
-	case "amazon":
-		if amzTag == "" {
-			return rawURL
-		}
-		u, err := url.Parse(rawURL)
-		if err != nil {
-			return rawURL
-		}
-		u.RawQuery = "tag=" + url.QueryEscape(amzTag)
-		u.Fragment = ""
-		return u.String()
-	case "mercadolivre":
-		if mlToolID == "" {
-			return rawURL
-		}
-		sep := "?"
-		if strings.Contains(rawURL, "?") {
-			sep = "&"
-		}
-		return fmt.Sprintf("%s%smatt_tool=%s&matt_source=affiliate",
-			rawURL, sep, url.QueryEscape(mlToolID))
-	}
-	return rawURL
-}
 
 func validShortID(s string) bool {
 	if len(s) < 4 || len(s) > 16 {

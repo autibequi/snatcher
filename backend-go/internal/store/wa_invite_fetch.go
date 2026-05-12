@@ -32,21 +32,9 @@ func (s *SQLStore) FetchAndPersistWhatsAppInvite(ctx context.Context, groupID in
 		return "", fmt.Errorf("grupo sem conta WA")
 	}
 
-	acc, err := s.GetWAAccount(g.WAAccountID.Int64)
-	if err != nil {
-		return "", err
-	}
+	// F08b: Evolution credentials from global appconfig (no per-account overrides).
 	cfg, _ := s.GetConfig()
-	baseURL, apiKey, instance := strings.TrimSpace(acc.BaseURL.String), strings.TrimSpace(acc.APIKey.String), strings.TrimSpace(acc.Instance.String)
-	if baseURL == "" && cfg.WABaseURL.Valid {
-		baseURL = strings.TrimSpace(cfg.WABaseURL.String)
-	}
-	if apiKey == "" && cfg.WAApiKey.Valid {
-		apiKey = strings.TrimSpace(cfg.WAApiKey.String)
-	}
-	if instance == "" && cfg.WAInstance.Valid {
-		instance = strings.TrimSpace(cfg.WAInstance.String)
-	}
+	baseURL, apiKey, instance := strings.TrimSpace(cfg.WABaseURL.String), strings.TrimSpace(cfg.WAApiKey.String), strings.TrimSpace(cfg.WAInstance.String)
 	if baseURL == "" {
 		return "", fmt.Errorf("Evolution não configurada")
 	}

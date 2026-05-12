@@ -63,16 +63,12 @@ func Build(
 	sources := adminhnd.NewSources(st)
 	affiliates := adminhnd.NewAffiliates(st)
 	catalog := adminhnd.NewCatalogDB(st, db)
-	channels := adminhnd.NewChannels(st, adapters)
 	config := adminhnd.NewConfigWithDB(st, db)
 	canal := handlers.NewCanal(st)
 	accounts := adminhnd.NewAccounts(st)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
-	broadcast := adminhnd.NewBroadcast(st)
 	analytics := adminhnd.NewAnalytics(st)
 	coverage := adminhnd.NewCoverageHandler(st)
-	dispatches := adminhnd.NewDispatchHandler(st, db)
-
 	// ReDesign handlers
 	groups      := adminhnd.NewGroupsHandler(st)
 	matchH      := adminhnd.NewMatchHandler(st)
@@ -86,16 +82,13 @@ func Build(
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy      := adminhnd.NewTaxonomyHandler(st)
 	curation      := adminhnd.NewCurationHandler(st, db, nil) // llmFn preenchido abaixo após composeH
-	autoMatch     := adminhnd.NewAutoMatchHandler(st)
 	linksH        := adminhnd.NewLinksHandler(st)
-	automations   := adminhnd.NewAutomationsHandler(st)
 	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
 	// Notifier compartilhado: handlers + scheduler postam resumos no grupo
 	// configurado em Settings → Notificações. Sem grupo configurado = no-op.
 	notif := notifier.New(st)
 	jonfrey.SetNotifier(notif)
 	dash.SetNotifier(notif)
-	dispatches.SetNotifier(notif)
 	if sched != nil {
 		sched.SetNotifier(notif)
 	}
@@ -103,8 +96,6 @@ func Build(
 	if sched != nil {
 		sched.SetJonfreyTick(jonfrey.RunCycle)
 	}
-	ads           := adminhnd.NewAdsHandler(st)
-
 	// PR-1: triage-refactor handlers
 	taxonomyPatterns := handlers.NewTaxonomyPattern(st)
 	matchLogs        := handlers.NewMatchLog(st)
@@ -118,11 +109,8 @@ func Build(
 	}
 	// Injeta factory LLM nos handlers que precisam
 	terms.SetLLMFn(composeH.BuildLLMClient)
-	channels.SetLLMFn(composeH.BuildLLMClient)
 	curation.SetLLMFn(composeH.BuildLLMClient)
 	dash.SetLLMFn(composeH.BuildLLMClient)
-	dispatches.SetLLMFn(composeH.BuildLLMClient)
-	automations.SetLLMFn(composeH.BuildLLMClient)
 	taxonomy.SetLLMFn(composeH.BuildLLMClient)
 	groups.SetLLMFn(composeH.BuildLLMClient)
 	catalog.SetLLMFn(composeH.BuildLLMClient)
@@ -196,10 +184,6 @@ func Build(
 	r.Get("/g/{slug}", publLinksResolver.Resolve)
 	r.Get("/ws", wsHandler.ServeHTTP)
 
-	// QR + health públicos
-	r.Get("/api/accounts/wa/{id}/qr", accounts.WAQR)
-	r.Get("/api/accounts/wa/health", accounts.WAHealth)
-
 	// ---------------------------------------------------------------------------
 	// Rotas protegidas
 	// ---------------------------------------------------------------------------
@@ -263,48 +247,14 @@ func Build(
 		r.Get("/api/catalog/keywords", catalog.ListKeywords)
 		r.Get("/api/catalog/keywords/", catalog.ListKeywords)
 
-		// Channels
-		r.Get("/api/channels", channels.List)
-		r.Get("/api/channels/", channels.List)
-		r.Get("/api/channels/{id}", channels.Get)
-		r.Post("/api/channels", channels.Create)
-		r.Post("/api/channels/", channels.Create)
-		r.Put("/api/channels/{id}", channels.Update)
-		r.Delete("/api/channels/{id}", channels.Delete)
-		r.Post("/api/channels/{id}/targets", channels.CreateTarget)
-		r.Patch("/api/channels/{id}/targets/{target_id}", channels.UpdateTarget)
-		r.Delete("/api/channels/{id}/targets/{target_id}", channels.DeleteTarget)
-		r.Get("/api/channels/{id}/rules", channels.ListRules)
-		r.Post("/api/channels/{id}/rules", channels.CreateRule)
-		r.Put("/api/channels/{id}/rules/{rule_id}", channels.UpdateRule)
-		r.Delete("/api/channels/{id}/rules/{rule_id}", channels.DeleteRule)
-		r.Post("/api/channels/{id}/send-digest", channels.SendDigest)
-		r.Post("/api/channels/{id}/send-product", channels.SendProduct)
-		r.Post("/api/channels/suggest", channels.Suggest)
-
-		// Automations
-		r.Get("/api/automations", automations.List)
-		r.Get("/api/automations/{channelId}", automations.Get)
-		r.Put("/api/automations/{channelId}", automations.Upsert)
-		r.Get("/api/automations/{channelId}/preview", automations.Preview)
-		r.Post("/api/automations/{channelId}/advise", automations.Advise)
-
 		// Jonfrey — orquestrador AI das automações
 		// Upload de imagens
 		r.Post("/api/uploads/image", adminhnd.UploadImage)
-
-		// Ads — disparos recorrentes pagos
-		r.Get("/api/ads", ads.List)
-		r.Post("/api/ads", ads.Create)
-		r.Get("/api/ads/{id}", ads.Get)
-		r.Patch("/api/ads/{id}", ads.Update)
-		r.Delete("/api/ads/{id}", ads.Delete)
 
 		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
 		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
 		r.Post("/api/jonfrey/run", jonfrey.RunAction)
 		r.Get("/api/jonfrey/review-dispatches", jonfrey.ReviewDispatchesGet)
-		r.Post("/api/jonfrey/review-dispatches", jonfrey.ReviewDispatches)
 		r.Get("/api/jonfrey/config", jonfrey.GetConfig)
 		r.Put("/api/jonfrey/config", jonfrey.UpdateConfig)
 
@@ -313,33 +263,11 @@ func Build(
 		r.Put("/api/config", config.Update)
 		r.Post("/api/config/full-auto-toggle", config.ToggleFullAuto)
 
-		// Accounts — WhatsApp
-		r.Get("/api/accounts/wa", accounts.ListWA)
-		r.Post("/api/accounts/wa", accounts.CreateWA)
-		r.Get("/api/accounts/wa/{id}", accounts.GetWA)
-		r.Put("/api/accounts/wa/{id}", accounts.UpdateWA)
-		r.Delete("/api/accounts/wa/{id}", accounts.DeleteWA)
-		r.Get("/api/accounts/wa/{id}/status", accounts.WAStatus)
-		r.Post("/api/accounts/wa/{id}/session/start", accounts.WAStartSession)
-		r.Post("/api/accounts/wa/{id}/session/logout", accounts.WAStartSession)
-		r.Get("/api/accounts/wa/{id}/groups", accounts.WAGroups)
-		r.Post("/api/accounts/wa/{id}/groups", accounts.WACreateGroup)
-
-		// Accounts — Telegram
-		r.Get("/api/accounts/tg", accounts.ListTG)
-		r.Post("/api/accounts/tg", accounts.CreateTG)
-		r.Put("/api/accounts/tg/{id}", accounts.UpdateTG)
-		r.Delete("/api/accounts/tg/{id}", accounts.DeleteTG)
+		// Accounts — WhatsApp CRUD removido em F08. Use /api/admin/senders/* para accounts v2.
 
 		// Crawl logs
 		r.Get("/api/crawl-logs", crawlLogs.List)
 		r.Get("/api/crawl-logs/", crawlLogs.List)
-
-		// Broadcast
-		r.Get("/api/broadcast", broadcast.List)
-		r.Get("/api/broadcast/", broadcast.List)
-		r.Post("/api/broadcast", broadcast.Create)
-		r.Post("/api/broadcast/", broadcast.Create)
 
 		// Analytics
 		r.Get("/api/analytics/summary", analytics.Summary)
@@ -347,10 +275,6 @@ func Build(
 		// Coverage (multi-WA)
 		r.Get("/api/coverage", coverage.GetCoverage)
 		r.Post("/api/coverage/sync", coverage.PostCoverageSync)
-
-		// Telegram chats discovery (dois paths — o frontend usa /api/config/tg/chats)
-		r.Get("/api/telegram/chats", accounts.ListTGChats)
-		r.Get("/api/config/tg/chats", accounts.ListTGChats)
 
 		// Legacy v1 groups (alias mantido para compatibilidade)
 		r.Get("/api/groups/legacy", accounts.ListGroups)
@@ -393,13 +317,6 @@ func Build(
 		r.Post("/api/curation/auto-llm", curation.AutoLLM)
 		r.Post("/api/curation/inspect-all", curation.InspectAll)
 
-		// Auto Match
-		r.Get("/api/auto-match", autoMatch.Status)
-		r.Get("/api/auto-match/preview", autoMatch.Preview)
-		r.Post("/api/auto-match/toggle", autoMatch.Toggle)
-		r.Post("/api/auto-match/run-now", autoMatch.RunNow)
-		r.Post("/api/auto-match/dispatch-one", autoMatch.DispatchOne)
-
 		// PR-1: Taxonomy Patterns (triage-refactor)
 		r.Get("/api/taxonomy/patterns", taxonomyPatterns.ListTaxonomyPatterns)
 		r.Get("/api/taxonomy/patterns/active", taxonomyPatterns.ListAllActivePatterns)
@@ -421,21 +338,6 @@ func Build(
 		// ReDesign: Compose
 		r.Post("/api/compose/preview", composeH.Preview)
 
-		// ReDesign: Dispatches
-		r.Get("/api/dispatches", dispatches.List)
-		r.Post("/api/dispatches", dispatches.Create)
-		r.Get("/api/dispatches/{id}", dispatches.Get)
-		r.Post("/api/dispatches/{id}/cancel", dispatches.Cancel)
-		r.Get("/api/dispatches/pending-approval", dispatches.ListPendingApproval)
-		r.Get("/api/dispatches/send-queue", dispatches.ListSendQueue)
-		r.Post("/api/dispatches/approve-all", dispatches.ApproveAllDispatch)
-		r.Post("/api/dispatches/process-queue-now", dispatches.ProcessQueueNow)
-		r.Post("/api/dispatches/approve-batch", dispatches.ApproveBatch)
-		r.Post("/api/dispatches/expire-stale", dispatches.ExpireStaleTargets)
-		r.Post("/api/dispatches/{id}/diagnose", dispatches.Diagnose)
-		r.Post("/api/dispatches/{id}/approve", dispatches.ApproveDispatch)
-		r.Post("/api/dispatches/{id}/reject", dispatches.RejectDispatch)
-
 		// ReDesign: Public Links (autenticado — gestão)
 		r.Get("/api/public-links", publLinks.List)
 		r.Post("/api/public-links", publLinks.Create)
@@ -454,11 +356,6 @@ func Build(
 		r.Delete("/api/affiliates/programs/{id}", affPrograms.Delete)
 		r.Post("/api/affiliates/build-link", affPrograms.BuildLink)
 		r.Get("/api/affiliates/coverage", affPrograms.CheckCoverage)
-
-		// ReDesign: Channels extras (audience + metrics)
-		r.Get("/api/channels/{id}/audience", channels.GetAudience)
-		r.Get("/api/channels/{id}/metrics", channels.GetMetrics)
-		r.Get("/api/channels/{id}/history", channels.GetHistory)
 
 		// Crawlers: Group Spies
 		r.Get("/api/crawlers/group-spy", groupSpies.List)

@@ -21,7 +21,7 @@ func NewCoverageHandler(s store.Store) *CoverageHandler {
 
 // CoverageMatrixResponse é a resposta para GET /api/coverage
 type CoverageMatrixResponse struct {
-	Accounts []models.WAAccount           `json:"accounts"`
+	Accounts []models.AccountV2           `json:"accounts"`
 	Targets  []models.ChannelTarget       `json:"targets"`
 	Matrix   [][]string                   `json:"matrix"` // rows=accounts, cols=targets; values="present"|"fallback"|"absent"
 	CachedAt time.Time                    `json:"cached_at"`
@@ -61,18 +61,18 @@ func (h *CoverageHandler) GetCoverage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	// Fetch all active accounts
-	accounts, err := h.store.ListWAAccounts()
+	// Fetch all active accounts (accounts v2)
+	accounts, err := h.store.ListAccountsV2()
 	if err != nil {
-		slog.Error("failed to list wa_accounts", "err", err)
+		slog.Error("failed to list accounts v2", "err", err)
 		writeErr(w, http.StatusInternalServerError, "failed to fetch accounts")
 		return
 	}
 
-	// Filter only active accounts
-	var activeAccounts []models.WAAccount
+	// Filter only active accounts (not banned/quarantine)
+	var activeAccounts []models.AccountV2
 	for _, a := range accounts {
-		if a.Active {
+		if a.IsActive() {
 			activeAccounts = append(activeAccounts, a)
 		}
 	}
@@ -177,14 +177,14 @@ func (h *CoverageHandler) PostCoverageSync(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate account exists and is active
-	acc, err := h.store.GetWAAccount(req.AccountID)
+	// Validate account exists and is active (accounts v2)
+	acc, err := h.store.GetAccountV2(req.AccountID)
 	if err != nil {
 		slog.Warn("account not found", "account_id", req.AccountID, "err", err)
 		writeErr(w, http.StatusNotFound, "account not found")
 		return
 	}
-	if !acc.Active {
+	if !acc.IsActive() {
 		writeErr(w, http.StatusBadRequest, "account is inactive")
 		return
 	}
@@ -215,7 +215,7 @@ func (h *CoverageHandler) PostCoverageSync(w http.ResponseWriter, r *http.Reques
 
 	if !req.Confirmed {
 		// Return preview
-		preview := "Account " + acc.Name + " will join " + string(rune(len(req.TargetIDs))) + " groups"
+		preview := "Account " + acc.Phone + " will join " + string(rune(len(req.TargetIDs))) + " groups"
 		writeJSON(w, http.StatusOK, CoverageSyncResponse{
 			Preview:        preview,
 			EstimatedJobs:  estimatedJobs,

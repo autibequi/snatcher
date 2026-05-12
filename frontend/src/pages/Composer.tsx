@@ -265,15 +265,8 @@ export default function Composer() {
 
   const loadingPreview = false
 
-  // Lista completa de canais disponíveis (sempre carregada para seletor inline)
-  const { data: allChannels = [] } = useQuery<Channel[]>({
-    queryKey: ['channels', 'all'],
-    queryFn: () =>
-      apiClient.get('/api/channels').then((r) => {
-        return Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
-      }),
-    staleTime: 60_000,
-  })
+  // Canal v1 removido em F12 — endpoint de canais não existe mais. Seletor desabilitado.
+  const allChannels: Channel[] = []
 
   // Seleção local sincronizada com query string ?targets=
   const [selectedTargets, setSelectedTargets] = React.useState<number[]>(targetIds)

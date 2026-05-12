@@ -46,28 +46,7 @@ type Group struct {
 	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
 }
 
-type Product struct {
-	ID        int64      `db:"id" json:"id"`
-	GroupID   int64      `db:"group_id" json:"group_id"`
-	Title     string     `db:"title" json:"title"`
-	Price     float64    `db:"price" json:"price"`
-	URL       string     `db:"url" json:"url"`
-	ImageURL  NullString `db:"image_url" json:"image_url,omitempty"`
-	Source    string     `db:"source" json:"source"`
-	ShortID   NullString `db:"short_id" json:"short_id,omitempty"`
-	FamilyKey NullString `db:"family_key" json:"family_key,omitempty"`
-	FoundAt   time.Time  `db:"found_at" json:"found_at"`
-	SentAt    NullTime   `db:"sent_at" json:"sent_at,omitempty"`
-}
 
-type ClickLog struct {
-	ID        int64     `db:"id" json:"id"`
-	ProductID int64     `db:"product_id" json:"product_id"`
-	ClickedAt time.Time `db:"clicked_at" json:"clicked_at"`
-	IPHash    string    `db:"ip_hash" json:"ip_hash"`
-	UserAgent string    `db:"user_agent" json:"user_agent"`
-	Referrer  string    `db:"referrer" json:"referrer"`
-}
 
 type ScanJob struct {
 	ID            int64      `db:"id" json:"id"`
@@ -96,11 +75,8 @@ type AppConfig struct {
 	WAGroupPrefix  NullString `db:"wa_group_prefix" json:"wa_group_prefix,omitempty"`
 	AlertPhone     NullString `db:"alert_phone" json:"alert_phone,omitempty"`
 	UseShortLinks  bool       `db:"use_short_links" json:"use_short_links"`
-	TGEnabled      bool       `db:"tg_enabled" json:"tg_enabled"`
-	TGBotToken     NullString `db:"tg_bot_token" json:"tg_bot_token,omitempty"`
-	TGBotUsername  NullString `db:"tg_bot_username" json:"tg_bot_username,omitempty"`
-	TGGroupPrefix  NullString `db:"tg_group_prefix" json:"tg_group_prefix,omitempty"`
-	TGLastUpdateID NullInt64  `db:"tg_last_update_id" json:"tg_last_update_id,omitempty"`
+	// DEPRECATED — Telegram descontinuado (F06). Campos TG_* removidos do AppConfig.
+	// Colunas DB permanecem até DROP em F10/F12.
 
 	// LLM provider
 	LLMProvider NullString `db:"llm_provider" json:"llm_provider,omitempty"`
@@ -197,22 +173,25 @@ type AutoMatchLog struct {
 	FalsePositiveMarkedAt NullTime       `db:"false_positive_marked_at" json:"false_positive_marked_at,omitempty"`
 }
 
-type WAAccount struct {
-	ID          int64      `db:"id" json:"id"`
-	Name        string     `db:"name" json:"name"`
-	Provider    string     `db:"provider" json:"provider"`
-	BaseURL     NullString `db:"base_url" json:"base_url,omitempty"`
-	APIKey      NullString `db:"api_key" json:"api_key,omitempty"`
-	Instance    NullString `db:"instance" json:"instance,omitempty"`
-	GroupPrefix NullString `db:"group_prefix" json:"group_prefix,omitempty"`
-	Status      string     `db:"status" json:"status"`
-	Active      bool       `db:"active" json:"active"`
-	Role        string     `db:"role" json:"role"`
-	DailyLimit  int        `db:"daily_limit" json:"daily_limit"`
-	SentToday   int        `db:"sent_today" json:"sent_today"`
-	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+
+// AccountV2 é a conta WhatsApp v2 (tabela accounts) com afinidade fixa a modem.
+// Substitui WAAccount após F10. Sem campos Evolution per-account — use appconfig global.
+type AccountV2 struct {
+	ID                  int64   `db:"id"                   json:"id"`
+	Phone               string  `db:"phone"                json:"phone"`
+	ModemID             int64   `db:"modem_id"             json:"modem_id"`
+	Status              string  `db:"status"               json:"status"` // warming|backup|primary|quarantine|banned
+	DailySendQuota      int     `db:"daily_send_quota"     json:"daily_send_quota"`
+	LastSentAt          NullTime `db:"last_sent_at"        json:"last_sent_at,omitempty"`
+	ConsecutiveFailures int     `db:"consecutive_failures" json:"consecutive_failures"`
 }
 
+// IsActive returns true when the account is operational (not banned or quarantined).
+func (a AccountV2) IsActive() bool {
+	return a.Status != "banned" && a.Status != "quarantine"
+}
+
+// DEPRECATED — dropped in F10/F12. Tabela tgaccount mantida até migração DROP.
 type TGAccount struct {
 	ID           int64      `db:"id" json:"id"`
 	Name         string     `db:"name" json:"name"`
@@ -702,17 +681,6 @@ func (cl *CrawlLog) SetSourceCounts(counts map[string]int) error {
 	return nil
 }
 
-type BroadcastMessage struct {
-	ID         int64      `db:"id" json:"id"`
-	Text       string     `db:"text" json:"text"`
-	ImageURL   NullString `db:"image_url" json:"image_url,omitempty"`
-	ChannelIDs string     `db:"channel_ids" json:"channel_ids"`
-	Status     string     `db:"status" json:"status"`
-	SentCount  int        `db:"sent_count" json:"sent_count"`
-	SentAt     NullTime   `db:"sent_at" json:"sent_at,omitempty"`
-	ErrorMsg   NullString `db:"error_msg" json:"error_msg,omitempty"`
-	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
-}
 
 // RedesignGroup é o destino físico (WA/TG) do ReDesign — tabela groups.
 // Não confundir com Group legado (tabela "group").
@@ -858,18 +826,6 @@ type SpyMessage struct {
 	CollectedAt time.Time  `db:"collected_at"  json:"collected_at"`
 }
 
-type TelegramChat struct {
-	ChatID          string     `db:"chat_id" json:"chat_id"`
-	Type            string     `db:"type" json:"type"`
-	Title           string     `db:"title" json:"title"`
-	Username        NullString `db:"username" json:"username,omitempty"`
-	MemberCount     NullInt64  `db:"member_count" json:"member_count,omitempty"`
-	IsAdmin         bool       `db:"is_admin" json:"is_admin"`
-	DiscoveredAt    time.Time  `db:"discovered_at" json:"discovered_at"`
-	LastSeenAt      time.Time  `db:"last_seen_at" json:"last_seen_at"`
-	LinkedGroupID   NullInt64  `db:"linked_group_id" json:"linked_group_id,omitempty"`
-	LinkedChannelID NullInt64  `db:"linked_channel_id" json:"linked_channel_id,omitempty"`
-}
 
 // ChannelHistoryEntry representa um disparo associado a um grupo de um canal.
 type ChannelHistoryEntry struct {
@@ -967,40 +923,6 @@ type JonfreyConfig struct {
 	UpdatedAt       time.Time      `db:"updated_at" json:"updated_at"`
 }
 
-// Ad é um anúncio recorrente customizado (texto+imagem) PAGO por um cliente,
-// que dispara num schedule até atingir active_until. Diferente de Dispatch (one-shot).
-type Ad struct {
-	ID               int64         `db:"id" json:"id"`
-	Name             string        `db:"name" json:"name"`
-	MessageText      string        `db:"message_text" json:"message_text"`
-	ImageURL         NullString    `db:"image_url" json:"image_url,omitempty"`
-	ChannelIDs       pq.Int64Array `db:"channel_ids" json:"channel_ids"`
-	GroupIDs         pq.Int64Array `db:"group_ids" json:"group_ids"`
-	ScheduleCron     string        `db:"schedule_cron" json:"schedule_cron"`
-	ActiveUntil      NullTime      `db:"active_until" json:"active_until,omitempty"`
-	Enabled          bool          `db:"enabled" json:"enabled"`
-	LastDispatchedAt NullTime      `db:"last_dispatched_at" json:"last_dispatched_at,omitempty"`
-	DispatchCount    int           `db:"dispatch_count" json:"dispatch_count"`
-	CreatedAt        time.Time     `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time     `db:"updated_at" json:"updated_at"`
-	// Billing & tracking (migration 0107)
-	ClientName string     `db:"client_name" json:"client_name"`
-	PaidAmount float64    `db:"paid_amount" json:"paid_amount"`
-	ShortID    NullString `db:"short_id" json:"short_id,omitempty"`
-	ClickCount int        `db:"click_count" json:"click_count"`
-	TargetURL  string     `db:"target_url" json:"target_url"`
-}
-
-// AdActive retorna true se o anúncio está dentro da janela de ativação.
-func (a Ad) IsActiveNow() bool {
-	if !a.Enabled {
-		return false
-	}
-	if a.ActiveUntil.Valid && a.ActiveUntil.Time.Before(time.Now()) {
-		return false
-	}
-	return true
-}
 
 // migration 0112 — TaxonomyPattern: padrões de matching para detection/enrichment
 type TaxonomyPattern struct {

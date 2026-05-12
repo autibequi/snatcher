@@ -94,11 +94,12 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 	}
 	ctrAvgPPDelta := ctrAvg - ctrPrev
 
-	// Health score baseado em wa_accounts.
-	// Heurística: (active - banned*2 - disconnected) / total * 100, clamp [0,100].
+	// Health score baseado em accounts v2.
+	// Heurística: (active - banned*2 - quarantine) / total * 100, clamp [0,100].
+	// active = primary|backup|warming; banned = banned; quarantine = quarantine.
 	// Penalidade adicional: grupos ativos com admin_count < 2 reduzem o score (peso pequeno).
 	// Se sem contas → null.
-	accounts, err := h.store.ListWAAccounts()
+	accounts, err := h.store.ListAccountsV2()
 	var healthScore *int
 	accountsNormalCount := 0
 	if err == nil && len(accounts) > 0 {
@@ -106,12 +107,12 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 		active, banned, disconnected := 0, 0, 0
 		for _, a := range accounts {
 			switch a.Status {
-			case "active", "connected":
+			case "primary", "backup", "warming":
 				active++
 				accountsNormalCount++
 			case "banned":
 				banned++
-			case "disconnected":
+			case "quarantine":
 				disconnected++
 			}
 		}
@@ -215,10 +216,10 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 
 	var alerts []Alert
 
-	// Categoria: wa_disconnect — contas WA desconectadas ou banidas
-	accounts, _ := h.store.ListWAAccounts()
+	// Categoria: wa_disconnect — contas WA em quarentena ou banidas (accounts v2)
+	accounts, _ := h.store.ListAccountsV2()
 	for _, a := range accounts {
-		if a.Status == "disconnected" || a.Status == "banned" {
+		if a.Status == "quarantine" || a.Status == "banned" {
 			severity := "atencao"
 			if a.Status == "banned" {
 				severity = "critico"
@@ -227,7 +228,7 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 				ID:       fmt.Sprintf("wa-%d", a.ID),
 				Severity: severity,
 				Category: "wa_disconnect",
-				Title:    fmt.Sprintf("Conta WhatsApp %q %s", a.Name, a.Status),
+				Title:    fmt.Sprintf("Conta WhatsApp %q %s", a.Phone, a.Status),
 				Subtitle: "sem atividade",
 				CTA:      CTA{Label: "Reconectar via QR", Href: "/accounts"},
 			})
@@ -542,19 +543,9 @@ func (h *DashboardHandler) AutomationDiagnostics(w http.ResponseWriter, r *http.
 		})
 	}
 
-	autos, _ := h.store.ListChannelAutomations(false)
+	// TODO migrate to v2: ListChannelAutomations removed; aggregate from send_log/daily_metrics
 	autoMatchCh := 0
 	autoMatchPaused := 0
-	now := time.Now()
-	for _, a := range autos {
-		if !a.AutoMatchEnabled {
-			continue
-		}
-		autoMatchCh++
-		if a.PausedUntil.Valid && a.PausedUntil.Time.After(now) {
-			autoMatchPaused++
-		}
-	}
 
 	channelsTextNoTax := 0
 	var channelsMismatchSamples []map[string]any
@@ -645,38 +636,14 @@ func (h *DashboardHandler) AutomationDiagnostics(w http.ResponseWriter, r *http.
 }
 
 func (h *DashboardHandler) evolutionSnapshot(cfg models.AppConfig) (ok bool, reason string, accountID int64) {
-	accounts, err := h.store.ListWAAccounts()
-	if err != nil {
-		return false, "erro ao listar contas WA: " + err.Error(), 0
-	}
+	// F08b: Evolution credentials are global (appconfig). No per-account overrides.
 	baseURL := cfg.WABaseURL.String
 	apiKey := cfg.WAApiKey.String
 	instance := cfg.WAInstance.String
-
-	for _, acc := range accounts {
-		if !acc.Active {
-			continue
-		}
-		u := baseURL
-		if acc.BaseURL.Valid && acc.BaseURL.String != "" {
-			u = acc.BaseURL.String
-		}
-		k := apiKey
-		if acc.APIKey.Valid && acc.APIKey.String != "" {
-			k = acc.APIKey.String
-		}
-		if !acc.Instance.Valid || acc.Instance.String == "" {
-			continue
-		}
-		in := acc.Instance.String
-		if u != "" && k != "" && in != "" {
-			return true, "", acc.ID
-		}
-	}
 	if baseURL != "" && apiKey != "" && instance != "" {
 		return true, "", 0
 	}
-	return false, "Evolution não configurada: defina URL/chave/instância na config global ou numa conta WA ativa com instância.", 0
+	return false, "Evolution não configurada: defina URL/chave/instância na config global.", 0
 }
 
 // UpcomingDispatches retorna os próximos disparos agendados.

@@ -148,23 +148,12 @@ func (n *Notifier) send(kind Kind, text string) {
 	slog.Info("notifier: enviado", "kind", kind, "group", group.Name)
 }
 
-func resolveCreds(st store.Store, cfg models.AppConfig, g models.RedesignGroup) (baseURL, apiKey, instance string) {
+// resolveCreds retorna credenciais Evolution do appconfig global.
+// F08b: per-account overrides (waaccount.base_url/api_key/instance) removidos.
+func resolveCreds(_ store.Store, cfg models.AppConfig, _ models.RedesignGroup) (baseURL, apiKey, instance string) {
 	baseURL = cfg.WABaseURL.String
 	apiKey = cfg.WAApiKey.String
 	instance = cfg.WAInstance.String
-	if g.WAAccountID.Valid && g.WAAccountID.Int64 > 0 {
-		if acc, err := st.GetWAAccount(g.WAAccountID.Int64); err == nil && acc.Active {
-			if acc.BaseURL.Valid && acc.BaseURL.String != "" {
-				baseURL = acc.BaseURL.String
-			}
-			if acc.APIKey.Valid && acc.APIKey.String != "" {
-				apiKey = acc.APIKey.String
-			}
-			if acc.Instance.Valid && acc.Instance.String != "" {
-				instance = acc.Instance.String
-			}
-		}
-	}
 	return
 }
 

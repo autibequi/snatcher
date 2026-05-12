@@ -541,13 +541,8 @@ export default function PublicLinks() {
         .catch(() => []),
   })
 
-  const { data: channels = [] } = useQuery<Channel[]>({
-    queryKey: ['channels-select'],
-    queryFn: () =>
-      apiClient
-        .get('/api/channels')
-        .then(r => (Array.isArray(r.data) ? r.data : (r.data?.items ?? []))),
-  })
+  // Canal v1 removido em F12 — endpoint de canais não existe mais. Criação de link desabilitada.
+  const channels: Channel[] = []
 
   // Groups for fallback chain editor
   const { data: groups = [] } = useQuery<Group[]>({

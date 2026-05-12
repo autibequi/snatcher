@@ -19,10 +19,6 @@ import (
 // Diferente das ações registradas em actionRegistry, este endpoint roda síncrono (LLM inline)
 // e devolve a avaliação direto pro front — não cria audit row em jonfrey_actions.
 
-type reviewDispatchesReq struct {
-	PeriodHours int `json:"period_hours"`
-}
-
 type reviewDispatchItem struct {
 	DispatchID int64  `json:"dispatch_id"`
 	ShortID    string `json:"short_id"`
@@ -71,27 +67,6 @@ const (
 	// /dashboard/recommendation. Bypass manual: ?force=1 no GET.
 	reviewDispatchesCacheTTL = 24 * time.Hour
 )
-
-// ReviewDispatches POST /api/jonfrey/review-dispatches
-// Body: { "period_hours": 24 }
-// Resposta: { headline, items[], generated_at }
-//
-// Mantido por compat. Caminho preferido é o GET (auto-load + cache).
-func (h *JonfreyHandler) ReviewDispatches(w http.ResponseWriter, r *http.Request) {
-	var req reviewDispatchesReq
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	period := normalizeReviewPeriod(req.PeriodHours)
-
-	ctx, cancel := context.WithTimeout(r.Context(), reviewDispatchesHTTPTimeout)
-	defer cancel()
-
-	resp, err := h.computeReviewDispatches(ctx, period)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
 // ReviewDispatchesGet GET /api/jonfrey/review-dispatches?force=1
 // Mesmo padrão do /api/dashboard/recommendation: TTL 24h, cache em memória +

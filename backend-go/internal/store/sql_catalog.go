@@ -533,3 +533,31 @@ func (s *SQLStore) GetRecentlyUpdatedProducts(since time.Time) ([]models.Catalog
 		`SELECT * FROM catalogproduct WHERE updated_at >= $1 ORDER BY updated_at DESC`, since)
 	return out, err
 }
+
+// ---------------------------------------------------------------------------
+// Pipeline canônico v2 — raw_items / discarded_items
+// ---------------------------------------------------------------------------
+
+// InsertRawItem grava o CrawlResult em raw_items resolvendo source_id via sources.id.
+// Tolerante a erro — nunca bloqueia o fluxo principal.
+func (s *SQLStore) InsertRawItem(r models.CrawlResult, payload []byte) error {
+	_, err := s.db.Exec(`
+		INSERT INTO raw_items (source_id, payload, crawled_at, processed)
+		SELECT s.id, $1, now(), false
+		FROM sources s WHERE s.id = $2
+		LIMIT 1
+	`, payload, r.Source)
+	return err
+}
+
+// InsertDiscardedItem grava o CrawlResult em discarded_items com o motivo da rejeição.
+// Tolerante a erro — nunca bloqueia o fluxo principal.
+func (s *SQLStore) InsertDiscardedItem(r models.CrawlResult, payload []byte, reason string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO discarded_items (source_id, reason, payload, discarded_at)
+		SELECT s.id, $1, $2, now()
+		FROM sources s WHERE s.id = $3
+		LIMIT 1
+	`, reason, payload, r.Source)
+	return err
+}

@@ -5,28 +5,24 @@ import { Button, Input, PageHeader, Tabs } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { filterBar } from '../lib/uiTokens'
 import { CrawlLogsTab } from './activity/CrawlLogsTab'
-import { DispatchesTab } from './activity/DispatchesTab'
 import { JonfreyTab } from './activity/JonfreyTab'
 import { LLMTab } from './activity/LLMTab'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'dispatches' | 'crawl' | 'jonfrey' | 'llm'
+type ActivityTab = 'crawl' | 'jonfrey' | 'llm'
 
-const VALID_TABS = new Set<string>(['dispatches', 'crawl', 'jonfrey', 'llm', 'pending'])
+const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'llm'])
 
 function resolveTab(raw: string | null): ActivityTab {
-  if (!raw) return 'dispatches'
+  if (!raw) return 'crawl'
   // Legacy aliases
-  if (raw === 'pending') return 'dispatches'
   if (raw === 'crawlers') return 'crawl'
-  if (raw === 'all' || raw === 'dispatches') return 'dispatches'
   if (VALID_TABS.has(raw)) return raw as ActivityTab
-  return 'dispatches'
+  return 'crawl'
 }
 
 const TAB_LIST = [
-  { id: 'dispatches', label: 'Disparos' },
   { id: 'crawl', label: 'Crawlers' },
   { id: 'jonfrey', label: 'Jonfrey' },
   { id: 'llm', label: 'LLM' },
@@ -35,13 +31,6 @@ const TAB_LIST = [
 // ── Quick stats ───────────────────────────────────────────────────────────────
 
 function QuickStats() {
-  const { data: dispatches = [] } = useQuery<Array<{ id: number; created_at: string }>>({
-    queryKey: ['dispatches-stats'],
-    queryFn: () =>
-      apiClient.get('/api/dispatches').then(r => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
-    staleTime: 60_000,
-  })
-
   const { data: crawlLogs = [] } = useQuery<Array<{ id: number; started_at: string }>>({
     queryKey: ['crawl-logs'],
     queryFn: () =>
@@ -57,27 +46,17 @@ function QuickStats() {
   })
 
   const since24h = Date.now() - 24 * 60 * 60 * 1000
-  const d24 = dispatches.filter(d => new Date(d.created_at).getTime() > since24h).length
   const c24 = crawlLogs.filter(l => new Date(l.started_at).getTime() > since24h).length
   const j24 = jonfreyActions.filter(a => new Date(a.created_at).getTime() > since24h).length
 
   return (
     <p className="text-[11px] text-fg-3 mb-1">
-      24h: {d24} disparo{d24 !== 1 ? 's' : ''} · {c24} crawl{c24 !== 1 ? 's' : ''} · {j24} jonfrey run{j24 !== 1 ? 's' : ''}
+      24h: {c24} crawl{c24 !== 1 ? 's' : ''} · {j24} jonfrey run{j24 !== 1 ? 's' : ''}
     </p>
   )
 }
 
 // ── Status options per tab ────────────────────────────────────────────────────
-
-const DISPATCH_STATUSES = [
-  { value: '', label: 'Todos' },
-  { value: 'queued', label: 'Agendado' },
-  { value: 'sending', label: 'Enviando' },
-  { value: 'completed', label: 'Concluído' },
-  { value: 'failed', label: 'Falhou' },
-  { value: 'draft', label: 'Rascunho' },
-]
 
 const CRAWL_STATUSES = [
   { value: '', label: 'Todos' },
@@ -96,7 +75,6 @@ const JONFREY_STATUSES = [
 ]
 
 function statusOptionsForTab(tab: ActivityTab) {
-  if (tab === 'dispatches') return DISPATCH_STATUSES
   if (tab === 'crawl') return CRAWL_STATUSES
   if (tab === 'jonfrey') return JONFREY_STATUSES
   return []
@@ -105,7 +83,7 @@ function statusOptionsForTab(tab: ActivityTab) {
 // ── CSV Export (shared) ───────────────────────────────────────────────────────
 
 function ExportCsvButton({ tab }: { tab: ActivityTab }) {
-  if (tab === 'llm') return null
+  if (tab === 'llm' || tab === 'jonfrey') return null
   return (
     <Button
       variant="secondary"
@@ -128,23 +106,14 @@ export default function Activity() {
   const tab = resolveTab(searchParams.get('tab'))
   const q = searchParams.get('q') ?? ''
   const status = searchParams.get('status') ?? ''
-  const dateFrom = searchParams.get('from') ?? ''
-  const dateTo = searchParams.get('to') ?? ''
-  const accountId = searchParams.get('account') ?? ''
-  const openDispatchIdRaw = searchParams.get('dispatchId')
-  const openDispatchId = openDispatchIdRaw ? Number.parseInt(openDispatchIdRaw, 10) : undefined
 
   // Local state for filter inputs (controlled; syncs to URL on change)
   const [localQ, setLocalQ] = React.useState(q)
   const [localStatus, setLocalStatus] = React.useState(status)
-  const [localDateFrom, setLocalDateFrom] = React.useState(dateFrom)
-  const [localDateTo, setLocalDateTo] = React.useState(dateTo)
 
   // Sync local state when URL changes externally
   React.useEffect(() => { setLocalQ(searchParams.get('q') ?? '') }, [searchParams])
   React.useEffect(() => { setLocalStatus(searchParams.get('status') ?? '') }, [searchParams])
-  React.useEffect(() => { setLocalDateFrom(searchParams.get('from') ?? '') }, [searchParams])
-  React.useEffect(() => { setLocalDateTo(searchParams.get('to') ?? '') }, [searchParams])
 
   function updateParams(updates: Record<string, string>) {
     const next = new URLSearchParams(searchParams)
@@ -161,33 +130,26 @@ export default function Activity() {
     setSearchParams(next, { replace: true })
     setLocalQ('')
     setLocalStatus('')
-    setLocalDateFrom('')
-    setLocalDateTo('')
   }
 
   function handleApplyFilters() {
     updateParams({
       q: localQ,
       status: localStatus,
-      from: localDateFrom,
-      to: localDateTo,
     })
   }
 
   function handleClearFilters() {
     setLocalQ('')
     setLocalStatus('')
-    setLocalDateFrom('')
-    setLocalDateTo('')
     const next = new URLSearchParams()
     next.set('tab', tab)
     setSearchParams(next, { replace: true })
   }
 
   const statusOptions = statusOptionsForTab(tab)
-  const showDateFilters = tab === 'dispatches'
   const showStatusFilter = statusOptions.length > 0
-  const hasActiveFilters = localQ || localStatus || localDateFrom || localDateTo
+  const hasActiveFilters = localQ || localStatus
 
   return (
     <div className="flex flex-col min-h-0">
@@ -227,30 +189,6 @@ export default function Activity() {
           </select>
         )}
 
-        {/* Date range (dispatches only) */}
-        {showDateFilters && (
-          <>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] text-fg-3">De</label>
-              <input
-                type="date"
-                value={localDateFrom}
-                onChange={e => setLocalDateFrom(e.target.value)}
-                className="text-sm border border-border rounded-md px-2 py-1 bg-surface text-fg"
-              />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] text-fg-3">Até</label>
-              <input
-                type="date"
-                value={localDateTo}
-                onChange={e => setLocalDateTo(e.target.value)}
-                className="text-sm border border-border rounded-md px-2 py-1 bg-surface text-fg"
-              />
-            </div>
-          </>
-        )}
-
         {/* Apply / Clear */}
         <Button variant="primary" size="sm" onClick={handleApplyFilters}>
           Filtrar
@@ -283,16 +221,6 @@ export default function Activity() {
 
       {/* Tab content */}
       <div className={`flex-1 px-4 py-4 ${tab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'} mx-auto w-full`}>
-        {tab === 'dispatches' && (
-          <DispatchesTab
-            status={status}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            accountId={accountId}
-            q={q}
-            openDispatchId={openDispatchId}
-          />
-        )}
         {tab === 'crawl' && (
           <CrawlLogsTab q={q} status={status} />
         )}

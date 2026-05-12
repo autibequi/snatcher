@@ -111,21 +111,11 @@ func main() {
 		adapterMap["whatsapp"] = evo
 	}
 
-	// Telegram
-	if appCfg.TGEnabled && appCfg.TGBotToken.Valid {
-		tg, err := adapters.NewTelegram(appCfg.TGBotToken.String)
-		if err != nil {
-			slog.Warn("telegram init failed", "err", err)
-		} else {
-			adapterMap["telegram"] = tg
-		}
-	}
-
 	// Pipeline runner
 	runner := pipeline.NewRunner(st, scraperMap, adapterMap)
 
 	// Scheduler
-	sched, err := scheduler.New(cfg.ScanInterval, runner, nil, st, nil)
+	sched, err := scheduler.New(cfg.ScanInterval, runner, st, nil)
 	if err != nil {
 		slog.Error("scheduler init", "err", err)
 		os.Exit(1)

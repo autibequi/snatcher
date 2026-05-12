@@ -394,36 +394,18 @@ func (s *SQLStore) GetHistoricalCTRForGroup(groupID int64, category string, minD
 	return &ctr, nil
 }
 
-func (s *SQLStore) ListWAAccounts() ([]models.WAAccount, error) {
-	var out []models.WAAccount
-	err := s.db.Select(&out, `SELECT * FROM waaccount ORDER BY id`)
+// ListAccountsV2 retorna todas as contas WA v2 (tabela accounts) ordenadas por id.
+func (s *SQLStore) ListAccountsV2() ([]models.AccountV2, error) {
+	var out []models.AccountV2
+	err := s.db.Select(&out, `SELECT id, phone, modem_id, status, daily_send_quota, last_sent_at, consecutive_failures FROM accounts ORDER BY id`)
 	return out, err
 }
 
-func (s *SQLStore) GetWAAccount(id int64) (models.WAAccount, error) {
-	var a models.WAAccount
-	err := s.db.Get(&a, `SELECT * FROM waaccount WHERE id = $1`, id)
+// GetAccountV2 retorna uma conta WA v2 pelo id (tabela accounts).
+func (s *SQLStore) GetAccountV2(id int64) (models.AccountV2, error) {
+	var a models.AccountV2
+	err := s.db.Get(&a, `SELECT id, phone, modem_id, status, daily_send_quota, last_sent_at, consecutive_failures FROM accounts WHERE id = $1`, id)
 	return a, err
-}
-
-func (s *SQLStore) CreateWAAccount(a models.WAAccount) (int64, error) {
-	return insertReturningID(s.db, `
-		INSERT INTO waaccount (name, provider, base_url, api_key, instance, group_prefix, status, active)
-		VALUES (:name, :provider, :base_url, :api_key, :instance, :group_prefix, :status, :active)`, a)
-}
-
-func (s *SQLStore) UpdateWAAccount(a models.WAAccount) error {
-	_, err := s.db.NamedExec(`
-		UPDATE waaccount SET name=:name, provider=:provider, base_url=:base_url,
-			api_key=:api_key, instance=:instance, group_prefix=:group_prefix,
-			status=:status, active=:active
-		WHERE id = :id`, a)
-	return err
-}
-
-func (s *SQLStore) DeleteWAAccount(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM waaccount WHERE id = $1`, id)
-	return err
 }
 
 func (s *SQLStore) ListTGAccounts() ([]models.TGAccount, error) {
@@ -460,26 +442,6 @@ func (s *SQLStore) DeleteTGAccount(id int64) error {
 // ---------------------------------------------------------------------------
 // Throttle
 // ---------------------------------------------------------------------------
-
-// CheckAndIncrementWA verifies if the WA account has reached its daily limit before sending.
-// Returns error if daily_limit exceeded; atomically increments sent_today if OK.
-func (s *SQLStore) CheckAndIncrementWA(accountID int64) error {
-	var row struct {
-		SentToday  int `db:"sent_today"`
-		DailyLimit int `db:"daily_limit"`
-	}
-	if err := s.db.Get(&row, `SELECT sent_today, daily_limit FROM waaccount WHERE id = $1`, accountID); err != nil {
-		return fmt.Errorf("throttle: WA account %d not found: %w", accountID, err)
-	}
-	if row.DailyLimit > 0 && row.SentToday >= row.DailyLimit {
-		return fmt.Errorf("throttle: WA account %d reached daily limit (%d/%d)", accountID, row.SentToday, row.DailyLimit)
-	}
-	_, err := s.db.Exec(`UPDATE waaccount SET sent_today = sent_today + 1 WHERE id = $1`, accountID)
-	if err != nil {
-		return fmt.Errorf("throttle: failed to increment sent_today: %w", err)
-	}
-	return nil
-}
 
 // CheckAndIncrementTG verifies if the TG account has reached its daily limit before sending.
 // Returns error if daily_limit exceeded; atomically increments sent_today if OK.

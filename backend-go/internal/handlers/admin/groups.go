@@ -121,8 +121,8 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	}
 
 	if g.WAAccountID.Valid {
-		if acc, err := h.store.GetWAAccount(g.WAAccountID.Int64); err == nil {
-			enriched.AccountLabel = acc.Name
+		if acc, err := h.store.GetAccountV2(g.WAAccountID.Int64); err == nil {
+			enriched.AccountLabel = acc.Phone
 		}
 	} else if g.TGAccountID.Valid {
 		if acc, err := h.store.GetTGAccount(g.TGAccountID.Int64); err == nil {
@@ -401,13 +401,8 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acc, err := h.store.GetWAAccount(group.WAAccountID.Int64)
-	if err != nil {
-		writeJSON(w, http.StatusOK, []Member{})
-		return
-	}
 	cfg, _ := h.store.GetConfig()
-	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		writeJSON(w, http.StatusOK, []Member{})
 		return
@@ -614,13 +609,8 @@ func (h *GroupsHandler) PropagateSubject(w http.ResponseWriter, r *http.Request)
 	}
 	subject := strings.TrimSpace(body.Subject)
 
-	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "conta WA nao encontrada")
-		return
-	}
 	cfg, _ := h.store.GetConfig()
-	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		writeErr(w, http.StatusServiceUnavailable, "Evolution nao configurada")
 		return
@@ -766,22 +756,8 @@ func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "grupo sem conta WhatsApp vinculada")
 		return
 	}
-	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "conta WA não encontrada")
-		return
-	}
 	cfg, _ := h.store.GetConfig()
-	baseURL, apiKey, instance := acc.BaseURL.String, acc.APIKey.String, acc.Instance.String
-	if baseURL == "" && cfg.WABaseURL.Valid {
-		baseURL = cfg.WABaseURL.String
-	}
-	if apiKey == "" && cfg.WAApiKey.Valid {
-		apiKey = cfg.WAApiKey.String
-	}
-	if instance == "" && cfg.WAInstance.Valid {
-		instance = cfg.WAInstance.String
-	}
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		writeErr(w, http.StatusServiceUnavailable, "Evolution não configurada")
 		return
@@ -805,17 +781,17 @@ func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
 
 // --- Evolution helpers (WhatsApp grupos) -------------------------------------
 
-func resolveWAEvolutionCredentials(acc models.WAAccount, cfg models.AppConfig) (baseURL, apiKey, instance string) {
-	baseURL = acc.BaseURL.String
-	apiKey = acc.APIKey.String
-	instance = acc.Instance.String
-	if baseURL == "" && cfg.WABaseURL.Valid {
+// resolveEvolutionCredentials retorna as credenciais Evolution globais do appconfig.
+// F08b: credenciais per-account (waaccount.base_url/api_key/instance) removidas;
+// Evolution é global — configurada em appconfig.
+func resolveEvolutionCredentials(cfg models.AppConfig) (baseURL, apiKey, instance string) {
+	if cfg.WABaseURL.Valid {
 		baseURL = cfg.WABaseURL.String
 	}
-	if apiKey == "" && cfg.WAApiKey.Valid {
+	if cfg.WAApiKey.Valid {
 		apiKey = cfg.WAApiKey.String
 	}
-	if instance == "" && cfg.WAInstance.Valid {
+	if cfg.WAInstance.Valid {
 		instance = cfg.WAInstance.String
 	}
 	return
@@ -986,11 +962,8 @@ func digitsSeenInAdminIndex(idx map[string]bool, digits string) bool {
 }
 
 func (h *GroupsHandler) waDigitsForAccount(ctx context.Context, accID int64, cfg models.AppConfig) string {
-	acc, err := h.store.GetWAAccount(accID)
-	if err != nil {
-		return ""
-	}
-	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	_ = accID // F08b: per-account Evolution credentials removed; using global config
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		return ""
 	}
@@ -1004,12 +977,8 @@ func (h *GroupsHandler) countVerifiedWAAdmins(ctx context.Context, g models.Rede
 	if err != nil {
 		return 0, err
 	}
-	acc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
-	if err != nil {
-		return 0, err
-	}
 	cfg, _ := h.store.GetConfig()
-	baseURL, apiKey, instance := resolveWAEvolutionCredentials(acc, cfg)
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		return 0, fmt.Errorf("no evolution")
 	}
@@ -1044,15 +1013,11 @@ func (h *GroupsHandler) promoteWAAccountAsGroupAdmin(ctx context.Context, g mode
 	if !g.JID.Valid || g.JID.String == "" || !g.WAAccountID.Valid {
 		return fmt.Errorf("grupo sem JID ou conta WA")
 	}
-	linkAcc, err := h.store.GetWAAccount(g.WAAccountID.Int64)
-	if err != nil {
-		return err
-	}
-	_, err = h.store.GetWAAccount(targetWAAccountID)
-	if err != nil {
+	// F08b: validate account exists via accounts v2; Evolution credentials come from global config.
+	if _, err := h.store.GetAccountV2(targetWAAccountID); err != nil {
 		return fmt.Errorf("conta WA alvo nao encontrada")
 	}
-	baseURL, apiKey, instance := resolveWAEvolutionCredentials(linkAcc, cfg)
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
 	if baseURL == "" {
 		return fmt.Errorf("Evolution nao configurada para a conta do grupo")
 	}

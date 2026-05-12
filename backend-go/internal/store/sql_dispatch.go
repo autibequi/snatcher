@@ -306,31 +306,6 @@ func (s *SQLStore) RecordSent(sv models.SentMessageV2) error {
 }
 
 // ---------------------------------------------------------------------------
-// Broadcast
-// ---------------------------------------------------------------------------
-
-func (s *SQLStore) CreateBroadcast(b models.BroadcastMessage) (int64, error) {
-	return insertReturningID(s.db, `
-		INSERT INTO broadcastmessage (text, image_url, channel_ids, status)
-		VALUES (:text, :image_url, :channel_ids, :status)`, b)
-}
-
-func (s *SQLStore) UpdateBroadcast(b models.BroadcastMessage) error {
-	_, err := s.db.NamedExec(`
-		UPDATE broadcastmessage SET status=:status, sent_count=:sent_count,
-			sent_at=:sent_at, error_msg=:error_msg
-		WHERE id = :id`, b)
-	return err
-}
-
-func (s *SQLStore) ListBroadcasts(limit int) ([]models.BroadcastMessage, error) {
-	var out []models.BroadcastMessage
-	err := s.db.Select(&out,
-		`SELECT * FROM broadcastmessage ORDER BY created_at DESC LIMIT $1`, limit)
-	return out, err
-}
-
-// ---------------------------------------------------------------------------
 // Analytics
 // ---------------------------------------------------------------------------
 
@@ -339,66 +314,6 @@ func (s *SQLStore) CountClicksByProduct(productID int64) (int64, error) {
 	err := s.db.Get(&count,
 		`SELECT COUNT(*) FROM clicklog WHERE product_id = $1`, productID)
 	return count, err
-}
-
-func (s *SQLStore) InsertClickLog(l models.ClickLog) error {
-	_, err := s.db.NamedExec(`
-		INSERT INTO clicklog (product_id, ip_hash, user_agent, referrer)
-		VALUES (:product_id, :ip_hash, :user_agent, :referrer)`, l)
-	return err
-}
-
-// ---------------------------------------------------------------------------
-// Legacy
-// ---------------------------------------------------------------------------
-
-func (s *SQLStore) ListGroups() ([]models.Group, error) {
-	var out []models.Group
-	err := s.db.Select(&out, `SELECT * FROM "group" ORDER BY id`)
-	return out, err
-}
-
-func (s *SQLStore) GetGroup(id int64) (models.Group, error) {
-	var g models.Group
-	err := s.db.Get(&g, `SELECT * FROM "group" WHERE id = $1`, id)
-	return g, err
-}
-
-func (s *SQLStore) ListProductsByGroup(groupID int64, limit int) ([]models.Product, error) {
-	var out []models.Product
-	err := s.db.Select(&out,
-		`SELECT * FROM product WHERE group_id = $1 ORDER BY found_at DESC LIMIT $2`, groupID, limit)
-	return out, err
-}
-
-func (s *SQLStore) GetProductByShortID(shortID string) (models.Product, bool, error) {
-	var p models.Product
-	err := s.db.Get(&p, `SELECT * FROM product WHERE short_id = $1 LIMIT 1`, shortID)
-	if err == sql.ErrNoRows {
-		return p, false, nil
-	}
-	return p, err == nil, err
-}
-
-// ---------------------------------------------------------------------------
-// TelegramChat
-// ---------------------------------------------------------------------------
-
-func (s *SQLStore) UpsertTelegramChat(c models.TelegramChat) error {
-	_, err := s.db.NamedExec(`
-		INSERT INTO telegramchat (chat_id, type, title, username, member_count, is_admin)
-		VALUES (:chat_id, :type, :title, :username, :member_count, :is_admin)
-		ON CONFLICT(chat_id) DO UPDATE SET
-			title=excluded.title, username=excluded.username,
-			member_count=excluded.member_count, is_admin=excluded.is_admin,
-			last_seen_at=CURRENT_TIMESTAMP`, c)
-	return err
-}
-
-func (s *SQLStore) ListTelegramChats() ([]models.TelegramChat, error) {
-	var out []models.TelegramChat
-	err := s.db.Select(&out, `SELECT * FROM telegramchat ORDER BY last_seen_at DESC`)
-	return out, err
 }
 
 func (s *SQLStore) GetAnalyticsSummary(since time.Time, days int) (map[string]any, error) {

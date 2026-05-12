@@ -14,33 +14,28 @@ const NAV: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/',             label: 'Dashboard',      icon: '🏠' },
-      { to: '/match',        label: 'Match',           icon: '🎯' },
-      { to: '/automations',  label: 'Auto-matches',    icon: '🤖' },
-      { to: '/compose',      label: 'Compor disparo',  icon: '✍️' },
-      { to: '/activity',     label: 'Activity',        icon: '📊' },
+      { to: '/',         label: 'Dashboard',      icon: '🏠' },
+      { to: '/compose',  label: 'Compor disparo',  icon: '✍️' },
+      { to: '/activity', label: 'Activity',        icon: '📊' },
     ],
   },
   {
     label: 'Fontes & Produtos',
     items: [
       { to: '/crawlers', label: 'Crawlers',  icon: '🕷️' },
-      { to: '/catalog',  label: 'Catálogo',  icon: '📦' },
     ],
   },
   {
     label: 'Destinos',
     items: [
-      { to: '/channels', label: 'Canais',         icon: '📡' },
-      { to: '/links',    label: 'Links públicos',  icon: '🔗' },
+      { to: '/links', label: 'Links públicos', icon: '🔗' },
     ],
   },
   {
     label: 'Provedores',
     items: [
-      { to: '/groups',     label: 'Grupos',     icon: '👥' },
-      { to: '/accounts',   label: 'Contas',     icon: '🔌' },
-      { to: '/affiliates', label: 'Afiliados',  icon: '💰' },
+      { to: '/groups',     label: 'Grupos',    icon: '👥' },
+      { to: '/affiliates', label: 'Afiliados', icon: '💰' },
     ],
   },
   {

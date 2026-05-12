@@ -23,7 +23,6 @@ import (
 type Scheduler struct {
 	s        gocron.Scheduler
 	runner   *pipeline.Runner
-	tgPoller func(ctx context.Context)
 	interval int
 	llmCli   llm.Client
 	storeRef store.Store
@@ -50,12 +49,12 @@ type Status struct {
 	NextRun         time.Time `json:"next_run"`
 }
 
-func New(intervalMinutes int, runner *pipeline.Runner, tgPoller func(ctx context.Context), st store.Store, llmCli llm.Client) (*Scheduler, error) {
+func New(intervalMinutes int, runner *pipeline.Runner, st store.Store, llmCli llm.Client) (*Scheduler, error) {
 	s, err := gocron.NewScheduler(gocron.WithStopTimeout(30 * time.Second))
 	if err != nil {
 		return nil, err
 	}
-	return &Scheduler{s: s, runner: runner, tgPoller: tgPoller, interval: intervalMinutes, storeRef: st, llmCli: llmCli}, nil
+	return &Scheduler{s: s, runner: runner, interval: intervalMinutes, storeRef: st, llmCli: llmCli}, nil
 }
 
 // SetDB injeta o sqlx.DB para cron jobs que precisam de acesso direto ao banco.
@@ -79,81 +78,11 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		return err
 	}
 
-	if sc.tgPoller != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(30*time.Second),
-			gocron.NewTask(func() { sc.tgPoller(ctx) }),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Job de dispatch worker — processa targets pendentes a cada 15s.
-	// Fase 4: quando use_send_queue=1, senders novos estão ativos → dispatch_worker antigo é no-op.
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(15*time.Second),
-			gocron.NewTask(func() {
-				// gate Fase 4: skip se senders v2 ativos
-				if sc.db != nil {
-					var flag float64
-					if dbErr := sc.db.GetContext(ctx, &flag, "SELECT get_param('use_send_queue','global',NULL)"); dbErr == nil && flag >= 1 {
-						slog.Debug("dispatch_worker: skipped — use_send_queue=1, senders v2 ativos")
-						return
-					}
-				}
-				_ = RunDispatchWorker(ctx, sc.storeRef, sc.notif)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Full-auto: pending_approval → queued sem depender do Jonfrey (tick separado).
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(1*time.Minute),
-			gocron.NewTask(func() { RunPromotePendingApproval(ctx, sc.storeRef) }),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Job de auto match — tick frequente; o intervalo real vem de appconfig (early return no worker).
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(15*time.Second),
-			gocron.NewTask(func() { RunAutoMatchWorker(ctx, sc.storeRef, sc.notif) }),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
 	// Curadoria só por script (keywords + patterns), sem LLM — tick frequente; intervalo em appconfig.
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(30*time.Second),
 			gocron.NewTask(func() { RunCurationHeuristicWorker(ctx, sc.storeRef, time.Now()) }),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Anúncios recorrentes (schedule_cron em tabela ads)
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(1*time.Minute),
-			gocron.NewTask(func() { RunAdsWorker(ctx, sc.storeRef) }),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {
