@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS scraper_configs (
     id           BIGSERIAL PRIMARY KEY,
-    source_id    BIGINT NOT NULL REFERENCES sources(id),
+    source_id    TEXT   NOT NULL REFERENCES sources(id),
     field        TEXT NOT NULL,
     selector     TEXT NOT NULL,
     extractor    TEXT,
@@ -23,5 +23,5 @@ INSERT INTO scraper_configs (source_id, field, selector, status, created_by)
 SELECT s.id, f.field, 'TBD', 'active', 'manual'
 FROM sources s
 CROSS JOIN (VALUES ('title'), ('price_current'), ('image_url'), ('canonical_url')) AS f(field)
-WHERE s.slug IN ('amazon','mercadolivre','shopee','awin','shein','magalu','aliexpress','humble','kinguin')
+WHERE s.id IN ('amz','ml','shopee','awin','shein','magalu','aliexpress','humble','kinguin')
 ON CONFLICT DO NOTHING;

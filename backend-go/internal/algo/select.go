@@ -10,7 +10,7 @@ type catalogItem struct {
 	ID           int64   `db:"id"`
 	ShortID      string  `db:"short_id"`
 	CategoryID   *int64  `db:"category_id"`
-	SourceID     int64   `db:"source_id"`
+	SourceID     string  `db:"source_id"`
 	QualityScore float64 `db:"quality_score"`
 	DiscountPct  float64 `db:"discount_pct"`
 }

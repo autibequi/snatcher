@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS raw_items (
     id          BIGSERIAL PRIMARY KEY,
-    source_id   BIGINT NOT NULL REFERENCES sources(id),
+    source_id   TEXT   NOT NULL REFERENCES sources(id),
     page_id     BIGINT REFERENCES pages(id),
     payload     JSONB NOT NULL,
     crawled_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

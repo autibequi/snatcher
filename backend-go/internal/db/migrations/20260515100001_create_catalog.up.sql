@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS catalog (
     id              BIGSERIAL PRIMARY KEY,
     dedup_key       TEXT UNIQUE NOT NULL,
     short_id        TEXT UNIQUE NOT NULL,
-    source_id       BIGINT NOT NULL REFERENCES sources(id),
+    source_id       TEXT   NOT NULL REFERENCES sources(id),
     category_id     BIGINT REFERENCES categories(id),
 
     title           TEXT NOT NULL,

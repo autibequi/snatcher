@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS conversions (
     short_id        TEXT NOT NULL,
     catalog_id      BIGINT,  -- FK adicionada quando catalog existir (Fase 3)
     group_id        BIGINT REFERENCES groups(id),
-    source_id       BIGINT NOT NULL REFERENCES sources(id),
+    source_id       TEXT   NOT NULL REFERENCES sources(id),
     external_tx_id  TEXT,
     order_value     NUMERIC(12,2),
     commission      NUMERIC(12,4),

@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS learned_weights (
     group_id    BIGINT REFERENCES groups(id) ON DELETE CASCADE,
     category_id BIGINT REFERENCES categories(id),
-    source_id   BIGINT REFERENCES sources(id),
+    source_id   TEXT   REFERENCES sources(id),
     ctr_30d     NUMERIC(5,4),        -- cliques / envios em 30d
     epc_30d     NUMERIC(10,4),       -- earnings per click (quando tiver conversão)
     samples_30d INT,                 -- envios que contribuíram

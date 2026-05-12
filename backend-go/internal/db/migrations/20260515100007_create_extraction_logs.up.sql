@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS extraction_logs (
     id                    BIGSERIAL PRIMARY KEY,
-    source_id             BIGINT NOT NULL REFERENCES sources(id),
+    source_id             TEXT   NOT NULL REFERENCES sources(id),
     field                 TEXT NOT NULL,
     scraper_config_id     BIGINT REFERENCES scraper_configs(id),
     extraction_successful BOOLEAN NOT NULL,

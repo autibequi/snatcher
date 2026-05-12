@@ -15,7 +15,7 @@ func RunScraperFix(ctx context.Context, db *sqlx.DB, mode RunMode) error {
 	}
 
 	type drift struct {
-		SourceID    int64   `db:"source_id"`
+		SourceID    string  `db:"source_id"`
 		Field       string  `db:"field"`
 		Attempts    int     `db:"attempts"`
 		SuccessRate float64 `db:"success_rate"`
