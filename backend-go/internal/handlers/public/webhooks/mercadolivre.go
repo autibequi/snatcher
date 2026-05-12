@@ -31,8 +31,8 @@ func HandleMLPostback(db *sqlx.DB) http.HandlerFunc {
 		}
 
 		// resolve source_id
-		var sourceID int64
-		if err := db.GetContext(r.Context(), &sourceID, "SELECT id FROM sources WHERE slug='mercadolivre'"); err != nil {
+		var sourceID string
+		if err := db.GetContext(r.Context(), &sourceID, "SELECT id FROM sources WHERE id='ml'"); err != nil {
 			slog.Error("mercadolivre.source_lookup", "err", err)
 			http.Error(w, "source not found", http.StatusInternalServerError)
 			return

@@ -32,8 +32,8 @@ func HandleAwinPostback(db *sqlx.DB) http.HandlerFunc {
 		}
 
 		// resolve source_id
-		var sourceID int64
-		if err := db.GetContext(r.Context(), &sourceID, "SELECT id FROM sources WHERE slug='awin'"); err != nil {
+		var sourceID string
+		if err := db.GetContext(r.Context(), &sourceID, "SELECT id FROM sources WHERE id='awin'"); err != nil {
 			slog.Error("awin.source_lookup", "err", err)
 			http.Error(w, "source not found", http.StatusInternalServerError)
 			return

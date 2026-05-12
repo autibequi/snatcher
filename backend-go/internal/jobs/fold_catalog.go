@@ -43,7 +43,7 @@ func FoldCatalogVariantsIntoCatalog(ctx context.Context, db *sqlx.DB) error {
 
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO catalog (dedup_key, short_id, source_id, title, price_current, canonical_url, content_hash, send_ready)
-			SELECT $1, $2, COALESCE((SELECT id FROM sources WHERE slug = 'unknown'), 1), $3, $4, $5, $6, false
+			SELECT $1, $2, COALESCE((SELECT id FROM sources WHERE id = 'unknown'), 'unknown'), $3, $4, $5, $6, false
 			ON CONFLICT (dedup_key) DO NOTHING
 		`, dedup, *shortID, *name, *price, *url, contentHash)
 		if err == nil {
