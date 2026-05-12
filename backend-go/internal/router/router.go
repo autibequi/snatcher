@@ -81,7 +81,6 @@ func Build(
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy      := adminhnd.NewTaxonomyHandler(st)
-	curation      := adminhnd.NewCurationHandler(st, db, nil) // llmFn preenchido abaixo após composeH
 	linksH        := adminhnd.NewLinksHandler(st)
 	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
 	// Notifier compartilhado: handlers + scheduler postam resumos no grupo
@@ -109,13 +108,11 @@ func Build(
 	}
 	// Injeta factory LLM nos handlers que precisam
 	terms.SetLLMFn(composeH.BuildLLMClient)
-	curation.SetLLMFn(composeH.BuildLLMClient)
 	dash.SetLLMFn(composeH.BuildLLMClient)
 	taxonomy.SetLLMFn(composeH.BuildLLMClient)
 	groups.SetLLMFn(composeH.BuildLLMClient)
 	catalog.SetLLMFn(composeH.BuildLLMClient)
 	jonfrey.SetLLMFn(composeH.BuildLLMClient)
-	jonfrey.SetCurationHandler(curation)
 
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
