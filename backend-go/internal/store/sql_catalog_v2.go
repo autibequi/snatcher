@@ -1,10 +1,19 @@
 package store
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 )
+
+// genShortID gera um short_id alfanumérico de 10 chars (URL-safe).
+func genShortID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)[:10]
+}
 
 // ---------------------------------------------------------------------------
 // Pipeline canônico v2 — catalog table
