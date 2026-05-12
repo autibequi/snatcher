@@ -25,6 +25,6 @@ SELECT
     END AS sentiment_score,
     now() AS computed_at
 FROM groups g
-WHERE COALESCE(g.enabled, true) = true;
+WHERE COALESCE(g.status, 'active') = 'active';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_group_health ON mv_group_health (group_id);

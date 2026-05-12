@@ -39,7 +39,7 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 	if err := db.SelectContext(ctx, &groups, `
 		SELECT id, category_id, daily_msg_cap, timezone
 		FROM groups
-		WHERE COALESCE(enabled, true) = true
+		WHERE COALESCE(status, 'active') = 'active'
 	`); err != nil {
 		return err
 	}

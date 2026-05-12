@@ -9,6 +9,6 @@ SELECT
     (SELECT COUNT(*) FROM clicks cl WHERE cl.group_id=g.id AND cl.clicked_at BETWEEN now()-INTERVAL '28 days' AND now()-INTERVAL '14 days') AS clicks_prev_14d,
     now() AS computed_at
 FROM groups g
-WHERE COALESCE(g.enabled, true) = true;
+WHERE COALESCE(g.status, 'active') = 'active';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_group_decay ON mv_group_decay (group_id);

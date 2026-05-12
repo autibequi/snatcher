@@ -15,6 +15,6 @@ SELECT 'group'::text, g.id::bigint, g.name,
     (SELECT COUNT(*) FROM send_log sl WHERE sl.group_id=g.id AND sl.sent_at > now()-INTERVAL '24h' AND sl.status='failed'),
     (SELECT COUNT(*) FROM send_log sl WHERE sl.group_id=g.id AND sl.sent_at > now()-INTERVAL '24h'),
     now()
-FROM groups g WHERE COALESCE(g.enabled, true) = true;
+FROM groups g WHERE COALESCE(g.status, 'active') = 'active';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_anomaly_signals ON mv_anomaly_signals (scope, scope_id);
