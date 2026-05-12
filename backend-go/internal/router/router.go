@@ -512,15 +512,28 @@ func Build(
 
 		// Fase 2: Conversion tracking dashboard
 		r.Get("/api/admin/conversions/by-group", adminhnd.ConversionsByGroupHandler(db))
+		r.Get("/api/admin/conversions/recent", adminhnd.RecentConversionsHandler(db))
+		r.Get("/api/admin/conversions/by-day", adminhnd.ConversionsByDayHandler(db))
+		r.Get("/api/admin/conversions/by-source", adminhnd.ConversionsBySourceHandler(db))
 
 		// Fase 3: Fold catalog — migra catalogvariant → catalog (one-shot manual)
 		r.Post("/api/admin/fold-catalog", adminhnd.FoldCatalogHandler(db))
 
+		// Fase 3b: Catalog Canônico — visualizar catalog cimentado (v2)
+		r.Get("/api/admin/catalog-canonical/stats", adminhnd.CatalogCanonicalStatsHandler(db))
+		r.Get("/api/admin/catalog-canonical", adminhnd.ListCatalogCanonicalHandler(db))
+
 		// Fase 4: Senders — status dos modems e filas de envio
 		r.Get("/api/admin/senders/status", adminhnd.SendersStatusHandler(db))
+		r.Get("/api/admin/senders/accounts", adminhnd.SendersAccountsHandler(db))
+		r.Post("/api/admin/modems/{id}/pause", adminhnd.PauseModemHandler(db))
+		r.Post("/api/admin/modems/{id}/resume", adminhnd.ResumeModemHandler(db))
 
 		// Fase 5: Loops LLM — status de autonomia e auditoria
 		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
+		r.Get("/api/admin/loops/{loop}/actions", adminhnd.LoopActionsHandler(db))
+		r.Post("/api/admin/loops/{loop}/status", adminhnd.SetLoopStatusHandler(db))
+		r.Post("/api/admin/loops/{loop}/reset_strikes", adminhnd.ResetStrikesHandler(db))
 
 		// Fase 7: L4 suggestions dashboard — aprovar/rejeitar sugestões pendentes dos loops
 		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))
@@ -529,6 +542,34 @@ func Build(
 
 		// Fase 8: Diferenciais — status dos MVPs opcionais
 		r.Get("/api/admin/diferenciais/status", adminhnd.DiferenciaisStatusHandler(db))
+
+		// Fase 9: Tunable parameters — listar e editar parâmetros tunáveis
+		r.Get("/api/admin/parameters", adminhnd.ListParamsHandler(db))
+		r.Put("/api/admin/parameters/{id}", adminhnd.UpdateParamHandler(db))
+		r.Post("/api/admin/parameters/{id}/reset", adminhnd.ResetParamHandler(db))
+
+		// Fase 10: Audit timeline -- eventos operacionais consolidados
+		r.Get("/api/admin/audit/timeline", adminhnd.AuditTimelineHandler(db))
+		r.Get("/api/admin/audit/stats", adminhnd.AuditStatsHandler(db))
+
+		// Scrapers admin — configs, health, logs, promote
+		r.Get("/api/admin/scrapers/configs", adminhnd.ListScraperConfigsHandler(db))
+		r.Put("/api/admin/scrapers/configs/{id}/selector", adminhnd.UpdateScraperSelectorHandler(db))
+		r.Post("/api/admin/scrapers/configs/{id}/promote", adminhnd.PromoteShadowHandler(db))
+		r.Get("/api/admin/scrapers/health", adminhnd.ScraperHealthHandler(db))
+		r.Get("/api/admin/scrapers/logs", adminhnd.ExtractionLogsHandler(db))
+
+		// Metrics dashboard — learned weights, daily metrics, A/B tests
+		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))
+		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
+		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
+
+		// Alert Rules CRUD + test (curador: dispara quando query retorna linhas)
+		r.Get("/api/admin/alert-rules", adminhnd.ListAlertRulesHandler(db))
+		r.Post("/api/admin/alert-rules/test", adminhnd.TestAlertRuleHandler(db))
+		r.Post("/api/admin/alert-rules", adminhnd.CreateAlertRuleHandler(db))
+		r.Put("/api/admin/alert-rules/{id}", adminhnd.UpdateAlertRuleHandler(db))
+		r.Delete("/api/admin/alert-rules/{id}", adminhnd.DeleteAlertRuleHandler(db))
 
 		danger := adminhnd.NewDangerHandler(db, st)
 		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)

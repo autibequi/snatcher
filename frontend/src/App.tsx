@@ -97,6 +97,15 @@ const Automations = lazy(() => import('./pages/Automations'))
 
 const Setup = lazy(() => import('./pages/Setup'))
 const SuggestionsL4 = lazy(() => import('./pages/SuggestionsL4'))
+const AdminConversions = lazy(() => import('./pages/AdminConversions'))
+const AdminParams = lazy(() => import('./pages/AdminParams'))
+const AdminLoops = lazy(() => import('./pages/AdminLoops'))
+const AdminCatalogCanonical = lazy(() => import('./pages/AdminCatalogCanonical'))
+const AdminSenders = lazy(() => import('./pages/AdminSenders'))
+const AdminAudit = lazy(() => import('./pages/AdminAudit'))
+const AdminAlerts = lazy(() => import('./pages/AdminAlerts'))
+const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
+const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
   : null
@@ -169,6 +178,26 @@ export default function App() {
 
               {/* Fase 7: L4 suggestions dashboard */}
               <Route path="suggestions-l4" element={<SuggestionsL4 />} />
+
+              {/* Fase 2: Conversion tracking */}
+              <Route path="admin/conversions" element={<AdminConversions />} />
+
+              {/* Fase 9: Admin Snatcher v2 — Parâmetros tunáveis */}
+              <Route path="admin/params" element={<AdminParams />} />
+
+              {/* Fase 9: Admin Snatcher v2 — Loops LLM */}
+              <Route path="admin/loops" element={<AdminLoops />} />
+
+              {/* Fase 3b: Admin Snatcher v2 — Catalog Canônico */}
+              <Route path="admin/catalog-canonical" element={<AdminCatalogCanonical />} />
+              {/* Fase 4: Admin Snatcher v2 — Modems & Senders */}
+              <Route path="admin/senders" element={<AdminSenders />} />
+
+              {/* Fase 10: Admin Snatcher v2 — Audit / Alerts / Metrics / Scrapers */}
+              <Route path="admin/audit" element={<AdminAudit />} />
+              <Route path="admin/alerts" element={<AdminAlerts />} />
+              <Route path="admin/metrics" element={<AdminMetrics />} />
+              <Route path="admin/scrapers" element={<AdminScrapers />} />
 
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />

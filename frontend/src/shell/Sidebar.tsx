@@ -58,6 +58,20 @@ const NAV: NavGroup[] = [
       { to: '/manual',   label: 'Manual',         icon: '📚' },
     ],
   },
+  {
+    label: 'Admin Snatcher v2',
+    items: [
+      { to: '/admin/conversions', label: 'Conversoes', icon: '💵' },
+      { to: '/admin/params', label: 'Parametros', icon: '⚙️' },
+      { to: '/admin/loops', label: 'Loops LLM', icon: '🔁' },
+      { to: '/admin/catalog-canonical', label: 'Catálogo v2', icon: '📦' },
+      { to: '/admin/senders', label: 'Modems & Senders', icon: '📡' },
+      { to: '/admin/audit', label: 'Audit Timeline', icon: '📜' },
+      { to: '/admin/alerts', label: 'Alert Rules', icon: '🚨' },
+      { to: '/admin/metrics', label: 'Métricas', icon: '📈' },
+      { to: '/admin/scrapers', label: 'Scrapers', icon: '🕷️' },
+    ],
+  },
 ]
 
 export function Sidebar({ onClose }: SidebarProps) {
