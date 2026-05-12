@@ -28,7 +28,6 @@ type JonfreyHandler struct {
 	store    store.Store
 	db       *sqlx.DB
 	llmFn    func() llm.Client
-	curation *CurationHandler // delega tarefas longas (inspect-all, etc)
 	notif    *notifier.Notifier // pode ser nil — métodos checam internamente
 
 	// Ciclo agendado (scheduler): um batch por vez — evita dois RunCycle sobrepostos e LastRunAt incorreto.
@@ -41,7 +40,6 @@ type JonfreyHandler struct {
 	// Cache em memória (hit rápido) + persistido em jonfrey_review_cache
 	// (sobrevive a restart do backend). Bypass manual via ?force=1 no GET.
 	reviewMu       sync.Mutex
-	reviewCache    *reviewDispatchesResp
 	reviewCachedAt time.Time
 }
 
@@ -87,7 +85,6 @@ func NewJonfreyHandler(st store.Store, db *sqlx.DB) *JonfreyHandler {
 }
 
 func (h *JonfreyHandler) SetLLMFn(fn func() llm.Client)              { h.llmFn = fn }
-func (h *JonfreyHandler) SetCurationHandler(c *CurationHandler)      { h.curation = c }
 func (h *JonfreyHandler) SetNotifier(n *notifier.Notifier)           { h.notif = n }
 
 // ── Catálogo de ações que o Jonfrey pode executar ────────────────────────────
@@ -259,21 +256,11 @@ func actionInspectPending(ctx context.Context, h *JonfreyHandler) (map[string]an
 			nil
 	}
 
-	if h.curation == nil {
-		return map[string]any{"pending": pendingCount},
-			map[string]any{"started": false},
-			"CurationHandler não injetado no Jonfrey — não consigo disparar inspeção.",
-			fmt.Errorf("curation handler not wired")
-	}
-
-	jobID, started, msg := h.curation.TriggerInspectAll()
-	beforeMap := map[string]any{"pending": pendingCount}
-	if !started {
-		return beforeMap, map[string]any{"started": false, "reason": msg}, msg, nil
-	}
-	afterMap := map[string]any{"started": true, "job_id": jobID, "queued_for_inspection": min(pendingCount, 30)}
-	reasoning := fmt.Sprintf("Encontrei %d produtos sem auditoria. Iniciei job InspectAll (job_id=%s) — LLM vai auditar os próximos 30 em background.", pendingCount, jobID)
-	return beforeMap, afterMap, reasoning, nil
+	// Curation handler v1 removido — inspeção via L4/loops (v2). Stub: reporta pending sem disparar.
+	return map[string]any{"pending": pendingCount},
+		map[string]any{"started": false, "reason": "curation v1 removed — use L4 dashboard"},
+		fmt.Sprintf("Curation handler v1 foi removido (unify-v1-v2). %d produtos pendentes — auditoria agora via /admin/loops e /suggestions-l4.", pendingCount),
+		nil
 }
 
 func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {

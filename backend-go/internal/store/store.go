@@ -170,22 +170,6 @@ type Store interface {
 	ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error)
 	CreateSpyMessage(m models.SpyMessage) error
 
-	// Dispatches
-	CreateDispatch(d models.Dispatch, targets []models.DispatchTarget) (int64, error)
-	GetDispatch(id int64) (models.Dispatch, error)
-	ListDispatches(status string, limit, offset int) ([]models.Dispatch, error)
-	ListDispatchTargets(dispatchID int64) ([]models.DispatchTarget, error)
-	ListPendingDispatchTargets(limit int) ([]models.DispatchTarget, error)
-	// PromotePendingApprovalToQueued passa pending_approval → queued quando full_auto_mode=true
-	// (não depende do Jonfrey nem da ação auto_release_pending).
-	PromotePendingApprovalToQueued() (int64, error)
-	UpdateDispatchTargetStatus(id int64, status, errorReason string) error
-	UpdateDispatchStatus(id int64, status string) error
-	CancelDispatch(id int64) error
-	AllDispatchTargetsFinished(dispatchID int64) (bool, error)
-	HasDeliveredTarget(dispatchID int64) (bool, error)
-	// DispatchIDsWithDelivered devolve true nas chaves que têm pelo menos um target status=delivered.
-	DispatchIDsWithDelivered(dispatchIDs []int64) map[int64]bool
 
 	// Auto Match
 	// AutoMatchProductChannelInFlight bloqueia duplicar fila (produto+canal com dispatch/target pendente).
