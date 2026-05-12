@@ -6,7 +6,6 @@ import (
 
 	"snatcher/backendv2/internal/compose"
 	"snatcher/backendv2/internal/llm"
-	"snatcher/backendv2/internal/models"
 )
 
 // mockLLM implementa llm.Client para testes.
@@ -83,15 +82,8 @@ func TestPreview_WithChannel(t *testing.T) {
 		Price:    89.90,
 		Category: "eletronicos",
 	}
-	ch := &models.Channel{
-		Name: "Tech Deals",
-		Audience: models.Audience{
-			Categories: []string{"eletronicos"},
-			Gender:     "mix",
-		},
-	}
-
-	got, err := svc.Preview(context.Background(), prod, ch)
+	// ch = nil após remoção de models.Channel em unify-v1-v2
+	got, err := svc.Preview(context.Background(), prod, nil)
 	if err != nil {
 		t.Fatalf("Preview retornou erro: %v", err)
 	}
