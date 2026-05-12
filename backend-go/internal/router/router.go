@@ -219,7 +219,6 @@ func Build(
 		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
 		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
 		r.Post("/api/jonfrey/run", jonfrey.RunAction)
-		r.Get("/api/jonfrey/review-dispatches", jonfrey.ReviewDispatchesGet)
 		r.Get("/api/jonfrey/config", jonfrey.GetConfig)
 		r.Put("/api/jonfrey/config", jonfrey.UpdateConfig)
 
@@ -273,14 +272,6 @@ func Build(
 		r.Get("/api/taxonomy/patterns/active", taxonomyPatterns.ListAllActivePatterns)
 		r.Get("/api/taxonomy/patterns/max-updated-at", taxonomyPatterns.MaxPatternUpdatedAt)
 
-		// PR-1: Match Logs and Product Taxonomy (triage-refactor)
-		r.Get("/api/match-logs", matchLogs.List)
-		r.Get("/api/match-logs/products/{product_id}/taxonomies", matchLogs.ListProductTaxonomies)
-		r.Post("/api/match-logs/products/{product_id}/taxonomies", matchLogs.UpsertProductTaxonomy)
-		r.Get("/api/match-logs/false-positives", matchLogs.ListFalsePositiveLogs)
-		r.Post("/api/match-logs/{log_id}/false-positive", matchLogs.MarkFalsePositive)
-		r.Post("/api/match-logs/{log_id}/score-breakdown", matchLogs.UpdateScoreBreakdown)
-		r.Put("/api/match-logs/products/{product_id}/attributes", matchLogs.UpdateProductAttributes)
 		// Short Links
 		r.Post("/api/links/shorten", linksH.Shorten)
 
