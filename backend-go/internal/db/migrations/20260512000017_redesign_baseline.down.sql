@@ -1,0 +1,1 @@
+-- Não implementado — fazer manualmente se necessário

@@ -11,6 +11,13 @@ var defaultModels = map[string]string{
 	"parse_offer":     "openai/gpt-4o-mini",
 	"reasoning":       "openai/o1-mini",
 	"embedding":       "openai/text-embedding-3-small",
+	// Loops LLM (Fase 5) usam DeepSeek V4 Flash via OpenRouter
+	"loop:default": "deepseek/deepseek-chat",
+	"loop:L1":      "deepseek/deepseek-chat",
+	"loop:L2":      "deepseek/deepseek-chat",
+	"loop:L5":      "deepseek/deepseek-chat",
+	"loop:L6":      "deepseek/deepseek-chat",
+	"loop:L7":      "deepseek/deepseek-chat",
 }
 
 type ModelRouter struct {

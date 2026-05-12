@@ -33,6 +33,7 @@ import (
 	"snatcher/backendv2/internal/scheduler"
 	"snatcher/backendv2/internal/scraperbridge"
 	"snatcher/backendv2/internal/scrapers"
+	"snatcher/backendv2/internal/senders"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -129,6 +130,8 @@ func main() {
 		slog.Error("scheduler init", "err", err)
 		os.Exit(1)
 	}
+	// Injeta DB para cron jobs com acesso direto (daily metrics, GC, Fase 3 algo, Fase 4 reaper/cgnat).
+	sched.SetDB(db)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -141,6 +144,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer sched.Stop()
+
+	// Fase 4: Senders particionados — 1 goroutine persistente por modem.
+	// StartAll é no-op se flag use_send_queue=0 (cada sender verifica internamente).
+	senders.StartAll(ctx, db)
 
 	// HTTP server (handler já construído acima)
 	srv := &http.Server{

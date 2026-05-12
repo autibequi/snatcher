@@ -1,7 +1,0 @@
--- migrate:up
-ALTER TABLE appconfig ADD COLUMN IF NOT EXISTS full_auto_mode BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE appconfig ADD COLUMN IF NOT EXISTS notify_approval_webhook TEXT NOT NULL DEFAULT '';
-ALTER TABLE appconfig ADD COLUMN IF NOT EXISTS auto_curate_llm BOOLEAN NOT NULL DEFAULT FALSE;
-
--- migrate:down
--- noop

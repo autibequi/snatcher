@@ -1,0 +1,1 @@
+-- noop: extensão pode estar em uso por outras queries.

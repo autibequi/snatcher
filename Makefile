@@ -15,7 +15,8 @@ FRONTEND_URL ?= http://localhost:6060
 
 .PHONY: help setup start start-tunnel deploy deploy-tunnel update pi-setup snatcher snatcher-down snatcher-logs beta up down dev dev-down dev-logs logs logs-backend logs-frontend \
         shell ps clean test health smoke scan status fix-network build-base \
-        backend-test-up backend-test backend-test-down backend-build backend-vet admin
+        backend-test-up backend-test backend-test-down backend-build backend-vet admin \
+        migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"}{printf "\033[36m%-18s\033[0m %s\n",$$1,$$2}'
@@ -38,6 +39,28 @@ backend-build: ## go build no backend-go
 
 backend-vet: ## go vet no backend-go
 	GOTOOLCHAIN=local $(MAKE) -C backend-go vet
+
+# ---------------------------------------------------------------------------
+# Migrations (golang-migrate) — delegam ao backend-go/Makefile
+# ---------------------------------------------------------------------------
+
+migrate-up: ## Aplica todas as migrations pendentes (DATABASE_URL obrigatório)
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-up
+
+migrate-down: ## Reverte a última migration (DATABASE_URL obrigatório)
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-down
+
+migrate-status: ## Mostra a versão atual das migrations
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-status
+
+migrate-create: ## Cria nova migration: make migrate-create NAME=add_widget
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-create NAME=$(NAME)
+
+migrate-force: ## Força estado de versão: make migrate-force V=20260512000076
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-force V=$(V)
+
+migrate-goto: ## Migra para versão específica: make migrate-goto V=20260512000050
+	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-goto V=$(V)
 
 # ---------------------------------------------------------------------------
 # Stack

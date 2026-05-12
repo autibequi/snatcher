@@ -1,0 +1,2 @@
+ALTER TABLE llm_metrics DROP COLUMN IF EXISTS prompt;
+ALTER TABLE llm_metrics DROP COLUMN IF EXISTS response;

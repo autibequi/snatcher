@@ -67,28 +67,25 @@ func RunMigrations(db *sqlx.DB) error {
 	})
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
 			continue
 		}
 
 		var applied bool
-		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, entry.Name()).Scan(&applied); err != nil {
-			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, name).Scan(&applied); err != nil {
+			return fmt.Errorf("check migration %s: %w", name, err)
 		}
 		if applied {
 			continue
 		}
 
-		data, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		data, err := migrationsFS.ReadFile("migrations/" + name)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", entry.Name(), err)
+			return fmt.Errorf("read %s: %w", name, err)
 		}
 
 		content := string(data)
-		if idx := strings.Index(content, "-- migrate:down"); idx != -1 {
-			content = content[:idx]
-		}
-		content = strings.ReplaceAll(content, "-- migrate:up", "")
 
 		for _, stmt := range splitStatements(content) {
 			stmt = strings.TrimSpace(stmt)
@@ -106,12 +103,12 @@ func RunMigrations(db *sqlx.DB) error {
 				if len(preview) > 200 {
 					preview = preview[:200] + "..."
 				}
-				return fmt.Errorf("migration %s: %w\nstatement: %s", entry.Name(), err, preview)
+				return fmt.Errorf("migration %s: %w\nstatement: %s", name, err, preview)
 			}
 		}
 
-		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ($1)`, entry.Name()); err != nil {
-			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
+		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ($1)`, name); err != nil {
+			return fmt.Errorf("record migration %s: %w", name, err)
 		}
 	}
 	return nil

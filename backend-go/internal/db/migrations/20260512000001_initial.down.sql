@@ -1,0 +1,1 @@
+-- (não implementado — schema deletado manualmente se necessário)

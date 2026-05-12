@@ -1,0 +1,1 @@
+-- noop (seeds opcionais; não remover dados criados por slug/query fixos)

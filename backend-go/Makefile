@@ -1,7 +1,7 @@
 BINARY = backendv2
 CMD    = ./cmd/server
 
-.PHONY: build run tidy migrate test test-up test-down test-logs lint vet swag docs
+.PHONY: build run tidy migrate migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto test test-up test-down test-logs lint vet swag docs
 
 build:
 	go build -buildvcs=false -o $(BINARY) $(CMD)
@@ -31,9 +31,37 @@ test-logs:
 	docker compose -f docker-compose.test.yml logs -f postgres-test
 
 # Aplica migrations contra DATABASE_URL (ou default).
+# DEPRECATED: use migrate-up instead
 migrate:
-	@echo "Running migrations against DATABASE_URL..."
-	@go run -buildvcs=false ./cmd/migrate
+	@echo "DEPRECATED: use migrate-up. Delegating..."
+	@go run -buildvcs=false ./cmd/migrate up
+
+migrate-up: ## Aplica todas as migrations pendentes
+	@go run -buildvcs=false ./cmd/migrate up
+
+migrate-down: ## Reverte a última migration
+	@go run -buildvcs=false ./cmd/migrate down
+
+migrate-status: ## Mostra a versão atual das migrations
+	@go run -buildvcs=false ./cmd/migrate version
+
+migrate-create: ## Cria nova migration: make migrate-create NAME=add_widget
+	@[ -n "$(NAME)" ] || { echo "NAME is required: make migrate-create NAME=add_widget"; exit 1; }
+	@TS=$$(date -u +%Y%m%d%H%M%S); \
+	UPFILE=internal/db/migrations/$${TS}_$(NAME).up.sql; \
+	DOWNFILE=internal/db/migrations/$${TS}_$(NAME).down.sql; \
+	printf '-- Migration: $(NAME)\n\n' > $$UPFILE; \
+	printf '-- Revert: $(NAME)\n\n' > $$DOWNFILE; \
+	echo "Created $$UPFILE"; \
+	echo "Created $$DOWNFILE"
+
+migrate-force: ## Força estado de versão sem aplicar migrations: make migrate-force V=20260512000076
+	@[ -n "$(V)" ] || { echo "V is required: make migrate-force V=20260512000076"; exit 1; }
+	@go run -buildvcs=false ./cmd/migrate force $(V)
+
+migrate-goto: ## Migra para versão específica: make migrate-goto V=20260512000050
+	@[ -n "$(V)" ] || { echo "V is required: make migrate-goto V=20260512000050"; exit 1; }
+	@go run -buildvcs=false ./cmd/migrate goto $(V)
 
 # Roda testes assumindo Postgres já no ar (CI seta service container).
 test:

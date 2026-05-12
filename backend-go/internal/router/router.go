@@ -9,9 +9,11 @@ import (
 
 	_ "snatcher/backendv2/internal/docs" // swagger docs
 	"snatcher/backendv2/internal/compose"
+	"snatcher/backendv2/internal/curator"
 	"snatcher/backendv2/internal/handlers"
 	adminhnd "snatcher/backendv2/internal/handlers/admin"
 	publichnd "snatcher/backendv2/internal/handlers/public"
+	webhookshnd "snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/notifier"
@@ -155,6 +157,15 @@ func Build(
 	r.Post("/webhooks/affiliate/{programId}", postbackH.Handle)
 	evoWebhook := adminhnd.NewEvolutionWebhookHandler(st)
 	r.Post("/webhooks/evolution", evoWebhook.Handle)
+	// Conversion tracking webhooks (Fase 2)
+	r.Post("/webhooks/awin", webhookshnd.HandleAwinPostback(db))
+	r.Post("/webhooks/mercadolivre", webhookshnd.HandleMLPostback(db))
+
+	// Fase 6: Curator WhatsApp webhook — mensagens dos grupos curador
+	r.Post("/webhooks/curator", publichnd.CuratorWebhookHandler(db, curator.GlobalConfirmer, curator.GlobalSender))
+
+	// Fase 8: Promo Bot webhook — respostas em grupos de promoção (stub)
+	r.Post("/webhooks/promo-bot", publichnd.PromoBotWebhookHandler(db))
 
 	r.Get("/api/health", healthHandler)
 	r.Get("/api/brand", brand.Get) // white-label public config
@@ -498,6 +509,26 @@ func Build(
 		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
 		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
 		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
+
+		// Fase 2: Conversion tracking dashboard
+		r.Get("/api/admin/conversions/by-group", adminhnd.ConversionsByGroupHandler(db))
+
+		// Fase 3: Fold catalog — migra catalogvariant → catalog (one-shot manual)
+		r.Post("/api/admin/fold-catalog", adminhnd.FoldCatalogHandler(db))
+
+		// Fase 4: Senders — status dos modems e filas de envio
+		r.Get("/api/admin/senders/status", adminhnd.SendersStatusHandler(db))
+
+		// Fase 5: Loops LLM — status de autonomia e auditoria
+		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
+
+		// Fase 7: L4 suggestions dashboard — aprovar/rejeitar sugestões pendentes dos loops
+		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))
+		r.Post("/api/admin/suggestions/{id}/approve", adminhnd.ApproveSuggestionHandler(db))
+		r.Post("/api/admin/suggestions/{id}/dismiss", adminhnd.DismissSuggestionHandler(db))
+
+		// Fase 8: Diferenciais — status dos MVPs opcionais
+		r.Get("/api/admin/diferenciais/status", adminhnd.DiferenciaisStatusHandler(db))
 
 		danger := adminhnd.NewDangerHandler(db, st)
 		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)

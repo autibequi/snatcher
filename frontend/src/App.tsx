@@ -96,6 +96,7 @@ const ManualTutorialPage = lazy(() => import('./pages/ManualTutorialPage'))
 const Automations = lazy(() => import('./pages/Automations'))
 
 const Setup = lazy(() => import('./pages/Setup'))
+const SuggestionsL4 = lazy(() => import('./pages/SuggestionsL4'))
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
   : null
@@ -165,6 +166,9 @@ export default function App() {
 
               {/* AUTOMAÇÕES */}
               <Route path="automations" element={<Automations />} />
+
+              {/* Fase 7: L4 suggestions dashboard */}
+              <Route path="suggestions-l4" element={<SuggestionsL4 />} />
 
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />

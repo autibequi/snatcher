@@ -1,0 +1,1 @@
+-- noop: não restauramos keywords problemáticos

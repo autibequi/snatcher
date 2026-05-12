@@ -145,3 +145,24 @@ Saúde: `GET /api/health`
 - Postgres role read-only dedicada para `cmd/public`
 - Reorg `internal/handlers/{admin,public}/` para reduzir surface de leak
 - Normalização de títulos com fuzzy matching mais forte
+
+---
+
+## Fases concluídas
+
+Histórico completo de desenvolvimento. Cards detalhados em [`.team/gran-plan/tasks/done/`](.team/gran-plan/tasks/done/).
+
+| Fase | Descrição |
+|------|-----------|
+| **0.5** | Alinhamento operacional — decisões de arquitetura, ADRs iniciais, stack confirmada |
+| **0.7** | Migração da ferramenta de migrations (golang-migrate swap) |
+| **1** | Foundation — 19 migrations + seeds (schema base, autenticação, crawlers) |
+| **2** | Conversion Tracking — postbacks afiliados (Amazon, Shopee, Awin, ML), click analytics |
+| **3** | Catálogo + Algo Tick — dedup robusto, AlgoTick L3 (score dinâmico), fold_catalog |
+| **4** | Senders particionados + anti-ban — send_queue, 3 senders com afinidade, Reaper, CGNAT check |
+| **5** | Loops LLM core — L1/L2/L3/L5/L6/L7 + llm_autonomy + tunable_parameters + alert_rules |
+| **6** | Sistema de alertas WhatsApp — Curator + Confirmer + daily report + notifier |
+| **7** | Loops avançados — L4 dashboard, L8 AutoTuning, L9 ContentOptimize + parameter_suggestions |
+| **8** | Diferenciais (opcional) — cache imagens, mv_group_health, A/B por horário, stubs sentiment + promo bot |
+
+Arquitetura completa pós-Fase 8: [ARCHITECTURE.md](ARCHITECTURE.md)

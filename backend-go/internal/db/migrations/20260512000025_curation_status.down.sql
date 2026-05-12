@@ -1,0 +1,1 @@
+-- no-op; original migration had no explicit down

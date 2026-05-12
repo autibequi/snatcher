@@ -31,6 +31,9 @@ func main() {
 	if err := appdb.RunMigrations(db); err != nil {
 		log.Fatal("migrations:", err)
 	}
+	// Nota: seeds de categories, modems, llm_autonomy, tunable_parameters, templates e alert_rules
+	// estão incorporados nas migrations 20260513100001–20260513100016. Nenhum seed adicional
+	// precisa ser chamado manualmente aqui — as migrations são idempotentes (ON CONFLICT DO NOTHING).
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
