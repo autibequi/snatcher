@@ -28,13 +28,13 @@ func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source stri
 func (s *SQLStore) PeekShortLinkByID(shortID string) (destURL string, source string, found bool) {
 	return "", "", false
 }
-func (s *SQLStore) GetShortIDByURL(url string) string { return "", false, nil }
+func (s *SQLStore) GetShortIDByURL(url string) string { return "" }
 func (s *SQLStore) IncrementShortLinkClickCount(shortID string)      {}
 
 // ---- Taxonomy ----
 
 func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) { return nil, nil }
-func (s *SQLStore) GetTaxonomy(id int64) (*models.Taxonomy, error) { return models.Taxonomy{}, nil }
+func (s *SQLStore) GetTaxonomy(id int64) (*models.Taxonomy, error) { return nil, nil }
 func (s *SQLStore) GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error) { return nil, nil }
 func (s *SQLStore) ListTaxonomy(taxType string) ([]models.Taxonomy, error) { return nil, nil }
 func (s *SQLStore) ListAllActivePatterns() ([]models.TaxonomyPattern, error)  { return nil, nil }
@@ -52,7 +52,7 @@ func (s *SQLStore) DeleteTaxonomy(id int64) error                   { return nil
 func (s *SQLStore) SetTaxonomyStatus(id int64, status string) error { return nil }
 func (s *SQLStore) IncrementTaxonomyDetect(id int64) error          { return nil }
 func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error) {
-	return nil, nil
+	return 0, nil
 }
 func (s *SQLStore) UpsertProductTaxonomy(productID, taxonomyID int64, role string, confidence float64, source string) error {
 	return nil
@@ -64,9 +64,9 @@ func (s *SQLStore) CreateAffiliate(a models.Affiliate) (int64, error)           
 func (s *SQLStore) UpdateAffiliate(a models.Affiliate) error                      { return nil }
 func (s *SQLStore) DeleteAffiliate(id int64) error                                { return nil }
 func (s *SQLStore) GetAffiliate(id int64) (models.Affiliate, error)               { return models.Affiliate{}, nil }
-func (s *SQLStore) GetAffiliateBySource(sourceID string) (models.Affiliate, bool, error) { return models.Affiliate{}, nil }
+func (s *SQLStore) GetAffiliateBySource(sourceID string) (models.Affiliate, bool, error) { return models.Affiliate{}, false, nil }
 func (s *SQLStore) ListAffiliates(sourceID *string) ([]models.Affiliate, error) { return nil, nil }
-func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) { return nil }
+func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) { return 0, nil }
 
 func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, error) {
 	return 0, nil
@@ -121,7 +121,7 @@ func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCou
 
 // ---- Catalog / product ----
 
-func (s *SQLStore) DeactivateCatalogProductsWithoutPrice() (int64, error) { return nil }
+func (s *SQLStore) DeactivateCatalogProductsWithoutPrice() (int64, error) { return 0, nil }
 func (s *SQLStore) IncrementProductFailures(id int64) error             { return nil }
 func (s *SQLStore) ResetProductFailures(id int64) error                 { return nil }
 func (s *SQLStore) UpdateProductAttributesJSON(productID int64, attrs []byte) error { return nil }
@@ -132,7 +132,7 @@ func (s *SQLStore) InsertRawItem(r models.CrawlResult, payload []byte) error { r
 
 // ---- Sent / curation ----
 
-func (s *SQLStore) RecordSent(s models.SentMessageV2) error { return nil }
+func (s *SQLStore) RecordSent(msg models.SentMessageV2) error { return nil }
 func (s *SQLStore) WasSentRecently(productID, targetID int64, since time.Time) (bool, error) {
 	return false, nil
 }
