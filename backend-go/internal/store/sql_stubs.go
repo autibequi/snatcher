@@ -28,21 +28,21 @@ func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source stri
 func (s *SQLStore) PeekShortLinkByID(shortID string) (destURL string, source string, found bool) {
 	return "", "", false
 }
-func (s *SQLStore) GetShortIDByURL(url string) (string, bool, error) { return "", false, nil }
+func (s *SQLStore) GetShortIDByURL(url string) string { return "", false, nil }
 func (s *SQLStore) IncrementShortLinkClickCount(shortID string)      {}
 
 // ---- Taxonomy ----
 
-func (s *SQLStore) DetectAndUpsertTaxonomy(name string) ([]int64, error) { return nil, nil }
-func (s *SQLStore) GetTaxonomy(id int64) (models.Taxonomy, error)        { return models.Taxonomy{}, nil }
+func (s *SQLStore) DetectAndUpsertTaxonomy(text string) ([]int64, error) { return nil, nil }
+func (s *SQLStore) GetTaxonomy(id int64) (*models.Taxonomy, error) { return models.Taxonomy{}, nil }
 func (s *SQLStore) GetTaxonomyByIDs(ids []int64) ([]models.Taxonomy, error) { return nil, nil }
-func (s *SQLStore) ListTaxonomy(limit, offset int) ([]models.Taxonomy, error) { return nil, nil }
+func (s *SQLStore) ListTaxonomy(taxType string) ([]models.Taxonomy, error) { return nil, nil }
 func (s *SQLStore) ListAllActivePatterns() ([]models.TaxonomyPattern, error)  { return nil, nil }
-func (s *SQLStore) ListPendingTaxonomy(limit int) ([]models.Taxonomy, error)  { return nil, nil }
-func (s *SQLStore) ListTaxonomyWithParent(parentID int64) ([]models.Taxonomy, error) {
+func (s *SQLStore) ListPendingTaxonomy() ([]models.Taxonomy, error) { return nil, nil }
+func (s *SQLStore) ListTaxonomyWithParent(taxType string, parentID *int64) ([]models.Taxonomy, error) {
 	return nil, nil
 }
-func (s *SQLStore) ListTaxonomyPatterns(taxonomyID int64) ([]models.TaxonomyPattern, error) {
+func (s *SQLStore) ListTaxonomyPatterns(taxonomyIDs []int64, kinds []string) ([]models.TaxonomyPattern, error) {
 	return nil, nil
 }
 func (s *SQLStore) MaxTaxonomyPatternUpdatedAt() (time.Time, error) { return time.Time{}, nil }
@@ -51,10 +51,10 @@ func (s *SQLStore) UpdateTaxonomy(t models.Taxonomy) error          { return nil
 func (s *SQLStore) DeleteTaxonomy(id int64) error                   { return nil }
 func (s *SQLStore) SetTaxonomyStatus(id int64, status string) error { return nil }
 func (s *SQLStore) IncrementTaxonomyDetect(id int64) error          { return nil }
-func (s *SQLStore) SuggestTaxonomyCandidate(name string) ([]models.Taxonomy, error) {
+func (s *SQLStore) SuggestTaxonomyCandidate(taxType, name string, keywords []string, sampleText, source string) (int64, error) {
 	return nil, nil
 }
-func (s *SQLStore) UpsertProductTaxonomy(productID, taxonomyID int64, method string) error {
+func (s *SQLStore) UpsertProductTaxonomy(productID, taxonomyID int64, role string, confidence float64, source string) error {
 	return nil
 }
 
@@ -64,9 +64,9 @@ func (s *SQLStore) CreateAffiliate(a models.Affiliate) (int64, error)           
 func (s *SQLStore) UpdateAffiliate(a models.Affiliate) error                      { return nil }
 func (s *SQLStore) DeleteAffiliate(id int64) error                                { return nil }
 func (s *SQLStore) GetAffiliate(id int64) (models.Affiliate, error)               { return models.Affiliate{}, nil }
-func (s *SQLStore) GetAffiliateBySource(source string) (models.Affiliate, error)  { return models.Affiliate{}, nil }
-func (s *SQLStore) ListAffiliates() ([]models.Affiliate, error)                   { return nil, nil }
-func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) error  { return nil }
+func (s *SQLStore) GetAffiliateBySource(sourceID string) (models.Affiliate, bool, error) { return models.Affiliate{}, nil }
+func (s *SQLStore) ListAffiliates(sourceID *string) ([]models.Affiliate, error) { return nil, nil }
+func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) { return nil }
 
 func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, error) {
 	return 0, nil
@@ -76,7 +76,7 @@ func (s *SQLStore) DeleteAffiliateProgram(id int64) error                  { ret
 func (s *SQLStore) GetAffiliateProgram(id int64) (models.AffiliateProgram, error) {
 	return models.AffiliateProgram{}, nil
 }
-func (s *SQLStore) ListAffiliatePrograms() ([]models.AffiliateProgram, error) { return nil, nil }
+func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error) { return nil, nil }
 func (s *SQLStore) ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error) {
 	return nil, nil
 }
@@ -87,19 +87,19 @@ func (s *SQLStore) GetPublicLink(id int64) (models.PublicLink, error) { return m
 func (s *SQLStore) GetPublicLinkBySlug(slug string) (models.PublicLink, error) {
 	return models.PublicLink{}, nil
 }
-func (s *SQLStore) ListPublicLinks(channelID int64) ([]models.PublicLink, error)   { return nil, nil }
+func (s *SQLStore) ListPublicLinks() ([]models.PublicLink, error) { return nil, nil }
 func (s *SQLStore) CreatePublicLink(l models.PublicLink) (int64, error)            { return 0, nil }
 func (s *SQLStore) UpdatePublicLink(l models.PublicLink) error                     { return nil }
 func (s *SQLStore) DeletePublicLink(id int64) error                                { return nil }
 func (s *SQLStore) IncrementPublicLinkClicks(id int64) error                       { return nil }
-func (s *SQLStore) IncrementRoundRobinIdx(id int64) error                          { return nil }
+func (s *SQLStore) IncrementRoundRobinIdx(id int64, newIdx int) error { return nil }
 
 // ---- GroupSpies ----
 
 func (s *SQLStore) CreateGroupSpy(g models.GroupSpy) (int64, error)          { return 0, nil }
 func (s *SQLStore) GetGroupSpy(id int64) (models.GroupSpy, error)            { return models.GroupSpy{}, nil }
-func (s *SQLStore) ListGroupSpies(active bool) ([]models.GroupSpy, error)    { return nil, nil }
-func (s *SQLStore) UpdateGroupSpyReader(id int64, readerID int64) error      { return nil }
+func (s *SQLStore) ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error) { return nil, nil }
+func (s *SQLStore) UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error { return nil }
 func (s *SQLStore) SoftDeleteGroupSpy(id int64) error                        { return nil }
 func (s *SQLStore) CreateSpyMessage(m models.SpyMessage) error               { return nil }
 func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error) {
@@ -110,7 +110,7 @@ func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage,
 
 func (s *SQLStore) GetCluster(id int64) (models.Cluster, error)        { return models.Cluster{}, nil }
 func (s *SQLStore) ListClusters() ([]models.Cluster, error)            { return nil, nil }
-func (s *SQLStore) UpsertClusters(cs []models.Cluster) error           { return nil }
+func (s *SQLStore) UpsertClusters(clusters []models.Cluster) error { return nil }
 
 // ---- Dispatch / send queue stubs ----
 
@@ -121,23 +121,23 @@ func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCou
 
 // ---- Catalog / product ----
 
-func (s *SQLStore) DeactivateCatalogProductsWithoutPrice() error        { return nil }
+func (s *SQLStore) DeactivateCatalogProductsWithoutPrice() (int64, error) { return nil }
 func (s *SQLStore) IncrementProductFailures(id int64) error             { return nil }
 func (s *SQLStore) ResetProductFailures(id int64) error                 { return nil }
-func (s *SQLStore) UpdateProductAttributesJSON(id int64, attrs []byte) error { return nil }
-func (s *SQLStore) InsertDiscardedItem(sourceID string, reason string, payload []byte) error {
+func (s *SQLStore) UpdateProductAttributesJSON(productID int64, attrs []byte) error { return nil }
+func (s *SQLStore) InsertDiscardedItem(r models.CrawlResult, payload []byte, reason string) error {
 	return nil
 }
 func (s *SQLStore) InsertRawItem(r models.CrawlResult, payload []byte) error { return nil }
 
 // ---- Sent / curation ----
 
-func (s *SQLStore) RecordSent(groupID, productID int64) error                  { return nil }
-func (s *SQLStore) WasSentRecently(groupID, productID int64, d time.Duration) (bool, error) {
+func (s *SQLStore) RecordSent(s models.SentMessageV2) error { return nil }
+func (s *SQLStore) WasSentRecently(productID, targetID int64, since time.Time) (bool, error) {
 	return false, nil
 }
-func (s *SQLStore) SetCurationHeuristicCheckpoint(id int64) error              { return nil }
-func (s *SQLStore) SetAutoMatchProductCursor(id int64) error                   { return nil }
+func (s *SQLStore) SetCurationHeuristicCheckpoint(at time.Time, lastProductID int64) error { return nil }
+func (s *SQLStore) SetAutoMatchProductCursor(cursor int64) error { return nil }
 
 // ---- unused imports guard ----
 var _ context.Context
