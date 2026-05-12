@@ -25,7 +25,7 @@ func WriteRawItem(ctx context.Context, db *sqlx.DB, r models.CrawlResult) {
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO raw_items (source_id, payload, crawled_at, processed)
 		SELECT s.id, $1, now(), false
-		FROM sources s WHERE s.slug = $2
+		FROM sources s WHERE s.id = $2
 		LIMIT 1
 	`, payload, r.Source)
 	if err != nil {
@@ -48,7 +48,7 @@ func WriteDiscardedItem(ctx context.Context, db *sqlx.DB, r models.CrawlResult, 
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO discarded_items (source_id, reason, payload, discarded_at)
 		SELECT s.id, $1, $2, now()
-		FROM sources s WHERE s.slug = $3
+		FROM sources s WHERE s.id = $3
 		LIMIT 1
 	`, reason, payload, r.Source)
 	if err != nil {
