@@ -43,34 +43,34 @@ function DetailModal({ item, onClose }: DetailModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6 space-y-3"
+        className="bg-surface dark:bg-bg rounded-xl shadow-2xl max-w-lg w-full mx-4 px-3 py-4 sm:px-4 sm:py-6 space-y-3"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-lg font-semibold leading-tight">{item.title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0">
+          <button onClick={onClose} className="text-fg-4 hover:text-fg-2 text-xl leading-none flex-shrink-0">
             ✕
           </button>
         </div>
         <dl className="text-sm space-y-1">
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">ID</dt><dd>{item.id}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">short_id</dt><dd className="font-mono text-xs">{item.short_id}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">dedup_key</dt><dd className="font-mono text-xs break-all">{item.dedup_key}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">source_id</dt><dd>{item.source_id}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Categoria</dt><dd>{item.category_name ?? item.category_id ?? '—'}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Preço atual</dt><dd>{brl.format(item.price_current)}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">ID</dt><dd>{item.id}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">short_id</dt><dd className="font-mono text-xs">{item.short_id}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">dedup_key</dt><dd className="font-mono text-xs break-all">{item.dedup_key}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">source_id</dt><dd>{item.source_id}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Categoria</dt><dd>{item.category_name ?? item.category_id ?? '—'}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço atual</dt><dd>{brl.format(item.price_current)}</dd></div>
           {item.price_original != null && (
-            <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Preço original</dt><dd>{brl.format(item.price_original)}</dd></div>
+            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço original</dt><dd>{brl.format(item.price_original)}</dd></div>
           )}
           {item.discount_pct != null && (
-            <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Desconto</dt><dd>{item.discount_pct.toFixed(1)}%</dd></div>
+            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Desconto</dt><dd>{item.discount_pct.toFixed(1)}%</dd></div>
           )}
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Quality score</dt><dd>{item.quality_score != null ? item.quality_score.toFixed(3) : '—'}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">send_ready</dt><dd>{item.send_ready ? '✓' : '✗'}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">canonical_url_alive</dt><dd>{item.canonical_url_alive ? '✓' : '✗'}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">Criado em</dt><dd>{item.created_at}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Quality score</dt><dd>{item.quality_score != null ? item.quality_score.toFixed(3) : '—'}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">send_ready</dt><dd>{item.send_ready ? '✓' : '✗'}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">canonical_url_alive</dt><dd>{item.canonical_url_alive ? '✓' : '✗'}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Criado em</dt><dd>{item.created_at}</dd></div>
           {item.send_ready_at && (
-            <div className="flex gap-2"><dt className="text-gray-500 w-36 flex-shrink-0">send_ready_at</dt><dd>{item.send_ready_at}</dd></div>
+            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">send_ready_at</dt><dd>{item.send_ready_at}</dd></div>
           )}
         </dl>
       </div>
@@ -80,9 +80,9 @@ function DetailModal({ item, onClose }: DetailModalProps) {
 
 function QualityBadge({ score }: { score?: number }) {
   if (score == null) {
-    return <span className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">—</span>
+    return <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-2 text-fg-3">—</span>
   }
-  const color = score >= 0.6 ? 'bg-green-100 text-green-700' : score >= 0.4 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+  const color = score >= 0.6 ? 'bg-success-soft text-green-700' : score >= 0.4 ? 'bg-warning-soft text-yellow-700' : 'bg-surface-2 text-fg-3'
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{score.toFixed(2)}</span>
 }
 
@@ -154,14 +154,14 @@ export default function AdminCatalogCanonical() {
     : []
 
   return (
-    <div className="p-6 max-w-6xl space-y-6">
+    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Catalog Canônico (v2)</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-fg-3 mt-1">
             Preview do que o Algo tick novo vai enviar. Coexiste com catalog antigo via flag{' '}
-            <code className="bg-gray-100 px-1 rounded text-xs">catalog_source</code>.
+            <code className="bg-surface-2 px-1 rounded text-xs">catalog_source</code>.
           </p>
         </div>
         <button
@@ -175,12 +175,12 @@ export default function AdminCatalogCanonical() {
 
       {/* KPI cards */}
       {statsLoading ? (
-        <div className="flex gap-4">{[...Array(5)].map((_, i) => <div key={i} className="h-20 flex-1 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+        <div className="flex gap-4">{[...Array(5)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {KPI_CARDS.map(k => (
-            <div key={k.label} className="bg-white dark:bg-gray-900 border rounded-xl p-4 shadow-sm">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{k.label}</p>
+            <div key={k.label} className="bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm">
+              <p className="text-xs text-fg-3 uppercase tracking-wide">{k.label}</p>
               <p className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value.toLocaleString('pt-BR')}</p>
             </div>
           ))}
@@ -189,13 +189,13 @@ export default function AdminCatalogCanonical() {
 
       {/* Por source */}
       {stats && stats.by_source.length > 0 && (
-        <div className="bg-white dark:bg-gray-900 border rounded-xl p-4 shadow-sm">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Por source</h2>
+        <div className="bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-3 mb-3">Por source</h2>
           <table className="text-sm w-full max-w-sm">
             <thead>
               <tr className="border-b">
-                <th className="text-left py-1 pr-4 text-gray-600 font-medium">source_id</th>
-                <th className="text-right py-1 text-gray-600 font-medium">count</th>
+                <th className="text-left py-1 pr-4 text-fg-2 font-medium">source_id</th>
+                <th className="text-right py-1 text-fg-2 font-medium">count</th>
               </tr>
             </thead>
             <tbody>
@@ -222,7 +222,7 @@ export default function AdminCatalogCanonical() {
           Só send_ready
         </label>
         <div className="flex items-center gap-2 text-sm">
-          <label htmlFor="catid" className="text-gray-600">Category ID:</label>
+          <label htmlFor="catid" className="text-fg-2">Category ID:</label>
           <input
             id="catid"
             type="number"
@@ -235,24 +235,24 @@ export default function AdminCatalogCanonical() {
         </div>
         <button
           onClick={() => { loadItems(); loadStats() }}
-          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+          className="px-3 py-1 text-sm border rounded hover:bg-surface-2"
         >
           Atualizar
         </button>
       </div>
 
       {/* Tabela */}
-      <div className="bg-white dark:bg-gray-900 border rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-surface dark:bg-bg border rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
+          <thead className="bg-surface-2 border-b">
             <tr>
               <th className="w-14 px-3 py-2" />
-              <th className="text-left px-3 py-2 font-medium text-gray-600">Título</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-600 hidden md:table-cell">Source / Categoria</th>
-              <th className="text-right px-3 py-2 font-medium text-gray-600">Preço</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-600 hidden lg:table-cell">Score</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-600">Ready</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-600">URL</th>
+              <th className="text-left px-3 py-2 font-medium text-fg-2">Título</th>
+              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell">Source / Categoria</th>
+              <th className="text-right px-3 py-2 font-medium text-fg-2">Preço</th>
+              <th className="text-center px-3 py-2 font-medium text-fg-2 hidden lg:table-cell">Score</th>
+              <th className="text-center px-3 py-2 font-medium text-fg-2">Ready</th>
+              <th className="text-center px-3 py-2 font-medium text-fg-2">URL</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -261,17 +261,17 @@ export default function AdminCatalogCanonical() {
               [...Array(10)].map((_, i) => (
                 <tr key={i}>
                   <td colSpan={8} className="px-3 py-2">
-                    <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-4 bg-surface-2 rounded animate-pulse" />
                   </td>
                 </tr>
               ))
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-gray-400">Nenhum item encontrado.</td>
+                <td colSpan={8} className="px-3 py-6 text-center text-fg-4">Nenhum item encontrado.</td>
               </tr>
             ) : (
               items.map(item => (
-                <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={item.id} className="hover:bg-surface-2 transition-colors">
                   {/* Thumbnail */}
                   <td className="px-3 py-2">
                     {item.image_url ? (
@@ -282,7 +282,7 @@ export default function AdminCatalogCanonical() {
                         onError={e => { (e.target as HTMLImageElement).src = '' }}
                       />
                     ) : (
-                      <div className="w-12 h-12 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-xs">?</div>
+                      <div className="w-12 h-12 rounded bg-surface-2 flex items-center justify-center text-fg-4 text-xs">?</div>
                     )}
                   </td>
                   {/* Título */}
@@ -292,9 +292,9 @@ export default function AdminCatalogCanonical() {
                     </span>
                   </td>
                   {/* Source / Categoria */}
-                  <td className="px-3 py-2 hidden md:table-cell text-xs text-gray-500">
+                  <td className="px-3 py-2 hidden md:table-cell text-xs text-fg-3">
                     <div>{item.source_id}</div>
-                    {item.category_name && <div className="text-gray-400">{item.category_name}</div>}
+                    {item.category_name && <div className="text-fg-4">{item.category_name}</div>}
                   </td>
                   {/* Preço */}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -323,7 +323,7 @@ export default function AdminCatalogCanonical() {
                   <td className="px-3 py-2">
                     <button
                       onClick={() => setDetailItem(item)}
-                      className="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                      className="px-2 py-1 text-xs bg-surface-2 rounded hover:bg-surface-3 transition-colors"
                     >
                       Ver
                     </button>
@@ -340,15 +340,15 @@ export default function AdminCatalogCanonical() {
         <button
           onClick={() => setPage(p => Math.max(0, p - 1))}
           disabled={page === 0}
-          className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+          className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-surface-2"
         >
           ←
         </button>
-        <span className="text-gray-600">Página {page + 1}</span>
+        <span className="text-fg-2">Página {page + 1}</span>
         <button
           onClick={() => setPage(p => p + 1)}
           disabled={items.length < LIMIT}
-          className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+          className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-surface-2"
         >
           →
         </button>

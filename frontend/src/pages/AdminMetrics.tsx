@@ -470,7 +470,7 @@ export default function AdminMetrics() {
   const [tab, setTab] = useState<Tab>('weights')
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 mx-auto space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-xl font-semibold text-fg">Analytics — Metrics Dashboard</h1>

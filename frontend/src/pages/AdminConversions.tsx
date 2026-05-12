@@ -112,7 +112,7 @@ export default function AdminConversions() {
   const maxGroupCommission = Math.max(1, ...byGroup.map(r => r.commission))
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-8">
+    <div className="p-4 md:mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 mx-auto space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>

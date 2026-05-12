@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
+import { sectionCard, pageContainer } from '../lib/uiTokens'
 
 interface TunableParam {
   id: number
@@ -130,15 +131,15 @@ export default function AdminParams() {
   const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(s => grouped[s])
 
   return (
-    <div className="p-6 max-w-5xl space-y-8">
+    <div className="px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-8">
       <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>
 
-      {loading && <p className="text-gray-500">Carregando...</p>}
+      {loading && <p className="text-fg-3">Carregando...</p>}
 
       {/* Flags strangler — destaque no topo */}
       {!loading && stranglerParams.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
             Flags Strangler
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -148,7 +149,7 @@ export default function AdminParams() {
               return (
                 <div
                   key={p.id}
-                  className="border rounded-lg p-4 bg-white shadow-sm flex flex-col gap-2"
+                  className="border rounded-lg p-4 bg-surface shadow-sm flex flex-col gap-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-sm">{p.param_name}</span>
@@ -164,7 +165,7 @@ export default function AdminParams() {
                     >
                       <span
                         className={[
-                          'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                          'inline-block h-4 w-4 transform rounded-full bg-surface shadow transition-transform',
                           isOn ? 'translate-x-6' : 'translate-x-1',
                         ].join(' ')}
                       />
@@ -173,13 +174,13 @@ export default function AdminParams() {
                   <span
                     className={[
                       'text-xs font-medium',
-                      isOn ? 'text-green-600' : 'text-gray-400',
+                      isOn ? 'text-green-600' : 'text-fg-4',
                     ].join(' ')}
                   >
                     {isOn ? 'ON' : 'OFF'}
                   </span>
                   {p.last_changed && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-fg-4">
                       Alterado: {p.last_changed}
                       {p.last_change_by ? ` por ${p.last_change_by}` : ''}
                     </p>
@@ -194,19 +195,19 @@ export default function AdminParams() {
       {/* Params regulares agrupados por scope_type */}
       {!loading && sortedScopes.map(scope => (
         <section key={scope}>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
             {scope}
           </h2>
-          <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+          <div className="border rounded-lg bg-surface shadow-sm overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-surface-2 border-b">
                 <tr>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600">Parâmetro</th>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600">Valor atual</th>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600 hidden md:table-cell">
+                  <th className="text-left px-4 py-2 font-medium text-fg-2">Parâmetro</th>
+                  <th className="text-left px-4 py-2 font-medium text-fg-2">Valor atual</th>
+                  <th className="text-left px-4 py-2 font-medium text-fg-2 hidden md:table-cell">
                     Padrão / Min / Max
                   </th>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600 hidden lg:table-cell">
+                  <th className="text-left px-4 py-2 font-medium text-fg-2 hidden lg:table-cell">
                     Última alteração
                   </th>
                   <th className="px-4 py-2" />
@@ -216,8 +217,8 @@ export default function AdminParams() {
                 {grouped[scope].map(p => {
                   const isBusy = saving[p.id]
                   return (
-                    <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-gray-800">{p.param_name}</td>
+                    <tr key={p.id} className="hover:bg-surface-2 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-fg">{p.param_name}</td>
                       <td className="px-4 py-3">
                         <input
                           type="number"
@@ -232,10 +233,10 @@ export default function AdminParams() {
                           disabled={isBusy}
                         />
                       </td>
-                      <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
+                      <td className="px-4 py-3 text-fg-3 hidden md:table-cell">
                         {p.default_value} / {p.min_value} / {p.max_value}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden lg:table-cell">
+                      <td className="px-4 py-3 text-xs text-fg-4 hidden lg:table-cell">
                         {p.last_changed
                           ? `${p.last_changed}${p.last_change_by ? ` · ${p.last_change_by}` : ''}`
                           : '—'}
@@ -252,7 +253,7 @@ export default function AdminParams() {
                           <button
                             onClick={() => handleReset(p)}
                             disabled={isBusy}
-                            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs font-medium disabled:opacity-50"
+                            className="px-3 py-1 bg-surface-3 rounded hover:bg-gray-300 text-xs font-medium disabled:opacity-50"
                           >
                             Reset
                           </button>
@@ -268,7 +269,7 @@ export default function AdminParams() {
       ))}
 
       {!loading && params.length === 0 && (
-        <p className="text-gray-500">Nenhum parâmetro encontrado.</p>
+        <p className="text-fg-3">Nenhum parâmetro encontrado.</p>
       )}
     </div>
   )

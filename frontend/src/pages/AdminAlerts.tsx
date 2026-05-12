@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
+import { sectionCard, pageContainer } from '../lib/uiTokens'
 
 interface AlertRule {
   id: number
@@ -39,8 +40,8 @@ function humanize(iso?: string): string {
 function SeverityBadge({ severity }: { severity: string }) {
   const cls =
     severity === 'critical'
-      ? 'bg-red-100 text-red-800'
-      : 'bg-yellow-100 text-yellow-800'
+      ? 'bg-danger-soft text-danger'
+      : 'bg-warning-soft text-warning'
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
       {severity}
@@ -71,7 +72,7 @@ function Toggle({
     >
       <span
         className={[
-          'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+          'inline-block h-4 w-4 transform rounded-full bg-surface shadow transition-transform',
           value ? 'translate-x-6' : 'translate-x-1',
         ].join(' ')}
       />
@@ -212,7 +213,7 @@ export default function AdminAlerts() {
       : []
 
   return (
-    <div className="p-6 max-w-6xl">
+    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Alert Rules</h1>
@@ -235,23 +236,23 @@ export default function AdminAlerts() {
         </span>
       </div>
 
-      {loading && <p className="text-gray-500">Carregando...</p>}
+      {loading && <p className="text-fg-3">Carregando...</p>}
 
       {!loading && rules.length === 0 && (
-        <p className="text-gray-400">Nenhuma regra cadastrada.</p>
+        <p className="text-fg-4">Nenhuma regra cadastrada.</p>
       )}
 
       {/* Table */}
       {!loading && rules.length > 0 && (
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+        <div className="bg-surface border rounded-lg shadow-sm overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-surface-2 border-b">
               <tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Nome</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Severity</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Cooldown</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Enabled</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600 hidden md:table-cell">
+                <th className="text-left px-4 py-2 font-medium text-fg-2">Nome</th>
+                <th className="text-left px-4 py-2 font-medium text-fg-2">Severity</th>
+                <th className="text-left px-4 py-2 font-medium text-fg-2">Cooldown</th>
+                <th className="text-left px-4 py-2 font-medium text-fg-2">Enabled</th>
+                <th className="text-left px-4 py-2 font-medium text-fg-2 hidden md:table-cell">
                   Último disparo
                 </th>
                 <th className="px-4 py-2" />
@@ -259,31 +260,31 @@ export default function AdminAlerts() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rules.map(rule => (
-                <tr key={rule.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-semibold text-gray-800 font-mono text-xs">
+                <tr key={rule.id} className="hover:bg-surface-2 transition-colors">
+                  <td className="px-4 py-3 font-semibold text-fg font-mono text-xs">
                     {rule.name}
                   </td>
                   <td className="px-4 py-3">
                     <SeverityBadge severity={rule.severity} />
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{rule.cooldown_min} min</td>
+                  <td className="px-4 py-3 text-fg-2">{rule.cooldown_min} min</td>
                   <td className="px-4 py-3">
                     <Toggle value={rule.enabled} onChange={() => handleToggleEnabled(rule)} />
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
+                  <td className="px-4 py-3 text-xs text-fg-4 hidden md:table-cell">
                     {humanize(rule.last_fired_at)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => openEdit(rule)}
-                        className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded font-medium"
+                        className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-3 rounded font-medium"
                       >
                         Editar
                       </button>
                       <button
                         onClick={() => handleDelete(rule)}
-                        className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium"
+                        className="px-3 py-1 text-xs bg-danger-soft hover:bg-red-200 text-danger rounded font-medium"
                       >
                         Excluir
                       </button>
@@ -299,8 +300,8 @@ export default function AdminAlerts() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+          <div className="bg-surface rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-3 py-4 sm:px-4 sm:py-6">
               <h2 className="text-lg font-bold mb-4">
                 {editing ? 'Editar regra' : 'Nova regra'}
               </h2>
@@ -308,7 +309,7 @@ export default function AdminAlerts() {
               <div className="space-y-4">
                 {/* Nome */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <label className="block text-sm font-medium text-fg-2 mb-1">Nome</label>
                   <input
                     type="text"
                     value={form.name}
@@ -320,7 +321,7 @@ export default function AdminAlerts() {
 
                 {/* Query SQL */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-fg-2 mb-1">
                     Query SQL
                   </label>
                   <textarea
@@ -346,7 +347,7 @@ export default function AdminAlerts() {
 
                 {/* Resultado do teste — erro */}
                 {testError && (
-                  <div className="border border-red-300 bg-red-50 rounded p-3 text-sm text-red-800 font-mono whitespace-pre-wrap">
+                  <div className="border border-red-300 bg-danger-soft rounded p-3 text-sm text-danger font-mono whitespace-pre-wrap">
                     {testError}
                   </div>
                 )}
@@ -359,13 +360,13 @@ export default function AdminAlerts() {
                         className={[
                           'inline-block px-2 py-0.5 rounded text-xs font-medium',
                           testResult.count === 0
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800',
+                            ? 'bg-success-soft text-success'
+                            : 'bg-danger-soft text-danger',
                         ].join(' ')}
                       >
                         {testResult.count} linha{testResult.count !== 1 ? 's' : ''}
                       </span>
-                      <span className="text-gray-500 text-xs">
+                      <span className="text-fg-3 text-xs">
                         {testResult.count === 0
                           ? 'Nenhum alerta seria disparado.'
                           : 'Alerta seria disparado!'}
@@ -375,11 +376,11 @@ export default function AdminAlerts() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs border-collapse">
                           <thead>
-                            <tr className="bg-gray-50">
+                            <tr className="bg-surface-2">
                               {sampleColumns.map(col => (
                                 <th
                                   key={col}
-                                  className="px-2 py-1 text-left font-medium text-gray-600 border-b"
+                                  className="px-2 py-1 text-left font-medium text-fg-2 border-b"
                                 >
                                   {col}
                                 </th>
@@ -388,11 +389,11 @@ export default function AdminAlerts() {
                           </thead>
                           <tbody>
                             {testResult.samples.map((row, i) => (
-                              <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                              <tr key={i} className="border-t border-border hover:bg-surface-2">
                                 {sampleColumns.map(col => (
-                                  <td key={col} className="px-2 py-1 text-gray-700">
+                                  <td key={col} className="px-2 py-1 text-fg-2">
                                     {row[col] == null ? (
-                                      <span className="text-gray-400">null</span>
+                                      <span className="text-fg-4">null</span>
                                     ) : (
                                       String(row[col])
                                     )}
@@ -403,7 +404,7 @@ export default function AdminAlerts() {
                           </tbody>
                         </table>
                         {testResult.count > 10 && (
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-xs text-fg-4 mt-1">
                             Mostrando 10 de {testResult.count} linhas.
                           </p>
                         )}
@@ -415,7 +416,7 @@ export default function AdminAlerts() {
                 {/* Severity + Cooldown */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
+                    <label className="block text-sm font-medium text-fg-2 mb-1">Severity</label>
                     <select
                       value={form.severity}
                       onChange={e =>
@@ -431,7 +432,7 @@ export default function AdminAlerts() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-fg-2 mb-1">
                       Cooldown (min)
                     </label>
                     <input
@@ -452,7 +453,7 @@ export default function AdminAlerts() {
                     value={form.enabled}
                     onChange={v => setForm(f => ({ ...f, enabled: v }))}
                   />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-fg-2">
                     {form.enabled ? 'Habilitada' : 'Desabilitada'}
                   </span>
                 </div>
@@ -464,7 +465,7 @@ export default function AdminAlerts() {
                   type="button"
                   onClick={closeModal}
                   disabled={saving}
-                  className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded font-medium disabled:opacity-50"
+                  className="px-4 py-2 text-sm bg-surface-2 hover:bg-surface-3 rounded font-medium disabled:opacity-50"
                 >
                   Cancelar
                 </button>

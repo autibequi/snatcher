@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
+import { sectionCard, pageContainer } from '../lib/uiTokens'
 
 const ALL_LOOPS = [
   'taxonomy_grow',
@@ -48,10 +49,10 @@ function humanize(iso?: string): string {
 function StatusBadge({ status }: { status: string }) {
   const cls =
     status === 'active'
-      ? 'bg-green-100 text-green-800'
+      ? 'bg-success-soft text-success'
       : status === 'suggesting'
-      ? 'bg-yellow-100 text-yellow-800'
-      : 'bg-gray-100 text-gray-600'
+      ? 'bg-warning-soft text-warning'
+      : 'bg-surface-2 text-fg-2'
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
       {status}
@@ -130,41 +131,41 @@ export default function AdminLoops() {
   )
 
   return (
-    <div className="p-6 max-w-6xl">
+    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
       <h1 className="text-2xl font-bold mb-2">Loops LLM ({ALL_LOOPS.length})</h1>
 
-      <div className="mb-5 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+      <div className="mb-5 bg-accent-soft border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
         Estes {ALL_LOOPS.length} loops ajustam o snatcher de forma autônoma.{' '}
         <strong>active</strong> = aplica direto.{' '}
         <strong>suggesting</strong> = só publica em /suggestions-l4.{' '}
         <strong>disabled</strong> = no-op.
       </div>
 
-      {loading && <p className="text-gray-500">Carregando...</p>}
+      {loading && <p className="text-fg-3">Carregando...</p>}
 
       {!loading && (
         <div className="space-y-3">
           {rows.map(loop => (
-            <div key={loop.loop_name} className="bg-white border rounded-lg p-4 shadow-sm">
+            <div key={loop.loop_name} className="bg-surface border rounded-lg p-4 shadow-sm">
               {/* Main row */}
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-mono text-sm font-semibold w-44 flex-shrink-0">
                   {loop.loop_name}
                 </span>
                 <StatusBadge status={loop.status} />
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-fg-2">
                   Strikes 30d:{' '}
                   <strong className={loop.strikes_30d > 0 ? 'text-red-600' : ''}>
                     {loop.strikes_30d}
                   </strong>
                 </span>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-fg-2">
                   Ações 7d: <strong>{loop.actions_last_7d}</strong>
                 </span>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-fg-2">
                   Sugestões: <strong>{loop.suggestions_open}</strong>
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-fg-4">
                   Última strike: {humanize(loop.last_strike_at)}
                 </span>
 
@@ -172,20 +173,20 @@ export default function AdminLoops() {
                 <div className="flex flex-wrap gap-1 ml-auto">
                   <button
                     onClick={() => toggleExpand(loop.loop_name)}
-                    className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded font-medium"
+                    className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-3 rounded font-medium"
                   >
                     {expanded[loop.loop_name] ? 'Ocultar ações' : 'Ver ações'}
                   </button>
                   <button
                     onClick={() => resetStrikes(loop.loop_name)}
-                    className="px-3 py-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 rounded font-medium"
+                    className="px-3 py-1 text-xs bg-warning-soft hover:bg-orange-200 text-warning rounded font-medium"
                   >
                     Reset strikes
                   </button>
                   {loop.status !== 'active' && (
                     <button
                       onClick={() => setStatus(loop.loop_name, 'active')}
-                      className="px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 rounded font-medium"
+                      className="px-3 py-1 text-xs bg-success-soft hover:bg-green-200 text-success rounded font-medium"
                     >
                       Set Active
                     </button>
@@ -193,7 +194,7 @@ export default function AdminLoops() {
                   {loop.status !== 'suggesting' && (
                     <button
                       onClick={() => setStatus(loop.loop_name, 'suggesting')}
-                      className="px-3 py-1 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded font-medium"
+                      className="px-3 py-1 text-xs bg-warning-soft hover:bg-yellow-200 text-warning rounded font-medium"
                     >
                       Set Suggesting
                     </button>
@@ -201,7 +202,7 @@ export default function AdminLoops() {
                   {loop.status !== 'disabled' && (
                     <button
                       onClick={() => setStatus(loop.loop_name, 'disabled')}
-                      className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-800 rounded font-medium"
+                      className="px-3 py-1 text-xs bg-danger-soft hover:bg-red-200 text-danger rounded font-medium"
                     >
                       Disable
                     </button>
@@ -213,17 +214,17 @@ export default function AdminLoops() {
               {expanded[loop.loop_name] && (
                 <div className="mt-4 border-t pt-3">
                   {actionsLoading[loop.loop_name] && (
-                    <p className="text-sm text-gray-500">Carregando ações...</p>
+                    <p className="text-sm text-fg-3">Carregando ações...</p>
                   )}
                   {!actionsLoading[loop.loop_name] && (
                     <>
                       {(!actions[loop.loop_name] || actions[loop.loop_name].length === 0) ? (
-                        <p className="text-sm text-gray-400">Nenhuma ação nos últimos 7 dias.</p>
+                        <p className="text-sm text-fg-4">Nenhuma ação nos últimos 7 dias.</p>
                       ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs border-collapse">
                             <thead>
-                              <tr className="bg-gray-50 text-gray-600 text-left">
+                              <tr className="bg-surface-2 text-fg-2 text-left">
                                 <th className="px-2 py-1 font-medium">Tipo</th>
                                 <th className="px-2 py-1 font-medium">Tabela</th>
                                 <th className="px-2 py-1 font-medium">ID</th>
@@ -234,15 +235,15 @@ export default function AdminLoops() {
                             </thead>
                             <tbody>
                               {actions[loop.loop_name].map(a => (
-                                <tr key={a.id} className="border-t border-gray-100 hover:bg-gray-50">
+                                <tr key={a.id} className="border-t border-border hover:bg-surface-2">
                                   <td className="px-2 py-1 font-mono">{a.action_type}</td>
-                                  <td className="px-2 py-1 text-gray-600">{a.target_table}</td>
-                                  <td className="px-2 py-1 text-gray-500">{a.target_id ?? '—'}</td>
-                                  <td className="px-2 py-1 text-gray-600 max-w-xs truncate" title={a.reasoning}>
+                                  <td className="px-2 py-1 text-fg-2">{a.target_table}</td>
+                                  <td className="px-2 py-1 text-fg-3">{a.target_id ?? '—'}</td>
+                                  <td className="px-2 py-1 text-fg-2 max-w-xs truncate" title={a.reasoning}>
                                     {a.reasoning ?? '—'}
                                   </td>
-                                  <td className="px-2 py-1 text-gray-600">{a.evaluation ?? '—'}</td>
-                                  <td className="px-2 py-1 text-gray-400 whitespace-nowrap">
+                                  <td className="px-2 py-1 text-fg-2">{a.evaluation ?? '—'}</td>
+                                  <td className="px-2 py-1 text-fg-4 whitespace-nowrap">
                                     {humanize(a.applied_at)}
                                   </td>
                                 </tr>
