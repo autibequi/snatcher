@@ -114,9 +114,9 @@ func (s *SQLStore) UpsertClusters(cs []models.Cluster) error           { return 
 
 // ---- Dispatch / send queue stubs ----
 
-func (s *SQLStore) CountPendingTargetsByGroup(groupID int64) (int, error) { return 0, nil }
-func (s *SQLStore) CountRecentDeliveriesByGroup(groupID int64, since time.Time) (int, error) {
-	return 0, nil
+func (s *SQLStore) CountPendingTargetsByGroup() ([]GroupDeliveryCount, error) { return nil, nil }
+func (s *SQLStore) CountRecentDeliveriesByGroup(minutes int) ([]GroupDeliveryCount, error) {
+	return nil, nil
 }
 
 // ---- Catalog / product ----
