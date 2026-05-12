@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 interface TunableParam {
   id: number
@@ -37,7 +38,7 @@ export default function AdminParams() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/admin/parameters')
+      const r = await authFetch('/api/admin/parameters')
       const data: TunableParam[] = await r.json()
       setParams(data || [])
       // Inicializa campos de edição com current_value
@@ -69,7 +70,7 @@ export default function AdminParams() {
     if (!window.confirm(`Salvar ${param.param_name} = ${numVal}?`)) return
     setSaving(s => ({ ...s, [param.id]: true }))
     try {
-      const r = await fetch(`/api/admin/parameters/${param.id}`, {
+      const r = await authFetch(`/api/admin/parameters/${param.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: numVal }),
@@ -89,7 +90,7 @@ export default function AdminParams() {
     if (!window.confirm(`Resetar ${param.param_name} para o valor padrão (${param.default_value})?`)) return
     setSaving(s => ({ ...s, [param.id]: true }))
     try {
-      const r = await fetch(`/api/admin/parameters/${param.id}/reset`, { method: 'POST' })
+      const r = await authFetch(`/api/admin/parameters/${param.id}/reset`, { method: 'POST' })
       if (!r.ok) {
         const err = await r.json().catch(() => ({ error: r.statusText }))
         alert(`Erro ao resetar: ${err.error || r.statusText}`)
@@ -106,7 +107,7 @@ export default function AdminParams() {
     if (!window.confirm(`${newVal === 1 ? 'Ativar' : 'Desativar'} ${param.param_name}?`)) return
     setSaving(s => ({ ...s, [param.id]: true }))
     try {
-      const r = await fetch(`/api/admin/parameters/${param.id}`, {
+      const r = await authFetch(`/api/admin/parameters/${param.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: newVal }),

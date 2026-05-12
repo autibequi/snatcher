@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 // ---------- types ----------
 
@@ -88,7 +89,7 @@ function LearnedWeightsTab() {
   const load = (ms: number) => {
     setLoading(true)
     setError(null)
-    fetch(`/api/admin/metrics/learned-weights?min_samples=${ms}`)
+    authFetch(`/api/admin/metrics/learned-weights?min_samples=${ms}`)
       .then(r => r.json())
       .then(d => setRows(Array.isArray(d) ? d : []))
       .catch(e => setError(String(e)))
@@ -207,7 +208,7 @@ function DailyMetricsTab() {
     setError(null)
     const qs = new URLSearchParams({ days: String(d) })
     if (m) qs.set('metric', m)
-    fetch(`/api/admin/metrics/daily?${qs}`)
+    authFetch(`/api/admin/metrics/daily?${qs}`)
       .then(r => r.json())
       .then(data => setRows(Array.isArray(data) ? data : []))
       .catch(e => setError(String(e)))
@@ -312,7 +313,7 @@ function ABTestsTab() {
     setLoading(true)
     setError(null)
     const qs = s ? `?status=${s}` : ''
-    fetch(`/api/admin/metrics/ab-tests${qs}`)
+    authFetch(`/api/admin/metrics/ab-tests${qs}`)
       .then(r => r.json())
       .then(d => setRows(Array.isArray(d) ? d : []))
       .catch(e => setError(String(e)))

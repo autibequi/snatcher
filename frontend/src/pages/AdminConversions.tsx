@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 // ---------- types ----------
 
@@ -86,10 +87,10 @@ export default function AdminConversions() {
     setLoading(true)
     setError(null)
     Promise.all([
-      fetch(`/api/admin/conversions/by-group?days=${days}`).then(r => r.json()),
-      fetch(`/api/admin/conversions/by-day?days=${days}`).then(r => r.json()),
-      fetch(`/api/admin/conversions/by-source?days=${days}`).then(r => r.json()),
-      fetch(`/api/admin/conversions/recent?limit=50`).then(r => r.json()),
+      authFetch(`/api/admin/conversions/by-group?days=${days}`).then(r => r.json()),
+      authFetch(`/api/admin/conversions/by-day?days=${days}`).then(r => r.json()),
+      authFetch(`/api/admin/conversions/by-source?days=${days}`).then(r => r.json()),
+      authFetch(`/api/admin/conversions/recent?limit=50`).then(r => r.json()),
     ])
       .then(([g, d, s, rec]) => {
         setByGroup(Array.isArray(g) ? g : [])

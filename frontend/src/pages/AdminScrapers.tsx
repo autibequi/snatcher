@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export default function AdminScrapers() {
   const loadHealth = async () => {
     setHealthLoading(true)
     try {
-      const r = await fetch('/api/admin/scrapers/health')
+      const r = await authFetch('/api/admin/scrapers/health')
       const data: HealthRow[] = await r.json()
       setHealth(data || [])
     } finally {
@@ -110,7 +111,7 @@ export default function AdminScrapers() {
     setConfigsLoading(true)
     try {
       const url = '/api/admin/scrapers/configs' + (status ? `?status=${encodeURIComponent(status)}` : '')
-      const r = await fetch(url)
+      const r = await authFetch(url)
       const data: ScraperConfig[] = await r.json()
       setConfigs(data || [])
     } finally {
@@ -124,7 +125,7 @@ export default function AdminScrapers() {
       const params = new URLSearchParams()
       if (sourceID) params.set('source_id', sourceID)
       if (field) params.set('field', field)
-      const r = await fetch('/api/admin/scrapers/logs?' + params.toString())
+      const r = await authFetch('/api/admin/scrapers/logs?' + params.toString())
       const data: ExtractionLog[] = await r.json()
       setLogs(data || [])
     } finally {
@@ -147,7 +148,7 @@ export default function AdminScrapers() {
     if (!editSelector.trim()) { alert('Selector não pode ser vazio'); return }
     setEditSaving(true)
     try {
-      const r = await fetch(`/api/admin/scrapers/configs/${editModal.id}/selector`, {
+      const r = await authFetch(`/api/admin/scrapers/configs/${editModal.id}/selector`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selector: editSelector }),
@@ -166,7 +167,7 @@ export default function AdminScrapers() {
 
   const promote = async (cfg: ScraperConfig) => {
     if (!window.confirm(`Promover config #${cfg.id} (${cfg.source_id} / ${cfg.field}) de shadow para active?\n\nConfig active atual será arquivada.`)) return
-    const r = await fetch(`/api/admin/scrapers/configs/${cfg.id}/promote`, { method: 'POST' })
+    const r = await authFetch(`/api/admin/scrapers/configs/${cfg.id}/promote`, { method: 'POST' })
     if (!r.ok) {
       const txt = await r.text()
       alert('Erro ao promover: ' + txt)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 // ---------- types ----------
 
@@ -95,8 +96,8 @@ export default function AdminAudit() {
     setLoading(true)
     setError(null)
     Promise.all([
-      fetch(`/api/admin/audit/timeline?days=${days}`).then(r => r.json()),
-      fetch(`/api/admin/audit/stats?days=${days}`).then(r => r.json()),
+      authFetch(`/api/admin/audit/timeline?days=${days}`).then(r => r.json()),
+      authFetch(`/api/admin/audit/stats?days=${days}`).then(r => r.json()),
     ])
       .then(([tl, st]) => {
         setTimeline(Array.isArray(tl) ? tl : [])

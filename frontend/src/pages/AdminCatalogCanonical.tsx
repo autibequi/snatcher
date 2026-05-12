@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -100,7 +101,7 @@ export default function AdminCatalogCanonical() {
   const loadStats = async () => {
     setStatsLoading(true)
     try {
-      const r = await fetch('/api/admin/catalog-canonical/stats')
+      const r = await authFetch('/api/admin/catalog-canonical/stats')
       if (r.ok) setStats(await r.json())
     } finally {
       setStatsLoading(false)
@@ -116,7 +117,7 @@ export default function AdminCatalogCanonical() {
       })
       if (readyOnly) params.set('ready_only', '1')
       if (categoryID) params.set('category_id', categoryID)
-      const r = await fetch(`/api/admin/catalog-canonical?${params}`)
+      const r = await authFetch(`/api/admin/catalog-canonical?${params}`)
       if (r.ok) setItems(await r.json())
     } finally {
       setLoading(false)
@@ -130,7 +131,7 @@ export default function AdminCatalogCanonical() {
     if (!window.confirm('Disparar fold_catalog? Isso migra catalogvariant → catalog (one-shot). Continuar?')) return
     setFoldLoading(true)
     try {
-      const r = await fetch('/api/admin/fold-catalog', { method: 'POST' })
+      const r = await authFetch('/api/admin/fold-catalog', { method: 'POST' })
       if (r.ok) {
         alert('fold_catalog disparado (202 Accepted). Rode em background.')
       } else {

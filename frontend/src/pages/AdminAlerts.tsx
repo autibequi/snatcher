@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 interface AlertRule {
   id: number
@@ -92,7 +93,7 @@ export default function AdminAlerts() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/admin/alert-rules')
+      const r = await authFetch('/api/admin/alert-rules')
       const data = await r.json()
       setRules(data || [])
     } finally {
@@ -135,12 +136,12 @@ export default function AdminAlerts() {
 
   const handleDelete = async (rule: AlertRule) => {
     if (!window.confirm(`Excluir a regra "${rule.name}"? Esta ação não pode ser desfeita.`)) return
-    await fetch(`/api/admin/alert-rules/${rule.id}`, { method: 'DELETE' })
+    await authFetch(`/api/admin/alert-rules/${rule.id}`, { method: 'DELETE' })
     await load()
   }
 
   const handleToggleEnabled = async (rule: AlertRule) => {
-    await fetch(`/api/admin/alert-rules/${rule.id}`, {
+    await authFetch(`/api/admin/alert-rules/${rule.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...rule, enabled: !rule.enabled }),
@@ -152,7 +153,7 @@ export default function AdminAlerts() {
     setSaving(true)
     try {
       if (editing) {
-        const r = await fetch(`/api/admin/alert-rules/${editing.id}`, {
+        const r = await authFetch(`/api/admin/alert-rules/${editing.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(form),
@@ -163,7 +164,7 @@ export default function AdminAlerts() {
           return
         }
       } else {
-        const r = await fetch('/api/admin/alert-rules', {
+        const r = await authFetch('/api/admin/alert-rules', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(form),
@@ -186,7 +187,7 @@ export default function AdminAlerts() {
     setTestResult(null)
     setTestError(null)
     try {
-      const r = await fetch('/api/admin/alert-rules/test', {
+      const r = await authFetch('/api/admin/alert-rules/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: form.query }),

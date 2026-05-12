@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 interface ModemStatus {
   id?: number
@@ -49,8 +50,8 @@ export default function AdminSenders() {
     setLoading(true)
     try {
       const [statusRes, accountsRes] = await Promise.all([
-        fetch('/api/admin/senders/status'),
-        fetch('/api/admin/senders/accounts'),
+        authFetch('/api/admin/senders/status'),
+        authFetch('/api/admin/senders/accounts'),
       ])
       const statusData: ModemStatus[] = await statusRes.json()
       const accountsData: AccountRow[] = await accountsRes.json()
@@ -76,7 +77,7 @@ export default function AdminSenders() {
     const key = `${modemSlug}-pause`
     setActionBusy(key)
     try {
-      await fetch(`/api/admin/modems/${modemId}/pause`, {
+      await authFetch(`/api/admin/modems/${modemId}/pause`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hours, reason: 'manual' }),
@@ -96,7 +97,7 @@ export default function AdminSenders() {
     const key = `${modemSlug}-resume`
     setActionBusy(key)
     try {
-      await fetch(`/api/admin/modems/${modemId}/resume`, { method: 'POST' })
+      await authFetch(`/api/admin/modems/${modemId}/resume`, { method: 'POST' })
       await load()
     } finally {
       setActionBusy(null)

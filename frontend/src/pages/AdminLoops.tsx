@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authFetch } from '../lib/authFetch'
 
 const ALL_LOOPS = [
   'taxonomy_grow',
@@ -68,7 +69,7 @@ export default function AdminLoops() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/admin/loops/status')
+      const r = await authFetch('/api/admin/loops/status')
       const data = await r.json()
       setLoops(data || [])
     } finally {
@@ -86,7 +87,7 @@ export default function AdminLoops() {
     if (next && !actions[loopName]) {
       setActionsLoading(prev => ({ ...prev, [loopName]: true }))
       try {
-        const r = await fetch(`/api/admin/loops/${loopName}/actions?days=7`)
+        const r = await authFetch(`/api/admin/loops/${loopName}/actions?days=7`)
         const data = await r.json()
         setActions(prev => ({ ...prev, [loopName]: data || [] }))
       } finally {
@@ -100,7 +101,7 @@ export default function AdminLoops() {
       const verb = status === 'disabled' ? 'DESABILITAR' : 'colocar em modo sugestão'
       if (!window.confirm(`Confirmar: ${verb} o loop "${loopName}"?`)) return
     }
-    await fetch(`/api/admin/loops/${loopName}/status`, {
+    await authFetch(`/api/admin/loops/${loopName}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -111,7 +112,7 @@ export default function AdminLoops() {
 
   const resetStrikes = async (loopName: string) => {
     if (!window.confirm(`Zerar strikes do loop "${loopName}"?`)) return
-    await fetch(`/api/admin/loops/${loopName}/reset_strikes`, { method: 'POST' })
+    await authFetch(`/api/admin/loops/${loopName}/reset_strikes`, { method: 'POST' })
     load()
   }
 
