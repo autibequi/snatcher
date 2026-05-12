@@ -6,6 +6,7 @@ ENV CGO_ENABLED=0 GOMAXPROCS=1 GOGC=10
 
 COPY go.mod go.sum ./
 RUN go mod download
+ARG CACHEBUST=20260512_1740
 COPY . .
 
 RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -o backendv2 ./cmd/server
