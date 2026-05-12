@@ -452,6 +452,14 @@ type RedesignGroup struct {
 	Archived    bool       `db:"archived" json:"archived"`
 	LastError   NullString `db:"last_error" json:"last_error,omitempty"`
 	LastErrorAt NullTime   `db:"last_error_at" json:"last_error_at,omitempty"`
+	// migration 20260513100019 — colunas canônicas
+	WhatsappJID NullString `db:"whatsapp_jid" json:"whatsapp_jid,omitempty"`
+	CategoryID  NullInt64  `db:"category_id" json:"category_id,omitempty"`
+	Timezone    string     `db:"timezone" json:"timezone"`
+	DailyMsgCap int        `db:"daily_msg_cap" json:"daily_msg_cap"`
+	// migration 20260518100001 — curator flag
+	IsCuratorGroup bool       `db:"is_curator_group" json:"is_curator_group"`
+	CuratorRole    NullString `db:"curator_role" json:"curator_role,omitempty"`
 }
 
 // GroupAdmin representa um administrador de um grupo (tabela group_admins).
