@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"snatcher/backendv2/internal/match"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 	"strings"
@@ -38,7 +37,12 @@ const fuzzyThreshold = 0.80 // legado, mantido para compat
 const matchHighConfidence = 0.90
 const matchGrayLow = 0.65
 
-var patternCache = match.NewPatternCache()
+// patternCache removido (internal/match pacote v1 deletado em unify-v1-v2)
+type noopPatternCache struct{}
+func (noopPatternCache) Refresh(_ store.Store) error { return nil }
+func (noopPatternCache) MatchAllPatterns(_ string) []taxonomyHit { return nil }
+type taxonomyHit struct{ TaxonomyID int64; TaxonomyType, ParentID string }
+var patternCache = noopPatternCache{}
 
 // canonicalizeURL normaliza URL removendo parâmetros de tracking e fragmentos
 func canonicalizeURL(rawURL string) string {
@@ -84,7 +88,7 @@ func mapTaxonomyTypeToRole(taxonomyType string, parentID *int64) string {
 }
 
 // buildAttributesJSON constrói JSON JSONB com atributos agrupados por tipo
-func buildAttributesJSON(hits []match.TaxonomyHit) []byte {
+func buildAttributesJSON(hits []taxonomyHit) []byte {
 	attrs := make(map[string][]int64)
 	for _, hit := range hits {
 		role := mapTaxonomyTypeToRole(hit.TaxonomyType, hit.ParentID)
