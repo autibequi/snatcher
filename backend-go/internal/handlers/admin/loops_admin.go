@@ -42,6 +42,7 @@ func LoopActionsHandler(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		_ = json.NewEncoder(w).Encode(rows)
 	}
 }

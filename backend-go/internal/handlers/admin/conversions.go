@@ -41,6 +41,7 @@ func ConversionsByGroupHandler(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows)
 	}
 }
@@ -73,6 +74,7 @@ func RecentConversionsHandler(db *sqlx.DB) http.HandlerFunc {
 			ORDER BY c.occurred_at DESC LIMIT $1
 		`, limit)
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows)
 	}
 }
@@ -101,6 +103,7 @@ func ConversionsByDayHandler(db *sqlx.DB) http.HandlerFunc {
 			GROUP BY day ORDER BY day DESC
 		`, days)
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows)
 	}
 }
@@ -129,6 +132,7 @@ func ConversionsBySourceHandler(db *sqlx.DB) http.HandlerFunc {
 			GROUP BY source_id ORDER BY commission DESC
 		`, days)
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows)
 	}
 }

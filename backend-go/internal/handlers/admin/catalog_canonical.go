@@ -70,6 +70,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			rows = []row{}
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows) //nolint:errcheck
 	}
 }
