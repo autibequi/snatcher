@@ -14,7 +14,7 @@ import (
 
 // ---- Clicks / products ----
 
-func (s *SQLStore) CountClicksByProduct(productID int64, since time.Time) (int, error) { return 0, nil }
+func (s *SQLStore) CountClicksByProduct(productID int64) (int64, error) { return 0, nil }
 func (s *SQLStore) InsertPriceHistoryV2(h models.PriceHistoryV2) error                    { return nil }
 func (s *SQLStore) ListPriceHistoryV2(variantID int64) ([]models.PriceHistoryV2, error)   { return nil, nil }
 func (s *SQLStore) GetVariantStats(variantID int64, windowDays int) (*models.VariantStats, error) { return nil, nil }
