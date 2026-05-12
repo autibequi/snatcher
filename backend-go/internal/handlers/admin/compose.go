@@ -7,6 +7,7 @@ import (
 
 	"snatcher/backendv2/internal/compose"
 	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/store"
 )
 

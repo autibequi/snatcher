@@ -3,7 +3,6 @@ package public
 import (
 	"net/http"
 
-	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/redirect"
 	"snatcher/backendv2/internal/store"
 )
@@ -28,17 +27,7 @@ func ShortLinkRedirect(st store.Store, rd *redirect.Redirector) http.HandlerFunc
 			return
 		}
 
-		v, ok, err := st.GetVariantByShortID(shortID)
-		if err != nil || !ok {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
-		programs, _ := st.ListAffiliatePrograms(nil)
-		finalURL, _, _ := affiliates.BuildLink(v.URL, v.Source, programs)
-		if redirect.WriteHTMLRedirectWithGTM(w, redirect.GTMContainerID(st), finalURL) {
-			return
-		}
-		redirect.SetProductRedirectCacheHeaders(w.Header())
-		http.Redirect(w, r, finalURL, http.StatusFound)
+		// GetVariantByShortID removido — redirect via /r/:shortID
+		http.Redirect(w, r, "/", http.StatusFound)
 	}
 }

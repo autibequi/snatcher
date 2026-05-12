@@ -272,105 +272,11 @@ func actionTuneThresholds(ctx context.Context, h *JonfreyHandler) (map[string]an
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
-	autos, err := h.store.ListChannelAutomations(true) // só enabled
-	if err != nil {
-		return nil, nil, "", err
-	}
-
-	type adjustment struct {
-		ChannelID    int64   `json:"channel_id"`
-		ChannelName  string  `json:"channel_name"`
-		FieldChanged string  `json:"field"`
-		OldValue     float64 `json:"old"`
-		NewValue     float64 `json:"new"`
-		Reason       string  `json:"reason"`
-	}
-	var adjustments []adjustment
-	beforeMap := map[string]any{"automations_count": len(autos)}
-
-	for _, a := range autos {
-		threshold := 60.0
-		if a.Threshold.Valid {
-			threshold = a.Threshold.Float64
-		}
-		avg := threshold // no auto_match_logs data available (removed in v2)
-
-		// Snapshot por canal para o LLM
-		var deliveryCount, failedCount int
-		_ = h.db.GetContext(ctx, &deliveryCount, `
-			SELECT COUNT(*) FROM dispatch_targets dt
-			JOIN dispatches d ON d.id = dt.dispatch_id
-			JOIN groups grp ON grp.id = dt.group_id
-			WHERE grp.channel_id = $1 AND dt.status = 'delivered'
-			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
-		_ = h.db.GetContext(ctx, &failedCount, `
-			SELECT COUNT(*) FROM dispatch_targets dt
-			JOIN dispatches d ON d.id = dt.dispatch_id
-			JOIN groups grp ON grp.id = dt.group_id
-			WHERE grp.channel_id = $1 AND dt.status = 'failed'
-			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
-		var clicksOnDelivered int
-		_ = h.db.GetContext(ctx, &clicksOnDelivered, `
-			SELECT COALESCE(SUM(dt.click_count), 0) FROM dispatch_targets dt
-			JOIN dispatches d ON d.id = dt.dispatch_id
-			JOIN groups grp ON grp.id = dt.group_id
-			WHERE grp.channel_id = $1 AND dt.status = 'delivered'
-			  AND d.created_at > now() - interval '14 days'`, a.ChannelID)
-		ctr := 0.0
-		if deliveryCount > 0 {
-			ctr = float64(clicksOnDelivered) / float64(deliveryCount)
-		}
-
-		prompt := fmt.Sprintf(`Otimize threshold de automação (só estes dados locais).
-
-Canal ID: %d
-Threshold atual: %.0f (score mín. p/ disparar)
-Score médio estimado: %.1f
-Targets entregues 14d / falhos 14d: %d / %d
-CTR aprox.: %.3f (cliques em targets delivered / número de targets delivered)
-Cooldown: %dh
-
-Regra: alta taxa falha ou CTR baixíssimo pode pedir threshold mais alto (mais seletivo). Score médio estável bem acima do threshold pode baixar levemente (mais disparos).
-
-JSON apenas:
-{"new_threshold":55,"change":false,"reason":"uma frase"}`,
-			a.ChannelID, threshold, avg, deliveryCount, failedCount, ctr, a.CooldownHours)
-
-		ctxC, cancel := context.WithTimeout(ctx, 30*time.Second)
-		resp, err := cli.Complete(ctxC, prompt, llm.Options{
-			MaxTokens: 200, Temperature: 0.2, Operation: "jonfrey_tune_threshold", JSONMode: true,
-		})
-		cancel()
-		if err != nil {
-			continue
-		}
-		var parsed struct {
-			NewThreshold float64 `json:"new_threshold"`
-			Change       bool    `json:"change"`
-			Reason       string  `json:"reason"`
-		}
-		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-			continue
-		}
-		if !parsed.Change || parsed.NewThreshold == threshold {
-			continue
-		}
-		// Sanity bounds
-		if parsed.NewThreshold < 20 || parsed.NewThreshold > 95 {
-			continue
-		}
-		a.Threshold = models.NullFloat64{NullFloat64: sql.NullFloat64{Float64: parsed.NewThreshold, Valid: true}}
-		_ = h.store.UpsertChannelAutomation(a)
-		adjustments = append(adjustments, adjustment{
-			ChannelID: a.ChannelID, ChannelName: a.ChannelName,
-			FieldChanged: "threshold", OldValue: threshold, NewValue: parsed.NewThreshold,
-			Reason: parsed.Reason,
-		})
-	}
-
-	afterMap := map[string]any{"adjustments": adjustments, "adjusted_count": len(adjustments)}
-	reasoning := fmt.Sprintf("LLM avaliou %d automações ativas e recomendou ajuste em %d delas com base em score médio + delivery/failed dos últimos 14 dias.", len(autos), len(adjustments))
-	return beforeMap, afterMap, reasoning, nil
+	// ListChannelAutomations removido em v2 — action desativada
+	_ = cli
+	beforeMap := map[string]any{"automations_count": 0}
+	afterMap := map[string]any{"adjusted_count": 0}
+	return beforeMap, afterMap, "tune_thresholds desativado (ChannelAutomation removido em v2)", nil
 }
 
 // ── Handlers HTTP ──────────────────────────────────────────────────────────
@@ -818,78 +724,10 @@ func actionAutoCurate(ctx context.Context, h *JonfreyHandler) (map[string]any, m
 		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
-	products, err := h.store.ListPendingCurationProducts(20)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	beforeMap := map[string]any{"pending_count": len(products)}
-	if len(products) == 0 {
-		return beforeMap, map[string]any{"approved": 0, "rejected": 0}, "Nada na fila de curadoria.", nil
-	}
-
-	approved, rejected, untouched := 0, 0, 0
-	for _, p := range products {
-		brand := ""
-		if p.Brand.Valid {
-			brand = p.Brand.String
-		}
-		mkt := ""
-		if p.LowestPriceSource.Valid {
-			mkt = strings.TrimSpace(p.LowestPriceSource.String)
-		}
-		tags := strings.Join(p.GetTags(), ",")
-		if len(tags) > 180 {
-			tags = tags[:180] + "…"
-		}
-		priceStr := ""
-		if p.LowestPrice.Valid {
-			priceStr = fmt.Sprintf("%.2f", p.LowestPrice.Float64)
-		}
-		prompt := fmt.Sprintf(`Classifique para curadoria. Só dados abaixo. JSON estrito confidence 0..1.
-titulo:%q marca:%q marketplace:%q preco_low:%s tags_csv:%s
-{"category":"slug","brand":"Nome","tags":[""],"confidence":0.0}`,
-			p.CanonicalName, brand, mkt, priceStr, tags)
-		ctxC, cancel := context.WithTimeout(ctx, 45*time.Second)
-		resp, err := cli.Complete(ctxC, prompt, llm.Options{
-			// ≥512: JSON com tags longas costuma estourar 200 tok e vira finish_reason=length (truncado).
-			MaxTokens:   768,
-			Temperature: 0.1,
-			Operation:   "jonfrey_autocurate",
-			JSONMode:    true,
-		})
-		cancel()
-		if err != nil {
-			untouched++
-			continue
-		}
-		var parsed struct {
-			Category   string  `json:"category"`
-			Brand      string  `json:"brand"`
-			Confidence float64 `json:"confidence"`
-		}
-		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-			untouched++
-			continue
-		}
-		switch {
-		case parsed.Confidence >= 0.9 && parsed.Brand != "" && parsed.Category != "":
-			_, _ = h.db.ExecContext(ctx, `
-				UPDATE catalogproduct SET brand=$1, curation_status='curated' WHERE id=$2`,
-				parsed.Brand, p.ID)
-			approved++
-		case parsed.Confidence < 0.4:
-			_, _ = h.db.ExecContext(ctx, `
-				UPDATE catalogproduct SET curation_status='rejected' WHERE id=$1`, p.ID)
-			rejected++
-		default:
-			untouched++
-		}
-	}
-
-	afterMap := map[string]any{"approved": approved, "rejected": rejected, "still_pending": untouched}
-	reasoning := fmt.Sprintf("Avaliei %d produtos pendentes: %d auto-aprovados (confiança ≥ 90%%), %d rejeitados (confiança < 40%%), %d voltaram pra fila humana.",
-		len(products), approved, rejected, untouched)
-	return beforeMap, afterMap, reasoning, nil
+	// ListPendingCurationProducts removido em v2 — action desativada
+	_ = cli
+	beforeMap := map[string]any{"pending_count": 0}
+	return beforeMap, map[string]any{"approved": 0, "rejected": 0}, "autocurate desativado (ListPendingCurationProducts removido em v2)", nil
 }
 
 // actionDetectFailingChannel: pausa canais com CTR/delivery rate ruim.
@@ -953,13 +791,7 @@ func actionDetectFailingChannel(ctx context.Context, h *JonfreyHandler) (map[str
 		if reason == "" {
 			continue
 		}
-		// pausa: desliga a automação do canal
-		auto, err := h.store.GetChannelAutomation(s.ChannelID)
-		if err != nil || auto == nil || !auto.Enabled {
-			continue
-		}
-		auto.Enabled = false
-		_ = h.store.UpsertChannelAutomation(*auto)
+		// pausa: GetChannelAutomation removido em v2 — registra apenas
 		pausedList = append(pausedList, paused{
 			ChannelID: s.ChannelID, Name: s.ChannelName,
 			DeliveryRate: deliveryRate, CTR: ctr, Reason: reason,

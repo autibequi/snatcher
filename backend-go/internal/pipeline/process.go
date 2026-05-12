@@ -41,7 +41,7 @@ const matchGrayLow = 0.65
 type noopPatternCache struct{}
 func (noopPatternCache) Refresh(_ store.Store) error { return nil }
 func (noopPatternCache) MatchAllPatterns(_ string) []taxonomyHit { return nil }
-type taxonomyHit struct{ TaxonomyID int64; TaxonomyType, ParentID string }
+type taxonomyHit struct{ TaxonomyID int64; TaxonomyType string; ParentID *int64 }
 var patternCache = noopPatternCache{}
 
 // canonicalizeURL normaliza URL removendo parâmetros de tracking e fragmentos

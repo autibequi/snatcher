@@ -27,13 +27,13 @@ func NewAccounts(st store.Store) *AccountsHandler {
 }
 
 func (h *AccountsHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.store.ListGroups()
+	groups, err := h.store.ListRedesignGroups(0, "", "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if groups == nil {
-		groups = []models.Group{}
+		groups = []models.RedesignGroup{}
 	}
 	writeJSON(w, http.StatusOK, groups)
 }

@@ -62,9 +62,7 @@ func Build(
 	// LLM injected after composeH is created below
 	sources := adminhnd.NewSources(st)
 	affiliates := adminhnd.NewAffiliates(st)
-	catalog := adminhnd.NewCatalogDB(st, db)
 	config := adminhnd.NewConfigWithDB(st, db)
-	canal := handlers.NewCanal(st)
 	accounts := adminhnd.NewAccounts(st)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
 	// ReDesign handlers
@@ -93,7 +91,6 @@ func Build(
 	}
 	// PR-1: triage-refactor handlers
 	taxonomyPatterns := handlers.NewTaxonomyPattern(st)
-	matchLogs        := handlers.NewMatchLog(st)
 
 	// Compose (LLM) — usa NopClient se OPENROUTER_API_KEY não configurado
 	var composeH *adminhnd.ComposeHandler
@@ -167,10 +164,6 @@ func Build(
 	r.Get("/uploads/*", func(w http.ResponseWriter, req *http.Request) {
 		http.StripPrefix("/uploads/", http.FileServer(http.Dir("/data/uploads"))).ServeHTTP(w, req)
 	})
-
-	r.Get("/canal/{slug}", canal.GroupPicker)
-	r.Get("/canal/{slug}/preview", canal.Preview)
-	r.Get("/join/{slug}", canal.JoinRedirect)
 
 	// ReDesign: public link resolve + WebSocket (auth via query param token)
 	r.Get("/g/{slug}", publLinksResolver.Resolve)
