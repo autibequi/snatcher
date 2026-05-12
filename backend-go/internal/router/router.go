@@ -67,16 +67,12 @@ func Build(
 	canal := handlers.NewCanal(st)
 	accounts := adminhnd.NewAccounts(st)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
-	analytics := adminhnd.NewAnalytics(st)
-	coverage := adminhnd.NewCoverageHandler(st)
 	// ReDesign handlers
 	groups      := adminhnd.NewGroupsHandler(st)
-	matchH      := adminhnd.NewMatchHandler(st)
 	publLinks   := adminhnd.NewPublicLinksHandlerDB(st, db)
 	publLinksResolver := publichnd.NewPublicLinksResolver(st)
 	affPrograms := adminhnd.NewAffiliateProgramsHandlerDB(st, db)
 	groupSpies  := adminhnd.NewGroupSpiesHandler(st)
-	clustersH   := adminhnd.NewClustersHandlerDB(st, db)
 	dash        := adminhnd.NewDashboardHandler(st, db)
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
@@ -111,7 +107,6 @@ func Build(
 	dash.SetLLMFn(composeH.BuildLLMClient)
 	taxonomy.SetLLMFn(composeH.BuildLLMClient)
 	groups.SetLLMFn(composeH.BuildLLMClient)
-	catalog.SetLLMFn(composeH.BuildLLMClient)
 	jonfrey.SetLLMFn(composeH.BuildLLMClient)
 
 	// WebSocket hub + handler
@@ -224,26 +219,6 @@ func Build(
 		r.Post("/api/search-terms/suggest", terms.Suggest)
 		r.Get("/api/search-terms/{id}/results", terms.ListResults)
 
-		// Catalog
-		r.Get("/api/catalog", catalog.List)
-		r.Get("/api/catalog/", catalog.List)
-		r.Get("/api/catalog/search", catalog.Search)
-		r.Get("/api/catalog/brands", catalog.ListBrands)
-		r.Get("/api/catalog/categories", catalog.ListCategories)
-		r.Get("/api/catalog/subcategories", catalog.ListSubcategories)
-		r.Get("/api/catalog/sources", catalog.ListSources)
-		r.Get("/api/catalog/{id}", catalog.Get)
-		r.Put("/api/catalog/{id}", catalog.Update)
-		r.Patch("/api/catalog/{id}", catalog.PatchCurationStatus)
-		r.Post("/api/catalog/{id}/suggest-tags", catalog.SuggestTags)
-		// Reprocess pode demorar minutos — timeout explícito maior que o global (5m).
-		r.With(chimw.Timeout(10 * time.Minute)).Post("/api/catalog/reprocess", catalog.Reprocess)
-		r.Delete("/api/catalog/{id}", catalog.Delete)
-		r.Get("/api/catalog/variants/{id}/stats", catalog.VariantStats)
-		r.Get("/api/catalog/variants/{variant_id}/history", catalog.ListVariantHistory)
-		r.Get("/api/catalog/keywords", catalog.ListKeywords)
-		r.Get("/api/catalog/keywords/", catalog.ListKeywords)
-
 		// Jonfrey — orquestrador AI das automações
 		// Upload de imagens
 		r.Post("/api/uploads/image", adminhnd.UploadImage)
@@ -267,11 +242,8 @@ func Build(
 		r.Get("/api/crawl-logs/", crawlLogs.List)
 
 		// Analytics
-		r.Get("/api/analytics/summary", analytics.Summary)
 
 		// Coverage (multi-WA)
-		r.Get("/api/coverage", coverage.GetCoverage)
-		r.Post("/api/coverage/sync", coverage.PostCoverageSync)
 
 		// Legacy v1 groups (alias mantido para compatibilidade)
 		r.Get("/api/groups/legacy", accounts.ListGroups)
@@ -292,7 +264,6 @@ func Build(
 		r.Delete("/api/groups/{id}/admins/{adminId}", groups.DeleteAdmin)
 
 		// ReDesign: Match
-		r.Post("/api/match", matchH.Match)
 
 		// Taxonomy (categorias e marcas para autocomplete + admin)
 		r.Get("/api/taxonomy", taxonomy.List)
@@ -351,9 +322,6 @@ func Build(
 		r.Patch("/api/crawlers/group-spy/{id}", groupSpies.UpdateReader)
 
 		// Clusters analíticos
-		r.Get("/api/clusters", clustersH.List)
-		r.Get("/api/clusters/{id}", clustersH.Get)
-		r.Post("/api/clusters/recompute", clustersH.Recompute)
 
 		// Dashboard
 		r.Get("/api/dashboard/kpis", dash.KPIs)
