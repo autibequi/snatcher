@@ -87,16 +87,6 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 	return items, err
 }
 
-// selectTopForGroup mantida para compat: pega top-1 sem MMR.
-// O tick.go novo chama selectTopKForGroup + applyMMR.
-func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int64, categoryID *int64) (catalogItem, float64, bool) {
-	items, err := selectTopKForGroup(ctx, db, groupID, channelID, categoryID)
-	if err != nil || len(items) == 0 {
-		return catalogItem{}, 0, false
-	}
-	return items[0], items[0].FinalScore, true
-}
-
 // enqueueSend insere em send_queue (tabela criada na Fase 4 — graceful skip se ausente).
 func enqueueSend(ctx context.Context, db *sqlx.DB, groupID int64, item catalogItem, score float64) error {
 	_, err := db.ExecContext(ctx, `
