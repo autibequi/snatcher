@@ -19,7 +19,7 @@ const STRANGLER_FLAGS = ['use_algo_tick']
 
 const PARAM_META: Record<string, { label: string; description: string }> = {
   // Flags strangler
-  use_algo_tick:          { label: 'Algoritmo de seleção',    description: 'Ativa o tick do algo — score ponderado por qualidade, frescor e diversidade ao escolher produtos para envio.' },
+  use_algo_tick:          { label: 'Score Engine',             description: 'Ativa o Score Engine — seleciona produtos por qualidade, frescor, diversidade e categoria do grupo para envio automático.' },
   use_send_queue:         { label: 'Fila de envio',           description: 'Usa a fila particionada por modem em vez do dispatcher legado.' },
   catalog_source:         { label: 'Catálogo v2',             description: 'Lê produtos do catálogo novo (0 = legado, 1 = v2 cimentado).' },
   // Qualidade e seleção
