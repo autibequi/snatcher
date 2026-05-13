@@ -26,8 +26,8 @@ interface AccountRow {
 
 function statusBadge(status: string) {
   const base = 'inline-block px-2 py-0.5 rounded text-xs font-semibold'
-  if (status === 'active') return <span className={`${base} bg-success-soft text-green-700`}>active</span>
-  if (status === 'paused') return <span className={`${base} bg-warning-soft text-yellow-700`}>paused</span>
+  if (status === 'active') return <span className={`${base} bg-success-soft text-success`}>active</span>
+  if (status === 'paused') return <span className={`${base} bg-warning-soft text-warning`}>paused</span>
   if (status === 'quarantine') return <span className={`${base} bg-danger-soft text-danger`}>quarantine</span>
   return <span className={`${base} bg-surface-2 text-fg-2`}>{status}</span>
 }
@@ -181,7 +181,7 @@ export default function AdminSenders() {
                   {modem.paused_until && (
                     <div className="flex justify-between">
                       <span className="text-fg-4">Pausado ate</span>
-                      <span className="font-medium text-xs text-yellow-700">{modem.paused_until}</span>
+                      <span className="font-medium text-xs text-warning">{modem.paused_until}</span>
                     </div>
                   )}
                   {modem.paused_reason && (
