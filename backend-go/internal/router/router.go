@@ -342,6 +342,12 @@ func Build(
 		r.Post("/api/admin/modems/{id}/pause", adminhnd.PauseModemHandler(db))
 		r.Post("/api/admin/modems/{id}/resume", adminhnd.ResumeModemHandler(db))
 
+		// Accounts v2 CRUD
+		accsV2 := adminhnd.NewAccountsV2Handler(st)
+		r.Post("/api/admin/modems/{id}/accounts", accsV2.Create)
+		r.Delete("/api/admin/accounts/{id}", accsV2.Delete)
+		r.Patch("/api/admin/accounts/{id}", accsV2.Update)
+
 		// Fase 5: Loops LLM — status de autonomia e auditoria
 		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
 		r.Get("/api/admin/loops/{loop}/actions", adminhnd.LoopActionsHandler(db))

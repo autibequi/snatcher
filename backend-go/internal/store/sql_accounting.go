@@ -251,6 +251,34 @@ func (s *SQLStore) GetAccountV2(id int64) (models.AccountV2, error) {
 	return a, err
 }
 
+// CreateAccountV2 insere uma nova conta WA na tabela accounts.
+func (s *SQLStore) CreateAccountV2(phone string, modemID int64, quota int) (int64, error) {
+	if quota <= 0 {
+		quota = 20
+	}
+	var id int64
+	err := s.db.QueryRowx(`
+		INSERT INTO accounts (phone, modem_id, status, daily_send_quota)
+		VALUES ($1, $2, 'primary', $3)
+		RETURNING id
+	`, phone, modemID, quota).Scan(&id)
+	return id, err
+}
+
+// DeleteAccountV2 remove uma conta WA v2 pelo id.
+func (s *SQLStore) DeleteAccountV2(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM accounts WHERE id = $1`, id)
+	return err
+}
+
+// UpdateAccountV2 atualiza status e quota de uma conta WA v2.
+func (s *SQLStore) UpdateAccountV2(id int64, status string, quota int) error {
+	_, err := s.db.Exec(`
+		UPDATE accounts SET status=$1, daily_send_quota=$2, status_changed_at=now() WHERE id=$3
+	`, status, quota, id)
+	return err
+}
+
 func (s *SQLStore) DeleteTGAccount(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM tgaccount WHERE id = $1`, id)
 	return err

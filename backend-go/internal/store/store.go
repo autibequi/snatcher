@@ -54,6 +54,9 @@ type Store interface {
 	// AccountV2 — contas WA v2 (tabela accounts). Substituem WAAccount após F10.
 	ListAccountsV2() ([]models.AccountV2, error)
 	GetAccountV2(id int64) (models.AccountV2, error)
+	CreateAccountV2(phone string, modemID int64, quota int) (int64, error)
+	DeleteAccountV2(id int64) error
+	UpdateAccountV2(id int64, status string, quota int) error
 	DeleteTGAccount(id int64) error
 
 	// Throttle (check and increment daily message limits)
