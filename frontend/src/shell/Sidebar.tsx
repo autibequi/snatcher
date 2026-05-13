@@ -14,16 +14,10 @@ const NAV: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/',         label: 'Dashboard',     icon: '🏠' },
-      { to: '/compose',  label: 'Compor disparo', icon: '✍️' },
-      { to: '/activity', label: 'Atividade',      icon: '📋' },
-    ],
-  },
-  {
-    label: 'Automação',
-    items: [
-      { to: '/admin/senders',  label: 'Modems & Senders', icon: '📡' },
-      { to: '/suggestions-l4', label: 'Sugestões L4',     icon: '💡' },
+      { to: '/',               label: 'Dashboard',     icon: '🏠' },
+      { to: '/compose',        label: 'Compor disparo', icon: '✍️' },
+      { to: '/activity',       label: 'Atividade',      icon: '📋' },
+      { to: '/suggestions-l4', label: 'Insights',       icon: '💡' },
     ],
   },
   {
@@ -47,6 +41,7 @@ const NAV: NavGroup[] = [
       { to: '/admin/templates', label: 'Templates',      icon: '💬' },
       { to: '/affiliates',      label: 'Afiliados',      icon: '💰' },
       { to: '/links',           label: 'Links públicos', icon: '🔗' },
+      { to: '/admin/senders',   label: 'Modems',         icon: '📡' },
     ],
   },
   {
