@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -87,6 +88,7 @@ function QualityBadge({ score }: { score?: number }) {
 }
 
 export default function AdminCatalogCanonical() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<Stats | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -290,14 +292,23 @@ export default function AdminCatalogCanonical() {
                       {item.canonical_url_alive ? '✓' : '✗'}
                     </span>
                   </td>
-                  {/* Ver */}
+                  {/* Ações */}
                   <td className="px-3 py-2">
-                    <button
-                      onClick={() => setDetailItem(item)}
-                      className="px-2 py-1 text-xs bg-surface-2 rounded hover:bg-surface-3 transition-colors"
-                    >
-                      Ver
-                    </button>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setDetailItem(item)}
+                        className="px-2 py-1 text-xs bg-surface-2 rounded hover:bg-surface-3 transition-colors"
+                      >
+                        Ver
+                      </button>
+                      <button
+                        onClick={() => navigate(`/compose?productIds=${item.id}`)}
+                        className="px-2 py-1 text-xs bg-accent text-white rounded hover:bg-accent-hover transition-colors"
+                        title="Abrir Composer com este produto"
+                      >
+                        ✈ Disparar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
