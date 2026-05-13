@@ -28,37 +28,48 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 		return nil
 	}
 
-	// 3. Para cada grupo ativo, selecionar top-1 item via SQL com hard skips
+	// 3. Para cada grupo ativo, seleciona top-K via fórmula composta + MMR
 	type group struct {
 		ID          int64  `db:"id"`
+		ChannelID   int64  `db:"channel_id"`
 		CategoryID  *int64 `db:"category_id"`
 		DailyMsgCap int    `db:"daily_msg_cap"`
 		Timezone    string `db:"timezone"`
 	}
 	var groups []group
 	if err := db.SelectContext(ctx, &groups, `
-		SELECT id, category_id, daily_msg_cap, timezone
+		SELECT id, channel_id, category_id, daily_msg_cap, timezone
 		FROM groups
 		WHERE COALESCE(status, 'active') = 'active'
 	`); err != nil {
 		return err
 	}
 
+	lambda := loadMMRLambda(ctx, db)
 	enqueued := 0
 	for _, g := range groups {
 		if !ShouldEnqueueGroup(ctx, db, g.ID, g.DailyMsgCap) {
 			continue
 		}
-		item, score, ok := selectTopForGroup(ctx, db, g.ID, g.CategoryID)
+		candidates, err := selectTopKForGroup(ctx, db, g.ID, g.ChannelID, g.CategoryID)
+		if err != nil || len(candidates) == 0 {
+			continue
+		}
+		sentToday, err := loadSentTodayCategories(ctx, db, g.ID)
+		if err != nil {
+			slog.Warn("algo.tick: loadSentTodayCategories", "err", err, "group", g.ID)
+			sentToday = map[int64]bool{}
+		}
+		item, ok := applyMMR(candidates, sentToday, lambda)
 		if !ok {
 			continue
 		}
-		if err := enqueueSend(ctx, db, g.ID, item, score); err != nil {
+		if err := enqueueSend(ctx, db, g.ID, item, item.FinalScore); err != nil {
 			slog.Warn("algo.tick: enqueue", "err", err, "group", g.ID)
 			continue
 		}
 		enqueued++
 	}
-	slog.Info("algo.tick: done", "enqueued", enqueued, "groups", len(groups))
+	slog.Info("algo.tick: done", "enqueued", enqueued, "groups", len(groups), "lambda", lambda)
 	return nil
 }

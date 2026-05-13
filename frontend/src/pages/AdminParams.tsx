@@ -15,11 +15,12 @@ interface TunableParam {
   last_change_by?: string
 }
 
-const STRANGLER_FLAGS = ['use_algo_tick']
+const STRANGLER_FLAGS = ['use_algo_tick', 'use_scoring_v2']
 
 const PARAM_META: Record<string, { label: string; description: string }> = {
   // Flags strangler
   use_algo_tick:          { label: 'Score Engine',             description: 'Ativa o Score Engine — seleciona produtos por qualidade, frescor, diversidade e categoria do grupo para envio automático.' },
+  use_scoring_v2:         { label: 'Scoring v2 (fórmula composta)', description: 'Usa fórmula composta com 7 sinais (qualidade, afinidade, peso do canal, CTR, EPC, frescor, saturação) + re-rank por diversidade (MMR). Desligado = ORDER BY quality_score global.' },
   use_send_queue:         { label: 'Fila de envio',           description: 'Usa a fila particionada por modem em vez do dispatcher legado.' },
   catalog_source:         { label: 'Catálogo v2',             description: 'Lê produtos do catálogo novo (0 = legado, 1 = v2 cimentado).' },
   // Qualidade e seleção
@@ -33,10 +34,18 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   half_life_learned:      { label: 'Meia-vida do peso aprendido (dias)', description: 'Após quantos dias o histórico de conversão perde metade do peso no score.' },
   // Diversidade
   anti_saturation_decay:  { label: 'Penalidade de saturação',   description: 'Fator de desconto para produtos já enviados recentemente ao mesmo grupo. Menor = penalidade mais forte.' },
-  diversity_bonus_weight: { label: 'Peso de diversidade',       description: 'Bônus aplicado quando o produto é de uma categoria diferente dos últimos enviados ao grupo.' },
+  diversity_bonus_weight: { label: 'Peso de diversidade',       description: 'Bônus de diversidade no re-rank MMR (1 - peso = lambda da fórmula). Maior = mais diversidade de categoria por grupo/dia.' },
   // Exploração
-  epsilon_base:           { label: 'Taxa de exploração',        description: 'Probabilidade inicial de escolher um produto aleatório em vez do de maior score (evita viés).' },
+  epsilon_base:           { label: 'Taxa de exploração',        description: 'Probabilidade inicial de escolher um produto aleatório em vez do de maior score (evita viés). [Fase 2 do Scoring v2]' },
   epsilon_decay_rate:     { label: 'Velocidade de decay da exploração', description: 'Quão rápido a exploração aleatória diminui com o tempo conforme o modelo aprende.' },
+  // Scoring v2 — pesos da fórmula composta
+  score_weight_quality:    { label: 'Peso · Qualidade intrínseca', description: 'Coeficiente w_q na fórmula composta. Multiplica quality_score do produto (0..1).' },
+  score_weight_affinity:   { label: 'Peso · Afinidade grupo×categoria', description: 'Coeficiente w_a. Multiplica group_category_affinity (ajustado pelo loop affinity_adjust).' },
+  score_weight_channel:    { label: 'Peso · Pesos do canal',     description: 'Coeficiente w_w. Multiplica channel_category_weights/100 (sliders na página Canais).' },
+  score_weight_ctr:        { label: 'Peso · CTR 30d',            description: 'Coeficiente w_c. Multiplica learned_weights.ctr_30d (cliques/envios do grupo×categoria nos últimos 30 dias).' },
+  score_weight_epc:        { label: 'Peso · EPC 30d',            description: 'Coeficiente w_e. Multiplica learned_weights.epc_30d (earnings per click, clampado em 1.0).' },
+  score_weight_freshness:  { label: 'Peso · Frescor (recência)', description: 'Coeficiente w_f. Multiplica decay exponencial baseado em send_ready_at e half_life_freshness.' },
+  score_weight_saturation: { label: 'Peso · Anti-saturação',     description: 'Coeficiente w_s (subtraído do score). Multiplica anti_saturation_decay^n_sends_24h da mesma categoria no grupo.' },
 }
 
 function paramLabel(name: string): string {

@@ -13,29 +13,66 @@ type catalogItem struct {
 	SourceID     string  `db:"source_id"`
 	QualityScore float64 `db:"quality_score"`
 	DiscountPct  float64 `db:"discount_pct"`
+	FinalScore   float64 `db:"final_score"`
 }
 
-// selectTopForGroup seleciona o melhor item via SQL com hard skips:
-// send_ready=true, quality_score >= threshold, canonical_url_alive=true,
-// anti-repeat 7d, nao-na-fila.
-func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID int64, categoryID *int64) (catalogItem, float64, bool) {
-	var item catalogItem
-	err := db.GetContext(ctx, &item, `
+const topK = 10
+
+// selectTopKForGroup retorna os top-K candidatos ranqueados pela fórmula
+// composta (Fase 1 do plano scoring v2). Hard skips iguais à versão antiga
+// (send_ready, URL viva, threshold de qualidade, anti-repeat 7d, dedup de fila).
+//
+// final_score = w_q*quality + w_a*affinity + w_w*channel_weight
+//             + w_c*ctr_30d + w_e*epc_30d + w_f*freshness
+//             - w_s*saturation
+func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int64, categoryID *int64) ([]catalogItem, error) {
+	var items []catalogItem
+	err := db.SelectContext(ctx, &items, `
+		WITH gst AS (
+			SELECT cat.category_id, COUNT(*) AS n_sent
+			FROM send_log sl
+			JOIN catalog cat ON cat.id = sl.catalog_id
+			WHERE sl.group_id = $1
+			  AND sl.sent_at > now() - INTERVAL '24 hours'
+			GROUP BY cat.category_id
+		)
 		SELECT c.id, c.short_id, c.category_id, c.source_id,
 		       COALESCE(c.quality_score, 0) AS quality_score,
-		       COALESCE(c.discount_pct, 0) AS discount_pct
+		       COALESCE(c.discount_pct, 0)  AS discount_pct,
+		         (get_param('score_weight_quality','global',NULL) * COALESCE(c.quality_score, 0))
+		       + (get_param('score_weight_affinity','global',NULL) * COALESCE(gca.affinity, 0.5))
+		       + (get_param('score_weight_channel','global',NULL)  * COALESCE(ccw.weight, 0) / 100.0)
+		       + (get_param('score_weight_ctr','global',NULL)      * COALESCE(lw_agg.ctr_30d, 0))
+		       + (get_param('score_weight_epc','global',NULL)      * LEAST(COALESCE(lw_agg.epc_30d, 0), 1.0))
+		       + (get_param('score_weight_freshness','global',NULL)
+		            * exp(-0.693
+		                  * EXTRACT(EPOCH FROM (now() - COALESCE(c.send_ready_at, c.created_at)))
+		                  / 3600.0
+		                  / GREATEST(get_param('half_life_freshness','global',NULL) * 24.0, 1.0)))
+		       - (get_param('score_weight_saturation','global',NULL)
+		            * power(get_param('anti_saturation_decay','global',NULL),
+		                    COALESCE(gst.n_sent, 0)))
+		         AS final_score
 		FROM catalog c
+		LEFT JOIN group_category_affinity gca
+		       ON gca.group_id = $1 AND gca.category_id = c.category_id
+		LEFT JOIN channel_category_weights ccw
+		       ON ccw.channel_id = $2 AND ccw.category_id = c.category_id
+		LEFT JOIN LATERAL (
+		    SELECT AVG(ctr_30d)::numeric AS ctr_30d, AVG(epc_30d)::numeric AS epc_30d
+		    FROM learned_weights lw
+		    WHERE lw.group_id = $1 AND lw.category_id = c.category_id
+		) lw_agg ON true
+		LEFT JOIN gst ON gst.category_id = c.category_id
 		WHERE c.send_ready = true
 		  AND c.canonical_url_alive = true
 		  AND COALESCE(c.quality_score, 0) >= COALESCE(
-		      (SELECT current_value FROM tunable_parameters
-		       WHERE param_name = 'quality_threshold' AND scope_type = 'global'),
-		      0.4)
-		  AND ($2::bigint IS NULL OR c.category_id = $2)
+		      get_param('quality_threshold','global',NULL), 0.4)
+		  AND ($3::bigint IS NULL OR c.category_id = $3)
 		  AND NOT EXISTS (
 		      SELECT 1 FROM group_sent_history h
 		      WHERE h.group_id = $1
-		        AND h.dedup_key IN (SELECT dedup_key FROM catalog WHERE id = c.id)
+		        AND h.dedup_key = c.dedup_key
 		        AND h.sent_at > now() - INTERVAL '7 days'
 		  )
 		  AND NOT EXISTS (
@@ -44,13 +81,20 @@ func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID int64, category
 		        AND q.catalog_id = c.id
 		        AND q.status IN ('pending', 'sending')
 		  )
-		ORDER BY c.quality_score DESC
-		LIMIT 1
-	`, groupID, categoryID)
-	if err != nil {
-		return item, 0, false
+		ORDER BY final_score DESC
+		LIMIT $4
+	`, groupID, channelID, categoryID, topK)
+	return items, err
+}
+
+// selectTopForGroup mantida para compat: pega top-1 sem MMR.
+// O tick.go novo chama selectTopKForGroup + applyMMR.
+func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int64, categoryID *int64) (catalogItem, float64, bool) {
+	items, err := selectTopKForGroup(ctx, db, groupID, channelID, categoryID)
+	if err != nil || len(items) == 0 {
+		return catalogItem{}, 0, false
 	}
-	return item, item.QualityScore, true
+	return items[0], items[0].FinalScore, true
 }
 
 // enqueueSend insere em send_queue (tabela criada na Fase 4 — graceful skip se ausente).
