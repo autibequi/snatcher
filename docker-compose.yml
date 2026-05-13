@@ -29,6 +29,11 @@ services:
       - evo-postgres
       - evo-redis
     restart: unless-stopped
+    networks:
+      default: {}
+      coolify:
+        aliases:
+          - evolution
     deploy:
       resources:
         limits:
