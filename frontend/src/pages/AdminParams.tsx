@@ -17,6 +17,35 @@ interface TunableParam {
 
 const STRANGLER_FLAGS = ['use_algo_tick', 'use_send_queue', 'catalog_source']
 
+const PARAM_META: Record<string, { label: string; description: string }> = {
+  // Flags strangler
+  use_algo_tick:          { label: 'Algoritmo de seleção',    description: 'Ativa o tick do algo — score ponderado por qualidade, frescor e diversidade ao escolher produtos para envio.' },
+  use_send_queue:         { label: 'Fila de envio',           description: 'Usa a fila particionada por modem em vez do dispatcher legado.' },
+  catalog_source:         { label: 'Catálogo v2',             description: 'Lê produtos do catálogo novo (0 = legado, 1 = v2 cimentado).' },
+  // Qualidade e seleção
+  quality_threshold:      { label: 'Score mínimo de qualidade', description: 'Produtos com score abaixo desse valor não entram na fila. Aumentar = mais seletivo.' },
+  baseline_min:           { label: 'Mínimo diário por grupo',   description: 'Garante ao menos N envios por dia mesmo em grupos com score baixo.' },
+  cap_max:                { label: 'Máximo diário por grupo',   description: 'Teto de envios por grupo por dia. Protege contra saturação.' },
+  // Cadência de envio
+  cooldown_seconds:       { label: 'Cooldown entre envios (s)', description: 'Intervalo mínimo entre dois disparos do mesmo modem, em segundos.' },
+  // Decaimento temporal
+  half_life_freshness:    { label: 'Meia-vida de frescor (dias)',  description: 'Após quantos dias um produto perde metade do bônus por ser novo no catálogo.' },
+  half_life_learned:      { label: 'Meia-vida do peso aprendido (dias)', description: 'Após quantos dias o histórico de conversão perde metade do peso no score.' },
+  // Diversidade
+  anti_saturation_decay:  { label: 'Penalidade de saturação',   description: 'Fator de desconto para produtos já enviados recentemente ao mesmo grupo. Menor = penalidade mais forte.' },
+  diversity_bonus_weight: { label: 'Peso de diversidade',       description: 'Bônus aplicado quando o produto é de uma categoria diferente dos últimos enviados ao grupo.' },
+  // Exploração
+  epsilon_base:           { label: 'Taxa de exploração',        description: 'Probabilidade inicial de escolher um produto aleatório em vez do de maior score (evita viés).' },
+  epsilon_decay_rate:     { label: 'Velocidade de decay da exploração', description: 'Quão rápido a exploração aleatória diminui com o tempo conforme o modelo aprende.' },
+}
+
+function paramLabel(name: string): string {
+  return PARAM_META[name]?.label ?? name
+}
+function paramDescription(name: string): string {
+  return PARAM_META[name]?.description ?? ''
+}
+
 function isStranglerFlag(name: string): boolean {
   return STRANGLER_FLAGS.includes(name)
 }
@@ -151,13 +180,16 @@ export default function AdminParams() {
                   key={p.id}
                   className="border rounded-lg p-4 bg-surface shadow-sm flex flex-col gap-2"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">{p.param_name}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-fg">{paramLabel(p.param_name)}</p>
+                      <p className="text-[10px] text-fg-3 font-mono mt-0.5">{p.param_name}</p>
+                    </div>
                     <button
                       onClick={() => handleToggle(p)}
                       disabled={isBusy}
                       className={[
-                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                        'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none',
                         isOn ? 'bg-green-500' : 'bg-gray-300',
                         isBusy ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
                       ].join(' ')}
@@ -171,12 +203,10 @@ export default function AdminParams() {
                       />
                     </button>
                   </div>
-                  <span
-                    className={[
-                      'text-xs font-medium',
-                      isOn ? 'text-green-600' : 'text-fg-4',
-                    ].join(' ')}
-                  >
+                  {paramDescription(p.param_name) && (
+                    <p className="text-xs text-fg-3 leading-snug">{paramDescription(p.param_name)}</p>
+                  )}
+                  <span className={['text-xs font-medium', isOn ? 'text-green-600' : 'text-fg-4'].join(' ')}>
                     {isOn ? 'ON' : 'OFF'}
                   </span>
                   {p.last_changed && (
@@ -196,7 +226,7 @@ export default function AdminParams() {
       {!loading && sortedScopes.map(scope => (
         <section key={scope}>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-            {scope}
+            {scope === 'global' ? 'Globais' : scope === 'modem' ? 'Por modem' : scope === 'group' ? 'Por grupo' : scope === 'category' ? 'Por categoria' : scope}
           </h2>
           <div className="border rounded-lg bg-surface shadow-sm overflow-hidden">
             <table className="w-full text-sm">
@@ -218,7 +248,15 @@ export default function AdminParams() {
                   const isBusy = saving[p.id]
                   return (
                     <tr key={p.id} className="hover:bg-surface-2 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-fg">{p.param_name}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="font-semibold text-fg cursor-help"
+                          title={paramDescription(p.param_name) ? `${paramDescription(p.param_name)}\n\n(${p.param_name})` : p.param_name}
+                        >
+                          {paramLabel(p.param_name)}
+                        </span>
+                        <p className="text-[10px] text-fg-3 font-mono mt-0.5">{p.param_name}</p>
+                      </td>
                       <td className="px-4 py-3">
                         <input
                           type="number"
