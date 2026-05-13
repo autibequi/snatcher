@@ -125,9 +125,12 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	}
 
 	if evolutionVerify && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
-		if v, err := h.countVerifiedWAAdmins(ctx, g); err == nil {
+		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if v, err := h.countVerifiedWAAdmins(verifyCtx, g); err == nil {
 			enriched.VerifiedAdminCount = v
 		}
+		// se falhar (timeout, evolution offline, etc.) mantém adminCount do banco
 	}
 
 	return enriched
