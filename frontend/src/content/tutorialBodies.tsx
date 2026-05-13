@@ -436,6 +436,402 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       </Sec>
     </Shell>
   ),
+
+  scoring: () => (
+    <Shell>
+      <Sec title="O que é o Score Engine">
+        <p>
+          O <strong className="text-fg">Score Engine</strong> é o ciclo que decide,
+          a cada 5 minutos, qual produto do catálogo vai para cada grupo ativo. Ele
+          pondera 7 sinais por produto e por grupo, aplica diversidade, exploração
+          e defesas contra spam — e devolve uma escolha por grupo.
+        </p>
+        <p>
+          Ele é controlado pelo toggle <strong className="text-fg">Score Engine</strong> em{' '}
+          <strong className="text-fg">/admin/params</strong> (flag <code>use_algo_tick</code>).
+          Desligado: nada é enviado pelo motor automático — só envios manuais. Ligado:
+          tick a cada 5min dentro da janela de envio.
+        </p>
+      </Sec>
+
+      <Sec title="Pipeline em 1 minuto">
+        <p>Para cada grupo ativo, em cada tick:</p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li><b>(Opcional) Thompson Sampling</b> — amostra Beta(α, β) por categoria do canal e escolhe uma categoria pra explorar/explorar-melhor neste tick.</li>
+          <li><b>Top-K via SQL</b> — calcula score composto (7 termos) para todos os produtos elegíveis, ordena, pega os 10 melhores.</li>
+          <li><b>MMR re-rank</b> — penaliza candidatos cuja categoria já saiu hoje no grupo; reordena o top-K.</li>
+          <li><b>(Opcional) ε-greedy</b> — com probabilidade ε, escolhe um candidato aleatório do top-K em vez do nº 1.</li>
+          <li><b>Enqueue</b> — manda pra fila de envio do modem responsável.</li>
+        </ol>
+      </Sec>
+
+      <Sec title="A fórmula composta — 7 sinais">
+        <p>
+          O score final de um produto <b>p</b> num grupo <b>g</b> é a soma ponderada:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`final_score(p, g) =
+    w_q · quality_score(p)              # 1. intrínseco
+  + w_a · affinity(g, cat)              # 2. histórico do grupo
+  + w_w · channel_weight(canal, cat)    # 3. sliders do operador
+  + w_c · ctr_blended(g, cat, src)      # 4. cliques (hierárquico)
+  + w_e · epc_blended(g, cat, src)      # 5. receita (hierárquico)
+  + w_f · freshness(p)                  # 6. recência
+  - w_s · saturation(g, cat)            # 7. anti-fadiga`}
+        </pre>
+        <p>
+          Cada <b>w_*</b> é um tunable em /admin/params (defaults razoáveis abaixo).
+          Os termos 4 e 5 usam <b>shrinkage hierárquico</b> entre grupo e canal —
+          explicado mais à frente.
+        </p>
+      </Sec>
+
+      <Sec title="Termo 1 · quality_score (w_q = 0.30)">
+        <p>
+          Score intrínseco do produto, calculado quando ele entra/atualiza no catálogo.
+          Combina:
+        </p>
+        <Ul>
+          <li><b>Imagem</b> presente e válida (+0.30)</li>
+          <li><b>Preço atual</b> presente (+0.20)</li>
+          <li><b>Título</b> presente (+0.10)</li>
+          <li><b>Desconto</b> proporcional ao % (até +0.40)</li>
+          <li><b>Boost 1.5×</b> nas 24h após uma queda detectada (<code>last_price_drop_at</code>)</li>
+          <li><b>Trust do source</b> multiplica tudo (Amazon 0.9, marketplace pequeno 0.5)</li>
+          <li><b>Decay temporal</b>: produto perde score com o tempo (half-life 7 dias)</li>
+        </Ul>
+        <p>
+          Produtos com score abaixo de <code>quality_threshold</code> (default 0.40)
+          ficam de fora — não entram no funil.
+        </p>
+      </Sec>
+
+      <Sec title="Termo 2 · affinity (w_a = 0.20)">
+        <p>
+          Quão bem o grupo <b>g</b> historicamente responde a produtos da <b>categoria</b> de <b>p</b>.
+          Tabela <code>group_category_affinity</code>, valor entre 0.05 e 1.0.
+        </p>
+        <p>
+          Atualizada periodicamente pelo loop LLM <b>affinity_adjust</b> que olha:
+        </p>
+        <Ul>
+          <li>CTR 30d daquela categoria nesse grupo</li>
+          <li>EPC 30d</li>
+          <li>Quantos samples houve (confidence)</li>
+        </Ul>
+        <p>
+          Default neutro <code>0.50</code> para combinações ainda não medidas.
+        </p>
+      </Sec>
+
+      <Sec title="Termo 3 · channel_weight (w_w = 0.15)">
+        <p>
+          O prior do operador — você define em <strong className="text-fg">/channels</strong> qual
+          a importância de cada categoria por canal, via sliders 0–100%. Esse é o sinal humano
+          que diz "este canal é principalmente de eletrônicos, mas aceita gaming".
+        </p>
+        <p>
+          Tabela <code>channel_category_weights</code>. Categorias fora dos sliders contam como 0,
+          o que efetivamente as exclui — comportamento desejado.
+        </p>
+      </Sec>
+
+      <Sec title="Termos 4 e 5 · CTR e EPC (w_c = 0.15, w_e = 0.10)">
+        <p>
+          Performance histórica real — clicks e earnings-per-click dos últimos 30 dias,
+          decompostos por <code>(grupo, categoria, source)</code>. O job{' '}
+          <code>refresh_learned_weights</code> roda <b>a cada hora</b> e calcula tudo
+          com <b>decay exponencial</b> (cliques recentes valem mais; half-life 7d).
+        </p>
+        <p>
+          O grande pulo do gato aqui é o <b>shrinkage hierárquico</b> (estilo
+          James–Stein):
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`c = confidence(grupo)   # 0..1, sobe com samples_30d
+ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
+        </pre>
+        <p>
+          Tradução: <b>grupo novo</b> (poucos dados → confidence baixa) usa o sinal do
+          canal-mãe, herdando aprendizado dos irmãos. <b>Grupo maduro</b> usa o próprio
+          sinal. Transição é suave, sem cutoff arbitrário. O mesmo blend vale para EPC.
+        </p>
+      </Sec>
+
+      <Sec title="Termo 6 · freshness (w_f = 0.05)">
+        <p>
+          Bônus por produto "fresco" — recém-virou <code>send_ready</code>. Decai
+          exponencialmente:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`freshness(p) = exp(-ln(2) · hours / (half_life_freshness · 24))`}
+        </pre>
+        <p>
+          Com half-life=7d: produto de 24h vale ~0.91, de 7d vale 0.5, de 14d vale 0.25.
+          Peso pequeno (0.05) — é desempate, não fator dominante.
+        </p>
+      </Sec>
+
+      <Sec title="Termo 7 · saturation (w_s = 0.30, subtraído)">
+        <p>
+          Penalidade <b>crescente</b> se a categoria já saiu hoje no grupo. Evita
+          "spam de eletrônicos" num grupo onde acabou de sair um. Fórmula:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`penalty(g, cat) = 1 - anti_saturation_decay ^ n_sent_24h
+# anti_saturation_decay = 0.60
+#   n=0: 0     (produto novo não é penalizado)
+#   n=1: 0.40  (já saiu 1× hoje)
+#   n=2: 0.64
+#   n=3: 0.78`}
+        </pre>
+        <p>
+          Acoplado ao MMR (próxima seção), evita repetição dura mesmo sem janela
+          mínima entre envios.
+        </p>
+      </Sec>
+
+      <Sec title="MMR — diversidade no re-rank">
+        <p>
+          Após ordenar pelo score composto, aplicamos{' '}
+          <b>Maximal Marginal Relevance</b> nos top-10:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`mmr(p) = λ · final_score(p)
+       - (1-λ) · same_category_as_today(p, g)
+
+λ = 1 - diversity_bonus_weight   # default λ = 0.70`}
+        </pre>
+        <p>
+          Se uma categoria já saiu hoje no grupo, todos os produtos dessa categoria
+          tomam −(1−λ) extra. Quem ganha o tick costuma ser uma categoria diferente,
+          mantendo o feed variado. <code>diversity_bonus_weight</code> entre 0 e 0.80
+          ajusta a força do efeito.
+        </p>
+      </Sec>
+
+      <Sec title="Anti-repeat de produto — bypass de re-promoção">
+        <p>
+          Sem isso, um produto bom poderia ir 10× para o mesmo grupo numa semana.
+          Janela padrão: <b>7 dias</b> entre dois envios do mesmo produto no mesmo grupo.
+          Janela estendida para <b>14d</b> se o preço subiu desde o último envio
+          (produto piorou).
+        </p>
+        <p>
+          <b>Bypass excepcional</b> — quando uma queda nova justifica re-enviar
+          antes da janela:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`bypass se TODOS verdadeiros:
+  c.last_price_drop_at > last_sent_at
+  last_sent_at < now() - repromo_cooldown_hours (default 24h)
+  (price_at_send - price_atual) / price_at_send >= repromo_drop_threshold (default 10%)`}
+        </pre>
+        <p>
+          Ou seja: caiu de novo, já passou 24h, e está pelo menos 10% mais barato
+          que da última vez → reposta. Tunables expostos em /admin/params.
+        </p>
+      </Sec>
+
+      <Sec title="Exploração ε-greedy (Fase 2, opt-in)">
+        <p>
+          Sistema 100% greedy ignora produtos novos que nunca tiveram chance.
+          Solução: com probabilidade <b>ε</b>, escolhe um produto aleatório do
+          top-K (não o nº 1).
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`ε = epsilon_base · exp(-epsilon_decay_rate · dias_desde_lançamento)
+# defaults: epsilon_base=0.40, decay_rate=0.00035/dia
+# tempo zero: 40% exploração; 1 ano depois: ~34%`}
+        </pre>
+        <p>
+          Gate: flag <code>use_epsilon_explore</code>. Ligue depois de validar a
+          Fase 1 — sistema bem calibrado precisa de menos exploração.
+        </p>
+      </Sec>
+
+      <Sec title="Thompson Sampling (Fase 3, opt-in)">
+        <p>
+          Bandit Bernoulli por <code>(grupo, categoria)</code>. Cada arm tem α e β
+          (Beta posterior). A cada tick:
+        </p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>Para cada categoria do canal, amostra <code>Beta(α, β)</code></li>
+          <li>Escolhe a categoria com maior sample → vira filtro para o top-K SQL</li>
+        </ol>
+        <p>
+          <b>Atualização (cada tick, gated por flag):</b>
+        </p>
+        <Ul>
+          <li>Conversão → <code>α += 1</code></li>
+          <li>Click → <code>α += click_reward_weight</code> (default 0.10 = 10 clicks ≈ 1 conversão)</li>
+          <li>Envio &gt;24h sem conversão → <code>β += 1</code></li>
+        </Ul>
+        <p>
+          <b>Warm-start hierárquico:</b> grupo novo nasce com α/β = 25% do canal-mãe.
+          Converge rápido sem perder especialização ao coletar dados próprios.
+        </p>
+        <p>
+          <b>Três cursores</b> (<code>cursor_conversions</code>, <code>cursor_clicks</code>,
+          <code>cursor_losses</code>) garantem que cada evento é processado{' '}
+          <b>exatamente uma vez</b> — sem double-count.
+        </p>
+        <p>
+          Gate: <code>use_thompson_sampling</code>. Recomendado ligar só após ~30
+          dias de dados.
+        </p>
+      </Sec>
+
+      <Sec title="Shortlinks por grupo — atribuição honesta">
+        <p>
+          Cada envio gera um <code>short_id</code> em <code>group_shortlinks</code>{' '}
+          ligado a <code>(catalog_id, group_id)</code>. Quando alguém clica:
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`SELECT catalog_id, group_id FROM group_shortlinks WHERE short_id = $1
+# DETERMINÍSTICO — clique sempre conta pro grupo original,
+# não importa onde a pessoa viu`}
+        </pre>
+        <p>
+          Antes era inferido pelo "último grupo que mandou esse produto" — atribuição
+          podia ir pro grupo errado se o mesmo produto fosse enviado a vários grupos.
+          Agora é determinístico.
+        </p>
+      </Sec>
+
+      <Sec title="Cap anti-viralização">
+        <p>
+          E se o link de um grupo viralizar fora dele? Antes, todos os cliques
+          externos contavam pro CTR do grupo original — envenenando o bandit:
+          "grupo X ama eletrônicos!" quando na verdade era a galera do WhatsApp
+          do tio.
+        </p>
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`clicks_efetivos = LEAST(clicks_reais, k · member_count)
+# k = click_cap_per_member (default 3.0)
+# grupo de 100 membros: até 300 clicks contam pro learning
+# acima disso é viralização — entra em métricas, não no scoring`}
+        </pre>
+        <p>
+          Aplicado tanto no <code>refresh_learned_weights</code> (CTR/EPC) quanto
+          no Thompson (recompensa por click). Excedente fica disponível em{' '}
+          <strong className="text-fg">/analytics → tab Virality</strong>.
+        </p>
+      </Sec>
+
+      <Sec title="Como debugar uma escolha">
+        <p>
+          "Por que o sistema mandou este produto pra este grupo agora?"
+        </p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>
+            Abra <strong className="text-fg">/analytics → Learned Weights</strong> — confira CTR/EPC do
+            grupo×categoria; valores muito altos podem dominar a fórmula.
+          </li>
+          <li>
+            Em <strong className="text-fg">/channels</strong>, veja os sliders do canal — categoria
+            com 80% pesa muito mais que uma com 20%.
+          </li>
+          <li>
+            Confira em <strong className="text-fg">/analytics → Virality</strong> se aquele grupo
+            tem ratio alto — se sim, o sinal CTR pode estar mascarado por viralização
+            (mesmo com o cap).
+          </li>
+          <li>
+            Em <strong className="text-fg">/admin/params</strong>, valide se os
+            <code>score_weight_*</code> estão balanceados (soma ~1.0 sem o w_s).
+            Se w_c=0.9, CTR domina tudo.
+          </li>
+          <li>
+            <strong className="text-fg">/logs</strong> mostra cada tick com
+            "<code>enqueued=N groups=M lambda=0.7</code>" — útil pra ver volume.
+          </li>
+        </ol>
+      </Sec>
+
+      <Sec title="Como tunar (ordem recomendada)">
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>
+            <b>Comece em padrões.</b> Defaults são razoáveis: w_q=0.30, w_a=0.20,
+            w_w=0.15, w_c=0.15, w_e=0.10, w_f=0.05, w_s=0.30.
+          </li>
+          <li>
+            <b>Configure os sliders dos canais</b> em <strong className="text-fg">/channels</strong>{' '}
+            primeiro — é o sinal humano mais direto.
+          </li>
+          <li>
+            Deixe rodar <b>7 dias</b>. Confira <strong className="text-fg">/analytics → Learned Weights</strong>:
+            categorias com EPC alto e samples ≥ 50 são sinais de verdade.
+          </li>
+          <li>
+            Se sentir "mesmice", aumente <code>diversity_bonus_weight</code> ou
+            ligue <code>use_epsilon_explore</code>.
+          </li>
+          <li>
+            Se quiser "mais agressivo no que funciona", aumente <code>w_c</code> e <code>w_e</code>;
+            diminua <code>w_q</code> (qualidade pura).
+          </li>
+          <li>
+            Após 30d, ligue <code>use_thompson_sampling</code> para auto-otimização
+            por categoria.
+          </li>
+          <li>
+            Monitore <strong className="text-fg">/analytics → Virality</strong>: ratio alto num
+            grupo é informação valiosa pra escalar canal/expandir audiência.
+          </li>
+        </ol>
+      </Sec>
+
+      <Sec title="Glossário dos tunables">
+        <p className="text-fg-3">Todos em <strong className="text-fg">/admin/params</strong>.</p>
+        <table className="w-full text-xs border border-border rounded overflow-hidden">
+          <thead className="bg-surface-2">
+            <tr>
+              <th className="text-left px-2 py-1.5 border-b border-border">Param</th>
+              <th className="text-left px-2 py-1.5 border-b border-border">Default</th>
+              <th className="text-left px-2 py-1.5 border-b border-border">O que faz</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            <tr><td className="px-2 py-1.5 font-mono">use_algo_tick</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga/desliga o Score Engine</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">use_epsilon_explore</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga exploração ε-greedy (Fase 2)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">use_thompson_sampling</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga bandit por categoria (Fase 3)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">quality_threshold</td><td className="px-2 py-1.5">0.40</td><td className="px-2 py-1.5">Score mínimo pra entrar no funil</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_quality</td><td className="px-2 py-1.5">0.30</td><td className="px-2 py-1.5">w_q · quality intrínseco</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_affinity</td><td className="px-2 py-1.5">0.20</td><td className="px-2 py-1.5">w_a · afinidade grupo×categoria</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_channel</td><td className="px-2 py-1.5">0.15</td><td className="px-2 py-1.5">w_w · sliders do canal</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_ctr</td><td className="px-2 py-1.5">0.15</td><td className="px-2 py-1.5">w_c · CTR blended (com canal)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_epc</td><td className="px-2 py-1.5">0.10</td><td className="px-2 py-1.5">w_e · EPC blended</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_freshness</td><td className="px-2 py-1.5">0.05</td><td className="px-2 py-1.5">w_f · frescor temporal</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">score_weight_saturation</td><td className="px-2 py-1.5">0.30</td><td className="px-2 py-1.5">w_s · penalidade subtraída</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">anti_saturation_decay</td><td className="px-2 py-1.5">0.60</td><td className="px-2 py-1.5">Base do decay de saturação</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">diversity_bonus_weight</td><td className="px-2 py-1.5">0.30</td><td className="px-2 py-1.5">Força do MMR (λ = 1 − este)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">half_life_freshness</td><td className="px-2 py-1.5">7</td><td className="px-2 py-1.5">Dias do half-life de frescor</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">learned_half_life_days</td><td className="px-2 py-1.5">7</td><td className="px-2 py-1.5">Dias do half-life do CTR/EPC</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">epsilon_base</td><td className="px-2 py-1.5">0.40</td><td className="px-2 py-1.5">ε inicial (Fase 2)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">epsilon_decay_rate</td><td className="px-2 py-1.5">0.00035</td><td className="px-2 py-1.5">Decay diário do ε</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">click_reward_weight</td><td className="px-2 py-1.5">0.10</td><td className="px-2 py-1.5">α += este · clicks (Thompson)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">click_cap_per_member</td><td className="px-2 py-1.5">3.0</td><td className="px-2 py-1.5">Cap anti-viralização (k)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">antirepeat_window_days</td><td className="px-2 py-1.5">7</td><td className="px-2 py-1.5">Janela padrão entre re-envios</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">antirepeat_window_days_price_up</td><td className="px-2 py-1.5">14</td><td className="px-2 py-1.5">Janela estendida se preço subiu</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">repromo_drop_threshold</td><td className="px-2 py-1.5">0.10</td><td className="px-2 py-1.5">Queda mínima pra bypass (10%)</td></tr>
+            <tr><td className="px-2 py-1.5 font-mono">repromo_cooldown_hours</td><td className="px-2 py-1.5">24</td><td className="px-2 py-1.5">Min entre 2 envios mesmo c/ bypass</td></tr>
+          </tbody>
+        </table>
+      </Sec>
+
+      <Sec title="Garantias do sistema">
+        <Ul>
+          <li><b>Idempotência:</b> três cursores no Thompson garantem que cada evento conta uma vez.</li>
+          <li><b>Atribuição honesta:</b> shortlinks por grupo eliminam ambiguidade de clique.</li>
+          <li><b>Anti-envenenamento:</b> cap k×members protege contra viralização externa.</li>
+          <li><b>Anti-spam:</b> 7d hard-window + saturation + MMR cobrem 3 camadas.</li>
+          <li><b>Marketplace-correto:</b> CTR/EPC casados por <code>source_id</code> (não mistura Amazon e Magalu).</li>
+          <li><b>Fallback gracioso:</b> grupo sem dados usa canal; canal sem dados usa neutro.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
 }
 
 export function renderTutorialBody(slug: string): React.ReactNode | null {

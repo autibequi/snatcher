@@ -161,6 +161,13 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
     icon: '🎯',
     path: '/match',
   },
+  {
+    slug: 'scoring',
+    title: 'Algoritmo de Scoring',
+    description:
+      'Como o Score Engine decide qual produto vai para qual grupo e quando — fórmula, exploração, defesas e tunables.',
+    icon: '🧮',
+  },
 ]
 
 export function manualTutorialTitle(slug: string): string | undefined {
@@ -201,6 +208,7 @@ export function resolveTutorialSlugFromPath(pathname: string): string {
     ['/compose', 'compose'],
     ['/ads', 'ads'],
     ['/match', 'match'],
+    ['/scoring', 'scoring'],
   ]
 
   for (const [prefix, slug] of prefixes) {
