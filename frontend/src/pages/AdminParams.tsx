@@ -190,7 +190,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
                       disabled={isBusy}
                       className={[
                         'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none',
-                        isOn ? 'bg-green-500' : 'bg-gray-300',
+                        isOn ? 'bg-success' : 'bg-border',
                         isBusy ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
                       ].join(' ')}
                       aria-label={isOn ? 'Desativar' : 'Ativar'}
@@ -206,7 +206,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
                   {paramDescription(p.param_name) && (
                     <p className="text-xs text-fg-3 leading-snug">{paramDescription(p.param_name)}</p>
                   )}
-                  <span className={['text-xs font-medium', isOn ? 'text-green-600' : 'text-fg-4'].join(' ')}>
+                  <span className={['text-xs font-medium', isOn ? 'text-success' : 'text-fg-4'].join(' ')}>
                     {isOn ? 'ON' : 'OFF'}
                   </span>
                   {p.last_changed && (
@@ -284,14 +284,14 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
                           <button
                             onClick={() => handleSave(p)}
                             disabled={isBusy}
-                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs font-medium disabled:opacity-50"
+                            className="px-3 py-1 bg-accent text-white rounded hover:bg-accent-hover text-xs font-medium disabled:opacity-50"
                           >
                             Salvar
                           </button>
                           <button
                             onClick={() => handleReset(p)}
                             disabled={isBusy}
-                            className="px-3 py-1 bg-surface-3 rounded hover:bg-gray-300 text-xs font-medium disabled:opacity-50"
+                            className="px-3 py-1 bg-surface-3 rounded hover:bg-border text-xs font-medium disabled:opacity-50"
                           >
                             Reset
                           </button>

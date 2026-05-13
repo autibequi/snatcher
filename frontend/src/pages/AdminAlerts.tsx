@@ -65,7 +65,7 @@ function Toggle({
       disabled={disabled}
       className={[
         'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-        value ? 'bg-green-500' : 'bg-gray-300',
+        value ? 'bg-success' : 'bg-border',
         disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
       ].join(' ')}
       aria-label={value ? 'Desativar' : 'Ativar'}
@@ -219,7 +219,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
         {!embedded && <h1 className="text-2xl font-bold">Alert Rules</h1>}
         <button
           onClick={openCreate}
-          className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium${embedded ? '' : ''}`}
+          className={`px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover text-sm font-medium${embedded ? '' : ''}`}
         >
           + Nova regra
         </button>
@@ -278,7 +278,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
                       </button>
                       <button
                         onClick={() => handleDelete(rule)}
-                        className="px-3 py-1 text-xs bg-danger-soft hover:bg-red-200 text-danger rounded font-medium"
+                        className="px-3 py-1 text-xs bg-danger-soft hover:bg-danger-soft/80 text-danger rounded font-medium"
                       >
                         Excluir
                       </button>
@@ -333,7 +333,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
                     type="button"
                     onClick={handleTestQuery}
                     disabled={testing || !form.query.trim()}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded text-sm font-medium"
+                    className="px-4 py-2 bg-warning text-white hover:brightness-95 disabled:opacity-50 rounded text-sm font-medium"
                   >
                     {testing ? 'Testando...' : 'Testar query'}
                   </button>
@@ -341,7 +341,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
 
                 {/* Resultado do teste — erro */}
                 {testError && (
-                  <div className="border border-red-300 bg-danger-soft rounded p-3 text-sm text-danger font-mono whitespace-pre-wrap">
+                  <div className="border border-danger/30 bg-danger-soft rounded p-3 text-sm text-danger font-mono whitespace-pre-wrap">
                     {testError}
                   </div>
                 )}
@@ -467,7 +467,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
                   type="button"
                   onClick={handleSave}
                   disabled={saving || !form.name.trim() || !form.query.trim()}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded font-medium disabled:opacity-50"
+                  className="px-4 py-2 text-sm bg-accent text-white hover:bg-accent-hover rounded font-medium disabled:opacity-50"
                 >
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>

@@ -34,9 +34,9 @@ function statusBadge(status: string) {
 
 function accountStatusBadge(status: string) {
   const base = 'inline-block px-1.5 py-0.5 rounded text-xs font-medium'
-  if (status === 'active') return <span className={`${base} bg-green-50 text-green-700`}>active</span>
+  if (status === 'active') return <span className={`${base} bg-success-soft text-success`}>active</span>
   if (status === 'banned') return <span className={`${base} bg-danger-soft text-danger`}>banned</span>
-  if (status === 'paused') return <span className={`${base} bg-yellow-50 text-yellow-700`}>paused</span>
+  if (status === 'paused') return <span className={`${base} bg-warning-soft text-warning`}>paused</span>
   return <span className={`${base} bg-surface-2 text-fg-2`}>{status}</span>
 }
 
@@ -170,7 +170,7 @@ export default function AdminSenders() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-fg-4">Bans 24h</span>
-                    <span className={modem.bans_last_24h > 0 ? 'font-semibold text-red-600' : 'font-medium'}>
+                    <span className={modem.bans_last_24h > 0 ? 'font-semibold text-danger' : 'font-medium'}>
                       {modem.bans_last_24h}
                     </span>
                   </div>
@@ -197,14 +197,14 @@ export default function AdminSenders() {
                   <button
                     onClick={() => handlePause(modem.slug, modem.id, 1)}
                     disabled={anyBusy}
-                    className="px-3 py-1 text-xs font-medium bg-warning-soft text-warning rounded hover:bg-yellow-200 disabled:opacity-50"
+                    className="px-3 py-1 text-xs font-medium bg-warning-soft text-warning rounded hover:bg-warning-soft/80 disabled:opacity-50"
                   >
                     Pausar 1h
                   </button>
                   <button
                     onClick={() => handlePause(modem.slug, modem.id, 6)}
                     disabled={anyBusy}
-                    className="px-3 py-1 text-xs font-medium bg-warning-soft text-warning rounded hover:bg-orange-200 disabled:opacity-50"
+                    className="px-3 py-1 text-xs font-medium bg-warning-soft text-warning rounded hover:bg-warning-soft/80 disabled:opacity-50"
                   >
                     Pausar 6h
                   </button>
@@ -212,7 +212,7 @@ export default function AdminSenders() {
                     <button
                       onClick={() => handleResume(modem.slug, modem.id)}
                       disabled={anyBusy}
-                      className="px-3 py-1 text-xs font-medium bg-success-soft text-success rounded hover:bg-green-200 disabled:opacity-50"
+                      className="px-3 py-1 text-xs font-medium bg-success-soft text-success rounded hover:bg-success-soft/80 disabled:opacity-50"
                     >
                       Resumir
                     </button>
@@ -245,7 +245,7 @@ export default function AdminSenders() {
                         {acc.consecutive_failures > 0 && (
                           <div className="flex justify-between text-fg-4">
                             <span>Falhas consecutivas</span>
-                            <span className="font-semibold text-red-600">{acc.consecutive_failures}</span>
+                            <span className="font-semibold text-danger">{acc.consecutive_failures}</span>
                           </div>
                         )}
                       </div>
