@@ -116,7 +116,7 @@ services:
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
       - TZ_NAME=${TZ_NAME:-America/Sao_Paulo}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-      - EVOLUTION_URL=http://snatcher-evolution:8080
+      - EVOLUTION_URL=${EVOLUTION_URL:-http://snatcher-evolution:8080}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - AUTH_USERNAME=${AUTH_USERNAME:-admin}
@@ -142,7 +142,8 @@ services:
       start_period: 60s   # Chromium ARM demora mais pra inicializar (Python); Go ignora esse delay
     networks:
       default: {}
-      nuvem: {}   # acesso ao Ollama/vLLM em ../.cache/nuvem/services/ai
+      nuvem: {}     # acesso ao Ollama/vLLM em ../.cache/nuvem/services/ai
+      coolify: {}   # rede compartilhada Coolify — permite alcançar Evolution em outro projeto
 
   redirect:
     image: ghcr.io/autibequi/snatcher-redirect:latest
@@ -244,3 +245,5 @@ volumes:
 networks:
   nuvem:
     external: true   # criada por ../.cache/nuvem/services/ai/docker-compose.yml
+  coolify:
+    external: true   # rede padrão do Coolify — compartilhada entre todos os projetos
