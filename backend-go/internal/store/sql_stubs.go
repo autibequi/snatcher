@@ -68,18 +68,6 @@ func (s *SQLStore) GetAffiliateBySource(sourceID string) (models.Affiliate, bool
 func (s *SQLStore) ListAffiliates(sourceID *string) ([]models.Affiliate, error) { return nil, nil }
 func (s *SQLStore) InsertAffiliateConversion(c models.AffiliateConversion) (int64, error) { return 0, nil }
 
-func (s *SQLStore) CreateAffiliateProgram(p models.AffiliateProgram) (int64, error) {
-	return 0, nil
-}
-func (s *SQLStore) UpdateAffiliateProgram(p models.AffiliateProgram) error { return nil }
-func (s *SQLStore) DeleteAffiliateProgram(id int64) error                  { return nil }
-func (s *SQLStore) GetAffiliateProgram(id int64) (models.AffiliateProgram, error) {
-	return models.AffiliateProgram{}, nil
-}
-func (s *SQLStore) ListAffiliatePrograms(active *bool) ([]models.AffiliateProgram, error) { return nil, nil }
-func (s *SQLStore) ListAffiliateProgramsByMarketplace(marketplace string) ([]models.AffiliateProgram, error) {
-	return nil, nil
-}
 
 // ---- PublicLinks ----
 
