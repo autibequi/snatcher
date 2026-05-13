@@ -16,6 +16,7 @@ interface ModemStatus {
 interface AccountRow {
   id: number
   phone: string
+  nickname: string
   modem_id: number
   modem_slug: string
   status: string
@@ -66,6 +67,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
   const [status, setStatus] = useState<'idle' | 'loading_qr' | 'waiting_scan' | 'connected' | 'saving' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [phone, setPhone] = useState('')
+  const [nickname, setNickname] = useState('')
   const [quota, setQuota] = useState('20')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -96,17 +98,24 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
         setStatus('connected')
         return
       }
-      const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
-      const body = await r.json().catch(() => null)
-      if (!r.ok) {
-        setErrorMsg(body?.error ?? `HTTP ${r.status}: ${r.statusText}`)
-        setStatus('error')
-        return
+
+      // Tenta obter QR até 5x com 2s de intervalo (instância pode precisar de um momento após criar)
+      let qrValue = ''
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (attempt > 0) await new Promise(res => setTimeout(res, 2000))
+        const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
+        const body = await r.json().catch(() => null)
+        if (!r.ok) {
+          setErrorMsg(body?.error ?? `HTTP ${r.status}: ${r.statusText}`)
+          setStatus('error')
+          return
+        }
+        qrValue = body?.qr_base64 ?? ''
+        if (qrValue) break
       }
-      const qrValue: string = body?.qr_base64 ?? ''
+
       if (!qrValue) {
-        // QR vazio após EnsureInstance = instância criada mas sem QR disponível ainda
-        setErrorMsg('QR code não disponível — tente novamente em alguns segundos.')
+        setErrorMsg('QR não disponível. A instância pode já estar conectada — tente "Tentar novamente".')
         setStatus('error')
         return
       }
@@ -125,7 +134,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
     try {
       const r = await authFetch(`/api/admin/modems/${modem.id}/accounts`, {
         method: 'POST',
-        body: JSON.stringify({ phone: phone.trim(), daily_send_quota: parseInt(quota) || 20 }),
+        body: JSON.stringify({ phone: phone.trim(), nickname: nickname.trim(), daily_send_quota: parseInt(quota) || 20 }),
       })
       if (!r.ok) {
         const err = await r.json().catch(() => ({ error: r.statusText }))
@@ -144,7 +153,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
+      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">Conectar conta</h2>
           <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">✕</button>
@@ -193,7 +202,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
                   src={qr.startsWith('data:') ? qr : `data:image/png;base64,${qr}`}
                   alt="QR Code WhatsApp"
                   className="mx-auto rounded-lg border border-border"
-                  style={{ width: 220, height: 220 }}
+                  style={{ width: 300, height: 300 }}
                 />
                 <p className="text-xs text-fg-3">Abra o WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
                 <p className="text-[10px] text-fg-4 animate-pulse">Aguardando leitura...</p>
@@ -208,11 +217,18 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
                 </div>
                 <input
                   type="text"
+                  placeholder="Apelido (ex: Pedro pessoal)"
+                  value={nickname}
+                  onChange={e => setNickname(e.target.value)}
+                  className="w-full text-sm border border-border rounded px-3 py-2 bg-bg focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+                <input
+                  type="text"
                   placeholder="+55 21 99999-9999"
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   className="w-full text-sm border border-border rounded px-3 py-2 bg-bg focus:outline-none focus:border-accent"
-                  autoFocus
                 />
                 <div className="flex gap-2 items-center">
                   <input
@@ -463,8 +479,11 @@ export default function AdminSenders() {
                         {modemAccounts.map(acc => (
                           <div key={acc.id} className="py-2.5 flex items-center gap-3">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm font-medium text-fg">{acc.phone}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {acc.nickname && (
+                                  <span className="text-sm font-semibold text-fg">{acc.nickname}</span>
+                                )}
+                                <span className="font-mono text-xs text-fg-3">{acc.phone}</span>
                                 {accountStatusBadge(acc.status)}
                               </div>
                               <div className="text-xs text-fg-3 mt-0.5">

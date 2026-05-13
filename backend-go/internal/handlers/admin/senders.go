@@ -27,6 +27,7 @@ func SendersAccountsHandler(db *sqlx.DB) http.HandlerFunc {
 		type row struct {
 			ID                  int64   `db:"id"                   json:"id"`
 			Phone               string  `db:"phone"                json:"phone"`
+			Nickname            string  `db:"nickname"             json:"nickname"`
 			ModemID             int64   `db:"modem_id"             json:"modem_id"`
 			ModemSlug           string  `db:"modem_slug"           json:"modem_slug"`
 			Status              string  `db:"status"               json:"status"`
@@ -37,7 +38,7 @@ func SendersAccountsHandler(db *sqlx.DB) http.HandlerFunc {
 		}
 		var rows []row
 		_ = db.SelectContext(r.Context(), &rows, `
-			SELECT a.id, a.phone, a.modem_id, m.slug AS modem_slug, a.status,
+			SELECT a.id, a.phone, a.nickname, a.modem_id, m.slug AS modem_slug, a.status,
 			       a.daily_send_quota, a.last_sent_at::text, a.consecutive_failures,
 			       COALESCE((SELECT COUNT(*) FROM send_log sl WHERE sl.account_id=a.id AND sl.sent_at::date = CURRENT_DATE AND sl.status='sent'), 0) AS sent_today
 			FROM accounts a JOIN modems m ON m.id=a.modem_id

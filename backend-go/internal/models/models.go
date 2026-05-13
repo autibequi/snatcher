@@ -153,13 +153,14 @@ type AppConfig struct {
 // AccountV2 é a conta WhatsApp v2 (tabela accounts) com afinidade fixa a modem.
 // Substitui WAAccount após F10. Sem campos Evolution per-account — use appconfig global.
 type AccountV2 struct {
-	ID                  int64   `db:"id"                   json:"id"`
-	Phone               string  `db:"phone"                json:"phone"`
-	ModemID             int64   `db:"modem_id"             json:"modem_id"`
-	Status              string  `db:"status"               json:"status"` // warming|backup|primary|quarantine|banned
-	DailySendQuota      int     `db:"daily_send_quota"     json:"daily_send_quota"`
-	LastSentAt          NullTime `db:"last_sent_at"        json:"last_sent_at,omitempty"`
-	ConsecutiveFailures int     `db:"consecutive_failures" json:"consecutive_failures"`
+	ID                  int64    `db:"id"                   json:"id"`
+	Phone               string   `db:"phone"                json:"phone"`
+	Nickname            string   `db:"nickname"             json:"nickname"`
+	ModemID             int64    `db:"modem_id"             json:"modem_id"`
+	Status              string   `db:"status"               json:"status"` // warming|backup|primary|quarantine|banned
+	DailySendQuota      int      `db:"daily_send_quota"     json:"daily_send_quota"`
+	LastSentAt          NullTime `db:"last_sent_at"         json:"last_sent_at,omitempty"`
+	ConsecutiveFailures int      `db:"consecutive_failures" json:"consecutive_failures"`
 }
 
 // IsActive returns true when the account is operational (not banned or quarantined).

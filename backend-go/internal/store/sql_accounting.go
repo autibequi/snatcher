@@ -252,16 +252,16 @@ func (s *SQLStore) GetAccountV2(id int64) (models.AccountV2, error) {
 }
 
 // CreateAccountV2 insere uma nova conta WA na tabela accounts.
-func (s *SQLStore) CreateAccountV2(phone string, modemID int64, quota int) (int64, error) {
+func (s *SQLStore) CreateAccountV2(phone, nickname string, modemID int64, quota int) (int64, error) {
 	if quota <= 0 {
 		quota = 20
 	}
 	var id int64
 	err := s.db.QueryRowx(`
-		INSERT INTO accounts (phone, modem_id, status, daily_send_quota)
-		VALUES ($1, $2, 'primary', $3)
+		INSERT INTO accounts (phone, nickname, modem_id, status, daily_send_quota)
+		VALUES ($1, $2, $3, 'primary', $4)
 		RETURNING id
-	`, phone, modemID, quota).Scan(&id)
+	`, phone, nickname, modemID, quota).Scan(&id)
 	return id, err
 }
 

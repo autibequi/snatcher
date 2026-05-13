@@ -25,14 +25,15 @@ func (h *AccountsV2Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Phone string `json:"phone"`
-		Quota int    `json:"daily_send_quota"`
+		Phone    string `json:"phone"`
+		Nickname string `json:"nickname"`
+		Quota    int    `json:"daily_send_quota"`
 	}
 	if err := decodeBody(r, &req); err != nil || req.Phone == "" {
 		writeErr(w, http.StatusBadRequest, "phone obrigatório")
 		return
 	}
-	id, err := h.store.CreateAccountV2(req.Phone, modemID, req.Quota)
+	id, err := h.store.CreateAccountV2(req.Phone, req.Nickname, modemID, req.Quota)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar conta: "+err.Error())
 		return
