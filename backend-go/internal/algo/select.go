@@ -31,6 +31,7 @@ func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID int64, category
 		      (SELECT current_value FROM tunable_parameters
 		       WHERE param_name = 'quality_threshold' AND scope_type = 'global'),
 		      0.4)
+		  AND ($2::bigint IS NULL OR c.category_id = $2)
 		  AND NOT EXISTS (
 		      SELECT 1 FROM group_sent_history h
 		      WHERE h.group_id = $1
@@ -45,7 +46,7 @@ func selectTopForGroup(ctx context.Context, db *sqlx.DB, groupID int64, category
 		  )
 		ORDER BY c.quality_score DESC
 		LIMIT 1
-	`, groupID)
+	`, groupID, categoryID)
 	if err != nil {
 		return item, 0, false
 	}

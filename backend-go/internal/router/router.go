@@ -226,6 +226,16 @@ func Build(
 
 		// Coverage (multi-WA)
 
+		// Channels v2 — agrupadores com config de produto
+		chV2 := adminhnd.NewChannelsV2Handler(st)
+		r.Get("/api/channels", chV2.List)
+		r.Post("/api/channels", chV2.Create)
+		r.Get("/api/channels/{id}", chV2.Get)
+		r.Patch("/api/channels/{id}", chV2.Update)
+		r.Delete("/api/channels/{id}", chV2.Delete)
+		r.Post("/api/channels/{id}/groups/{groupId}", chV2.LinkGroup)
+		r.Delete("/api/channels/{id}/groups/{groupId}", chV2.UnlinkGroup)
+
 		// ReDesign: Groups
 		r.Get("/api/groups", groups.List)
 		r.Post("/api/groups", groups.Create)

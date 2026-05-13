@@ -37,6 +37,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Distribuição',
     items: [
+      { to: '/channels',        label: 'Canais',         icon: '📺' },
       { to: '/groups',          label: 'Grupos',         icon: '👥' },
       { to: '/admin/templates', label: 'Templates',      icon: '💬' },
       { to: '/affiliates',      label: 'Afiliados',      icon: '💰' },

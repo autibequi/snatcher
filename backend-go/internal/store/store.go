@@ -255,4 +255,15 @@ type Store interface {
 	GetCatalogItemByDedupKey(dedupKey string) (CatalogV2Item, bool, error)
 	GetCatalogItemByURL(canonicalURL string) (CatalogV2Item, bool, error)
 	ListCatalogV2ForMatch(limit int) ([]CatalogV2Item, error)
+
+	// ChannelV2
+	ListChannelsV2() ([]models.ChannelV2, error)
+	GetChannelV2(id int64) (models.ChannelV2, error)
+	CreateChannelV2(c models.ChannelV2) (int64, error)
+	UpdateChannelV2(c models.ChannelV2) error
+	DeleteChannelV2(id int64) error
+	// Grupos vinculados
+	ListGroupsByChannel(channelID int64) ([]models.RedesignGroup, error)
+	SetGroupChannel(groupID, channelID int64) error
+	UnsetGroupChannel(groupID int64) error
 }

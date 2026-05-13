@@ -101,6 +101,7 @@ const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
 const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
+const Channels = lazy(() => import('./pages/Channels'))
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
   : null
@@ -202,8 +203,7 @@ export default function App() {
               <Route path="admin/alerts" element={<Navigate to="/settings/alerts" replace />} />
               {/* Audit migrado para Activity */}
               <Route path="admin/audit" element={<Navigate to="/activity?tab=audit" replace />} />
-              <Route path="channels" element={<Navigate to="/admin/senders" replace />} />
-              <Route path="channels/*" element={<Navigate to="/admin/senders" replace />} />
+              <Route path="channels" element={<Channels />} />
               <Route path="catalog" element={<Navigate to="/admin/catalog-canonical" replace />} />
               <Route path="curation" element={<Navigate to="/admin/catalog-canonical" replace />} />
               <Route path="accounts" element={<Navigate to="/admin/senders" replace />} />
