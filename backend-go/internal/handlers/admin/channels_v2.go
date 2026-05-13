@@ -147,3 +147,43 @@ func (h *ChannelsV2Handler) UnlinkGroup(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// GetWeights retorna os pesos de categoria do canal.
+func (h *ChannelsV2Handler) GetWeights(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	weights, err := h.store.ListChannelCategoryWeights(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao buscar pesos")
+		return
+	}
+	if weights == nil {
+		weights = []models.ChannelCategoryWeight{}
+	}
+	writeJSON(w, http.StatusOK, weights)
+}
+
+// SetWeights salva os pesos de categoria do canal (substitui todos).
+func (h *ChannelsV2Handler) SetWeights(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var req []models.ChannelCategoryWeight
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "json inválido")
+		return
+	}
+	for i := range req {
+		req[i].ChannelID = id
+	}
+	if err := h.store.SetChannelCategoryWeights(id, req); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao salvar pesos")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}

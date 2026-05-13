@@ -50,3 +50,35 @@ func (s *SQLStore) UnsetGroupChannel(groupID int64) error {
 	_, err := s.db.Exec(`UPDATE groups SET channel_id=NULL WHERE id=$1`, groupID)
 	return err
 }
+
+func (s *SQLStore) ListChannelCategoryWeights(channelID int64) ([]models.ChannelCategoryWeight, error) {
+	var out []models.ChannelCategoryWeight
+	err := s.db.Select(&out, `
+		SELECT channel_id, category_id, weight FROM channel_category_weights
+		WHERE channel_id=$1 ORDER BY category_id
+	`, channelID)
+	return out, err
+}
+
+func (s *SQLStore) SetChannelCategoryWeights(channelID int64, weights []models.ChannelCategoryWeight) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM channel_category_weights WHERE channel_id=$1`, channelID); err != nil {
+		return err
+	}
+	for _, w := range weights {
+		if w.Weight <= 0 {
+			continue
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO channel_category_weights (channel_id, category_id, weight) VALUES ($1,$2,$3)
+			ON CONFLICT (channel_id, category_id) DO UPDATE SET weight=$3
+		`, channelID, w.CategoryID, w.Weight); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

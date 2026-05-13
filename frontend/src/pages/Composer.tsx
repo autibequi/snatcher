@@ -112,7 +112,16 @@ function TemplateDropdown({ onSelect }: { onSelect: (body: string) => void }) {
 interface Channel {
   id: number
   name: string
+  quality_threshold: number
+  daily_cap: number
+  active: boolean
+}
+
+interface ChannelGroup {
+  id: number
+  name: string
   platform: string
+  whatsapp_jid?: string
 }
 
 interface DispatchTarget {
@@ -369,8 +378,12 @@ export default function Composer() {
 
   const loadingPreview = false
 
-  // Canal v1 removido em F12 — endpoint de canais não existe mais. Seletor desabilitado.
-  const allChannels: Channel[] = []
+  const { data: allChannels = [] } = useQuery<Channel[]>({
+    queryKey: ['channels-for-composer'],
+    queryFn: () => apiClient.get('/api/channels').then(r => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+    staleTime: 30_000,
+    select: (data) => data.filter(c => c.active),
+  })
 
   // Seleção local sincronizada com query string ?targets=
   const [selectedTargets, setSelectedTargets] = React.useState<number[]>(targetIds)
@@ -504,22 +517,30 @@ export default function Composer() {
   ])
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
-    mutationFn: (targets) => {
+    mutationFn: async (targets) => {
       const link = affiliateUrl || ''
-      const resolvedAffiliateLink = affiliateLinkFromQuery || affiliateUrl || ''
       let finalText = applyComposeVariables(text, link)
       if (link && !finalText.includes(link)) finalText = `${finalText}\n\n${link}`
-      return apiClient
-        .post<DispatchResponse>('/api/dispatches', {
-          product_id: productIds[0] ?? undefined,
-          message: { text: finalText, media_url: productImage || undefined },
-          affiliate_link: resolvedAffiliateLink,
-          scheduled_for: scheduledFor || undefined,
-          targets,
-        } as DispatchPayload & { scheduled_for?: string })
-        .then((r) => r.data)
+
+      // Expande canais → grupos e dispara via endpoint manual
+      const channelIds = targets.map(t => t.channel_id)
+      const groupIds: number[] = []
+      for (const cid of channelIds) {
+        const detail = await apiClient.get(`/api/channels/${cid}`).then(r => r.data).catch(() => null)
+        if (detail?.groups) {
+          for (const g of detail.groups) groupIds.push(g.id)
+        }
+      }
+      if (groupIds.length === 0) throw new Error('Nenhum grupo vinculado aos canais selecionados')
+
+      await apiClient.post('/api/dispatch/manual', {
+        group_ids: groupIds,
+        message: finalText,
+        image_url: productImage || undefined,
+      })
+      return { id: Date.now() }
     },
-    onSuccess: (data) => navigate(`/logs?dispatchId=${data.id}`),
+    onSuccess: () => navigate('/activity'),
     onError: (err: any) => {
       const status = err?.response?.status
       const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
@@ -952,7 +973,6 @@ export default function Composer() {
                             <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${isSelected ? 'translate-x-4' : 'translate-x-0'}`} />
                           </span>
                           <span className="flex-1 min-w-0 truncate text-sm text-fg font-medium">{ch.name}</span>
-                          <PlatformPill platform={ch.platform ?? 'whatsapp'} />
                         </button>
                       )
                     })}

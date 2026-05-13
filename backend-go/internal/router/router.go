@@ -235,6 +235,8 @@ func Build(
 		r.Delete("/api/channels/{id}", chV2.Delete)
 		r.Post("/api/channels/{id}/groups/{groupId}", chV2.LinkGroup)
 		r.Delete("/api/channels/{id}/groups/{groupId}", chV2.UnlinkGroup)
+		r.Get("/api/channels/{id}/weights", chV2.GetWeights)
+		r.Put("/api/channels/{id}/weights", chV2.SetWeights)
 
 		// ReDesign: Groups
 		r.Get("/api/groups", groups.List)
@@ -417,6 +419,10 @@ func Build(
 
 		danger := adminhnd.NewDangerHandler(db, st)
 		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
+
+		// Dispatch manual (Composer)
+		manualDispatch := adminhnd.NewManualDispatchHandler(st)
+		r.Post("/api/dispatch/manual", manualDispatch.Send)
 	})
 
 	return r

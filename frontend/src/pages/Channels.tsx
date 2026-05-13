@@ -51,6 +51,12 @@ interface Category {
   name: string
 }
 
+interface CategoryWeight {
+  channel_id: number
+  category_id: number
+  weight: number
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function platformBadge(platform: string) {
@@ -64,6 +70,113 @@ function platformBadge(platform: string) {
 function groupStatusBadge(status: string) {
   if (status === 'active') return <span className={statusChipSuccess}>ativo</span>
   return <span className={statusChipMuted}>{status}</span>
+}
+
+// ── Category Weight Sliders ───────────────────────────────────────────────────
+
+function CategoryWeightsEditor({
+  channelId,
+  categories,
+}: {
+  channelId: number
+  categories: Category[]
+}) {
+  const qc = useQueryClient()
+
+  const { data: savedWeights = [] } = useQuery<CategoryWeight[]>({
+    queryKey: ['channel-weights', channelId],
+    queryFn: () => authFetchJSON<CategoryWeight[]>(`/api/channels/${channelId}/weights`, []),
+    staleTime: 10_000,
+  })
+
+  const [weights, setWeights] = useState<Record<number, number>>({})
+  const initialized = Object.keys(weights).length > 0 || savedWeights.length > 0
+
+  // Inicializa com os pesos salvos quando carregam
+  const [synced, setSynced] = useState(false)
+  if (!synced && savedWeights.length > 0) {
+    const map: Record<number, number> = {}
+    savedWeights.forEach(w => { map[w.category_id] = w.weight })
+    setWeights(map)
+    setSynced(true)
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const payload = Object.entries(weights)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => ({ category_id: Number(k), weight: v }))
+      return authFetch(`/api/channels/${channelId}/weights`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['channel-weights', channelId] }),
+  })
+
+  const total = Object.values(weights).reduce((s, v) => s + v, 0)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-fg-2 uppercase tracking-wide">Categorias de produto</p>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-mono ${total > 100 ? 'text-danger' : total === 100 ? 'text-success' : 'text-fg-3'}`}>
+            {total}%
+          </span>
+          <Button
+            size="sm"
+            variant={total === 100 ? 'primary' : 'secondary'}
+            loading={saveMut.isPending}
+            onClick={() => saveMut.mutate()}
+          >
+            Salvar pesos
+          </Button>
+        </div>
+      </div>
+
+      {categories.length === 0 && (
+        <p className="text-xs text-fg-3">Nenhuma categoria cadastrada.</p>
+      )}
+
+      <div className="space-y-2">
+        {categories.map(cat => {
+          const val = weights[cat.id] ?? 0
+          return (
+            <div key={cat.id} className="flex items-center gap-3">
+              <span className="text-xs text-fg-2 w-32 flex-shrink-0 truncate">{cat.name}</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={val}
+                onChange={e => setWeights(prev => ({ ...prev, [cat.id]: Number(e.target.value) }))}
+                className="flex-1 accent-accent"
+              />
+              <span className="text-xs font-mono text-fg-2 w-10 text-right">{val}%</span>
+              {val > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setWeights(prev => ({ ...prev, [cat.id]: 0 }))}
+                  className="text-[10px] text-fg-3 hover:text-fg"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {total > 100 && (
+        <p className="text-xs text-danger">Total ultrapassa 100%. Reduza alguns pesos.</p>
+      )}
+      {total === 0 && initialized && (
+        <p className="text-xs text-fg-3">Sem categorias configuradas — o canal usará produtos de todas as categorias.</p>
+      )}
+    </div>
+  )
 }
 
 // ── Channel form ──────────────────────────────────────────────────────────────
@@ -264,11 +377,13 @@ function ChannelGroupsPanel({
 function ChannelCard({
   channel,
   allGroups,
+  categories,
   expanded,
   onToggleExpand,
 }: {
   channel: Channel & { groups_count?: number }
   allGroups: Group[]
+  categories: Category[]
   expanded: boolean
   onToggleExpand: () => void
 }) {
@@ -363,11 +478,14 @@ function ChannelCard({
       )}
 
       {expanded && !editing && (
-        <ChannelGroupsPanel
-          channelId={channel.id}
-          allGroups={allGroups}
-          onClose={onToggleExpand}
-        />
+        <>
+          <CategoryWeightsEditor channelId={channel.id} categories={categories} />
+          <ChannelGroupsPanel
+            channelId={channel.id}
+            allGroups={allGroups}
+            onClose={onToggleExpand}
+          />
+        </>
       )}
     </div>
   )
@@ -457,7 +575,7 @@ export default function Channels() {
             <ChannelCard
               key={ch.id}
               channel={ch}
-              
+              categories={categories}
               allGroups={allGroups}
               expanded={expandedId === ch.id}
               onToggleExpand={() => toggleExpand(ch.id)}

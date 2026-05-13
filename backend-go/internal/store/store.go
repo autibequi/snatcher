@@ -266,4 +266,8 @@ type Store interface {
 	ListGroupsByChannel(channelID int64) ([]models.RedesignGroup, error)
 	SetGroupChannel(groupID, channelID int64) error
 	UnsetGroupChannel(groupID int64) error
+
+	// Pesos de categoria por canal
+	ListChannelCategoryWeights(channelID int64) ([]models.ChannelCategoryWeight, error)
+	SetChannelCategoryWeights(channelID int64, weights []models.ChannelCategoryWeight) error
 }
