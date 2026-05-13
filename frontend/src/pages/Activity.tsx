@@ -8,12 +8,13 @@ import { CrawlLogsTab } from './activity/CrawlLogsTab'
 import { JonfreyTab } from './activity/JonfreyTab'
 import { LLMTab } from './activity/LLMTab'
 import { LoopActionsTab } from './activity/LoopActionsTab'
+import { AuditTab } from './activity/AuditTab'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'crawl' | 'jonfrey' | 'llm' | 'loops'
+type ActivityTab = 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
 
-const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'llm', 'loops'])
+const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'loops', 'llm', 'audit'])
 
 function resolveTab(raw: string | null): ActivityTab {
   if (!raw) return 'crawl'
@@ -27,6 +28,7 @@ const TAB_LIST = [
   { id: 'jonfrey', label: 'Jonfrey' },
   { id: 'loops',   label: 'Loops LLM' },
   { id: 'llm',     label: 'LLM' },
+  { id: 'audit',   label: 'Auditoria' },
 ] as const
 
 // ── Quick stats ───────────────────────────────────────────────────────────────
@@ -75,9 +77,17 @@ const JONFREY_STATUSES = [
   { value: 'skipped', label: 'Pulado' },
 ]
 
+const AUDIT_STATUSES = [
+  { value: '',             label: 'Todos' },
+  { value: 'llm_action',   label: 'Ação LLM' },
+  { value: 'system_pause', label: 'Pausa sistema' },
+  { value: 'ban_event',    label: 'Ban detectado' },
+]
+
 function statusOptionsForTab(tab: ActivityTab) {
-  if (tab === 'crawl') return CRAWL_STATUSES
+  if (tab === 'crawl')  return CRAWL_STATUSES
   if (tab === 'jonfrey') return JONFREY_STATUSES
+  if (tab === 'audit')  return AUDIT_STATUSES
   return []
 }
 
@@ -233,6 +243,9 @@ export default function Activity() {
         )}
         {tab === 'llm' && (
           <LLMTab q={q} />
+        )}
+        {tab === 'audit' && (
+          <AuditTab q={q} status={status} />
         )}
       </div>
     </div>

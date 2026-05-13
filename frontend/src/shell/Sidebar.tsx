@@ -59,7 +59,6 @@ const NAV: NavGroup[] = [
   {
     label: 'Sistema',
     items: [
-      { to: '/admin/audit',   label: 'Audit Timeline', icon: '📜' },
       { to: '/settings',      label: 'Configurações',  icon: '⚙️' },
       { to: '/manual',        label: 'Manual',         icon: '📚' },
     ],

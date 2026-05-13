@@ -196,6 +196,8 @@ export default function App() {
               <Route path="admin/loops" element={<Navigate to="/settings/loops" replace />} />
               <Route path="admin/params" element={<Navigate to="/settings/params" replace />} />
               <Route path="admin/alerts" element={<Navigate to="/settings/alerts" replace />} />
+              {/* Audit migrado para Activity */}
+              <Route path="admin/audit" element={<Navigate to="/activity?tab=audit" replace />} />
               <Route path="channels" element={<Navigate to="/admin/senders" replace />} />
               <Route path="channels/*" element={<Navigate to="/admin/senders" replace />} />
               <Route path="catalog" element={<Navigate to="/admin/catalog-canonical" replace />} />

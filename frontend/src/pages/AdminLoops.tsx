@@ -149,81 +149,63 @@ export default function AdminLoops({ embedded = false }: { embedded?: boolean })
     <div className={embedded ? 'space-y-3' : pageContainer}>
       {!embedded && <h1 className="text-2xl font-bold mb-2">Loops LLM ({ALL_LOOPS.length})</h1>}
 
-      <div className="mb-5 bg-accent-soft border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
-        Estes {ALL_LOOPS.length} loops ajustam o snatcher de forma autônoma.{' '}
-        <strong>active</strong> = aplica direto.{' '}
-        <strong>suggesting</strong> = só publica em /suggestions-l4.{' '}
-        <strong>disabled</strong> = no-op.
-      </div>
+      <p className="text-xs text-fg-3 mb-4">
+        Cada loop roda de forma autônoma. <strong className="text-fg-2">Ativo</strong> = aplica direto. <strong className="text-fg-2">Sugestão</strong> = só publica para revisão. <strong className="text-fg-2">Desligado</strong> = no-op.
+      </p>
 
       {loading && <p className="text-fg-3">Carregando...</p>}
 
       {!loading && (
-        <div className="space-y-3">
+        <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
           {rows.map(loop => (
-            <div key={loop.loop_name} className="bg-surface border rounded-lg p-4 shadow-sm">
+            <div key={loop.loop_name} className="bg-surface px-4 py-3">
               {/* Main row */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className="text-sm font-semibold flex-shrink-0 cursor-help"
-                  title={loopDesc(loop.loop_name) ? `${loopDesc(loop.loop_name)}\n(${loop.loop_name})` : loop.loop_name}
-                >
-                  {loopLabel(loop.loop_name)}
-                  <span className="font-mono font-normal text-fg-3 text-[10px] ml-1.5">{loop.loop_name}</span>
-                </span>
-                <StatusBadge status={loop.status} />
-                <span className="text-sm text-fg-2">
-                  Strikes 30d:{' '}
-                  <strong className={loop.strikes_30d > 0 ? 'text-red-600' : ''}>
-                    {loop.strikes_30d}
-                  </strong>
-                </span>
-                <span className="text-sm text-fg-2">
-                  Ações 7d: <strong>{loop.actions_last_7d}</strong>
-                </span>
-                <span className="text-sm text-fg-2">
-                  Sugestões: <strong>{loop.suggestions_open}</strong>
-                </span>
-                <span className="text-xs text-fg-4">
-                  Última strike: {humanize(loop.last_strike_at)}
-                </span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <span
+                    className="text-sm font-medium text-fg cursor-help"
+                    title={loopDesc(loop.loop_name) ? `${loopDesc(loop.loop_name)}\n(${loop.loop_name})` : loop.loop_name}
+                  >
+                    {loopLabel(loop.loop_name)}
+                  </span>
+                  <span className="font-mono text-fg-3 text-[10px] ml-2">{loop.loop_name}</span>
+                </div>
 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-1 ml-auto">
+                <div className="flex items-center gap-3 flex-shrink-0 text-xs text-fg-3">
+                  {loop.strikes_30d > 0 && (
+                    <span className="text-danger font-medium">{loop.strikes_30d} strike{loop.strikes_30d !== 1 ? 's' : ''}</span>
+                  )}
+                  {loop.actions_last_7d > 0 && (
+                    <span>{loop.actions_last_7d} ações/7d</span>
+                  )}
+                  {loop.suggestions_open > 0 && (
+                    <span className="text-warning">{loop.suggestions_open} sugestão{loop.suggestions_open !== 1 ? 'ões' : ''}</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <select
+                    value={loop.status}
+                    onChange={e => setStatus(loop.loop_name, e.target.value)}
+                    className="text-xs border border-border rounded px-2 py-1 bg-surface text-fg focus:outline-none focus:border-accent"
+                  >
+                    <option value="active">Ativo</option>
+                    <option value="suggesting">Sugestão</option>
+                    <option value="disabled">Desligado</option>
+                  </select>
+                  <StatusBadge status={loop.status} />
                   <button
                     onClick={() => toggleExpand(loop.loop_name)}
-                    className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-3 rounded font-medium"
+                    className="text-xs text-fg-3 hover:text-fg underline"
                   >
-                    {expanded[loop.loop_name] ? 'Ocultar ações' : 'Ver ações'}
+                    {expanded[loop.loop_name] ? 'Fechar' : 'Ações'}
                   </button>
-                  <button
-                    onClick={() => resetStrikes(loop.loop_name)}
-                    className="px-3 py-1 text-xs bg-warning-soft hover:bg-orange-200 text-warning rounded font-medium"
-                  >
-                    Reset strikes
-                  </button>
-                  {loop.status !== 'active' && (
+                  {loop.strikes_30d > 0 && (
                     <button
-                      onClick={() => setStatus(loop.loop_name, 'active')}
-                      className="px-3 py-1 text-xs bg-success-soft hover:bg-green-200 text-success rounded font-medium"
+                      onClick={() => resetStrikes(loop.loop_name)}
+                      className="text-xs text-fg-3 hover:text-fg underline"
                     >
-                      Set Active
-                    </button>
-                  )}
-                  {loop.status !== 'suggesting' && (
-                    <button
-                      onClick={() => setStatus(loop.loop_name, 'suggesting')}
-                      className="px-3 py-1 text-xs bg-warning-soft hover:bg-yellow-200 text-warning rounded font-medium"
-                    >
-                      Set Suggesting
-                    </button>
-                  )}
-                  {loop.status !== 'disabled' && (
-                    <button
-                      onClick={() => setStatus(loop.loop_name, 'disabled')}
-                      className="px-3 py-1 text-xs bg-danger-soft hover:bg-red-200 text-danger rounded font-medium"
-                    >
-                      Disable
+                      Zerar strikes
                     </button>
                   )}
                 </div>
