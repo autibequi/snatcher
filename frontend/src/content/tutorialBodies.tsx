@@ -257,15 +257,25 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   catalog: () => (
     <Shell>
-      <Sec title="Catálogo">
+      <Sec title="O que é o Catálogo canônico">
         <Ul>
-          <li>É a fonte única de produtos para busca, composer e auto-match.</li>
-          <li>Filtros e estado (ativo, preço, origem) afetam quem entra na prévia do match.</li>
+          <li>Fonte única de produtos para o Score Engine, Composer e métricas. Rota: <code>/admin/catalog-canonical</code>.</li>
+          <li>Cada produto tem <code>dedup_key</code> único (source:id) — upsert idempotente: mesmo produto scrapado N vezes = 1 linha.</li>
+          <li>Campos críticos pro scoring: <code>quality_score</code>, <code>send_ready</code>, <code>canonical_url_alive</code>, <code>last_price_drop_at</code>.</li>
+        </Ul>
+      </Sec>
+      <Sec title="send_ready e quality_score">
+        <Ul>
+          <li><code>send_ready = true</code> + <code>canonical_url_alive = true</code> + <code>quality_score &ge; threshold</code> = produto elegível para envio.</li>
+          <li>Quality score calculado automaticamente: imagem (+0.30), preço (+0.20), título (+0.10), desconto (até +0.40), boost 1.5× nas 24h pós queda de preço.</li>
+          <li>Job <code>recompute_quality_scores</code> roda a cada hora cobrindo produtos atualizados recentemente.</li>
         </Ul>
       </Sec>
       <Sec title="Dicas">
         <Ul>
-          <li>Imagens e nome canônico ruins prejudicam preview e conversão — corrija na origem ou manualmente.</li>
+          <li>Produto sem imagem perde 0.30 de score — crawlers ruins que não capturam imagem reduzem volumetria de envio.</li>
+          <li>URL morta (<code>canonical_url_alive = false</code>) bloqueia o produto mesmo com score alto — job de ping testa periodicamente.</li>
+          <li>Forçar <code>send_ready</code> manualmente só em debug; crawl normal seta automaticamente.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -275,18 +285,22 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="Grupos WhatsApp / Telegram">
         <Ul>
-          <li>
-            Grupos importados das contas — vincule-os a canais no detalhe de cada canal ou do grupo.
-          </li>
-          <li>
-            Importe grupos a partir das <strong className="text-fg">Contas</strong> conectadas; cada grupo físico pode aparecer em vários canais lógicos.
-          </li>
-          <li>Vincule grupos aos canais certos — sem destino não há envio.</li>
+          <li>Tabela <code>groups</code> — cada linha é um grupo físico WA/TG vinculado a um <b>canal lógico</b> em <code>channel_id</code>.</li>
+          <li>Cada grupo tem seu próprio <code>daily_msg_cap</code>, <code>timezone</code>, <code>whatsapp_jid</code>.</li>
+          <li>Importe da conta primary em <strong className="text-fg">/admin/senders</strong> após conectar WA.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Shortlinks por grupo">
+        <Ul>
+          <li>Desde a migração <code>group_shortlinks</code>, cada envio gera um <code>short_id</code> único por <code>(grupo, produto)</code>. Cliques são atribuídos deterministicamente ao grupo original — não ao "último que mandou".</li>
+          <li>Isso torna CTR e virality ratio confiáveis em <strong className="text-fg">/admin/metrics</strong>.</li>
         </Ul>
       </Sec>
       <Sec title="Organização">
         <Ul>
-          <li>Mantenha nomes reconhecíveis e remova grupos mortos para não confundir relatórios.</li>
+          <li>Grupos sem <code>whatsapp_jid</code> não recebem disparos — importe via /admin/senders.</li>
+          <li>Grupos banidos ou com status <code>banned</code> ficam fora do tick automaticamente.</li>
+          <li>Virality ratio alto em <strong className="text-fg">Métricas → Virality</strong> = grupo cujo link viraliza fora; boa métrica de alcance, não de qualidade do grupo.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -294,27 +308,32 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   accounts: () => (
     <Shell>
-      <Sec title="Contas conectadas">
-        <Ul>
-          <li>WhatsApp via QR; Telegram conforme fluxo do provedor. Sem conta ativa não há envio.</li>
-          <li>Status deve chegar a conectado antes de confiar em disparos ou imports de grupo.</li>
-        </Ul>
-      </Sec>
-      <Sec title="Segurança">
-        <Ul>
-          <li>Limite contas por política interna; troque sessão se suspeitar de ban ou compromise.</li>
-        </Ul>
+      <Sec title="Tutorial movido">
+        <p className="text-fg-2">
+          "Contas conectadas" é agora <strong className="text-fg">Modems &amp; Senders</strong> em <code>/admin/senders</code>.
+          Veja o tutorial <strong className="text-fg">Modems &amp; Senders</strong> para o conteúdo atualizado.
+        </p>
       </Sec>
     </Shell>
   ),
 
   analytics: () => (
     <Shell>
-      <Sec title="Insights de cliques">
+      <Sec title="Métricas & Insights — 4 abas">
+        <p className="text-fg-2">Rota: <code>/admin/metrics</code>. Cada aba cobre uma dimensão diferente do sistema:</p>
         <Ul>
-          <li>Métricas de engajamento e performance de links.</li>
-          <li>Mede interesse em links rastreados e ajuda a comparar canais/ofertas.</li>
-          <li>Use para decidir horários e tipos de produto, não como única métrica de receita.</li>
+          <li><b>Learned Weights</b> — CTR 30d e EPC por (grupo, categoria, source). Filtro por <code>min_samples</code>. Use para entender o que o sistema aprendeu e por que escolhe certos produtos.</li>
+          <li><b>Daily Metrics</b> — enviados, cliques e conversões por dia, com filtro de métrica e janela de tempo. Bom para tendências e sazonalidade.</li>
+          <li><b>A/B Tests</b> — experimentos ativos em tunables: proposta vs atual, métrica objetivo, peso % de exposição e status (running / promoted / rolled_back).</li>
+          <li><b>Virality</b> — por grupo: clicks totais, esperado por membros, excedente viral e ratio. <b>Observacional apenas</b> — cliques excedentes já são descartados do learning pelo cap <code>click_cap_per_member</code>.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Como usar">
+        <Ul>
+          <li><b>Confidence baixa</b> (&lt;0.25) em Learned Weights = grupo com poucos dados; o sistema usa o canal-mãe como fallback.</li>
+          <li><b>EPC alto + samples baixo</b> = outlier — pode ser produto de nicho caro ou ruído.</li>
+          <li><b>Virality ratio &gt; 50%</b> = mais da metade dos cliques vêm de fora. Positivo para awareness; neutro para o scoring.</li>
+          <li>A/B Tests promovidos atualizam automaticamente o tunable em <code>tunable_parameters</code>.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -324,8 +343,9 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="Links públicos">
         <Ul>
-          <li>Páginas e redirecionamentos estáveis para divulgar entrada em grupos ou campanhas.</li>
-          <li>Cadeias de fallback garantem que o utilizador chegue a um grupo com vaga quando possível.</li>
+          <li>Páginas estáticas para divulgar entrada em grupos — URL fixa, independente do estado dos grupos.</li>
+          <li>Cadeias de fallback: se o grupo alvo está cheio ou banido, redireciona para o próximo disponível.</li>
+          <li>Útil para bio de Instagram, stories e campanhas externas que precisam de URL estável.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -333,10 +353,11 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   clusters: () => (
     <Shell>
-      <Sec title="Clusters">
+      <Sec title="Clusters de canais">
         <Ul>
-          <li>Agrupa canais por comportamento de audiência para comparar desempenho e testes.</li>
-          <li>Recomputar após mudanças grandes de público ou oferta.</li>
+          <li>Agrupa canais com comportamento de audiência similar — útil para comparar performance A/B entre segmentos.</li>
+          <li>Algoritmo de clustering roda sobre métricas de CTR, EPC e categoria dos últimos 30d.</li>
+          <li>Recompute após mudanças grandes de público (novos grupos, troca de categoria) para clusters não ficarem stale.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -344,39 +365,27 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   logs: () => (
     <Shell>
-      <Sec title="Logs">
-        <Ul>
-          <li>Primeiro lugar para filas, disparos, erros de adapter e jobs.</li>
-          <li>
-            Na tab <strong className="text-fg">Disparos</strong>: filtros por <strong className="text-fg">estado</strong>, datas, conta WA; a coluna mostra canal/grupo em cada linha.
-            Abra uma linha para ver detalhe do disparo.
-          </li>
-          <li>
-            Há tabs separadas para <strong className="text-fg">Crawlers</strong>, <strong className="text-fg">Jonfrey</strong>, <strong className="text-fg">Matches</strong>, etc.
-          </li>
-          <li>
-            Na tab <strong className="text-fg">Jonfrey</strong>, a auditoria do assistente é a mesma que em <strong className="text-fg">Auto disparos → Jonfrey</strong>.
-          </li>
-          <li>
-            Atalhos <code className="text-xs bg-surface-2 px-1 rounded">/logs?dispatchId=…</code> (ex.: a partir de Auto disparos ou após compor) abrem o detalhe desse disparo.
-          </li>
-        </Ul>
-      </Sec>
-      <Sec title="Suporte">
-        <Ul>
-          <li>Em falhas intermitentes, cruze horário do log com mudanças recentes em canais ou contas.</li>
-        </Ul>
+      <Sec title="Página renomeada para Atividade">
+        <p className="text-fg-2">
+          <code>/logs</code> redireciona para <strong className="text-fg">/activity</strong>. Veja o tutorial <strong className="text-fg">Atividade</strong>.
+        </p>
       </Sec>
     </Shell>
   ),
 
   affiliates: () => (
     <Shell>
-      <Sec title="Afiliados">
+      <Sec title="Programas de afiliados">
         <Ul>
-          <li>Credenciais e tags por programa. Sem isso, o link curto não comissiona.</li>
-          <li>Configure programas e IDs por marketplace para links curtos comissionarem certo.</li>
-          <li>Composer e automações dependem disso para não mandar link "seco".</li>
+          <li>Credenciais e IDs por marketplace (Amazon, Magalu, Shopee, etc). Sem configurar, o link sai "seco" — sem comissionamento.</li>
+          <li>Cada programa tem <code>marketplace</code>, <code>credentials</code> (JSONB) e flag <code>active</code>.</li>
+          <li>Sender resolve o link afiliado antes de montar a mensagem — usa domínio de redirect + shortlink por grupo.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Verificação">
+        <Ul>
+          <li>Clique no shortlink gerado manualmente e confira se a URL final contém seu tag afiliado.</li>
+          <li>Conversões rastreadas aparecem em <strong className="text-fg">/admin/conversions</strong> após postback do marketplace.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -384,11 +393,17 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   taxonomy: () => (
     <Shell>
-      <Sec title="Taxonomia">
+      <Sec title="Taxonomia de categorias">
         <Ul>
-          <li>Categorias e marcas usadas no Match e detectadas pelo crawler.</li>
-          <li>Estrutura de categorias e padrões que alimentam match, filtros e relatórios.</li>
-          <li>Mantenha estável: renomeações em massa podem exigir reprocessamento.</li>
+          <li>Categorias (<code>categories</code>) alimentam: sliders do canal, affinity por grupo, A/B de template, CTR/EPC por categoria e Thompson Sampling.</li>
+          <li>Seeds padrão: <code>eletronico</code>, <code>gaming</code>, <code>casa</code>, <code>moda</code>, <code>geral</code>. Adicione via interface.</li>
+          <li>Marcas e padrões (keywords) usados pelos crawlers para detectar categoria do produto automaticamente.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Cuidados">
+        <Ul>
+          <li>Renomear categoria não migra <code>learned_weights</code> / <code>bandit_arms</code> — dados históricos ficam orphans. Prefira criar nova categoria e migrar gradualmente.</li>
+          <li>Categoria com poucos produtos tende a ter bandit arm com baixa confidence — agrupa com categoria próxima ou usa <code>geral</code> como fallback.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -396,10 +411,21 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   settings: () => (
     <Shell>
-      <Sec title="Configurações">
+      <Sec title="Configurações — sub-rotas">
+        <p className="text-fg-2">Cada aba de <code>/settings</code> tem escopo diferente:</p>
         <Ul>
-          <li>Preferências da conta, integrações LLM, limites de envio e identidade de links públicos.</li>
-          <li>Alterações aqui podem afetar Jonfrey, composer e automações — teste em janela controlada.</li>
+          <li><b>/settings</b> (raiz) — configuração geral da conta, LLM e identidade de links públicos.</li>
+          <li><b>/settings/loops</b> — os 9 loops LLM: toggle on/off, modo (suggesting/active), frequência. Ver tutorial <strong className="text-fg">Loops LLM</strong>.</li>
+          <li><b>/settings/params</b> — alias de <code>/admin/params</code> — os ~25 tunables do sistema. Ver tutorial <strong className="text-fg">Parâmetros tunáveis</strong>.</li>
+          <li><b>/admin/senders</b> — Modems &amp; contas WA. Ver tutorial <strong className="text-fg">Modems &amp; Senders</strong>.</li>
+          <li><b>/admin/alerts</b> — regras de alerta (cota, ban, falha). Dispara notificação no dashboard.</li>
+          <li><b>/admin/audit</b> — log de ações do sistema, chamadas LLM, erros de jobs.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Atenção">
+        <Ul>
+          <li>Alterações em LLM key afetam todos os 9 loops imediatamente.</li>
+          <li>Desativar <code>use_algo_tick</code> em /settings/params para o Score Engine — use com cuidado em produção.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -407,12 +433,270 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   match: () => (
     <Shell>
-      <Sec title="Match">
+      <Sec title="Conceito incorporado ao Score Engine">
+        <p className="text-fg-2">
+          A página <code>/match</code> redireciona para <strong className="text-fg">/settings/params</strong>.
+          O conceito de "match produto↔canal" foi incorporado à fórmula composta do Score Engine — não existe mais como tela separada.
+        </p>
+        <p className="text-fg-2 mt-3">Para entender por que um produto foi escolhido para um grupo:</p>
         <Ul>
-          <li>Escolha um produto. O sistema mostra <strong className="text-fg">quais grupos têm fit</strong> — e por quê.</li>
-          <li>Visualiza scoring produto↔canal e ajuda a entender por que algo não disparou.</li>
-          <li>Ajuste audiência do canal ou dados do produto (categoria, marca, preço) conforme as dicas da própria tela.</li>
+          <li><strong className="text-fg">/manual/scoring</strong> — explicação completa da fórmula e dos 7 sinais.</li>
+          <li><strong className="text-fg">/admin/metrics → Learned Weights</strong> — CTR/EPC reais por (grupo, categoria).</li>
+          <li><strong className="text-fg">/channels</strong> — sliders de categoria do canal.</li>
+          <li><strong className="text-fg">/admin/params</strong> — pesos dos 7 termos (<code>score_weight_*</code>).</li>
         </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  // ── Tutoriais novos ────────────────────────────────────────────────────────
+
+  activity: () => (
+    <Shell>
+      <Sec title="Atividade — histórico de disparos">
+        <Ul>
+          <li>Substituiu a página <code>/logs</code>. Mostra todos os envios: status, grupo, produto, modem, horário.</li>
+          <li>Filtre por <b>status</b> (sent, failed, pending), <b>grupo</b>, <b>conta WA</b> ou <b>intervalo de datas</b>.</li>
+          <li>Clique em uma linha para ver detalhe: template usado, shortlink, imagem, erro se houver.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Status mais comuns">
+        <Ul>
+          <li><code>sent</code> — Evolution API confirmou envio com sucesso.</li>
+          <li><code>failed</code> — erro ao enviar (conta desconectada, grupo banido, timeout Evolution).</li>
+          <li><code>pending</code> — na <code>send_queue</code>, aguardando worker.</li>
+          <li><code>sending</code> — worker pegou, enviando agora.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Diagnóstico de falhas">
+        <Ul>
+          <li>Muitos <code>failed</code> da mesma conta → sessão WA caiu; reconecte em <strong className="text-fg">/admin/senders</strong>.</li>
+          <li>Muitos <code>pending</code> acumulando → worker não está rodando ou modem travado.</li>
+          <li>Falhas intermitentes → olhe o error_code na linha; <code>ECONNREFUSED</code> = Evolution API offline.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  insights: () => (
+    <Shell>
+      <Sec title="Insights L4 — sugestões dos loops LLM">
+        <Ul>
+          <li>Fila de sugestões geradas pelos loops LLM (principalmente <code>affinity_adjust</code>, <code>cooldown_suggest</code>, <code>cap_suggest</code>).</li>
+          <li>Cada sugestão tem: tipo, argumento, raciocínio do modelo, status (<code>pending / accepted / rejected</code>).</li>
+          <li>Em modo <b>suggesting</b> (default), loops produzem sugestões aqui mas não agem. Em modo <b>active</b>, agem automaticamente.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Uso">
+        <Ul>
+          <li>Revise semanalmente; sugestões antigas rejeitadas se tornam stale (sistema pode parar de gerar se a fila encher).</li>
+          <li>Aceitar uma sugestão de tunable a aplica diretamente em <code>tunable_parameters</code>.</li>
+          <li>Logs de raciocínio ficam em <strong className="text-fg">/admin/audit</strong> — útil para entender por que o loop sugeriu algo.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  scrapers: () => (
+    <Shell>
+      <Sec title="Extratores por marketplace">
+        <Ul>
+          <li>Configuração de como cada marketplace é raspado: seletores CSS, headers, rate limit, modo (shadow / produção).</li>
+          <li><b>Shadow mode</b>: extrator roda mas produtos vão para fila de revisão, não direto ao catálogo. Bom pra validar extrator novo sem poluir produção.</li>
+          <li><b>Promote</b>: converte shadow → produção quando validado.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Diferença de Crawlers">
+        <Ul>
+          <li><strong className="text-fg">Crawlers</strong> (<code>/crawlers</code>) = workers agendados que <em>disparam</em> o scrape (quando, de onde, com qual conta).</li>
+          <li><strong className="text-fg">Scrapers</strong> (<code>/admin/scrapers</code>) = <em>como</em> extrair de cada source — seletores e lógica de parsing.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Health">
+        <Ul>
+          <li>Coluna "Health" mostra % de produtos com imagem e categoria nas últimas 24h. Abaixo de 70% = scraper com problema.</li>
+          <li>Logs de extração em <strong className="text-fg">/activity</strong> filtrado por tipo <code>scraper</code>.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  templates: () => (
+    <Shell>
+      <Sec title="Templates de mensagem">
+        <Ul>
+          <li>Cada template tem: <b>categoria</b>, <b>corpo</b> com variáveis, <b>peso</b> (chance de ser escolhido em A/B) e flag <code>enabled</code>.</li>
+          <li>O dispatcher escolhe o template por categoria do produto — ou o mais genérico se não houver específico.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Variáveis disponíveis">
+        <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
+{`{titulo}    — título do produto (catalog.title)
+{preco_de}  — preço original formatado (R$ 99,90)
+{preco_por} — preço atual formatado
+{desconto}  — % de desconto inteiro (ex: 30)
+{link}      — shortlink afiliado por grupo
+{emoji}     — emoji temático (resolvido pelo sistema)
+`}
+        </pre>
+      </Sec>
+      <Sec title="Boas práticas">
+        <Ul>
+          <li>Tenha pelo menos 1 template por categoria principal. Sem template da categoria = usa template de <code>geral</code> como fallback.</li>
+          <li>Peso maior = aparece mais nas mensagens auto-geradas. Use pra A/B de copy sem mexer em código.</li>
+          <li><code>optimal_hours</code> (array JSON) — horários em que esse template performou melhor. Alimentado pelo loop <code>template_ab</code>.</li>
+          <li>Desativar (<code>enabled = false</code>) pausa sem deletar — mantém histórico de performance.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  modems: () => (
+    <Shell>
+      <Sec title="Modems & Senders">
+        <Ul>
+          <li><b>Modem</b> = slot de hardware (4G USB) ou <b>HOST modem</b> (o próprio servidor — sem hardware, usa Evolution API local).</li>
+          <li>Cada modem pode ter N <b>contas WA</b> vinculadas, cada uma com status: <code>primary</code>, <code>backup</code>, <code>warming</code>, <code>banned</code>.</li>
+          <li>O dispatcher usa contas <code>primary</code> primeiro; <code>backup</code> como fallback por <code>ga.priority</code>.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Conectar conta WhatsApp">
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>Clique <b>Conectar conta WA</b> no card do modem.</li>
+          <li>Evolution API cria instância e exibe QR code (retry automático em até 5 tentativas se QR demorar).</li>
+          <li>Escaneie com o celular operacional.</li>
+          <li>Modal pede: <b>telefone</b>, <b>nickname</b> e <b>cota diária</b>. Preencha e confirme.</li>
+          <li>Conta aparece com status <code>primary</code> e pill verde <code>api_online</code> + <code>wa_status</code>.</li>
+        </ol>
+      </Sec>
+      <Sec title="Status da conta">
+        <Ul>
+          <li><code>api_online</code> — Evolution API responde (processo rodando).</li>
+          <li><code>wa_status</code> — sessão WA ativa (logado no WhatsApp).</li>
+          <li>Ambos verdes = operacional. <code>api_online</code> vermelho = Evolution caiu; <code>wa_status</code> vermelho = sessão expirou, reconecte.</li>
+          <li><code>consecutive_failures</code> — contador de falhas seguidas; alto = conta em risco de ban.</li>
+          <li><code>sent_today</code> — envios do dia. Ao atingir <code>daily_send_quota</code>, conta é pulada até meia-noite.</li>
+        </Ul>
+      </Sec>
+      <Sec title="HOST modem">
+        <Ul>
+          <li>Criado automaticamente na migration. Não precisa hardware — a Evolution API roda no mesmo servidor.</li>
+          <li>Ideal para SaaS / cloud sem hardware físico 4G.</li>
+          <li>Funciona igual a modem 4G para o dispatcher — mesma lógica de prioridade e cota.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  domains: () => (
+    <Shell>
+      <Sec title="Rotação de domínios de redirect">
+        <Ul>
+          <li>Lista de domínios usados nos shortlinks. Cada envio usa o domínio ativo com menor taxa de ban.</li>
+          <li>Por quê? WhatsApp bloqueia domínios que enviam links suspeitos em volume. Rotação distribui o risco.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Configuração">
+        <Ul>
+          <li>Adicione o domínio (ex: <code>go.promo.com.br</code>) — deve apontar DNS para o servidor de redirect.</li>
+          <li>Marque como <code>active</code>. O sender escolhe automaticamente o domínio ativo ao gerar shortlink.</li>
+          <li>Se um domínio começa a ter muitos clicks com <code>domain_host</code> correspondendo a redirects bloqueados, desative-o.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Como auditar">
+        <Ul>
+          <li>Tabela <code>clicks</code> tem <code>domain_host</code> — verifique em <strong className="text-fg">/admin/metrics → Daily</strong> se um domínio tem CTR muito menor que outros (pode estar bloqueado).</li>
+          <li>Send log tem <code>domain_id</code> — permite rastrear qual domínio foi usado em cada envio.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  conversoes: () => (
+    <Shell>
+      <Sec title="Conversões rastreadas">
+        <Ul>
+          <li>Vendas atribuídas ao sistema via <b>postback de afiliado</b> (Amazon, Magalu, etc) ou importação manual.</li>
+          <li>Cada conversão tem: <code>catalog_id</code>, <code>group_id</code>, <code>order_value</code>, <code>commission</code>, <code>status</code>, <code>occurred_at</code>.</li>
+          <li>Atribuição: via <code>short_id</code> do shortlink — liga clique ao produto E ao grupo que enviou (determinístico desde <code>group_shortlinks</code>).</li>
+        </Ul>
+      </Sec>
+      <Sec title="Impacto no scoring">
+        <Ul>
+          <li><code>epc_30d</code> em <code>learned_weights</code> = <code>SUM(commission) / COUNT(clicks)</code> por (grupo, categoria, source) — calculado horariamente.</li>
+          <li>Thompson Sampling: cada conversão incrementa <code>alpha</code> do arm (grupo, categoria) — aprendizado direto de receita.</li>
+          <li>Alta <code>commission</code> → EPC alto → produto ganha <code>w_e · epc_blended</code> extra na fórmula.</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  loops: () => (
+    <Shell>
+      <Sec title="Os 9 Loops LLM">
+        <p className="text-fg-2">
+          Cada loop é um agente especializado com LLM rodando em cron. Gerenciados em <code>/settings/loops</code>.
+          Dois modos: <b>suggesting</b> (gera sugestões em /suggestions-l4) e <b>active</b> (age diretamente).
+        </p>
+      </Sec>
+      <Sec title="Loops de scoring e distribuição">
+        <Ul>
+          <li><b>affinity_adjust</b> — analisa CTR/EPC por (grupo, categoria), ajusta <code>group_category_affinity</code> em ±0.10/ciclo.</li>
+          <li><b>cooldown_suggest</b> — detecta grupos saturados e sugere aumentar cooldown ou reduzir cap.</li>
+          <li><b>cap_suggest</b> — analisa grupos com fila acumulada vs cap e sugere ajustes.</li>
+          <li><b>anomaly_pause</b> — identifica grupos com padrão anômalo (queda brusca de CTR) e sugere pausa.</li>
+          <li><b>auto_tuning</b> — ajusta tunables globais (quality_threshold, pesos) baseado em A/B tests em andamento.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Loops de catálogo e conteúdo">
+        <Ul>
+          <li><b>scraper_fix</b> — detecta scrapers com health baixo e sugere ajuste de seletores.</li>
+          <li><b>taxonomy_grow</b> — sugere novas categorias baseado em produtos não-classificados.</li>
+          <li><b>template_ab</b> — analisa CTR por template/hora e ajusta <code>optimal_hours</code> e pesos.</li>
+          <li><b>content_optimize</b> — sugere variações de copy de templates com baixo CTR.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Configuração e segurança">
+        <Ul>
+          <li>Todos começam em modo <b>suggesting</b> — nada muda sem aprovação.</li>
+          <li>Ativar modo <b>active</b> em produção só após validar as sugestões por pelo menos 2 semanas.</li>
+          <li>Logs detalhados de cada execução em <strong className="text-fg">/admin/audit</strong>.</li>
+          <li>Custo de tokens LLM: loops mais caros são <code>content_optimize</code> e <code>template_ab</code> (analisam corpus maior).</li>
+        </Ul>
+      </Sec>
+    </Shell>
+  ),
+
+  params: () => (
+    <Shell>
+      <Sec title="Parâmetros tunáveis">
+        <p className="text-fg-2">
+          <code>/admin/params</code> (alias: <code>/settings/params</code>) — painel central de ~25 tunables do sistema.
+          Alterações têm efeito imediato no próximo tick (5min).
+        </p>
+      </Sec>
+      <Sec title="Estrutura">
+        <Ul>
+          <li><b>Flags strangler</b> (topo em destaque) — on/off com toggle: <code>use_algo_tick</code>, <code>use_epsilon_explore</code>, <code>use_thompson_sampling</code>.</li>
+          <li><b>Parâmetros globais</b> — sliders e inputs numéricos com min/max. Cada um tem default + possibilidade de reset.</li>
+          <li>Valor fora do range é rejeitado antes de salvar — não precisa validar manualmente.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Grupos de parâmetros">
+        <Ul>
+          <li><b>Qualidade e seleção</b>: <code>quality_threshold</code>, <code>cap_max</code>, <code>baseline_min</code>.</li>
+          <li><b>Scoring v2</b>: os 7 <code>score_weight_*</code> da fórmula composta.</li>
+          <li><b>Anti-repeat e bypass</b>: <code>antirepeat_window_days</code>, <code>repromo_drop_threshold</code>, <code>repromo_cooldown_hours</code>.</li>
+          <li><b>Diversidade</b>: <code>diversity_bonus_weight</code>, <code>anti_saturation_decay</code>.</li>
+          <li><b>Exploração</b>: <code>epsilon_base</code>, <code>epsilon_decay_rate</code>.</li>
+          <li><b>Aprendizado</b>: <code>learned_half_life_days</code>, <code>click_reward_weight</code>, <code>click_cap_per_member</code>.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Dica">
+        <p className="text-fg-2">
+          Para entender o que cada param faz em profundidade, abra o tutorial{' '}
+          <strong className="text-fg">Algoritmo de Scoring</strong> — tem a tabela completa com defaults e efeito.
+        </p>
       </Sec>
     </Shell>
   ),
