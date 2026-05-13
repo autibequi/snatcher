@@ -4,7 +4,7 @@ import { Button, Switch, Skeleton } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
 import {
   sectionCard, sectionTitle, sectionSubtitle,
-  switchRow, formLabel, formHint,
+  switchRow,
   statusChipSuccess, statusChipDanger, statusChipMuted,
 } from '../../lib/uiTokens'
 import { relJonfreyTime, type JonfreyAction } from '../../components/JonfreyActionCard'
@@ -117,32 +117,26 @@ function JonfreySection() {
         </div>
       </div>
 
-      {/* Automações do Jonfrey */}
-      <div className="space-y-2">
+      {/* Automações do Jonfrey — mesmo estilo dos loops */}
+      <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
         {AUTOMATIONS.map(meta => {
           const last = lastByType(meta.id)
           const enabled = enabledActions.includes(meta.id)
           return (
-            <div key={meta.id} className={sectionCard}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0 space-y-1">
-                  <p className={formLabel}>{meta.label}</p>
-                  <p className={formHint}>{meta.description}</p>
+            <div key={meta.id} className="bg-surface px-4 py-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-fg">{meta.label}</span>
                   {last ? (
-                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <span className="ml-2 inline-flex items-center gap-1.5">
                       <StatusChip status={last.status} />
                       <span className="text-[11px] text-fg-3">{relJonfreyTime(last.created_at)}</span>
-                      {last.reasoning?.trim() && (
-                        <span className="text-[11px] text-fg-2 truncate max-w-xs" title={last.reasoning}>
-                          {last.reasoning.slice(0, 80)}{last.reasoning.length > 80 ? '…' : ''}
-                        </span>
-                      )}
-                    </div>
+                    </span>
                   ) : (
-                    <p className="text-[11px] text-fg-3 pt-1">Nenhuma execução registrada</p>
+                    <span className="ml-2 text-[11px] text-fg-3">sem execuções</span>
                   )}
                   {!pilotOn && enabled && (
-                    <p className="text-[11px] text-warning pt-0.5">Auto-pilot desligado — não vai rodar.</p>
+                    <span className="ml-2 text-[11px] text-warning">auto-pilot off</span>
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
