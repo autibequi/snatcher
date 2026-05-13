@@ -42,27 +42,48 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		         (get_param('score_weight_quality','global',NULL) * COALESCE(c.quality_score, 0))
 		       + (get_param('score_weight_affinity','global',NULL) * COALESCE(gca.affinity, 0.5))
 		       + (get_param('score_weight_channel','global',NULL)  * COALESCE(ccw.weight, 0) / 100.0)
-		       + (get_param('score_weight_ctr','global',NULL)      * COALESCE(lw_agg.ctr_30d, 0))
-		       + (get_param('score_weight_epc','global',NULL)      * LEAST(COALESCE(lw_agg.epc_30d, 0), 1.0))
+		       -- CTR/EPC com shrinkage hierárquico (James-Stein-style):
+		       --   c = lw_agg.confidence (0..1, sobe com samples_30d)
+		       --   blended = c * grupo + (1-c) * canal
+		       -- Grupo novo (confidence baixa) usa o canal; grupo maduro usa o próprio.
+		       + (get_param('score_weight_ctr','global',NULL) *
+		           (COALESCE(lw_agg.confidence, 0)        * COALESCE(lw_agg.ctr_30d, 0)
+		          + (1 - COALESCE(lw_agg.confidence, 0))  * COALESCE(lwc.ctr_30d, 0)))
+		       + (get_param('score_weight_epc','global',NULL) *
+		           LEAST(
+		             COALESCE(lw_agg.confidence, 0)       * COALESCE(lw_agg.epc_30d, 0)
+		           + (1 - COALESCE(lw_agg.confidence, 0)) * COALESCE(lwc.epc_30d, 0),
+		             1.0))
 		       + (get_param('score_weight_freshness','global',NULL)
 		            * exp(-0.693
 		                  * EXTRACT(EPOCH FROM (now() - COALESCE(c.send_ready_at, c.created_at)))
 		                  / 3600.0
 		                  / GREATEST(get_param('half_life_freshness','global',NULL) * 24.0, 1.0)))
+		       -- Penalty = 0 quando n_sent=0; cresce com saturação.
+		       --   n=0: 1 - 1 = 0
+		       --   n=1: 1 - 0.60 = 0.40
+		       --   n=2: 1 - 0.36 = 0.64
+		       --   n=3: 1 - 0.22 = 0.78
 		       - (get_param('score_weight_saturation','global',NULL)
-		            * power(get_param('anti_saturation_decay','global',NULL),
-		                    COALESCE(gst.n_sent, 0)))
+		            * (1 - power(get_param('anti_saturation_decay','global',NULL),
+		                         COALESCE(gst.n_sent, 0))))
 		         AS final_score
 		FROM catalog c
 		LEFT JOIN group_category_affinity gca
 		       ON gca.group_id = $1 AND gca.category_id = c.category_id
 		LEFT JOIN channel_category_weights ccw
 		       ON ccw.channel_id = $2 AND ccw.category_id = c.category_id
-		LEFT JOIN LATERAL (
-		    SELECT AVG(ctr_30d)::numeric AS ctr_30d, AVG(epc_30d)::numeric AS epc_30d
-		    FROM learned_weights lw
-		    WHERE lw.group_id = $1 AND lw.category_id = c.category_id
-		) lw_agg ON true
+		-- Match exato: 1 linha por (group, category, source) — não AVG entre sources.
+		LEFT JOIN learned_weights lw_agg
+		       ON lw_agg.group_id    = $1
+		      AND lw_agg.category_id = c.category_id
+		      AND lw_agg.source_id   = c.source_id
+		-- Channel-level fallback: agregação dos irmãos do mesmo canal. Usado
+		-- via shrinkage hierárquico (CTE blended abaixo).
+		LEFT JOIN learned_weights_channel lwc
+		       ON lwc.channel_id  = $2
+		      AND lwc.category_id = c.category_id
+		      AND lwc.source_id   = c.source_id
 		LEFT JOIN gst ON gst.category_id = c.category_id
 		LEFT JOIN LATERAL (
 		    SELECT MAX(sent_at)              AS last_sent_at,

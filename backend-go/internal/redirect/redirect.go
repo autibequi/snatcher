@@ -122,19 +122,24 @@ func (rd *Redirector) logClick(r *http.Request, shortID string) {
 
 	rd.store.IncrementShortLinkClickCount(shortID)
 
-	// Resolve catalog_id e group_id via send_log v2 (pipeline canônico — F07).
-	// Usa o envio mais recente associado a este short_id via catalog.short_id.
+	// Resolve catalog_id e group_id — determinístico via group_shortlinks
+	// (cada grupo tem seu próprio short_id por produto). Fallback para o
+	// esquema legado (catalog.short_id + último send_log) durante a transição.
 	var logCtx struct {
 		CatalogID *int64 `db:"catalog_id"`
 		GroupID   *int64 `db:"group_id"`
 	}
-	_ = rd.db.Get(&logCtx, `
-		SELECT sl.catalog_id, sl.group_id
-		FROM send_log sl
-		JOIN catalog c ON c.id = sl.catalog_id
-		WHERE c.short_id = $1
-		ORDER BY sl.sent_at DESC
-		LIMIT 1`, shortID)
+	if err := rd.db.Get(&logCtx, `
+		SELECT catalog_id, group_id FROM group_shortlinks WHERE short_id = $1
+	`, shortID); err != nil {
+		_ = rd.db.Get(&logCtx, `
+			SELECT sl.catalog_id, sl.group_id
+			FROM send_log sl
+			JOIN catalog c ON c.id = sl.catalog_id
+			WHERE c.short_id = $1
+			ORDER BY sl.sent_at DESC
+			LIMIT 1`, shortID)
+	}
 
 	// Grava em clicks (tabela canônica v2).
 	_, _ = rd.db.Exec(`

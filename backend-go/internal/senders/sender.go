@@ -190,12 +190,20 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		body = "🔥 {titulo}\nDe R$ {preco_de} por R$ {preco_por} ({desconto}% OFF)\n{link}"
 	}
 
-	// 4. monta link de redirect (domínio afiliado se disponível)
+	// 4. monta link de redirect — shortlink por (group, catalog) para
+	//    atribuição determinística de cliques (vs catalog.short_id que era
+	//    global e causava attribution errada quando vários grupos enviavam
+	//    o mesmo produto).
 	link := cat.CanonicalURL
-	if domainID != nil && cat.ShortID != "" {
-		var domain sql.NullString
-		if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
-			link = "https://" + domain.String + "/" + cat.ShortID
+	if domainID != nil {
+		var groupShort sql.NullString
+		_ = db.GetContext(ctx, &groupShort,
+			`SELECT ensure_group_shortlink($1, $2)`, catalogID, groupID)
+		if groupShort.Valid && groupShort.String != "" {
+			var domain sql.NullString
+			if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
+				link = "https://" + domain.String + "/" + groupShort.String
+			}
 		}
 	}
 

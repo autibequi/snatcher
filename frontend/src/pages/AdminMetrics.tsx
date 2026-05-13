@@ -91,7 +91,88 @@ function Badge({ status }: { status: string }) {
 
 // ---------- tab state ----------
 
-type Tab = 'weights' | 'daily' | 'abtests'
+type Tab = 'weights' | 'daily' | 'abtests' | 'virality'
+
+interface ViralityRow {
+  group_id: number
+  group_name?: string
+  channel_name?: string
+  clicks_total: number
+  unique_links: number
+  member_count: number
+  expected_max: number
+  clicks_excedentes: number
+  virality_ratio: number
+}
+
+function ViralityTab() {
+  const [rows, setRows] = useState<ViralityRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try {
+        const r = await authFetch('/api/admin/metrics/virality')
+        setRows((await r.json()) || [])
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  const ratioColor = (r: number) =>
+    r >= 0.5 ? 'text-success' : r >= 0.2 ? 'text-warning' : 'text-fg-3'
+
+  return (
+    <section>
+      <p className="text-sm text-fg-3 mb-3">
+        Cliques externos por grupo (acima de <b>k × members</b>). Métrica
+        observacional — não influencia o scoring (clicks excedentes já são
+        descartados pelo cap). Alto ratio = grupo cujos links viralizam fora,
+        boa cobertura externa.
+      </p>
+      {loading && <p className="text-fg-3">Carregando…</p>}
+      {!loading && rows.length === 0 && (
+        <p className="text-fg-3">Sem dados de viralização ainda.</p>
+      )}
+      {!loading && rows.length > 0 && (
+        <div className="border rounded-lg bg-surface shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-2 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-fg-2">Grupo</th>
+                <th className="text-left px-3 py-2 font-medium text-fg-2">Canal</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Members</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Links únicos</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Clicks totais</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Esperado</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Excedente</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Virality</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map(row => (
+                <tr key={row.group_id} className="hover:bg-surface-2">
+                  <td className="px-3 py-2 text-fg">{row.group_name ?? `#${row.group_id}`}</td>
+                  <td className="px-3 py-2 text-fg-3">{row.channel_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-right text-fg-3">{row.member_count}</td>
+                  <td className="px-3 py-2 text-right text-fg-3">{row.unique_links}</td>
+                  <td className="px-3 py-2 text-right text-fg">{row.clicks_total}</td>
+                  <td className="px-3 py-2 text-right text-fg-3">{row.expected_max}</td>
+                  <td className="px-3 py-2 text-right text-fg-3">{row.clicks_excedentes}</td>
+                  <td className={`px-3 py-2 text-right font-semibold ${ratioColor(row.virality_ratio)}`}>
+                    {(row.virality_ratio * 100).toFixed(1)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
 
 // ---------- Aba 1 — Learned Weights ----------
 
@@ -477,9 +558,10 @@ function ABTestsTab() {
 // ---------- main ----------
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'weights', label: 'Learned Weights' },
-  { id: 'daily',   label: 'Daily Metrics' },
-  { id: 'abtests', label: 'A/B Tests' },
+  { id: 'weights',  label: 'Learned Weights' },
+  { id: 'daily',    label: 'Daily Metrics' },
+  { id: 'abtests',  label: 'A/B Tests' },
+  { id: 'virality', label: 'Virality' },
 ]
 
 export default function AdminMetrics() {
@@ -514,9 +596,10 @@ export default function AdminMetrics() {
       </div>
 
       {/* Tab content */}
-      {tab === 'weights' && <LearnedWeightsTab />}
-      {tab === 'daily'   && <DailyMetricsTab />}
-      {tab === 'abtests' && <ABTestsTab />}
+      {tab === 'weights'  && <LearnedWeightsTab />}
+      {tab === 'daily'    && <DailyMetricsTab />}
+      {tab === 'abtests'  && <ABTestsTab />}
+      {tab === 'virality' && <ViralityTab />}
     </div>
   )
 }

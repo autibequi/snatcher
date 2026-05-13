@@ -8,6 +8,43 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// GET /api/admin/metrics/virality
+// Retorna por grupo: clicks totais, esperado pelos members, excedente viral
+// e ratio de viralização (excedente / total).
+func ViralityHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type row struct {
+			GroupID          int64   `db:"group_id"          json:"group_id"`
+			GroupName        *string `db:"group_name"        json:"group_name,omitempty"`
+			ChannelName      *string `db:"channel_name"      json:"channel_name,omitempty"`
+			ClicksTotal      int64   `db:"clicks_total"      json:"clicks_total"`
+			UniqueLinks      int64   `db:"unique_links"      json:"unique_links"`
+			MemberCount      int64   `db:"member_count"      json:"member_count"`
+			ExpectedMax      int64   `db:"expected_max"      json:"expected_max"`
+			ClicksExcedentes int64   `db:"clicks_excedentes" json:"clicks_excedentes"`
+			ViralityRatio    float64 `db:"virality_ratio"    json:"virality_ratio"`
+		}
+		var rows []row
+		_ = db.SelectContext(r.Context(), &rows, `
+			SELECT v.group_id,
+			       g.name AS group_name,
+			       ch.name AS channel_name,
+			       v.clicks_total, v.unique_links, v.member_count,
+			       v.expected_max, v.clicks_excedentes, v.virality_ratio
+			FROM group_virality v
+			LEFT JOIN groups g       ON g.id = v.group_id
+			LEFT JOIN channels_v2 ch ON ch.id = g.channel_id
+			ORDER BY v.virality_ratio DESC NULLS LAST, v.clicks_total DESC
+			LIMIT 200
+		`)
+		if rows == nil {
+			rows = []row{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rows)
+	}
+}
+
 // GET /api/admin/metrics/learned-weights?min_samples=50
 func LearnedWeightsHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

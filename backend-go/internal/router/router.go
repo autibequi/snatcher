@@ -396,10 +396,11 @@ func Build(
 		r.Get("/api/admin/scrapers/health", adminhnd.ScraperHealthHandler(db))
 		r.Get("/api/admin/scrapers/logs", adminhnd.ExtractionLogsHandler(db))
 
-		// Metrics dashboard — learned weights, daily metrics, A/B tests
+		// Metrics dashboard — learned weights, daily metrics, A/B tests, virality
 		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))
 		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
 		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
+		r.Get("/api/admin/metrics/virality", adminhnd.ViralityHandler(db))
 
 		// Templates de mensagem — CRUD + toggle
 		tmpl := adminhnd.NewTemplatesHandler(db)

@@ -109,28 +109,40 @@ func selectCategoryThompson(ctx context.Context, db *sqlx.DB, groupID, channelID
 	return &bestCat
 }
 
-// updateBanditArms processa send_log e conversions mais novos que processed_up_to
-// e atualiza alpha/beta de cada (group_id, category_id). Idempotente — chama
-// no início do tick antes da seleção.
+// updateBanditArms processa send_log/conversions/clicks novos e atualiza alpha/beta
+// de cada (group_id, category_id). Idempotente.
 //
-// Conversão → alpha += 1
-// Envio sem conversão (após janela de 24h) → beta += 1
+// Três cursores independentes por arm:
+//   - cursor_conversions: avança até o MAX(occurred_at) do batch processado
+//   - cursor_clicks:      avança até o MAX(clicked_at) do batch processado
+//   - cursor_losses:      avança até now() - 24h (mantém maturidade)
+//
+// Sinais:
+//   - Conversão           → alpha += 1
+//   - Click (atribuído)   → alpha += click_reward_weight (default 0.10)
+//   - Envio >24h sem conv → beta  += 1
+//
+// Política de clicks anônimos: ignorados (mesma política do
+// refresh_learned_weights — clicks sem group_id não atribuem).
 func updateBanditArms(ctx context.Context, db *sqlx.DB) error {
-	// 1. Adiciona +1 em alpha para cada conversão nova com category_id conhecido.
+	// 1. Conversões — alpha += n; cursor avança até MAX(occurred_at).
 	_, err := db.ExecContext(ctx, `
 		WITH new_conv AS (
-		    SELECT cv.group_id, cat.category_id, MAX(cv.occurred_at) AS max_at, COUNT(*) AS n
+		    SELECT cv.group_id, cat.category_id,
+		           MAX(cv.occurred_at) AS max_at,
+		           COUNT(*)            AS n
 		    FROM conversions cv
 		    JOIN catalog cat ON cat.id = cv.catalog_id
 		    JOIN bandit_arms ba
 		       ON ba.group_id = cv.group_id
 		      AND ba.category_id = cat.category_id
-		    WHERE cv.occurred_at > ba.processed_up_to
+		    WHERE cv.occurred_at > ba.cursor_conversions
 		      AND cat.category_id IS NOT NULL
 		    GROUP BY cv.group_id, cat.category_id
 		)
 		UPDATE bandit_arms ba
 		SET alpha = ba.alpha + nc.n,
+		    cursor_conversions = GREATEST(ba.cursor_conversions, nc.max_at),
 		    updated_at = now()
 		FROM new_conv nc
 		WHERE ba.group_id = nc.group_id
@@ -140,47 +152,60 @@ func updateBanditArms(ctx context.Context, db *sqlx.DB) error {
 		return err
 	}
 
-	// 1b. Recompensa parcial por click (alpha += click_reward_weight).
-	//     Clicks são ~10-50x mais frequentes que conversões, então o bandit
-	//     converge muito mais rápido. O peso é tunable; default 0.10 (10 clicks
-	//     ≈ 1 conversão de recompensa).
+	// 2. Clicks — alpha += effective_clicks * click_reward_weight.
+	//    effective_clicks = LEAST(n, k * member_count) protege contra
+	//    viralização externa. Cursor avança até MAX(clicked_at).
+	//    Clicks com group_id NULL são ignorados (consistência com refresh).
 	_, err = db.ExecContext(ctx, `
 		WITH new_clicks AS (
-		    SELECT cl.group_id, cat.category_id, COUNT(*) AS n
+		    SELECT cl.group_id, cat.category_id,
+		           MAX(cl.clicked_at) AS max_at,
+		           COUNT(*)           AS n_raw,
+		           MAX(g.member_count) AS members
 		    FROM clicks cl
 		    JOIN catalog cat ON cat.id = cl.catalog_id
+		    JOIN groups g   ON g.id = cl.group_id
 		    JOIN bandit_arms ba
 		       ON ba.group_id = cl.group_id
 		      AND ba.category_id = cat.category_id
-		    WHERE cl.clicked_at > ba.processed_up_to
+		    WHERE cl.clicked_at > ba.cursor_clicks
 		      AND cat.category_id IS NOT NULL
 		      AND cl.group_id IS NOT NULL
 		    GROUP BY cl.group_id, cat.category_id
+		),
+		capped AS (
+		    SELECT group_id, category_id, max_at,
+		           LEAST(
+		             n_raw::numeric,
+		             GREATEST(members, 1)
+		               * COALESCE(get_param('click_cap_per_member','global',NULL), 3.0)
+		           ) AS n_effective
+		    FROM new_clicks
 		)
 		UPDATE bandit_arms ba
-		SET alpha = ba.alpha + nc.n * COALESCE(get_param('click_reward_weight','global',NULL), 0.10),
+		SET alpha = ba.alpha + c.n_effective * COALESCE(get_param('click_reward_weight','global',NULL), 0.10),
+		    cursor_clicks = GREATEST(ba.cursor_clicks, c.max_at),
 		    updated_at = now()
-		FROM new_clicks nc
-		WHERE ba.group_id = nc.group_id
-		  AND ba.category_id = nc.category_id
+		FROM capped c
+		WHERE ba.group_id = c.group_id
+		  AND ba.category_id = c.category_id
 	`)
 	if err != nil {
 		return err
 	}
 
-	// 2. Adiciona +1 em beta para cada envio (>24h atrás, sem conversão correspondente).
-	//    Só consideramos sends já "maduros" para evitar contar como derrota um
-	//    envio cuja conversão ainda pode chegar.
+	// 3. Losses — beta += n para envios >24h sem conversão. Cursor avança até
+	//    now()-24h (envios mais novos ainda podem ganhar conversão tardia).
 	_, err = db.ExecContext(ctx, `
 		WITH new_loss AS (
-		    SELECT sl.group_id, cat.category_id, MAX(sl.sent_at) AS max_at, COUNT(*) AS n
+		    SELECT sl.group_id, cat.category_id, COUNT(*) AS n
 		    FROM send_log sl
 		    JOIN catalog cat ON cat.id = sl.catalog_id
 		    JOIN bandit_arms ba
 		       ON ba.group_id = sl.group_id
 		      AND ba.category_id = cat.category_id
-		    WHERE sl.sent_at > ba.processed_up_to
-		      AND sl.sent_at < now() - INTERVAL '24 hours'
+		    WHERE sl.sent_at > ba.cursor_losses
+		      AND sl.sent_at <= now() - INTERVAL '24 hours'
 		      AND cat.category_id IS NOT NULL
 		      AND sl.status = 'sent'
 		      AND NOT EXISTS (
@@ -193,34 +218,60 @@ func updateBanditArms(ctx context.Context, db *sqlx.DB) error {
 		)
 		UPDATE bandit_arms ba
 		SET beta = ba.beta + nl.n,
+		    cursor_losses = now() - INTERVAL '24 hours',
 		    updated_at = now()
 		FROM new_loss nl
 		WHERE ba.group_id = nl.group_id
 		  AND ba.category_id = nl.category_id
 	`)
-	if err != nil {
-		return err
-	}
-
-	// 3. Move o cursor processed_up_to para o limiar (now-24h) — só processamos
-	//    eventos já estáveis.
-	_, err = db.ExecContext(ctx, `
-		UPDATE bandit_arms SET processed_up_to = now() - INTERVAL '24 hours'
-		WHERE processed_up_to < now() - INTERVAL '24 hours'
-	`)
 	return err
 }
 
-// ensureBanditArmsForGroup cria braços Beta(1,1) faltantes para cada categoria
-// listada em channel_category_weights do grupo. Chamado lazy no tick quando
-// Thompson está ativo.
+// ensureBanditArmsForGroup cria braços faltantes para o grupo. Warm-start
+// hierárquico: se já existe bandit_arms_channel pro canal, herda α/β
+// proporcional (limita a 25% do peso do canal pra deixar margem de
+// aprendizado próprio); caso contrário Beta(1,1) neutro.
 func ensureBanditArmsForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int64) error {
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO bandit_arms (group_id, category_id, alpha, beta, processed_up_to)
-		SELECT $1, ccw.category_id, 1.0, 1.0, now() - INTERVAL '24 hours'
+		INSERT INTO bandit_arms (group_id, category_id, alpha, beta,
+		                         cursor_conversions, cursor_clicks, cursor_losses)
+		SELECT $1, ccw.category_id,
+		       GREATEST(1.0, COALESCE(bac.alpha, 1.0) * 0.25),
+		       GREATEST(1.0, COALESCE(bac.beta,  1.0) * 0.25),
+		       now() - INTERVAL '24 hours',
+		       now() - INTERVAL '24 hours',
+		       now() - INTERVAL '24 hours'
 		FROM channel_category_weights ccw
+		LEFT JOIN bandit_arms_channel bac
+		       ON bac.channel_id = ccw.channel_id
+		      AND bac.category_id = ccw.category_id
 		WHERE ccw.channel_id = $2 AND ccw.weight > 0
 		ON CONFLICT (group_id, category_id) DO NOTHING
 	`, groupID, channelID)
+	return err
+}
+
+// updateBanditArmsChannel agrega bandit_arms (group-level) por canal. Reaproveita
+// os α/β já atualizados em updateBanditArms — chamado logo depois.
+func updateBanditArmsChannel(ctx context.Context, db *sqlx.DB) error {
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO bandit_arms_channel (channel_id, category_id, alpha, beta,
+		                                 cursor_conversions, cursor_clicks, cursor_losses, updated_at)
+		SELECT g.channel_id, ba.category_id,
+		       SUM(ba.alpha), SUM(ba.beta),
+		       MAX(ba.cursor_conversions), MAX(ba.cursor_clicks), MAX(ba.cursor_losses),
+		       now()
+		FROM bandit_arms ba
+		JOIN groups g ON g.id = ba.group_id
+		WHERE g.channel_id IS NOT NULL
+		GROUP BY g.channel_id, ba.category_id
+		ON CONFLICT (channel_id, category_id) DO UPDATE
+		SET alpha = EXCLUDED.alpha,
+		    beta  = EXCLUDED.beta,
+		    cursor_conversions = EXCLUDED.cursor_conversions,
+		    cursor_clicks      = EXCLUDED.cursor_clicks,
+		    cursor_losses      = EXCLUDED.cursor_losses,
+		    updated_at = now()
+	`)
 	return err
 }

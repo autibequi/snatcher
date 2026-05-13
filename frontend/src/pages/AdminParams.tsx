@@ -55,6 +55,7 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   // Click reward + decay temporal (fecha o loop click → scoring)
   click_reward_weight:            { label: 'Recompensa por click (Thompson)', description: 'Quanto cada click incrementa em alpha do bandit. 0.10 = 10 clicks valem 1 conversão. Acelera convergência do Thompson Sampling.' },
   learned_half_life_days:         { label: 'Meia-vida do decay em CTR/EPC',   description: 'Dias após os quais um click/conversão dentro da janela 30d vale metade. Default 7d — sinaliza tendência recente sem perder cauda longa.' },
+  click_cap_per_member:           { label: 'Cap viral · clicks/membro',       description: 'Limite de clicks que contam pro learning = k × member_count. Clicks acima são considerados viralização externa e ficam só em group_virality (não envenenam CTR/bandit). Default 3.0.' },
 }
 
 function paramLabel(name: string): string {

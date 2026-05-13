@@ -51,6 +51,9 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 		if err := updateBanditArms(ctx, db); err != nil {
 			slog.Warn("algo.tick: updateBanditArms", "err", err)
 		}
+		if err := updateBanditArmsChannel(ctx, db); err != nil {
+			slog.Warn("algo.tick: updateBanditArmsChannel", "err", err)
+		}
 	}
 
 	enqueued := 0
