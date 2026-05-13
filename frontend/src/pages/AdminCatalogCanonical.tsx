@@ -94,7 +94,6 @@ export default function AdminCatalogCanonical() {
   const [readyOnly, setReadyOnly] = useState(false)
   const [categoryID, setCategoryID] = useState('')
   const [page, setPage] = useState(0)
-  const [foldLoading, setFoldLoading] = useState(false)
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null)
   const LIMIT = 50
 
@@ -127,22 +126,6 @@ export default function AdminCatalogCanonical() {
   useEffect(() => { loadStats() }, [])
   useEffect(() => { loadItems() }, [readyOnly, categoryID, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleFold = async () => {
-    if (!window.confirm('Disparar fold_catalog? Isso migra catalogvariant → catalog (one-shot). Continuar?')) return
-    setFoldLoading(true)
-    try {
-      const r = await authFetch('/api/admin/fold-catalog', { method: 'POST' })
-      if (r.ok) {
-        alert('fold_catalog disparado (202 Accepted). Rode em background.')
-      } else {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        alert(`Erro: ${err.error ?? r.statusText}`)
-      }
-    } finally {
-      setFoldLoading(false)
-    }
-  }
-
   const KPI_CARDS = stats
     ? [
         { label: 'Total', value: stats.total, color: 'text-blue-600' },
@@ -156,21 +139,9 @@ export default function AdminCatalogCanonical() {
   return (
     <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Catalog Canônico (v2)</h1>
-          <p className="text-sm text-fg-3 mt-1">
-            Preview do que o Algo tick novo vai enviar. Coexiste com catalog antigo via flag{' '}
-            <code className="bg-surface-2 px-1 rounded text-xs">catalog_source</code>.
-          </p>
-        </div>
-        <button
-          onClick={handleFold}
-          disabled={foldLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50"
-        >
-          {foldLoading ? '...' : '🔄'} Disparar fold_catalog
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold">Catálogo</h1>
+        <p className="text-sm text-fg-3 mt-1">Produtos disponíveis para envio pelo Algo tick.</p>
       </div>
 
       {/* KPI cards */}

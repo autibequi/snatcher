@@ -15,7 +15,7 @@ interface TunableParam {
   last_change_by?: string
 }
 
-const STRANGLER_FLAGS = ['use_algo_tick', 'use_send_queue', 'catalog_source']
+const STRANGLER_FLAGS = ['use_algo_tick', 'use_send_queue']
 
 const PARAM_META: Record<string, { label: string; description: string }> = {
   // Flags strangler

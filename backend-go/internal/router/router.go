@@ -350,10 +350,7 @@ func Build(
 		r.Get("/api/admin/conversions/by-day", adminhnd.ConversionsByDayHandler(db))
 		r.Get("/api/admin/conversions/by-source", adminhnd.ConversionsBySourceHandler(db))
 
-		// Fase 3: Fold catalog — migra catalogvariant → catalog (one-shot manual)
-		r.Post("/api/admin/fold-catalog", adminhnd.FoldCatalogHandler(db))
-
-		// Fase 3b: Catalog Canônico — visualizar catalog cimentado (v2)
+		// Catalog Canônico v2
 		r.Get("/api/admin/catalog-canonical/stats", adminhnd.CatalogCanonicalStatsHandler(db))
 		r.Get("/api/admin/catalog-canonical", adminhnd.ListCatalogCanonicalHandler(db))
 
