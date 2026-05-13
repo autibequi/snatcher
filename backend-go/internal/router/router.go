@@ -409,6 +409,39 @@ func Build(
 	return r
 }
 
+// BuildPublic cria um router minimalista para o serviço público de shortlinks.
+// Expõe apenas as rotas de redirecionamento — sem admin, sem auth, superfície mínima.
+// Usar quando APP_MODE=public (segundo serviço no Coolify).
+func BuildPublic(
+	db *sqlx.DB,
+	st store.Store,
+	rd *redirect.Redirector,
+) http.Handler {
+	r := chi.NewRouter()
+	r.Use(chimw.RequestID)
+	r.Use(requestIDLogger)
+	r.Use(chimw.Logger)
+	r.Use(chimw.Recoverer)
+	r.Use(chimw.CleanPath)
+	r.Use(middleware.CORS)
+	r.Use(chimw.Timeout(30 * time.Second))
+	r.Use(middleware.BodyLimit(64 << 10))
+	r.Use(middleware.MetricsMiddleware)
+
+	r.Handle("/metrics", promhttp.Handler())
+	r.Get("/api/health", healthHandler)
+
+	// Shortlinks — único propósito deste serviço
+	r.With(middleware.RateLimit(60.0/60.0, 60)).Get("/r/{shortID}", rd.Handler())
+	r.With(middleware.RateLimit(60.0/60.0, 120)).Get("/v/{shortID}", publichnd.ShortLinkRedirect(st, rd))
+
+	// Public group pages
+	publLinksResolver := publichnd.NewPublicLinksResolver(st)
+	r.Get("/g/{slug}", publLinksResolver.Resolve)
+
+	return r
+}
+
 // requestIDLogger is a middleware that extracts the request ID set by
 // chimw.RequestID and injects it into the default slog logger so that all
 // subsequent log calls within the request carry the "request_id" field.

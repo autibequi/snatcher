@@ -126,18 +126,25 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build router primeiro — regista SetJonfreyTick no scheduler antes de Start (tick Jonfrey/dispatch OK desde o 1º ciclo).
-	h := router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
+	var h http.Handler
+	if cfg.Mode == "public" {
+		// Modo público: apenas shortlinks, sem admin, sem scheduler, sem senders.
+		// Ideal para expor domínios de afiliados sem superfície de ataque admin.
+		slog.Info("starting in PUBLIC mode (shortlinks only)")
+		h = router.BuildPublic(db, st, rd)
+	} else {
+		// Modo full: API admin completa + shortlinks
+		h = router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
 
-	if err := sched.Start(ctx); err != nil {
-		slog.Error("scheduler start", "err", err)
-		os.Exit(1)
+		if err := sched.Start(ctx); err != nil {
+			slog.Error("scheduler start", "err", err)
+			os.Exit(1)
+		}
+		defer sched.Stop()
+
+		// Fase 4: Senders particionados — 1 goroutine persistente por modem.
+		senders.StartAll(ctx, db)
 	}
-	defer sched.Stop()
-
-	// Fase 4: Senders particionados — 1 goroutine persistente por modem.
-	// StartAll é no-op se flag use_send_queue=0 (cada sender verifica internamente).
-	senders.StartAll(ctx, db)
 
 	// HTTP server (handler já construído acima)
 	srv := &http.Server{

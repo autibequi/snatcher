@@ -76,6 +76,33 @@ services:
         limits:
           memory: 96m
 
+  # Serviço público — apenas shortlinks, sem admin, superfície mínima.
+  # Aponte seus domínios de afiliado para este serviço via Cloudflare Tunnel.
+  backend-public:
+    image: ghcr.io/autibequi/snatcher-backend:latest
+    container_name: snatcher-backend-public
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - PORT=8001
+      - APP_MODE=public
+      - JWT_SECRET=${AUTH_SECRET}
+      - ENV=prod
+    volumes: []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      default: {}
+
   backend:
     image: ghcr.io/autibequi/snatcher-backend:latest
     container_name: snatcher-backend

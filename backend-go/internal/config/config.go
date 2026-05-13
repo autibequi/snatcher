@@ -17,6 +17,7 @@ type Config struct {
 	PublicBaseURL string // ex: https://jon.promo (domínio público dos links)
 	GOMAXPROCS    int
 	ENV           string // "dev" (default) | "prod" | "staging" etc.
+	Mode          string // "full" (default) | "public" (apenas shortlinks, sem admin)
 
 	// White-label / SaaS
 	AppName    string // nome da aplicação (ex: "Jon Promo")
@@ -47,6 +48,7 @@ func Load() (Config, error) {
 		PublicBaseURL: env("PUBLIC_BASE_URL", "http://localhost:8000"),
 		GOMAXPROCS:    envInt("GOMAXPROCS", 2),
 		ENV:           env("ENV", "dev"),
+		Mode:          env("APP_MODE", "full"),
 
 		// White-label
 		AppName:    env("APP_NAME", "Snatcher"),
