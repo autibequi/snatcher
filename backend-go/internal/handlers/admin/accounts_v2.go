@@ -132,3 +132,38 @@ func (h *AccountsV2Handler) WAConnectionStatus(w http.ResponseWriter, r *http.Re
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
+
+// EvolutionHealth verifica se a Evolution API está acessível e retorna status + instância.
+// GET /api/admin/evolution/health — sem expor credenciais ao frontend.
+func (h *AccountsV2Handler) EvolutionHealth(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"configured": false,
+			"status":     "not_configured",
+			"instance":   "",
+		})
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	status, err := evo.GetStatus(context.Background())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"configured": true,
+			"status":     "unreachable",
+			"instance":   instance,
+			"error":      err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"configured": true,
+		"status":     status,
+		"instance":   instance,
+	})
+}

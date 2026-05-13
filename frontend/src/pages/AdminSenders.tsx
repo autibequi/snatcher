@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { authFetch } from '../lib/authFetch'
+import { useQuery } from '@tanstack/react-query'
+import { authFetch, authFetchJSON } from '../lib/authFetch'
 import { pageContainer } from '../lib/uiTokens'
 
 interface ModemStatus {
@@ -88,18 +89,23 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
     setErrorMsg('')
     try {
       const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
+      const body = await r.json().catch(() => null)
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        setErrorMsg(err.error ?? 'Erro ao obter QR code')
+        setErrorMsg(body?.error ?? `HTTP ${r.status}: ${r.statusText}`)
         setStatus('error')
         return
       }
-      const data: { qr_base64: string } = await r.json()
-      setQr(data.qr_base64)
+      const qrValue: string = body?.qr_base64 ?? ''
+      if (!qrValue) {
+        setErrorMsg('QR code vazio — Evolution pode já estar conectada ou instância offline.')
+        setStatus('error')
+        return
+      }
+      setQr(qrValue)
       setStatus('waiting_scan')
       pollRef.current = setInterval(() => pollStatus(modem.id), 3000)
     } catch (e) {
-      setErrorMsg(String(e))
+      setErrorMsg(`Falha de rede: ${String(e)}`)
       setStatus('error')
     }
   }, [modem.id, pollStatus])
@@ -173,8 +179,14 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
             )}
 
             {status === 'error' && (
-              <div className="rounded-lg bg-danger-soft border border-danger/30 px-3 py-3 space-y-2">
-                <p className="text-xs text-danger">{errorMsg}</p>
+              <div className="rounded-lg bg-danger-soft border border-danger/30 px-3 py-3 space-y-2 text-left">
+                <p className="text-xs font-medium text-danger">Erro ao conectar</p>
+                <p className="text-xs text-danger break-words">{errorMsg}</p>
+                {errorMsg.includes('não configurada') && (
+                  <p className="text-[10px] text-fg-3">
+                    Configure EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCE nas variáveis de ambiente do backend.
+                  </p>
+                )}
                 <button onClick={loadQR} className="text-xs text-accent hover:underline">
                   Tentar novamente
                 </button>
@@ -202,9 +214,14 @@ export default function AdminSenders() {
   const [loading, setLoading] = useState(true)
   const [expandedModem, setExpandedModem] = useState<string | null>('host')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
-  const [addPhone, setAddPhone] = useState<Record<string, string>>({})
-  const [addQuota, setAddQuota] = useState<Record<string, string>>({})
   const [connectingModem, setConnectingModem] = useState<ModemStatus | null>(null)
+
+  const { data: evoHealth } = useQuery<{ configured: boolean; status: string; instance: string }>({
+    queryKey: ['evolution-health'],
+    queryFn: () => authFetchJSON('/api/admin/evolution/health', { configured: false, status: 'unknown', instance: '' }),
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  })
 
   const load = async () => {
     setLoading(true)
@@ -256,27 +273,6 @@ export default function AdminSenders() {
     } finally { setActionBusy(null) }
   }
 
-  const handleAddAccount = async (modem: ModemStatus) => {
-    const phone = (addPhone[modem.slug] ?? '').trim()
-    if (!phone) { alert('Informe o número de telefone'); return }
-    if (modem.id == null) { alert('ID do modem não disponível'); return }
-    const quota = parseInt(addQuota[modem.slug] ?? '20') || 20
-    setActionBusy(`${modem.slug}-add`)
-    try {
-      const r = await authFetch(`/api/admin/modems/${modem.id}/accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, daily_send_quota: quota }),
-      })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        alert(`Erro: ${err.error ?? r.statusText}`)
-        return
-      }
-      setAddPhone(p => ({ ...p, [modem.slug]: '' }))
-      await load()
-    } finally { setActionBusy(null) }
-  }
 
   const handleDeleteAccount = async (acc: AccountRow) => {
     if (!window.confirm(`Remover conta ${acc.phone}?`)) return
@@ -303,9 +299,34 @@ export default function AdminSenders() {
 
   return (
     <div className={`${pageContainer} space-y-6`}>
-      <div>
-        <h1 className="text-2xl font-bold">Modems & Contas</h1>
-        <p className="text-sm text-fg-3 mt-1">Gerencie modems e as contas WhatsApp vinculadas a cada um.</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">Modems & Contas</h1>
+          <p className="text-sm text-fg-3 mt-1">Gerencie modems e as contas WhatsApp vinculadas a cada um.</p>
+        </div>
+        {evoHealth && (
+          <div className={[
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border',
+            evoHealth.status === 'connected'
+              ? 'bg-success-soft text-success border-success/30'
+              : evoHealth.status === 'not_configured'
+              ? 'bg-surface-2 text-fg-3 border-border'
+              : 'bg-danger-soft text-danger border-danger/30',
+          ].join(' ')}>
+            <span className={[
+              'w-1.5 h-1.5 rounded-full',
+              evoHealth.status === 'connected' ? 'bg-success animate-pulse' : 'bg-current',
+            ].join(' ')} />
+            Evolution
+            {evoHealth.status === 'connected' && ' · online'}
+            {evoHealth.status === 'disconnected' && ' · desconectada'}
+            {evoHealth.status === 'unreachable' && ' · inacessível'}
+            {evoHealth.status === 'not_configured' && ' · não configurada'}
+            {evoHealth.instance && evoHealth.status !== 'not_configured' && (
+              <span className="text-[10px] opacity-70 ml-1">{evoHealth.instance}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -374,37 +395,11 @@ export default function AdminSenders() {
                   </div>
                 </div>
 
-                {/* Contas + form de adição */}
+                {/* Lista de contas conectadas */}
                 {isExpanded && (
-                  <div className="px-4 py-3 space-y-2">
-                    {/* Form adicionar conta */}
-                    <div className="flex gap-2 items-center pb-3 border-b border-border">
-                      <input
-                        type="text"
-                        placeholder="+55 11 99999-9999"
-                        value={addPhone[modem.slug] ?? ''}
-                        onChange={e => setAddPhone(p => ({ ...p, [modem.slug]: e.target.value }))}
-                        className="flex-1 text-sm border border-border rounded px-2 py-1.5 bg-bg focus:outline-none focus:border-accent"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Quota/dia"
-                        value={addQuota[modem.slug] ?? '20'}
-                        onChange={e => setAddQuota(p => ({ ...p, [modem.slug]: e.target.value }))}
-                        className="w-24 text-sm border border-border rounded px-2 py-1.5 bg-bg focus:outline-none focus:border-accent"
-                      />
-                      <button
-                        onClick={() => handleAddAccount(modem)}
-                        disabled={actionBusy === `${modem.slug}-add`}
-                        className="px-3 py-1.5 text-sm bg-accent text-white rounded hover:bg-accent-hover disabled:opacity-50 font-medium"
-                      >
-                        + Adicionar
-                      </button>
-                    </div>
-
-                    {/* Lista de contas */}
+                  <div className="px-4 py-3">
                     {modemAccounts.length === 0 ? (
-                      <p className="text-xs text-fg-3 py-2">Nenhuma conta vinculada. Adicione uma acima.</p>
+                      <p className="text-xs text-fg-3 py-2">Nenhuma conta vinculada. Use "+ Conectar" para adicionar.</p>
                     ) : (
                       <div className="divide-y divide-border">
                         {modemAccounts.map(acc => (

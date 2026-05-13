@@ -355,6 +355,7 @@ func Build(
 		r.Patch("/api/admin/accounts/{id}", accsV2.Update)
 		r.Get("/api/admin/modems/{id}/qrcode", accsV2.WAQRCode)
 		r.Get("/api/admin/modems/{id}/connection-status", accsV2.WAConnectionStatus)
+		r.Get("/api/admin/evolution/health", accsV2.EvolutionHealth)
 
 		// Fase 5: Loops LLM — status de autonomia e auditoria
 		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
