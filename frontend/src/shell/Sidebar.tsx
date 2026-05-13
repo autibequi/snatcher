@@ -14,59 +14,59 @@ const NAV: NavGroup[] = [
   {
     label: 'Operação',
     items: [
-      { to: '/',         label: 'Dashboard',      icon: '🏠' },
-      { to: '/compose',  label: 'Compor disparo',  icon: '✍️' },
-      { to: '/activity', label: 'Activity',        icon: '📊' },
+      { to: '/',         label: 'Dashboard',     icon: '🏠' },
+      { to: '/compose',  label: 'Compor disparo', icon: '✍️' },
+      { to: '/activity', label: 'Atividade',      icon: '📋' },
     ],
   },
   {
-    label: 'Fontes & Produtos',
+    label: 'Automação',
     items: [
-      { to: '/crawlers', label: 'Crawlers',  icon: '🕷️' },
+      { to: '/admin/loops',    label: 'Loops LLM',        icon: '🔁' },
+      { to: '/admin/params',   label: 'Parâmetros',       icon: '🎛️' },
+      { to: '/admin/senders',  label: 'Modems & Senders', icon: '📡' },
+      { to: '/suggestions-l4', label: 'Sugestões L4',     icon: '💡' },
     ],
   },
   {
-    label: 'Destinos',
+    label: 'Catálogo',
     items: [
-      { to: '/links', label: 'Links públicos', icon: '🔗' },
+      { to: '/admin/catalog-canonical', label: 'Catálogo',   icon: '📦' },
+      { to: '/taxonomy',                label: 'Taxonomia',  icon: '🏷️' },
     ],
   },
   {
-    label: 'Provedores',
+    label: 'Scraping',
     items: [
-      { to: '/groups',     label: 'Grupos',    icon: '👥' },
-      { to: '/affiliates', label: 'Afiliados', icon: '💰' },
+      { to: '/crawlers',       label: 'Crawlers', icon: '🕷️' },
+      { to: '/admin/scrapers', label: 'Scrapers', icon: '🕸️' },
+    ],
+  },
+  {
+    label: 'Distribuição',
+    items: [
+      { to: '/groups',          label: 'Grupos',         icon: '👥' },
+      { to: '/admin/templates', label: 'Templates',      icon: '💬' },
+      { to: '/affiliates',      label: 'Afiliados',      icon: '💰' },
+      { to: '/links',           label: 'Links públicos', icon: '🔗' },
+    ],
+  },
+  {
+    label: 'Análise',
+    items: [
+      { to: '/admin/conversions', label: 'Conversões', icon: '💵' },
+      { to: '/admin/metrics',     label: 'Métricas',   icon: '📈' },
+      { to: '/analytics',         label: 'Analytics',  icon: '📊' },
+      { to: '/clusters',          label: 'Clusters',   icon: '🧩' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { to: '/settings', label: 'Configurações', icon: '⚙️' },
-      { to: '/taxonomy', label: 'Taxonomia',      icon: '🏷️' },
-      { to: '/manual',   label: 'Manual',         icon: '📚' },
-    ],
-  },
-  {
-    label: 'Controlar',
-    items: [
-      { to: '/admin/params',     label: 'Parâmetros',       icon: '🎛️' },
-      { to: '/admin/loops',      label: 'Loops LLM',        icon: '🔁' },
-      { to: '/admin/senders',    label: 'Modems & Senders', icon: '📡' },
-      { to: '/admin/alerts',     label: 'Alert Rules',      icon: '🚨' },
-      { to: '/admin/templates',  label: 'Templates',        icon: '💬' },
-      { to: '/suggestions-l4',   label: 'Sugestões L4',     icon: '💡' },
-    ],
-  },
-  {
-    label: 'Analisar',
-    items: [
-      { to: '/admin/conversions',       label: 'Conversões',     icon: '💵' },
-      { to: '/admin/metrics',           label: 'Métricas',       icon: '📈' },
-      { to: '/analytics',               label: 'Analytics',      icon: '📊' },
-      { to: '/clusters',                label: 'Clusters',       icon: '🧩' },
-      { to: '/admin/catalog-canonical', label: 'Catálogo',       icon: '📦' },
-      { to: '/admin/audit',             label: 'Audit Timeline', icon: '📜' },
-      { to: '/admin/scrapers',          label: 'Scrapers',       icon: '🕸️' },
+      { to: '/admin/alerts',  label: 'Alert Rules',    icon: '🚨' },
+      { to: '/admin/audit',   label: 'Audit Timeline', icon: '📜' },
+      { to: '/settings',      label: 'Configurações',  icon: '⚙️' },
+      { to: '/manual',        label: 'Manual',         icon: '📚' },
     ],
   },
 ]
