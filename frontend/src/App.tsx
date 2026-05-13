@@ -100,6 +100,7 @@ const AdminAlerts = lazy(() => import('./pages/AdminAlerts'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
+const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
   : null
@@ -184,6 +185,7 @@ export default function App() {
               <Route path="admin/metrics" element={<AdminMetrics />} />
               <Route path="admin/scrapers" element={<AdminScrapers />} />
               <Route path="admin/templates" element={<AdminTemplates />} />
+              <Route path="admin/domains" element={<RedirectDomains />} />
 
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />

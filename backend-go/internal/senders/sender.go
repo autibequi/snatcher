@@ -194,7 +194,7 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	link := cat.CanonicalURL
 	if domainID != nil && cat.ShortID != "" {
 		var domain sql.NullString
-		if err := db.GetContext(ctx, &domain, `SELECT domain FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
+		if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
 			link = "https://" + domain.String + "/" + cat.ShortID
 		}
 	}

@@ -342,6 +342,12 @@ func Build(
 		r.Post("/api/admin/modems/{id}/pause", adminhnd.PauseModemHandler(db))
 		r.Post("/api/admin/modems/{id}/resume", adminhnd.ResumeModemHandler(db))
 
+		// Redirect domains CRUD
+		r.Get("/api/admin/redirect-domains", adminhnd.ListRedirectDomainsHandler(db))
+		r.Post("/api/admin/redirect-domains", adminhnd.CreateRedirectDomainHandler(db))
+		r.Patch("/api/admin/redirect-domains/{id}/toggle", adminhnd.ToggleRedirectDomainHandler(db))
+		r.Delete("/api/admin/redirect-domains/{id}", adminhnd.DeleteRedirectDomainHandler(db))
+
 		// Accounts v2 CRUD
 		accsV2 := adminhnd.NewAccountsV2Handler(st)
 		r.Post("/api/admin/modems/{id}/accounts", accsV2.Create)

@@ -42,6 +42,7 @@ const NAV: NavGroup[] = [
       { to: '/affiliates',      label: 'Afiliados',      icon: '💰' },
       { to: '/links',           label: 'Links públicos', icon: '🔗' },
       { to: '/admin/senders',   label: 'Modems',         icon: '📡' },
+      { to: '/admin/domains',   label: 'Domínios',       icon: '🌐' },
     ],
   },
   {
