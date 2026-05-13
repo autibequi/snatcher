@@ -5,6 +5,109 @@ import { Badge, Button, Spinner, PlatformPill, PageHeader } from '../components/
 import { apiClient } from '../lib/apiClient'
 import { formGroup, formLabel, formHint, sectionCard, sectionTitle, switchRow, pageContainer } from '../lib/uiTokens'
 import { MessagePreview } from '../components/MessagePreview'
+import { authFetchJSON } from '../lib/authFetch'
+
+interface MessageTemplate {
+  id: number
+  category_slug: string
+  body: string
+  weight: number
+  enabled: boolean
+}
+
+/** Converte variáveis do formato DB ({titulo},{preco_de},...) para o formato do Composer ({produto},{de},...). */
+function dbBodyToComposer(body: string): string {
+  return body
+    .replace(/\{titulo\}/g, '{produto}')
+    .replace(/\{preco_de\}/g, '{de}')
+    .replace(/\{preco_por\}/g, '{por}')
+    .replace(/\{emoji\}/g, '🔥')
+}
+
+function TemplateDropdown({ onSelect }: { onSelect: (body: string) => void }) {
+  const [open, setOpen] = React.useState(false)
+  const [search, setSearch] = React.useState('')
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  const { data: templates = [] } = useQuery<MessageTemplate[]>({
+    queryKey: ['composer-templates'],
+    queryFn: () => authFetchJSON<MessageTemplate[]>('/api/admin/templates', []),
+    staleTime: 5 * 60_000,
+    select: (data) => data.filter((t) => t.enabled),
+  })
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase()
+    return templates.filter(
+      (t) => !q || t.body.toLowerCase().includes(q) || t.category_slug.toLowerCase().includes(q),
+    )
+  }, [templates, search])
+
+  React.useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs border border-border rounded px-2 py-1 text-fg-2 hover:bg-surface-2 flex items-center gap-1"
+        title="Escolher template cadastrado"
+      >
+        📋 Templates {templates.length > 0 && <span className="text-fg-3">({templates.length})</span>}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-80 bg-surface border border-border rounded-lg shadow-lg flex flex-col max-h-72">
+          <div className="p-2 border-b border-border">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar template..."
+              className="w-full text-xs border border-border rounded px-2 py-1.5 bg-bg focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 && (
+              <p className="text-xs text-fg-3 text-center py-4">Nenhum resultado</p>
+            )}
+            {filtered.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="w-full text-left px-3 py-2 hover:bg-surface-2 border-b border-border/40 last:border-b-0"
+                onClick={() => {
+                  onSelect(dbBodyToComposer(t.body))
+                  setOpen(false)
+                  setSearch('')
+                }}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">
+                    {t.category_slug}
+                  </span>
+                  <span className="text-[10px] text-fg-3">peso {t.weight}</span>
+                </div>
+                <p className="text-xs text-fg leading-snug line-clamp-2 whitespace-pre-wrap font-sans">
+                  {t.body.slice(0, 80)}{t.body.length > 80 ? '…' : ''}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface Channel {
   id: number
@@ -704,13 +807,16 @@ export default function Composer() {
                 <span className="w-6 h-6 bg-accent text-white text-xs font-bold rounded-full flex items-center justify-center">2</span>
                 <span className="font-medium text-fg">Template da mensagem</span>
               </div>
-              <span className="flex flex-wrap items-center gap-1">
-                {VARIABLES.map(v => (
-                  <button key={v} type="button" onClick={() => setText(t => t + v)}>
-                    <Badge variant="accent" size="sm" className="font-mono cursor-pointer hover:opacity-80">{v}</Badge>
-                  </button>
-                ))}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <TemplateDropdown onSelect={(body) => setText(body)} />
+                <span className="flex flex-wrap items-center gap-1">
+                  {VARIABLES.map(v => (
+                    <button key={v} type="button" onClick={() => setText(t => t + v)}>
+                      <Badge variant="accent" size="sm" className="font-mono cursor-pointer hover:opacity-80">{v}</Badge>
+                    </button>
+                  ))}
+                </span>
+              </div>
             </div>
             <div className="p-4 space-y-3">
               {loadingPreview && !text ? (
