@@ -2,6 +2,7 @@ package algo
 
 import (
 	"context"
+	"sort"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -12,26 +13,27 @@ import (
 //	mmr(i) = lambda * final_score(i) - (1-lambda) * sameCategoryAsToday(i)
 //
 // lambda = 1 - diversity_bonus_weight (default 0.70 com weight=0.30).
-// Retorna o argmax. Se candidates for vazio, retorna ok=false.
-func applyMMR(candidates []catalogItem, sentTodayCategories map[int64]bool, lambda float64) (catalogItem, bool) {
+// Retorna a lista re-ranqueada (desc por mmr_score). O argmax é o índice 0.
+func applyMMR(candidates []catalogItem, sentTodayCategories map[int64]bool, lambda float64) []catalogItem {
 	if len(candidates) == 0 {
-		return catalogItem{}, false
+		return candidates
 	}
 
-	var best catalogItem
-	bestMMR := -1e18
-	for _, c := range candidates {
+	out := make([]catalogItem, len(candidates))
+	copy(out, candidates)
+	mmrScores := make([]float64, len(out))
+	for i, c := range out {
 		penalty := 0.0
 		if c.CategoryID != nil && sentTodayCategories[*c.CategoryID] {
 			penalty = 1.0
 		}
-		mmr := lambda*c.FinalScore - (1-lambda)*penalty
-		if mmr > bestMMR {
-			bestMMR = mmr
-			best = c
-		}
+		mmrScores[i] = lambda*c.FinalScore - (1-lambda)*penalty
 	}
-	return best, true
+
+	sort.SliceStable(out, func(i, j int) bool {
+		return mmrScores[i] > mmrScores[j]
+	})
+	return out
 }
 
 // loadSentTodayCategories busca categorias já enviadas pro grupo nas últimas

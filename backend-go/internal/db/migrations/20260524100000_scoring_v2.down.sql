@@ -6,5 +6,7 @@ DELETE FROM tunable_parameters WHERE param_name IN (
     'score_weight_epc',
     'score_weight_freshness',
     'score_weight_saturation',
-    'use_scoring_v2'
+    'use_scoring_v2',
+    'use_epsilon_explore',
+    'use_thompson_sampling'
 );

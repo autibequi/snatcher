@@ -15,12 +15,14 @@ interface TunableParam {
   last_change_by?: string
 }
 
-const STRANGLER_FLAGS = ['use_algo_tick', 'use_scoring_v2']
+const STRANGLER_FLAGS = ['use_algo_tick', 'use_scoring_v2', 'use_epsilon_explore', 'use_thompson_sampling']
 
 const PARAM_META: Record<string, { label: string; description: string }> = {
   // Flags strangler
   use_algo_tick:          { label: 'Score Engine',             description: 'Ativa o Score Engine — seleciona produtos por qualidade, frescor, diversidade e categoria do grupo para envio automático.' },
   use_scoring_v2:         { label: 'Scoring v2 (fórmula composta)', description: 'Usa fórmula composta com 7 sinais (qualidade, afinidade, peso do canal, CTR, EPC, frescor, saturação) + re-rank por diversidade (MMR). Desligado = ORDER BY quality_score global.' },
+  use_epsilon_explore:    { label: 'Exploração ε-greedy (Fase 2)', description: 'Com probabilidade ε = epsilon_base * exp(-epsilon_decay_rate * dias), escolhe um candidato aleatório entre os top-10 pós-MMR. Ajuda a descobrir produtos novos sem histórico.' },
+  use_thompson_sampling:  { label: 'Thompson Sampling (Fase 3)', description: 'Amostra Beta(α,β) por (grupo×categoria) e escolhe a categoria do tick via bandit Bernoulli. Warm-start via learned_weights. Recomendado só após 30d de dados.' },
   use_send_queue:         { label: 'Fila de envio',           description: 'Usa a fila particionada por modem em vez do dispatcher legado.' },
   catalog_source:         { label: 'Catálogo v2',             description: 'Lê produtos do catálogo novo (0 = legado, 1 = v2 cimentado).' },
   // Qualidade e seleção

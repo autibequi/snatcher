@@ -46,12 +46,30 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 	}
 
 	lambda := loadMMRLambda(ctx, db)
+	thompsonOn := thompsonEnabled(ctx, db)
+	if thompsonOn {
+		if err := updateBanditArms(ctx, db); err != nil {
+			slog.Warn("algo.tick: updateBanditArms", "err", err)
+		}
+	}
+
 	enqueued := 0
 	for _, g := range groups {
 		if !ShouldEnqueueGroup(ctx, db, g.ID, g.DailyMsgCap) {
 			continue
 		}
-		candidates, err := selectTopKForGroup(ctx, db, g.ID, g.ChannelID, g.CategoryID)
+		// Categoria efetiva: se Thompson ativo, amostra do bandit;
+		// senão usa a categoria fixa do grupo (g.CategoryID, pode ser nil).
+		effectiveCat := g.CategoryID
+		if thompsonOn {
+			if err := ensureBanditArmsForGroup(ctx, db, g.ID, g.ChannelID); err != nil {
+				slog.Warn("algo.tick: ensureBanditArmsForGroup", "err", err, "group", g.ID)
+			}
+			if cat := selectCategoryThompson(ctx, db, g.ID, g.ChannelID); cat != nil {
+				effectiveCat = cat
+			}
+		}
+		candidates, err := selectTopKForGroup(ctx, db, g.ID, g.ChannelID, effectiveCat)
 		if err != nil || len(candidates) == 0 {
 			continue
 		}
@@ -60,10 +78,11 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 			slog.Warn("algo.tick: loadSentTodayCategories", "err", err, "group", g.ID)
 			sentToday = map[int64]bool{}
 		}
-		item, ok := applyMMR(candidates, sentToday, lambda)
-		if !ok {
+		ranked := applyMMR(candidates, sentToday, lambda)
+		if len(ranked) == 0 {
 			continue
 		}
+		item := pickWithEpsilon(ctx, db, ranked)
 		if err := enqueueSend(ctx, db, g.ID, item, item.FinalScore); err != nil {
 			slog.Warn("algo.tick: enqueue", "err", err, "group", g.ID)
 			continue
