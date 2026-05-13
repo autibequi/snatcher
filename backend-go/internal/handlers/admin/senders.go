@@ -10,6 +10,7 @@ import (
 )
 
 type sendersStatusRow struct {
+	ID           int64   `db:"id"            json:"id"`
 	Slug         string  `db:"slug"          json:"slug"`
 	Status       string  `db:"status"        json:"status"`
 	PausedUntil  *string `db:"paused_until"  json:"paused_until,omitempty"`
@@ -111,6 +112,7 @@ func SendersStatusHandler(db *sqlx.DB) http.HandlerFunc {
 		var rows []sendersStatusRow
 		err := db.SelectContext(r.Context(), &rows, `
 			SELECT
+				m.id,
 				m.slug,
 				m.status,
 				m.paused_until::text  AS paused_until,

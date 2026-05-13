@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"context"
 	"net/http"
+	"os"
 
+	"snatcher/backendv2/internal/adapters"
 	"snatcher/backendv2/internal/store"
 )
 
@@ -84,4 +87,48 @@ func (h *AccountsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// WAQRCode retorna o QR code base64 para conectar uma conta WhatsApp via Evolution API.
+// GET /api/admin/modems/{id}/qrcode
+func (h *AccountsV2Handler) WAQRCode(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	qr, err := evo.GetQRCode(context.Background())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao obter QR code: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"qr_base64": qr, "instance": instance})
+}
+
+// WAConnectionStatus retorna o estado de conexão da instância Evolution.
+// GET /api/admin/modems/{id}/connection-status
+func (h *AccountsV2Handler) WAConnectionStatus(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	status, err := evo.GetStatus(context.Background())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao obter status: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }

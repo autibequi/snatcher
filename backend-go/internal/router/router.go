@@ -348,11 +348,13 @@ func Build(
 		r.Patch("/api/admin/redirect-domains/{id}/toggle", adminhnd.ToggleRedirectDomainHandler(db))
 		r.Delete("/api/admin/redirect-domains/{id}", adminhnd.DeleteRedirectDomainHandler(db))
 
-		// Accounts v2 CRUD
+		// Accounts v2 CRUD + WA connect
 		accsV2 := adminhnd.NewAccountsV2Handler(st)
 		r.Post("/api/admin/modems/{id}/accounts", accsV2.Create)
 		r.Delete("/api/admin/accounts/{id}", accsV2.Delete)
 		r.Patch("/api/admin/accounts/{id}", accsV2.Update)
+		r.Get("/api/admin/modems/{id}/qrcode", accsV2.WAQRCode)
+		r.Get("/api/admin/modems/{id}/connection-status", accsV2.WAConnectionStatus)
 
 		// Fase 5: Loops LLM — status de autonomia e auditoria
 		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))

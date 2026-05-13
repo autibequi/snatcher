@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { authFetch } from '../lib/authFetch'
 import { pageContainer } from '../lib/uiTokens'
 
 interface ModemStatus {
-  id?: number
+  id: number
   slug: string
   status: string
   paused_until?: string
@@ -49,6 +49,153 @@ function accountStatusBadge(status: string) {
   return <span className={`${base} bg-surface-2 text-fg-2`}>{status}</span>
 }
 
+// ── Modal de conexão de conta ─────────────────────────────────────────────────
+
+type Platform = 'whatsapp' | 'telegram'
+
+interface ConnectModalProps {
+  modem: ModemStatus
+  onClose: () => void
+  onConnected: () => void
+}
+
+function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
+  const [platform, setPlatform] = useState<Platform | null>(null)
+  const [qr, setQr] = useState<string | null>(null)
+  const [status, setStatus] = useState<'idle' | 'loading_qr' | 'waiting_scan' | 'connected' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPoll = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+  }, [])
+
+  const pollStatus = useCallback(async (modemId: number) => {
+    try {
+      const r = await authFetch(`/api/admin/modems/${modemId}/connection-status`)
+      const data: { status: string } = await r.json()
+      if (data.status === 'connected') {
+        stopPoll()
+        setStatus('connected')
+        setTimeout(onConnected, 1500)
+      }
+    } catch { /* silencia, tenta de novo */ }
+  }, [stopPoll, onConnected])
+
+  const loadQR = useCallback(async () => {
+    setStatus('loading_qr')
+    setQr(null)
+    setErrorMsg('')
+    try {
+      const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: r.statusText }))
+        setErrorMsg(err.error ?? 'Erro ao obter QR code')
+        setStatus('error')
+        return
+      }
+      const data: { qr_base64: string } = await r.json()
+      setQr(data.qr_base64)
+      setStatus('waiting_scan')
+      pollRef.current = setInterval(() => pollStatus(modem.id), 3000)
+    } catch (e) {
+      setErrorMsg(String(e))
+      setStatus('error')
+    }
+  }, [modem.id, pollStatus])
+
+  useEffect(() => () => stopPoll(), [stopPoll])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-fg">Conectar conta</h2>
+          <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">✕</button>
+        </div>
+
+        {/* Seleção de plataforma */}
+        {!platform && (
+          <div className="space-y-2">
+            <p className="text-xs text-fg-3">Escolha a plataforma:</p>
+            <button
+              onClick={() => { setPlatform('whatsapp'); loadQR() }}
+              className="w-full flex items-center gap-3 px-4 py-3 border border-border rounded-lg hover:bg-surface-2 transition-colors text-left"
+            >
+              <span className="text-2xl">📱</span>
+              <div>
+                <p className="font-medium text-fg text-sm">WhatsApp</p>
+                <p className="text-xs text-fg-3">Conectar via QR code (Evolution API)</p>
+              </div>
+            </button>
+            <button
+              disabled
+              className="w-full flex items-center gap-3 px-4 py-3 border border-border rounded-lg opacity-50 cursor-not-allowed text-left"
+            >
+              <span className="text-2xl">✈️</span>
+              <div>
+                <p className="font-medium text-fg text-sm">Telegram</p>
+                <p className="text-xs text-fg-3">Em breve</p>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* QR Code */}
+        {platform === 'whatsapp' && (
+          <div className="space-y-3 text-center">
+            {status === 'loading_qr' && (
+              <div className="flex flex-col items-center gap-2 py-6">
+                <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-fg-3">Gerando QR code...</p>
+              </div>
+            )}
+
+            {status === 'waiting_scan' && qr && (
+              <>
+                <img
+                  src={qr.startsWith('data:') ? qr : `data:image/png;base64,${qr}`}
+                  alt="QR Code WhatsApp"
+                  className="mx-auto rounded-lg border border-border"
+                  style={{ width: 220, height: 220 }}
+                />
+                <p className="text-xs text-fg-3">Abra o WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
+                <p className="text-[10px] text-fg-4 animate-pulse">Aguardando leitura...</p>
+              </>
+            )}
+
+            {status === 'connected' && (
+              <div className="flex flex-col items-center gap-2 py-6">
+                <span className="text-4xl">✅</span>
+                <p className="text-sm font-medium text-success">Conectado com sucesso!</p>
+                <p className="text-xs text-fg-3">Adicione o número da conta no campo abaixo.</p>
+              </div>
+            )}
+
+            {status === 'error' && (
+              <div className="rounded-lg bg-danger-soft border border-danger/30 px-3 py-3 space-y-2">
+                <p className="text-xs text-danger">{errorMsg}</p>
+                <button onClick={loadQR} className="text-xs text-accent hover:underline">
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => { stopPoll(); setPlatform(null); setQr(null); setStatus('idle') }}
+              className="text-xs text-fg-3 hover:text-fg underline"
+            >
+              ← Voltar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AdminSenders() {
   const [modems, setModems] = useState<ModemStatus[]>([])
   const [accounts, setAccounts] = useState<AccountRow[]>([])
@@ -57,6 +204,7 @@ export default function AdminSenders() {
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [addPhone, setAddPhone] = useState<Record<string, string>>({})
   const [addQuota, setAddQuota] = useState<Record<string, string>>({})
+  const [connectingModem, setConnectingModem] = useState<ModemStatus | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -212,6 +360,12 @@ export default function AdminSenders() {
                       </>
                     )}
                     <button
+                      onClick={() => setConnectingModem(modem)}
+                      className="text-xs px-2 py-0.5 bg-accent text-white rounded hover:bg-accent-hover ml-1"
+                    >
+                      + Conectar
+                    </button>
+                    <button
                       onClick={() => setExpandedModem(isExpanded ? null : modem.slug)}
                       className="text-accent hover:underline ml-1"
                     >
@@ -306,6 +460,14 @@ export default function AdminSenders() {
             <p className="text-fg-3 text-sm">Nenhum modem encontrado.</p>
           )}
         </div>
+      )}
+
+      {connectingModem && (
+        <ConnectModal
+          modem={connectingModem}
+          onClose={() => setConnectingModem(null)}
+          onConnected={() => { setConnectingModem(null); load() }}
+        />
       )}
     </div>
   )
