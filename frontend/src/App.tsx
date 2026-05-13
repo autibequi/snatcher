@@ -192,6 +192,8 @@ export default function App() {
               <Route path="automations" element={<Navigate to="/settings/loops" replace />} />
               <Route path="automations/*" element={<Navigate to="/settings/loops" replace />} />
               <Route path="match" element={<Navigate to="/settings/params" replace />} />
+              {/* Jonfrey config migrado para Settings > Loops LLM */}
+              <Route path="settings/jonfrey" element={<Navigate to="/settings/loops" replace />} />
               {/* Migrados para Settings */}
               <Route path="admin/loops" element={<Navigate to="/settings/loops" replace />} />
               <Route path="admin/params" element={<Navigate to="/settings/params" replace />} />

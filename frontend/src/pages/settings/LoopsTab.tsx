@@ -1,5 +1,174 @@
 import AdminLoops from '../AdminLoops'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button, Switch, Skeleton } from '../../components/ui'
+import { apiClient } from '../../lib/apiClient'
+import {
+  sectionCard, sectionTitle, sectionSubtitle,
+  switchRow, formLabel, formHint,
+  statusChipSuccess, statusChipDanger, statusChipMuted,
+} from '../../lib/uiTokens'
+import { relJonfreyTime, type JonfreyAction } from '../../components/JonfreyActionCard'
+
+interface JonfreyConfig {
+  enabled: boolean
+  interval_minutes?: number
+  enabled_actions?: string[]
+  last_run_at?: string | null
+}
+
+const AUTOMATIONS = [
+  {
+    id: 'auto_curate_high_confidence',
+    label: 'Auto-triagem de produtos',
+    description: 'Classifica produtos pendentes com categoria e marca quando a confiança do modelo é alta.',
+  },
+  {
+    id: 'auto_match_promotions',
+    label: 'Auto-match de promoções',
+    description: 'Associa novos links rastreados a produtos do catálogo por similaridade semântica.',
+  },
+  {
+    id: 'auto_tag_clusters',
+    label: 'Auto-tagging de clusters',
+    description: 'Atualiza tags de clusters com base nos tópicos dominantes das últimas mensagens.',
+  },
+]
+
+function StatusChip({ status }: { status: string }) {
+  if (status === 'success') return <span className={statusChipSuccess}>sucesso</span>
+  if (status === 'failed')  return <span className={statusChipDanger}>falhou</span>
+  if (status === 'running') return <span className={`${statusChipMuted} animate-pulse`}>rodando</span>
+  return <span className={statusChipMuted}>{status}</span>
+}
+
+function JonfreySection() {
+  const qc = useQueryClient()
+
+  const { data: config, isLoading } = useQuery<JonfreyConfig | null>({
+    queryKey: ['jonfrey-config'],
+    queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
+    refetchInterval: 30_000,
+  })
+
+  const { data: actions = [] } = useQuery<JonfreyAction[]>({
+    queryKey: ['jonfrey-actions'],
+    queryFn: () => apiClient.get('/api/jonfrey/actions').then(r => r.data ?? []).catch(() => []),
+    refetchInterval: 15_000,
+  })
+
+  const pilotMut = useMutation({
+    mutationFn: (enabled: boolean) => apiClient.put('/api/jonfrey/config', { enabled }).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
+    onError: (err: unknown) => alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erro ao salvar'),
+  })
+
+  const actionMut = useMutation({
+    mutationFn: ({ actionId, enable }: { actionId: string; enable: boolean }) => {
+      if (!config) return Promise.reject(new Error('config não carregada'))
+      const current = config.enabled_actions ?? []
+      const next = enable ? Array.from(new Set([...current, actionId])) : current.filter(a => a !== actionId)
+      return apiClient.put('/api/jonfrey/config', { enabled_actions: next }).then(r => r.data)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
+  })
+
+  const runNowMut = useMutation({
+    mutationFn: () => apiClient.post('/api/jonfrey/run').then(r => r.data).catch(() => null),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['jonfrey-actions'] }); qc.invalidateQueries({ queryKey: ['jonfrey-config'] }) },
+  })
+
+  const pilotOn = !!config?.enabled
+  const enabledActions = config?.enabled_actions ?? []
+  const lastByType = (type: string): JonfreyAction | undefined => actions.find(a => a.action_type === type)
+
+  if (isLoading && !config) {
+    return <div className="space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Auto-pilot toggle */}
+      <div className={sectionCard}>
+        <div className={switchRow}>
+          <div>
+            <p className={sectionTitle}>Jonfrey — Agente automatizador</p>
+            <p className={`${sectionSubtitle} mt-0.5`}>
+              Quando ligado, roda em ciclos periódicos e executa as automações abaixo.
+            </p>
+            {config?.last_run_at && (
+              <p className="text-[11px] text-fg-3 mt-1">
+                Último ciclo: {relJonfreyTime(config.last_run_at)}
+                {config.interval_minutes ? ` · cadência ~${config.interval_minutes} min` : ''}
+              </p>
+            )}
+          </div>
+          <Switch
+            checked={pilotOn}
+            disabled={pilotMut.isPending || !config}
+            onChange={v => pilotMut.mutate(v)}
+          />
+        </div>
+        <div className="border-t border-border pt-3 mt-1 flex items-center gap-3">
+          <Button size="sm" variant="secondary" loading={runNowMut.isPending} disabled={!config} onClick={() => runNowMut.mutate()}>
+            Rodar agora
+          </Button>
+          {runNowMut.isSuccess && <p className="text-xs text-success">Ciclo acionado.</p>}
+          <p className="text-xs text-fg-3">Dispara um ciclo imediato independente do agendamento.</p>
+        </div>
+      </div>
+
+      {/* Automações do Jonfrey */}
+      <div className="space-y-2">
+        {AUTOMATIONS.map(meta => {
+          const last = lastByType(meta.id)
+          const enabled = enabledActions.includes(meta.id)
+          return (
+            <div key={meta.id} className={sectionCard}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className={formLabel}>{meta.label}</p>
+                  <p className={formHint}>{meta.description}</p>
+                  {last ? (
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      <StatusChip status={last.status} />
+                      <span className="text-[11px] text-fg-3">{relJonfreyTime(last.created_at)}</span>
+                      {last.reasoning?.trim() && (
+                        <span className="text-[11px] text-fg-2 truncate max-w-xs" title={last.reasoning}>
+                          {last.reasoning.slice(0, 80)}{last.reasoning.length > 80 ? '…' : ''}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-fg-3 pt-1">Nenhuma execução registrada</p>
+                  )}
+                  {!pilotOn && enabled && (
+                    <p className="text-[11px] text-warning pt-0.5">Auto-pilot desligado — não vai rodar.</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <Switch checked={enabled} disabled={actionMut.isPending} onChange={v => actionMut.mutate({ actionId: meta.id, enable: v })} />
+                  <span className="text-[10px] text-fg-3">{enabled ? 'ativa' : 'inativa'}</span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export function LoopsTab() {
-  return <AdminLoops embedded />
+  return (
+    <div className="space-y-8">
+      <JonfreySection />
+
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-fg-3 mb-3">
+          Loops autônomos
+        </p>
+        <AdminLoops embedded />
+      </div>
+    </div>
+  )
 }
