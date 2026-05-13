@@ -16,23 +16,22 @@ interface JonfreyConfig {
   last_run_at?: string | null
 }
 
-const AUTOMATIONS = [
-  {
-    id: 'auto_curate_high_confidence',
-    label: 'Auto-triagem de produtos',
-    description: 'Classifica produtos pendentes com categoria e marca quando a confiança do modelo é alta.',
-  },
-  {
-    id: 'auto_match_promotions',
-    label: 'Auto-match de promoções',
-    description: 'Associa novos links rastreados a produtos do catálogo por similaridade semântica.',
-  },
-  {
-    id: 'auto_tag_clusters',
-    label: 'Auto-tagging de clusters',
-    description: 'Atualiza tags de clusters com base nos tópicos dominantes das últimas mensagens.',
-  },
-]
+interface AvailableAction {
+  type: string
+  category: string
+  description: string
+  uses_llm: boolean
+  last_run_at?: string
+  last_run_status?: string
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  curation:     'Curadoria',
+  health:       'Saúde',
+  cleanup:      'Limpeza',
+  optimization: 'Otimização',
+  dispatch:     'Disparo',
+}
 
 function StatusChip({ status }: { status: string }) {
   if (status === 'success') return <span className={statusChipSuccess}>sucesso</span>
@@ -77,6 +76,12 @@ function JonfreySection() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['jonfrey-actions'] }); qc.invalidateQueries({ queryKey: ['jonfrey-config'] }) },
   })
 
+  const { data: available = [] } = useQuery<AvailableAction[]>({
+    queryKey: ['jonfrey-available'],
+    queryFn: () => apiClient.get('/api/jonfrey/available').then(r => r.data ?? []).catch(() => []),
+    staleTime: 5 * 60_000,
+  })
+
   const pilotOn = !!config?.enabled
   const enabledActions = config?.enabled_actions ?? []
   const lastByType = (type: string): JonfreyAction | undefined => actions.find(a => a.action_type === type)
@@ -117,16 +122,25 @@ function JonfreySection() {
         </div>
       </div>
 
-      {/* Automações do Jonfrey — mesmo estilo dos loops */}
+      {/* Automações carregadas dinamicamente do backend */}
       <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-        {AUTOMATIONS.map(meta => {
-          const last = lastByType(meta.id)
-          const enabled = enabledActions.includes(meta.id)
+        {available.map(action => {
+          const last = lastByType(action.type)
+          const enabled = enabledActions.includes(action.type)
           return (
-            <div key={meta.id} className="bg-surface px-4 py-3">
+            <div key={action.type} className="bg-surface px-4 py-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-fg">{meta.label}</span>
+                  <span
+                    className="text-sm font-medium text-fg cursor-help"
+                    title={`${action.description}\n(${action.type}${action.uses_llm ? ' · usa LLM' : ''})`}
+                  >
+                    {action.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                  </span>
+                  <span className="ml-1.5 text-[10px] px-1 rounded bg-surface-2 text-fg-3">
+                    {CATEGORY_LABEL[action.category] ?? action.category}
+                  </span>
+                  {action.uses_llm && <span className="ml-1 text-[10px] text-accent">LLM</span>}
                   {last ? (
                     <span className="ml-2 inline-flex items-center gap-1.5">
                       <StatusChip status={last.status} />
@@ -140,7 +154,7 @@ function JonfreySection() {
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <Switch checked={enabled} disabled={actionMut.isPending} onChange={v => actionMut.mutate({ actionId: meta.id, enable: v })} />
+                  <Switch checked={enabled} disabled={actionMut.isPending} onChange={v => actionMut.mutate({ actionId: action.type, enable: v })} />
                   <span className="text-[10px] text-fg-3">{enabled ? 'ativa' : 'inativa'}</span>
                 </div>
               </div>
