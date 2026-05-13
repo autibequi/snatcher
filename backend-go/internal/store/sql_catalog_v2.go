@@ -34,13 +34,37 @@ type CatalogV2Item struct {
 
 // CatalogV2UpsertParams reúne os campos necessários para um upsert em catalog.
 type CatalogV2UpsertParams struct {
-	DedupKey     string
-	ShortID      string
-	SourceID     string
-	Title        string
-	PriceCurrent float64
-	CanonicalURL string
-	ImageURL     string
+	DedupKey      string
+	ShortID       string
+	SourceID      string
+	Title         string
+	PriceCurrent  float64
+	PriceOriginal float64 // 0 = sem preço original (sem desconto calculável)
+	CanonicalURL  string
+	ImageURL      string
+}
+
+// computeQualityScore calcula um score básico 0–1 baseado nos atributos do produto.
+// Critérios: imagem (+0.3), desconto real (+até 0.4), preço válido (+0.2), título (+0.1).
+func computeQualityScore(p CatalogV2UpsertParams) float64 {
+	score := 0.0
+	if p.ImageURL != "" {
+		score += 0.30
+	}
+	if p.PriceCurrent > 0 {
+		score += 0.20
+	}
+	if p.Title != "" && len(p.Title) > 5 {
+		score += 0.10
+	}
+	if p.PriceOriginal > p.PriceCurrent && p.PriceCurrent > 0 {
+		discount := (p.PriceOriginal - p.PriceCurrent) / p.PriceOriginal
+		if discount > 0.40 {
+			discount = 0.40
+		}
+		score += discount
+	}
+	return score
 }
 
 // ContentHashV2 calcula o hash canônico do item para detecção de mudanças.
@@ -65,23 +89,28 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 		shortID = genShortID()
 	}
 	contentHash := ContentHashV2(p.Title, p.PriceCurrent, p.ImageURL)
+	qualityScore := computeQualityScore(p)
+	sendReady := qualityScore >= 0.40
 
 	// Garante que source_id existe; usa 'unknown' como fallback seguro.
 	_, err := s.db.Exec(`
 		INSERT INTO catalog (
 			dedup_key, short_id, source_id, title,
-			price_current, canonical_url, image_url,
-			content_hash, send_ready
+			price_current, price_original, canonical_url, image_url,
+			content_hash, quality_score, send_ready
 		)
 		SELECT $1, $2,
 			COALESCE((SELECT id FROM sources WHERE id = $3), 'unknown'),
-			$4, $5, $6, $7, $8, false
+			$4, $5, $6, $7, $8, $9, $10, $11
 		ON CONFLICT (dedup_key) DO UPDATE SET
 			price_current = EXCLUDED.price_current,
+			price_original = EXCLUDED.price_original,
 			content_hash  = EXCLUDED.content_hash,
 			image_url     = EXCLUDED.image_url,
-			updated_at    = now()
-	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.CanonicalURL, p.ImageURL, contentHash)
+			quality_score = EXCLUDED.quality_score,
+			send_ready    = EXCLUDED.send_ready,
+			send_ready_at = CASE WHEN EXCLUDED.send_ready AND NOT catalog.send_ready THEN now() ELSE catalog.send_ready_at END
+	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.PriceOriginal, p.CanonicalURL, p.ImageURL, contentHash, qualityScore, sendReady)
 	if err != nil {
 		return "", err
 	}
