@@ -47,6 +47,11 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   score_weight_epc:        { label: 'Peso · EPC 30d',            description: 'Coeficiente w_e. Multiplica learned_weights.epc_30d (earnings per click, clampado em 1.0).' },
   score_weight_freshness:  { label: 'Peso · Frescor (recência)', description: 'Coeficiente w_f. Multiplica decay exponencial baseado em send_ready_at e half_life_freshness.' },
   score_weight_saturation: { label: 'Peso · Anti-saturação',     description: 'Coeficiente w_s (subtraído do score). Multiplica anti_saturation_decay^n_sends_24h da mesma categoria no grupo.' },
+  // Anti-repeat e bypass de re-promoção
+  antirepeat_window_days:         { label: 'Janela anti-repeat (dias)',  description: 'Dias mínimos entre dois envios do MESMO produto no MESMO grupo (default 7d). Pode ser furada pelo bypass de re-promo.' },
+  antirepeat_window_days_price_up:{ label: 'Janela estendida quando preço subiu', description: 'Dias mínimos quando o produto piorou desde o último envio (default 14d). Evita repostar produto que ficou pior.' },
+  repromo_drop_threshold:         { label: 'Re-promo · Queda mínima',    description: 'Queda relativa de preço (vs último envio) necessária pra furar a janela anti-repeat. 0.10 = 10% mais barato que da última vez.' },
+  repromo_cooldown_hours:         { label: 'Re-promo · Cooldown (h)',    description: 'Horas mínimas entre dois envios do mesmo produto mesmo com bypass. Protege contra picos de scrape gerando flood.' },
 }
 
 function paramLabel(name: string): string {

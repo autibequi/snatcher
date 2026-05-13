@@ -64,16 +64,41 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		    WHERE lw.group_id = $1 AND lw.category_id = c.category_id
 		) lw_agg ON true
 		LEFT JOIN gst ON gst.category_id = c.category_id
+		LEFT JOIN LATERAL (
+		    SELECT MAX(sent_at)              AS last_sent_at,
+		           MAX(price_at_send)        AS last_price_at_send
+		    FROM group_sent_history h
+		    WHERE h.group_id = $1 AND h.dedup_key = c.dedup_key
+		) sent ON true
 		WHERE c.send_ready = true
 		  AND c.canonical_url_alive = true
 		  AND COALESCE(c.quality_score, 0) >= COALESCE(
 		      get_param('quality_threshold','global',NULL), 0.4)
 		  AND ($3::bigint IS NULL OR c.category_id = $3)
-		  AND NOT EXISTS (
-		      SELECT 1 FROM group_sent_history h
-		      WHERE h.group_id = $1
-		        AND h.dedup_key = c.dedup_key
-		        AND h.sent_at > now() - INTERVAL '7 days'
+		  -- Anti-repeat com bypass condicional ("re-promo"):
+		  --   A) nunca enviado nesse grupo
+		  --   B) janela padrão expirou (default 7d, ou 14d se preço subiu)
+		  --   C) bypass: preço caiu de novo após o envio + queda mínima
+		  --             E respeitando cooldown mínimo entre re-envios
+		  AND (
+		      sent.last_sent_at IS NULL
+		      OR sent.last_sent_at < now() - (
+		          CASE WHEN sent.last_price_at_send IS NOT NULL
+		                    AND c.price_current > sent.last_price_at_send
+		               THEN get_param('antirepeat_window_days_price_up','global',NULL)
+		               ELSE get_param('antirepeat_window_days','global',NULL)
+		          END * INTERVAL '1 day')
+		      OR (
+		          c.last_price_drop_at IS NOT NULL
+		          AND sent.last_price_at_send IS NOT NULL
+		          AND sent.last_price_at_send > 0
+		          AND c.last_price_drop_at > sent.last_sent_at
+		          AND sent.last_sent_at < now()
+		              - get_param('repromo_cooldown_hours','global',NULL) * INTERVAL '1 hour'
+		          AND (sent.last_price_at_send - c.price_current)
+		              / sent.last_price_at_send
+		              >= get_param('repromo_drop_threshold','global',NULL)
+		      )
 		  )
 		  AND NOT EXISTS (
 		      SELECT 1 FROM send_queue q

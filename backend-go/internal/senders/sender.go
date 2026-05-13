@@ -276,10 +276,11 @@ func markSent(ctx context.Context, db *sqlx.DB, qid, groupID, catalogID, account
 		INSERT INTO send_log (send_queue_id, group_id, account_id, catalog_id, domain_id, template_id, status, sent_at)
 		VALUES ($1, $2, $3, $4, $5, $6, 'sent', now())
 	`, qid, groupID, accountID, catalogID, domainID, templateID)
-	// anti-repeat: registra no histórico de envio por grupo
+	// anti-repeat: registra no histórico de envio por grupo + preço para detectar
+	// re-promoções que justificam bypass do filtro de 7 dias.
 	_, _ = tx.ExecContext(ctx, `
-		INSERT INTO group_sent_history (group_id, dedup_key, sent_at)
-		SELECT $1, dedup_key, now() FROM catalog WHERE id=$2
+		INSERT INTO group_sent_history (group_id, dedup_key, sent_at, price_at_send)
+		SELECT $1, dedup_key, now(), price_current FROM catalog WHERE id=$2
 		ON CONFLICT DO NOTHING
 	`, groupID, catalogID)
 	// touch account
