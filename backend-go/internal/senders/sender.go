@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -152,14 +154,115 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 	return true, nil
 }
 
-// sendViaEvolution envia a mensagem via Evolution API.
-// TODO: integrar com internal/messaging/evolution/ pattern existente.
-// Por ora: stub que sempre retorna sucesso simulado e log estruturado.
 func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalogID, accountID int64, templateID, domainID *int64) error {
-	slog.Info("sender.send.stub", "modem", modemID, "group", groupID, "catalog", catalogID, "account", accountID)
-	// Stub: integração real requer buscar credenciais do modem (wa_account_id, baseURL, apiKey, instance)
-	// e chamar os helpers sendEvolutionMessage/sendEvolutionMedia do dispatch_worker.
-	return nil
+	// 1. busca dados do produto
+	var cat struct {
+		Title           string          `db:"title"`
+		PriceCurrent    float64         `db:"price_current"`
+		PriceOriginal   sql.NullFloat64 `db:"price_original"`
+		DiscountPct     float64         `db:"discount_pct"`
+		CanonicalURL    string          `db:"canonical_url"`
+		ShortID         string          `db:"short_id"`
+		ImageURL        sql.NullString  `db:"image_url"`
+		CachedImagePath sql.NullString  `db:"cached_image_path"`
+	}
+	if err := db.GetContext(ctx, &cat, `
+		SELECT title, price_current, price_original, discount_pct, canonical_url,
+		       short_id, image_url, cached_image_path
+		FROM catalog WHERE id=$1
+	`, catalogID); err != nil {
+		return fmt.Errorf("fetch catalog %d: %w", catalogID, err)
+	}
+
+	// 2. busca JID do grupo
+	var jid sql.NullString
+	_ = db.GetContext(ctx, &jid, `SELECT whatsapp_jid FROM groups WHERE id=$1`, groupID)
+	if !jid.Valid || jid.String == "" {
+		return fmt.Errorf("grupo %d sem whatsapp_jid", groupID)
+	}
+
+	// 3. busca corpo do template
+	var body string
+	if templateID != nil {
+		_ = db.GetContext(ctx, &body, `SELECT body FROM templates WHERE id=$1 AND enabled=true`, *templateID)
+	}
+	if body == "" {
+		body = "🔥 {titulo}\nDe R$ {preco_de} por R$ {preco_por} ({desconto}% OFF)\n{link}"
+	}
+
+	// 4. monta link de redirect (domínio afiliado se disponível)
+	link := cat.CanonicalURL
+	if domainID != nil && cat.ShortID != "" {
+		var domain sql.NullString
+		if err := db.GetContext(ctx, &domain, `SELECT domain FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
+			link = "https://" + domain.String + "/" + cat.ShortID
+		}
+	}
+
+	// 5. interpola variáveis no template
+	msg := renderTemplateBody(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
+
+	// 6. define imagem (cached > remota)
+	imagePath := ""
+	if cat.CachedImagePath.Valid && cat.CachedImagePath.String != "" {
+		imagePath = cat.CachedImagePath.String
+	}
+
+	// 7. envia via Evolution API
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	slog.Info("sender.send", "modem", modemID, "group", groupID, "catalog", catalogID, "template", templateID, "jid", jid.String)
+	return SendTextWithMedia(ctx, SendMediaArgs{
+		Instance:  instance,
+		JID:       jid.String,
+		Caption:   msg,
+		ImagePath: imagePath,
+	})
+}
+
+// renderTemplateBody substitui as variáveis {xxx} pelo dados reais do produto.
+func renderTemplateBody(body, titulo string, precoDeNull sql.NullFloat64, precoPor, descontoPct float64, link string) string {
+	precoDe := precoPor
+	if precoDeNull.Valid && precoDeNull.Float64 > precoPor {
+		precoDe = precoDeNull.Float64
+	}
+
+	r := strings.NewReplacer(
+		"{titulo}",    titulo,
+		"{preco_de}",  formatMoney(precoDe),
+		"{preco_por}", formatMoney(precoPor),
+		"{desconto}",  fmt.Sprintf("%.0f", descontoPct),
+		"{link}",      link,
+		"{emoji}",     pickEmoji(descontoPct),
+	)
+	return r.Replace(body)
+}
+
+func formatMoney(v float64) string {
+	// ex: 1234.5 → "1.234,50"
+	s := fmt.Sprintf("%.2f", v)
+	// troca ponto decimal por vírgula
+	s = strings.ReplaceAll(s, ".", ",")
+	// insere separador de milhar
+	if len(s) > 6 {
+		s = s[:len(s)-6] + "." + s[len(s)-6:]
+	}
+	return s
+}
+
+func pickEmoji(pct float64) string {
+	switch {
+	case pct >= 50:
+		return "🔥"
+	case pct >= 30:
+		return "⚡"
+	case pct >= 15:
+		return "💰"
+	default:
+		return "🛒"
+	}
 }
 
 func markSent(ctx context.Context, db *sqlx.DB, qid, groupID, catalogID, accountID int64, templateID, domainID *int64) {
