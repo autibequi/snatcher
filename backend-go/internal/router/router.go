@@ -61,9 +61,7 @@ func Build(
 	terms := adminhnd.NewSearchTerms(st, scrapers)
 	// LLM injected after composeH is created below
 	sources := adminhnd.NewSources(st)
-	affiliates := adminhnd.NewAffiliates(st)
 	config := adminhnd.NewConfigWithDB(st, db)
-	accounts := adminhnd.NewAccounts(st)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
 	// ReDesign handlers
 	groups      := adminhnd.NewGroupsHandler(st)
@@ -182,8 +180,6 @@ func Build(
 		// Scan
 		r.Get("/api/scan/status", scan.Status)
 		r.Get("/api/scan/jobs", scan.ListJobs)
-		r.Post("/api/scan/pipeline", scan.TriggerPipeline)
-		r.Post("/api/scan/process", scan.TriggerProcess)
 
 		// Sources
 		r.Get("/api/sources", sources.List)
@@ -192,13 +188,6 @@ func Build(
 		r.Patch("/api/sources/{id}", sources.Update)
 
 		// Affiliates
-		r.Get("/api/affiliates", affiliates.List)
-		r.Get("/api/affiliates/", affiliates.List)
-		r.Get("/api/affiliates/{id}", affiliates.Get)
-		r.Post("/api/affiliates", affiliates.Create)
-		r.Post("/api/affiliates/", affiliates.Create)
-		r.Put("/api/affiliates/{id}", affiliates.Update)
-		r.Delete("/api/affiliates/{id}", affiliates.Delete)
 
 		// Search Terms (com e sem trailing slash)
 		r.Get("/api/search-terms", terms.List)
@@ -236,9 +225,6 @@ func Build(
 		// Analytics
 
 		// Coverage (multi-WA)
-
-		// Legacy v1 groups (alias mantido para compatibilidade)
-		r.Get("/api/groups/legacy", accounts.ListGroups)
 
 		// ReDesign: Groups
 		r.Get("/api/groups", groups.List)
@@ -309,7 +295,6 @@ func Build(
 
 		// Dashboard
 		r.Get("/api/dashboard/kpis", dash.KPIs)
-		r.Get("/api/dashboard/feed", dash.Feed)
 		r.Get("/api/dashboard/inbox", dash.Inbox)
 		r.Get("/api/dashboard/performance", dash.Performance)
 		r.Get("/api/dashboard/channel-performance", dash.Performance)
@@ -335,14 +320,11 @@ func Build(
 
 		// Admin: LLM observability
 		llmAdmin := adminhnd.NewLLMAdminHandler(db)
-		r.Get("/api/admin/llm/usage", llmAdmin.Usage)
 		r.Get("/api/admin/llm/cost-series", llmAdmin.CostSeries)
 		r.Get("/api/admin/llm/logs", llmAdmin.Logs)
 		r.Get("/api/admin/llm/ollama/models", llmAdmin.OllamaModels)
 		r.Get("/api/admin/llm/vllm/models", llmAdmin.OllamaModels)
-		r.Get("/api/admin/llm/budgets", llmAdmin.ListBudgets)
-		r.Patch("/api/admin/llm/budgets/{op}", llmAdmin.UpdateBudget)
-		r.Post("/api/admin/llm/budgets/{op}/reset", llmAdmin.ResetBudget)
+
 
 		// Fase 2: Conversion tracking dashboard
 		r.Get("/api/admin/conversions/by-group", adminhnd.ConversionsByGroupHandler(db))
@@ -370,9 +352,6 @@ func Build(
 		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))
 		r.Post("/api/admin/suggestions/{id}/approve", adminhnd.ApproveSuggestionHandler(db))
 		r.Post("/api/admin/suggestions/{id}/dismiss", adminhnd.DismissSuggestionHandler(db))
-
-		// Fase 8: Diferenciais — status dos MVPs opcionais
-		r.Get("/api/admin/diferenciais/status", adminhnd.DiferenciaisStatusHandler(db))
 
 		// Fase 9: Tunable parameters — listar e editar parâmetros tunáveis
 		r.Get("/api/admin/parameters", adminhnd.ListParamsHandler(db))

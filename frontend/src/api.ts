@@ -234,34 +234,6 @@ export const sendChannelProduct = (channelId: string, productId: string): Promis
   api.post(`/channels/${channelId}/send-product`, { product_id: productId }).then(r => r.data)
 
 // ────────────────────────────────────────────────────────────
-// v2 — Accounts (multi-WA/TG)
-// ────────────────────────────────────────────────────────────
-
-export const getWAHealth = (): Promise<any> => api.get('/accounts/wa/health').then(r => r.data)
-export const getWAAccounts = (): Promise<any> => api.get('/accounts/wa').then(r => r.data)
-export const createWAAccount = (data: any): Promise<any> => api.post('/accounts/wa', data).then(r => r.data)
-export const updateWAAccount = (id: string, data: any): Promise<any> =>
-  api.put(`/accounts/wa/${id}`, data).then(r => r.data)
-export const deleteWAAccount = (id: string): Promise<void> => api.delete(`/accounts/wa/${id}`)
-export const getWAAccountStatus = (id: string): Promise<any> => api.get(`/accounts/wa/${id}/status`).then(r => r.data)
-export const getWAAccountGroups = (id: string): Promise<any> => api.get(`/accounts/wa/${id}/groups`).then(r => r.data)
-export const createWAAccountGroup = (id: string, name: string): Promise<any> =>
-  api.post(`/accounts/wa/${id}/groups`, { name }).then(r => r.data)
-export const leaveWAAccountGroup = (id: string, groupId: string): Promise<void> =>
-  api.delete(`/accounts/wa/${id}/groups/${encodeURIComponent(groupId)}`)
-export const testWAAccount = (id: string): Promise<any> => api.post(`/accounts/wa/${id}/test`).then(r => r.data)
-export const startWAAccountSession = (id: string): Promise<any> =>
-  api.post(`/accounts/wa/${id}/session/start`).then(r => r.data)
-export const logoutWAAccount = (id: string): Promise<any> => api.post(`/accounts/wa/${id}/session/logout`).then(r => r.data)
-
-export const getTGAccounts = (): Promise<any> => api.get('/accounts/tg').then(r => r.data)
-export const createTGAccount = (data: any): Promise<any> => api.post('/accounts/tg', data).then(r => r.data)
-export const updateTGAccount = (id: string, data: any): Promise<any> =>
-  api.put(`/accounts/tg/${id}`, data).then(r => r.data)
-export const deleteTGAccount = (id: string): Promise<void> => api.delete(`/accounts/tg/${id}`)
-export const testTGAccount = (id: string): Promise<any> => api.post(`/accounts/tg/${id}/test`).then(r => r.data)
-
-// ────────────────────────────────────────────────────────────
 // Sources
 // ────────────────────────────────────────────────────────────
 

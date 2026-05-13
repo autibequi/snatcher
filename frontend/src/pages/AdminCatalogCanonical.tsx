@@ -82,7 +82,7 @@ function QualityBadge({ score }: { score?: number }) {
   if (score == null) {
     return <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-2 text-fg-3">—</span>
   }
-  const color = score >= 0.6 ? 'bg-success-soft text-green-700' : score >= 0.4 ? 'bg-warning-soft text-yellow-700' : 'bg-surface-2 text-fg-3'
+  const color = score >= 0.6 ? 'bg-success-soft text-success' : score >= 0.4 ? 'bg-warning-soft text-warning' : 'bg-surface-2 text-fg-3'
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{score.toFixed(2)}</span>
 }
 
@@ -128,11 +128,11 @@ export default function AdminCatalogCanonical() {
 
   const KPI_CARDS = stats
     ? [
-        { label: 'Total', value: stats.total, color: 'text-blue-600' },
-        { label: 'Send ready', value: stats.send_ready, color: 'text-green-600' },
-        { label: 'URLs mortas', value: stats.dead_urls, color: 'text-red-500' },
-        { label: 'Sem score', value: stats.unscored, color: 'text-yellow-600' },
-        { label: 'Imagens cached', value: stats.images_cached, color: 'text-purple-600' },
+        { label: 'Total',          value: stats.total,          color: 'text-accent' },
+        { label: 'Send ready',     value: stats.send_ready,     color: 'text-success' },
+        { label: 'URLs mortas',    value: stats.dead_urls,      color: 'text-danger' },
+        { label: 'Sem score',      value: stats.unscored,       color: 'text-warning' },
+        { label: 'Imagens cached', value: stats.images_cached,  color: 'text-fg-2' },
       ]
     : []
 
@@ -271,7 +271,7 @@ export default function AdminCatalogCanonical() {
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <div>{brl.format(item.price_current)}</div>
                     {item.discount_pct != null && item.discount_pct > 0 && (
-                      <div className="text-xs text-green-600">-{item.discount_pct.toFixed(0)}%</div>
+                      <div className="text-xs text-success">-{item.discount_pct.toFixed(0)}%</div>
                     )}
                   </td>
                   {/* Score */}
@@ -280,13 +280,13 @@ export default function AdminCatalogCanonical() {
                   </td>
                   {/* send_ready */}
                   <td className="px-3 py-2 text-center">
-                    <span className={item.send_ready ? 'text-green-500' : 'text-red-400'}>
+                    <span className={item.send_ready ? 'text-success' : 'text-danger'}>
                       {item.send_ready ? '✓' : '✗'}
                     </span>
                   </td>
                   {/* canonical_url_alive */}
                   <td className="px-3 py-2 text-center">
-                    <span className={item.canonical_url_alive ? 'text-green-500' : 'text-red-400'}>
+                    <span className={item.canonical_url_alive ? 'text-success' : 'text-danger'}>
                       {item.canonical_url_alive ? '✓' : '✗'}
                     </span>
                   </td>
