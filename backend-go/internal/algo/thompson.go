@@ -140,6 +140,34 @@ func updateBanditArms(ctx context.Context, db *sqlx.DB) error {
 		return err
 	}
 
+	// 1b. Recompensa parcial por click (alpha += click_reward_weight).
+	//     Clicks são ~10-50x mais frequentes que conversões, então o bandit
+	//     converge muito mais rápido. O peso é tunable; default 0.10 (10 clicks
+	//     ≈ 1 conversão de recompensa).
+	_, err = db.ExecContext(ctx, `
+		WITH new_clicks AS (
+		    SELECT cl.group_id, cat.category_id, COUNT(*) AS n
+		    FROM clicks cl
+		    JOIN catalog cat ON cat.id = cl.catalog_id
+		    JOIN bandit_arms ba
+		       ON ba.group_id = cl.group_id
+		      AND ba.category_id = cat.category_id
+		    WHERE cl.clicked_at > ba.processed_up_to
+		      AND cat.category_id IS NOT NULL
+		      AND cl.group_id IS NOT NULL
+		    GROUP BY cl.group_id, cat.category_id
+		)
+		UPDATE bandit_arms ba
+		SET alpha = ba.alpha + nc.n * COALESCE(get_param('click_reward_weight','global',NULL), 0.10),
+		    updated_at = now()
+		FROM new_clicks nc
+		WHERE ba.group_id = nc.group_id
+		  AND ba.category_id = nc.category_id
+	`)
+	if err != nil {
+		return err
+	}
+
 	// 2. Adiciona +1 em beta para cada envio (>24h atrás, sem conversão correspondente).
 	//    Só consideramos sends já "maduros" para evitar contar como derrota um
 	//    envio cuja conversão ainda pode chegar.

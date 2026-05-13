@@ -211,10 +211,12 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Refresh learned_weights — diário 02:00
+	// Refresh learned_weights — a cada hora (no minuto 7 pra não competir com
+	// outros jobs do topo da hora). Antes era diário às 02h; trazido para horário
+	// pra fechar o loop click → scoring em ~1h de latência em vez de ~24h.
 	if sc.db != nil {
 		_, err = sc.s.NewJob(
-			gocron.CronJob("0 2 * * *", false),
+			gocron.CronJob("7 * * * *", false),
 			gocron.NewTask(func() {
 				slog.Info("scheduler: refresh_learned_weights started")
 				if err := jobs.RunRefreshLearnedWeights(context.Background(), sc.db); err != nil {

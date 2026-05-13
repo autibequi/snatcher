@@ -52,6 +52,9 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   antirepeat_window_days_price_up:{ label: 'Janela estendida quando preço subiu', description: 'Dias mínimos quando o produto piorou desde o último envio (default 14d). Evita repostar produto que ficou pior.' },
   repromo_drop_threshold:         { label: 'Re-promo · Queda mínima',    description: 'Queda relativa de preço (vs último envio) necessária pra furar a janela anti-repeat. 0.10 = 10% mais barato que da última vez.' },
   repromo_cooldown_hours:         { label: 'Re-promo · Cooldown (h)',    description: 'Horas mínimas entre dois envios do mesmo produto mesmo com bypass. Protege contra picos de scrape gerando flood.' },
+  // Click reward + decay temporal (fecha o loop click → scoring)
+  click_reward_weight:            { label: 'Recompensa por click (Thompson)', description: 'Quanto cada click incrementa em alpha do bandit. 0.10 = 10 clicks valem 1 conversão. Acelera convergência do Thompson Sampling.' },
+  learned_half_life_days:         { label: 'Meia-vida do decay em CTR/EPC',   description: 'Dias após os quais um click/conversão dentro da janela 30d vale metade. Default 7d — sinaliza tendência recente sem perder cauda longa.' },
 }
 
 function paramLabel(name: string): string {
