@@ -25,7 +25,6 @@ import {
 interface Channel {
   id: number
   name: string
-  category_id: number | null
   quality_threshold: number
   daily_cap: number
   active: boolean
@@ -71,7 +70,6 @@ function groupStatusBadge(status: string) {
 
 interface ChannelFormValues {
   name: string
-  category_id: string
   quality_threshold: number
   daily_cap: number
   active: boolean
@@ -79,7 +77,6 @@ interface ChannelFormValues {
 
 const defaultForm = (): ChannelFormValues => ({
   name: '',
-  category_id: '',
   quality_threshold: 0.40,
   daily_cap: 30,
   active: true,
@@ -87,13 +84,11 @@ const defaultForm = (): ChannelFormValues => ({
 
 function ChannelForm({
   initial,
-  categories,
   onSave,
   onCancel,
   saving,
 }: {
   initial?: ChannelFormValues
-  categories: Category[]
   onSave: (values: ChannelFormValues) => void
   onCancel: () => void
   saving: boolean
@@ -114,20 +109,6 @@ function ChannelForm({
           onChange={e => set('name', e.target.value)}
           placeholder="Nome do canal"
         />
-      </div>
-
-      <div className={formGroup}>
-        <label className={formLabel}>Categoria</label>
-        <select
-          className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          value={form.category_id}
-          onChange={e => set('category_id', e.target.value)}
-        >
-          <option value="">Todas as categorias</option>
-          {categories.map(c => (
-            <option key={c.id} value={String(c.id)}>{c.name}</option>
-          ))}
-        </select>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -282,13 +263,11 @@ function ChannelGroupsPanel({
 
 function ChannelCard({
   channel,
-  categories,
   allGroups,
   expanded,
   onToggleExpand,
 }: {
   channel: Channel & { groups_count?: number }
-  categories: Category[]
   allGroups: Group[]
   expanded: boolean
   onToggleExpand: () => void
@@ -296,17 +275,12 @@ function ChannelCard({
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
 
-  const categoryName = channel.category_id
-    ? (categories.find(c => c.id === channel.category_id)?.name ?? `#${channel.category_id}`)
-    : 'Todas'
-
   const updateMut = useMutation({
     mutationFn: (values: ChannelFormValues) =>
       authFetch(`/api/channels/${channel.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           name: values.name,
-          category_id: values.category_id ? Number(values.category_id) : null,
           quality_threshold: values.quality_threshold,
           daily_cap: values.daily_cap,
           active: values.active,
@@ -325,7 +299,6 @@ function ChannelCard({
 
   const initialForm: ChannelFormValues = {
     name: channel.name,
-    category_id: channel.category_id ? String(channel.category_id) : '',
     quality_threshold: channel.quality_threshold,
     daily_cap: channel.daily_cap,
     active: channel.active,
@@ -336,7 +309,7 @@ function ChannelCard({
       {editing ? (
         <ChannelForm
           initial={initialForm}
-          categories={categories}
+          
           saving={updateMut.isPending}
           onSave={values => updateMut.mutate(values)}
           onCancel={() => setEditing(false)}
@@ -383,7 +356,6 @@ function ChannelCard({
           </div>
 
           <div className="flex flex-wrap gap-3 text-xs text-fg-3">
-            <span>Categoria: <span className="text-fg-2 font-medium">{categoryName}</span></span>
             <span>Score min: <span className="text-fg-2 font-medium tabular-nums">{channel.quality_threshold.toFixed(2)}</span></span>
             <span>Cap/dia: <span className="text-fg-2 font-medium tabular-nums">{channel.daily_cap}</span></span>
           </div>
@@ -432,7 +404,6 @@ export default function Channels() {
         method: 'POST',
         body: JSON.stringify({
           name: values.name,
-          category_id: values.category_id ? Number(values.category_id) : null,
           quality_threshold: values.quality_threshold,
           daily_cap: values.daily_cap,
           active: values.active,
@@ -464,7 +435,7 @@ export default function Channels() {
         <div className={`${sectionCard} mb-4`}>
           <p className={`${sectionTitle} mb-3`}>Novo canal</p>
           <ChannelForm
-            categories={categories}
+            
             saving={createMut.isPending}
             onSave={values => createMut.mutate(values)}
             onCancel={() => setShowCreate(false)}
@@ -486,7 +457,7 @@ export default function Channels() {
             <ChannelCard
               key={ch.id}
               channel={ch}
-              categories={categories}
+              
               allGroups={allGroups}
               expanded={expandedId === ch.id}
               onToggleExpand={() => toggleExpand(ch.id)}

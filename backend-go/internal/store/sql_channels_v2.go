@@ -4,29 +4,29 @@ import "snatcher/backendv2/internal/models"
 
 func (s *SQLStore) ListChannelsV2() ([]models.ChannelV2, error) {
 	var out []models.ChannelV2
-	err := s.db.Select(&out, `SELECT id, name, category_id, quality_threshold, daily_cap, active, created_at FROM channels_v2 ORDER BY name`)
+	err := s.db.Select(&out, `SELECT id, name, quality_threshold, daily_cap, active, created_at FROM channels_v2 ORDER BY name`)
 	return out, err
 }
 
 func (s *SQLStore) GetChannelV2(id int64) (models.ChannelV2, error) {
 	var c models.ChannelV2
-	err := s.db.Get(&c, `SELECT id, name, category_id, quality_threshold, daily_cap, active, created_at FROM channels_v2 WHERE id=$1`, id)
+	err := s.db.Get(&c, `SELECT id, name, quality_threshold, daily_cap, active, created_at FROM channels_v2 WHERE id=$1`, id)
 	return c, err
 }
 
 func (s *SQLStore) CreateChannelV2(c models.ChannelV2) (int64, error) {
 	var id int64
 	err := s.db.QueryRowx(`
-		INSERT INTO channels_v2 (name, category_id, quality_threshold, daily_cap, active)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id
-	`, c.Name, c.CategoryID, c.QualityThreshold, c.DailyCap, c.Active).Scan(&id)
+		INSERT INTO channels_v2 (name, quality_threshold, daily_cap, active)
+		VALUES ($1, $2, $3, $4) RETURNING id
+	`, c.Name, c.QualityThreshold, c.DailyCap, c.Active).Scan(&id)
 	return id, err
 }
 
 func (s *SQLStore) UpdateChannelV2(c models.ChannelV2) error {
 	_, err := s.db.Exec(`
-		UPDATE channels_v2 SET name=$1, category_id=$2, quality_threshold=$3, daily_cap=$4, active=$5 WHERE id=$6
-	`, c.Name, c.CategoryID, c.QualityThreshold, c.DailyCap, c.Active, c.ID)
+		UPDATE channels_v2 SET name=$1, quality_threshold=$2, daily_cap=$3, active=$4 WHERE id=$5
+	`, c.Name, c.QualityThreshold, c.DailyCap, c.Active, c.ID)
 	return err
 }
 

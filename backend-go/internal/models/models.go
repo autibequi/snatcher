@@ -463,15 +463,21 @@ type RedesignGroup struct {
 	CuratorRole    NullString `db:"curator_role" json:"curator_role,omitempty"`
 }
 
-// ChannelV2 agrupa grupos e define config de produto (categoria, score threshold, cap).
+// ChannelV2 agrupa grupos e define config de produto (score threshold, cap, pesos de categoria via channel_category_weights).
 type ChannelV2 struct {
 	ID               int64     `db:"id"                json:"id"`
 	Name             string    `db:"name"              json:"name"`
-	CategoryID       *int64    `db:"category_id"       json:"category_id,omitempty"`
 	QualityThreshold float64   `db:"quality_threshold" json:"quality_threshold"`
 	DailyCap         int       `db:"daily_cap"         json:"daily_cap"`
 	Active           bool      `db:"active"            json:"active"`
 	CreatedAt        time.Time `db:"created_at"        json:"created_at"`
+}
+
+// ChannelCategoryWeight peso de uma categoria num canal (sliders somam 100%).
+type ChannelCategoryWeight struct {
+	ChannelID  int64 `db:"channel_id"  json:"channel_id"`
+	CategoryID int64 `db:"category_id" json:"category_id"`
+	Weight     int   `db:"weight"      json:"weight"`
 }
 
 // GroupAdmin representa um administrador de um grupo (tabela group_admins).

@@ -50,9 +50,6 @@ func (h *ChannelsV2Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := models.ChannelV2{Name: req.Name, Active: true, QualityThreshold: 0.40, DailyCap: 30}
-	if req.CategoryID != nil {
-		c.CategoryID = req.CategoryID
-	}
 	if req.QualityThreshold != nil {
 		c.QualityThreshold = *req.QualityThreshold
 	}
@@ -91,9 +88,6 @@ func (h *ChannelsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name != nil {
 		existing.Name = *req.Name
-	}
-	if req.CategoryID != nil {
-		existing.CategoryID = req.CategoryID
 	}
 	if req.QualityThreshold != nil {
 		existing.QualityThreshold = *req.QualityThreshold
