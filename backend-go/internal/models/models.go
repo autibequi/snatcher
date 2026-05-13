@@ -471,6 +471,7 @@ type ChannelV2 struct {
 	DailyCap         int       `db:"daily_cap"         json:"daily_cap"`
 	Active           bool      `db:"active"            json:"active"`
 	CreatedAt        time.Time `db:"created_at"        json:"created_at"`
+	GroupsCount      int       `db:"groups_count"      json:"groups_count"`
 }
 
 // ChannelCategoryWeight peso de uma categoria num canal (sliders somam 100%).

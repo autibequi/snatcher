@@ -85,7 +85,7 @@ func (h *TemplatesHandler) ListCategories(w http.ResponseWriter, r *http.Request
 		Name string `db:"name" json:"name"`
 	}
 	var rows []catRow
-	if err := h.db.SelectContext(r.Context(), &rows, `SELECT id, slug, name FROM categories ORDER BY name`); err != nil {
+	if err := h.db.SelectContext(r.Context(), &rows, `SELECT id, slug, display_name AS name FROM categories ORDER BY display_name`); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao buscar categorias")
 		return
 	}

@@ -4,7 +4,11 @@ import "snatcher/backendv2/internal/models"
 
 func (s *SQLStore) ListChannelsV2() ([]models.ChannelV2, error) {
 	var out []models.ChannelV2
-	err := s.db.Select(&out, `SELECT id, name, quality_threshold, daily_cap, active, created_at FROM channels_v2 ORDER BY name`)
+	err := s.db.Select(&out, `
+		SELECT c.id, c.name, c.quality_threshold, c.daily_cap, c.active, c.created_at,
+		       COALESCE((SELECT COUNT(*) FROM groups g WHERE g.channel_id = c.id), 0) AS groups_count
+		FROM channels_v2 c ORDER BY c.name
+	`)
 	return out, err
 }
 
