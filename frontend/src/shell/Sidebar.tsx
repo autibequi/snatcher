@@ -60,6 +60,7 @@ const NAV: NavGroup[] = [
       { to: '/admin/loops',      label: 'Loops LLM',        icon: '🔁' },
       { to: '/admin/senders',    label: 'Modems & Senders', icon: '📡' },
       { to: '/admin/alerts',     label: 'Alert Rules',      icon: '🚨' },
+      { to: '/admin/templates',  label: 'Templates',        icon: '💬' },
       { to: '/suggestions-l4',   label: 'Sugestões L4',     icon: '💡' },
     ],
   },

@@ -398,6 +398,15 @@ func Build(
 		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
 		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
 
+		// Templates de mensagem — CRUD + toggle
+		tmpl := adminhnd.NewTemplatesHandler(db)
+		r.Get("/api/admin/templates", tmpl.List)
+		r.Get("/api/admin/templates/categories", tmpl.ListCategories)
+		r.Post("/api/admin/templates", tmpl.Create)
+		r.Put("/api/admin/templates/{id}", tmpl.Update)
+		r.Patch("/api/admin/templates/{id}/toggle", tmpl.Toggle)
+		r.Delete("/api/admin/templates/{id}", tmpl.Delete)
+
 		// Alert Rules CRUD + test (curador: dispara quando query retorna linhas)
 		r.Get("/api/admin/alert-rules", adminhnd.ListAlertRulesHandler(db))
 		r.Post("/api/admin/alert-rules/test", adminhnd.TestAlertRuleHandler(db))
