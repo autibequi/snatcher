@@ -226,15 +226,9 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
       </div>
 
       {/* Info banner */}
-      <div className="mb-5 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-900">
-        <strong>Regras SQL</strong> — quando retornam linhas, alerta dispara via curator.{' '}
-        <span className="inline-block px-2 py-0.5 rounded bg-green-200 text-green-900 font-mono text-xs">
-          verde se vazio
-        </span>{' '}
-        <span className="inline-block px-2 py-0.5 rounded bg-red-200 text-red-900 font-mono text-xs">
-          vermelho se com linhas
-        </span>
-      </div>
+      <p className="text-xs text-fg-3 mb-4">
+        Regras SQL — quando a query retorna linhas, o curator dispara o alerta. Sem linhas = silêncio.
+      </p>
 
       {loading && <p className="text-fg-3">Carregando...</p>}
 
