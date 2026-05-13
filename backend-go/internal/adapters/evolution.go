@@ -122,6 +122,20 @@ func (a *EvolutionAdapter) EnsureInstance(ctx context.Context) error {
 	return nil
 }
 
+// Ping verifica apenas se a Evolution API está respondendo (independente de WA conectado).
+func (a *EvolutionAdapter) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", a.baseURL+"/", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
 func (a *EvolutionAdapter) ListGroups(ctx context.Context) ([]map[string]any, error) {
 	var resp []map[string]any
 	err := a.get(ctx, fmt.Sprintf("/group/fetchAllGroups/%s?getParticipants=false", a.instance), &resp)

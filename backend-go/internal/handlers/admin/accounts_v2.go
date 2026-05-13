@@ -156,14 +156,17 @@ func (h *AccountsV2Handler) EvolutionHealth(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
-	status, err := evo.GetStatus(context.Background())
-	resp := map[string]any{
+
+	// Verifica se a API Evolution está respondendo
+	apiOnline := evo.Ping(context.Background()) == nil
+
+	// Verifica se a conta WA está conectada
+	waStatus, _ := evo.GetStatus(context.Background())
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"configured": true,
-		"status":     status,
+		"api_online": apiOnline,
+		"wa_status":  waStatus, // "connected" | "disconnected"
 		"instance":   instance,
-	}
-	if err != nil {
-		resp["error"] = err.Error()
-	}
-	writeJSON(w, http.StatusOK, resp)
+	})
 }

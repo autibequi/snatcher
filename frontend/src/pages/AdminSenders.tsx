@@ -216,9 +216,9 @@ export default function AdminSenders() {
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [connectingModem, setConnectingModem] = useState<ModemStatus | null>(null)
 
-  const { data: evoHealth } = useQuery<{ configured: boolean; status: string; instance: string }>({
+  const { data: evoHealth } = useQuery<{ configured: boolean; api_online: boolean; wa_status: string; instance: string }>({
     queryKey: ['evolution-health'],
-    queryFn: () => authFetchJSON('/api/admin/evolution/health', { configured: false, status: 'unknown', instance: '' }),
+    queryFn: () => authFetchJSON('/api/admin/evolution/health', { configured: false, api_online: false, wa_status: 'unknown', instance: '' }),
     refetchInterval: 15_000,
     staleTime: 10_000,
   })
@@ -307,22 +307,24 @@ export default function AdminSenders() {
         {evoHealth && (
           <div className={[
             'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border',
-            evoHealth.status === 'connected'
-              ? 'bg-success-soft text-success border-success/30'
-              : evoHealth.status === 'not_configured'
+            !evoHealth.configured
               ? 'bg-surface-2 text-fg-3 border-border'
+              : evoHealth.api_online
+              ? 'bg-success-soft text-success border-success/30'
               : 'bg-danger-soft text-danger border-danger/30',
           ].join(' ')}>
             <span className={[
               'w-1.5 h-1.5 rounded-full',
-              evoHealth.status === 'connected' ? 'bg-success animate-pulse' : 'bg-current',
+              evoHealth.api_online ? 'bg-success animate-pulse' : 'bg-current',
             ].join(' ')} />
             Evolution
-            {evoHealth.status === 'connected' && ' · online'}
-            {evoHealth.status === 'disconnected' && ' · desconectada'}
-            {evoHealth.status === 'unreachable' && ' · inacessível'}
-            {evoHealth.status === 'not_configured' && ' · não configurada'}
-            {evoHealth.instance && evoHealth.status !== 'not_configured' && (
+            {!evoHealth.configured && ' · não configurada'}
+            {evoHealth.configured && evoHealth.api_online && ' · online'}
+            {evoHealth.configured && !evoHealth.api_online && ' · inacessível'}
+            {evoHealth.api_online && evoHealth.wa_status === 'connected' && (
+              <span className="text-[10px] opacity-70 ml-0.5">· WA ✓</span>
+            )}
+            {evoHealth.instance && evoHealth.configured && (
               <span className="text-[10px] opacity-70 ml-1">{evoHealth.instance}</span>
             )}
           </div>
