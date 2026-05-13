@@ -14,6 +14,21 @@ const ALL_LOOPS = [
   'content_optimize',
 ]
 
+const LOOP_META: Record<string, { label: string; description: string }> = {
+  taxonomy_grow:    { label: 'Crescimento de taxonomia', description: 'Sugere novas categorias e marcas com base em produtos recentes sem classificação.' },
+  scraper_fix:      { label: 'Correção de scrapers',     description: 'Detecta scrapers com taxa de falha alta e ajusta seletores ou desativa automaticamente.' },
+  template_ab:      { label: 'Teste A/B de templates',   description: 'Compara variações de template de mensagem e promove a com maior CTR.' },
+  anomaly_pause:    { label: 'Pausa por anomalia',        description: 'Pausa envios de um grupo automaticamente quando detecta sinal anormal (baixo CTR, bans, saturação).' },
+  affinity_adjust:  { label: 'Ajuste de afinidade',      description: 'Recalibra o peso de categoria por grupo com base no histórico de cliques e conversões.' },
+  cooldown_suggest: { label: 'Sugestão de cooldown',     description: 'Propõe ajuste no intervalo entre envios por modem com base na taxa de ban e na fila.' },
+  cap_suggest:      { label: 'Sugestão de cap diário',   description: 'Propõe novo teto de envios por grupo com base na taxa de engajamento recente.' },
+  auto_tuning:      { label: 'Auto-tuning',              description: 'Ajusta parâmetros globais do algoritmo (quality_threshold, epsilon) de forma autônoma.' },
+  content_optimize: { label: 'Otimização de conteúdo',   description: 'Reescreve templates de mensagem de baixo desempenho usando LLM.' },
+}
+
+function loopLabel(name: string) { return LOOP_META[name]?.label ?? name }
+function loopDesc(name: string)  { return LOOP_META[name]?.description ?? '' }
+
 interface LoopStatus {
   loop_name: string
   status: 'active' | 'suggesting' | 'disabled'
@@ -149,8 +164,12 @@ export default function AdminLoops() {
             <div key={loop.loop_name} className="bg-surface border rounded-lg p-4 shadow-sm">
               {/* Main row */}
               <div className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-sm font-semibold w-44 flex-shrink-0">
-                  {loop.loop_name}
+                <span
+                  className="text-sm font-semibold flex-shrink-0 cursor-help"
+                  title={loopDesc(loop.loop_name) ? `${loopDesc(loop.loop_name)}\n(${loop.loop_name})` : loop.loop_name}
+                >
+                  {loopLabel(loop.loop_name)}
+                  <span className="font-mono font-normal text-fg-3 text-[10px] ml-1.5">{loop.loop_name}</span>
                 </span>
                 <StatusBadge status={loop.status} />
                 <span className="text-sm text-fg-2">

@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
 import { sectionCard, pageContainer } from '../lib/uiTokens'
 
+const SOURCE_LABEL: Record<string, string> = {
+  amazon: 'Amazon', mercadolivre: 'Mercado Livre', shopee: 'Shopee',
+  magazine_luiza: 'Magazine Luiza', magalu: 'Magazine Luiza',
+  americanas: 'Americanas', aliexpress: 'AliExpress', awin: 'Awin', kinguin: 'Kinguin',
+}
+function sourceLabel(id: string) { return SOURCE_LABEL[id] ?? id }
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface ScraperConfig {
@@ -220,7 +227,7 @@ export default function AdminScrapers() {
                 )}
                 {health.map((h, i) => (
                   <tr key={i} className={`hover:bg-surface-2 transition-colors ${rateBg(h.success_rate)}`}>
-                    <td className="px-4 py-2 font-mono text-xs">{h.source_id}</td>
+                    <td className="px-4 py-2 text-xs" title={h.source_id}>{sourceLabel(h.source_id)}</td>
                     <td className="px-4 py-2 text-fg-2">{h.field}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{h.attempts}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${rateColor(h.success_rate)}`}>
@@ -287,7 +294,7 @@ export default function AdminScrapers() {
                 )}
                 {configs.map(cfg => (
                   <tr key={cfg.id} className="hover:bg-surface-2 transition-colors">
-                    <td className="px-4 py-2 font-mono text-xs">{cfg.source_id}</td>
+                    <td className="px-4 py-2 text-xs" title={cfg.source_id}>{sourceLabel(cfg.source_id)}</td>
                     <td className="px-4 py-2 text-fg-2">{cfg.field}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-fg-3">{cfg.version}</td>
                     <td className="px-4 py-2 max-w-xs">
@@ -385,7 +392,7 @@ export default function AdminScrapers() {
                 {logs.map(log => (
                   <tr key={log.id} className={`hover:bg-surface-2 transition-colors ${!log.extraction_successful ? 'bg-danger-soft' : ''}`}>
                     <td className="px-4 py-2 text-right tabular-nums text-fg-4 text-xs">{log.id}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{log.source_id}</td>
+                    <td className="px-4 py-2 text-xs" title={log.source_id}>{sourceLabel(log.source_id)}</td>
                     <td className="px-4 py-2 text-fg-2">{log.field}</td>
                     <td className="px-4 py-2 text-xs text-fg-4 tabular-nums">{log.scraper_config_id ?? '—'}</td>
                     <td className="px-4 py-2">

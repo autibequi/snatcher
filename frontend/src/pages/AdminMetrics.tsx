@@ -1,6 +1,22 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../lib/authFetch'
 
+const SOURCE_LABEL: Record<string, string> = {
+  amazon: 'Amazon', mercadolivre: 'Mercado Livre', shopee: 'Shopee',
+  magazine_luiza: 'Magazine Luiza', magalu: 'Magazine Luiza',
+  americanas: 'Americanas', aliexpress: 'AliExpress', awin: 'Awin', kinguin: 'Kinguin',
+}
+function sourceLabel(id: string | number) { return SOURCE_LABEL[String(id)] ?? String(id) }
+
+const PARAM_LABEL: Record<string, string> = {
+  quality_threshold: 'Score mínimo de qualidade', baseline_min: 'Mínimo diário por grupo',
+  cap_max: 'Máximo diário por grupo', cooldown_seconds: 'Cooldown entre envios (s)',
+  half_life_freshness: 'Meia-vida de frescor', half_life_learned: 'Meia-vida do peso aprendido',
+  anti_saturation_decay: 'Penalidade de saturação', diversity_bonus_weight: 'Peso de diversidade',
+  epsilon_base: 'Taxa de exploração', epsilon_decay_rate: 'Decay da exploração',
+}
+function paramLabel(name: string) { return PARAM_LABEL[name] ?? name }
+
 // ---------- types ----------
 
 interface LearnedWeight {
@@ -164,7 +180,7 @@ function LearnedWeightsTab() {
                     {row.category_name ?? (row.category_id != null ? `#${row.category_id}` : '—')}
                   </td>
                   <td className="px-4 py-2 text-fg-2">
-                    {row.source_name ?? (row.source_id != null ? `#${row.source_id}` : '—')}
+                    {row.source_name ?? (row.source_id != null ? sourceLabel(row.source_id) : '—')}
                   </td>
                   <td className="px-4 py-2 text-right text-fg">
                     {row.samples_30d.toLocaleString('pt-BR')}
@@ -392,7 +408,7 @@ function ABTestsTab() {
                     onClick={() => toggle(row.id)}
                     className="border-b border-border hover:bg-surface-2/50 transition-colors cursor-pointer"
                   >
-                    <td className="px-4 py-2 font-mono text-fg">{row.param_name}</td>
+                    <td className="px-4 py-2 text-fg" title={row.param_name}>{paramLabel(row.param_name)}</td>
                     <td className="px-4 py-2 text-fg-2 font-mono">
                       {fmtNum(row.current_value, 4)}
                       <span className="text-fg-3 mx-1">→</span>

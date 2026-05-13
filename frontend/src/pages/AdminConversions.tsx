@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../lib/authFetch'
 
+const SOURCE_LABEL: Record<string, string> = {
+  amazon:          'Amazon',
+  mercadolivre:    'Mercado Livre',
+  shopee:          'Shopee',
+  magazine_luiza:  'Magazine Luiza',
+  magalu:          'Magazine Luiza',
+  americanas:      'Americanas',
+  aliexpress:      'AliExpress',
+  awin:            'Awin',
+  kinguin:         'Kinguin',
+}
+function sourceLabel(id: string) { return SOURCE_LABEL[id] ?? id }
+
 // ---------- types ----------
 
 interface ConversionByGroup {
@@ -206,7 +219,7 @@ export default function AdminConversions() {
                   <tbody>
                     {bySource.map(row => (
                       <tr key={row.source_id} className="border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
-                        <td className="px-4 py-2 font-mono text-fg">{row.source_id}</td>
+                        <td className="px-4 py-2 text-fg" title={row.source_id}>{sourceLabel(row.source_id)}</td>
                         <td className="px-4 py-2 text-right text-fg">{row.count.toLocaleString('pt-BR')}</td>
                         <td className="px-4 py-2 text-right text-fg">{brl(row.revenue)}</td>
                         <td className="px-4 py-2 text-right text-accent">{brl(row.commission)}</td>
@@ -276,7 +289,7 @@ export default function AdminConversions() {
                     {recent.map(row => (
                       <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
                         <td className="px-4 py-2 font-mono text-fg-2 whitespace-nowrap">{fmtDate(row.occurred_at)}</td>
-                        <td className="px-4 py-2 font-mono text-fg">{row.source_id}</td>
+                        <td className="px-4 py-2 text-fg" title={row.source_id}>{sourceLabel(row.source_id)}</td>
                         <td className="px-4 py-2 text-fg-2">{row.group_name ?? '—'}</td>
                         <td className="px-4 py-2 text-right text-fg">{row.order_value != null ? brl(row.order_value) : '—'}</td>
                         <td className="px-4 py-2 text-right text-accent">{row.commission != null ? brl(row.commission) : '—'}</td>
