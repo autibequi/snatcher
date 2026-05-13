@@ -63,8 +63,10 @@ interface ConnectModalProps {
 function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
   const [platform, setPlatform] = useState<Platform | null>(null)
   const [qr, setQr] = useState<string | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading_qr' | 'waiting_scan' | 'connected' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading_qr' | 'waiting_scan' | 'connected' | 'saving' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [phone, setPhone] = useState('')
+  const [quota, setQuota] = useState('20')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPoll = useCallback(() => {
@@ -78,16 +80,22 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
       if (data.status === 'connected') {
         stopPoll()
         setStatus('connected')
-        setTimeout(onConnected, 1500)
       }
-    } catch { /* silencia, tenta de novo */ }
-  }, [stopPoll, onConnected])
+    } catch { /* silencia */ }
+  }, [stopPoll])
 
   const loadQR = useCallback(async () => {
     setStatus('loading_qr')
     setQr(null)
     setErrorMsg('')
     try {
+      // Checa se já está conectado antes de pedir QR
+      const statusR = await authFetch(`/api/admin/modems/${modem.id}/connection-status`)
+      const statusData: { status: string } = await statusR.json()
+      if (statusData.status === 'connected') {
+        setStatus('connected')
+        return
+      }
       const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
       const body = await r.json().catch(() => null)
       if (!r.ok) {
@@ -97,7 +105,8 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
       }
       const qrValue: string = body?.qr_base64 ?? ''
       if (!qrValue) {
-        setErrorMsg('QR code vazio — Evolution pode já estar conectada ou instância offline.')
+        // QR vazio após EnsureInstance = instância criada mas sem QR disponível ainda
+        setErrorMsg('QR code não disponível — tente novamente em alguns segundos.')
         setStatus('error')
         return
       }
@@ -109,6 +118,27 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
       setStatus('error')
     }
   }, [modem.id, pollStatus])
+
+  const handleSaveAccount = async () => {
+    if (!phone.trim()) { alert('Informe o número'); return }
+    setStatus('saving')
+    try {
+      const r = await authFetch(`/api/admin/modems/${modem.id}/accounts`, {
+        method: 'POST',
+        body: JSON.stringify({ phone: phone.trim(), daily_send_quota: parseInt(quota) || 20 }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: r.statusText }))
+        alert(`Erro ao salvar: ${err.error}`)
+        setStatus('connected')
+        return
+      }
+      onConnected()
+    } catch {
+      alert('Erro ao salvar conta')
+      setStatus('connected')
+    }
+  }
 
   useEffect(() => () => stopPoll(), [stopPoll])
 
@@ -170,11 +200,37 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
               </>
             )}
 
-            {status === 'connected' && (
-              <div className="flex flex-col items-center gap-2 py-6">
-                <span className="text-4xl">✅</span>
-                <p className="text-sm font-medium text-success">Conectado com sucesso!</p>
-                <p className="text-xs text-fg-3">Adicione o número da conta no campo abaixo.</p>
+            {(status === 'connected' || status === 'saving') && (
+              <div className="space-y-3 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">✅</span>
+                  <p className="text-sm font-medium text-success">WA conectado! Informe o número:</p>
+                </div>
+                <input
+                  type="text"
+                  placeholder="+55 21 99999-9999"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="w-full text-sm border border-border rounded px-3 py-2 bg-bg focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    value={quota}
+                    onChange={e => setQuota(e.target.value)}
+                    placeholder="Quota/dia"
+                    className="w-24 text-sm border border-border rounded px-2 py-2 bg-bg focus:outline-none focus:border-accent"
+                  />
+                  <span className="text-xs text-fg-3">envios/dia</span>
+                </div>
+                <button
+                  onClick={handleSaveAccount}
+                  disabled={status === 'saving'}
+                  className="w-full px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:bg-accent-hover disabled:opacity-50"
+                >
+                  {status === 'saving' ? 'Salvando...' : 'Salvar conta'}
+                </button>
               </div>
             )}
 
