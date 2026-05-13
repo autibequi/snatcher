@@ -22,8 +22,6 @@ const NAV: NavGroup[] = [
   {
     label: 'Automação',
     items: [
-      { to: '/admin/loops',    label: 'Loops LLM',        icon: '🔁' },
-      { to: '/admin/params',   label: 'Parâmetros',       icon: '🎛️' },
       { to: '/admin/senders',  label: 'Modems & Senders', icon: '📡' },
       { to: '/suggestions-l4', label: 'Sugestões L4',     icon: '💡' },
     ],
@@ -56,14 +54,11 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/admin/conversions', label: 'Conversões', icon: '💵' },
       { to: '/admin/metrics',     label: 'Métricas',   icon: '📈' },
-      { to: '/analytics',         label: 'Analytics',  icon: '📊' },
-      { to: '/clusters',          label: 'Clusters',   icon: '🧩' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { to: '/admin/alerts',  label: 'Alert Rules',    icon: '🚨' },
       { to: '/admin/audit',   label: 'Audit Timeline', icon: '📜' },
       { to: '/settings',      label: 'Configurações',  icon: '⚙️' },
       { to: '/manual',        label: 'Manual',         icon: '📚' },

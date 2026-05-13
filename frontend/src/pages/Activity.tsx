@@ -7,25 +7,26 @@ import { filterBar } from '../lib/uiTokens'
 import { CrawlLogsTab } from './activity/CrawlLogsTab'
 import { JonfreyTab } from './activity/JonfreyTab'
 import { LLMTab } from './activity/LLMTab'
+import { LoopActionsTab } from './activity/LoopActionsTab'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'crawl' | 'jonfrey' | 'llm'
+type ActivityTab = 'crawl' | 'jonfrey' | 'llm' | 'loops'
 
-const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'llm'])
+const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'llm', 'loops'])
 
 function resolveTab(raw: string | null): ActivityTab {
   if (!raw) return 'crawl'
-  // Legacy aliases
   if (raw === 'crawlers') return 'crawl'
   if (VALID_TABS.has(raw)) return raw as ActivityTab
   return 'crawl'
 }
 
 const TAB_LIST = [
-  { id: 'crawl', label: 'Crawlers' },
+  { id: 'crawl',   label: 'Crawlers' },
   { id: 'jonfrey', label: 'Jonfrey' },
-  { id: 'llm', label: 'LLM' },
+  { id: 'loops',   label: 'Loops LLM' },
+  { id: 'llm',     label: 'LLM' },
 ] as const
 
 // ── Quick stats ───────────────────────────────────────────────────────────────
@@ -226,6 +227,9 @@ export default function Activity() {
         )}
         {tab === 'jonfrey' && (
           <JonfreyTab q={q} status={status} />
+        )}
+        {tab === 'loops' && (
+          <LoopActionsTab q={q} />
         )}
         {tab === 'llm' && (
           <LLMTab q={q} />

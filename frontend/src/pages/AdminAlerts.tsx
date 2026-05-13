@@ -80,7 +80,7 @@ function Toggle({
   )
 }
 
-export default function AdminAlerts() {
+export default function AdminAlerts({ embedded = false }: { embedded?: boolean }) {
   const [rules, setRules] = useState<AlertRule[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -213,13 +213,13 @@ export default function AdminAlerts() {
       : []
 
   return (
-    <div className={pageContainer}>
+    <div className={embedded ? 'space-y-4' : pageContainer}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Alert Rules</h1>
+        {!embedded && <h1 className="text-2xl font-bold">Alert Rules</h1>}
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+          className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium${embedded ? '' : ''}`}
         >
           + Nova regra
         </button>

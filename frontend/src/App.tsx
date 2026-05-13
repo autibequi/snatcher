@@ -188,10 +188,14 @@ export default function App() {
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />
               <Route path="ads" element={<Navigate to="/activity" replace />} />
-              <Route path="auto-match" element={<Navigate to="/admin/loops" replace />} />
-              <Route path="automations" element={<Navigate to="/admin/loops" replace />} />
-              <Route path="automations/*" element={<Navigate to="/admin/loops" replace />} />
-              <Route path="match" element={<Navigate to="/admin/params" replace />} />
+              <Route path="auto-match" element={<Navigate to="/settings/loops" replace />} />
+              <Route path="automations" element={<Navigate to="/settings/loops" replace />} />
+              <Route path="automations/*" element={<Navigate to="/settings/loops" replace />} />
+              <Route path="match" element={<Navigate to="/settings/params" replace />} />
+              {/* Migrados para Settings */}
+              <Route path="admin/loops" element={<Navigate to="/settings/loops" replace />} />
+              <Route path="admin/params" element={<Navigate to="/settings/params" replace />} />
+              <Route path="admin/alerts" element={<Navigate to="/settings/alerts" replace />} />
               <Route path="channels" element={<Navigate to="/admin/senders" replace />} />
               <Route path="channels/*" element={<Navigate to="/admin/senders" replace />} />
               <Route path="catalog" element={<Navigate to="/admin/catalog-canonical" replace />} />

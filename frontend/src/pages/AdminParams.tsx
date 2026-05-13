@@ -59,7 +59,7 @@ function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
   }, {} as Record<string, T[]>)
 }
 
-export default function AdminParams() {
+export default function AdminParams({ embedded = false }: { embedded?: boolean }) {
   const [params, setParams] = useState<TunableParam[]>([])
   const [loading, setLoading] = useState(true)
   const [editValues, setEditValues] = useState<Record<number, string>>({})
@@ -160,8 +160,8 @@ export default function AdminParams() {
   const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(s => grouped[s])
 
   return (
-    <div className="px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-8">
-      <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>
+    <div className={embedded ? 'space-y-8' : 'px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-8'}>
+      {!embedded && <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>}
 
       {loading && <p className="text-fg-3">Carregando...</p>}
 

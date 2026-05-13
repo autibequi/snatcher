@@ -75,7 +75,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-export default function AdminLoops() {
+export default function AdminLoops({ embedded = false }: { embedded?: boolean }) {
   const [loops, setLoops] = useState<LoopStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -146,8 +146,8 @@ export default function AdminLoops() {
   )
 
   return (
-    <div className={pageContainer}>
-      <h1 className="text-2xl font-bold mb-2">Loops LLM ({ALL_LOOPS.length})</h1>
+    <div className={embedded ? 'space-y-3' : pageContainer}>
+      {!embedded && <h1 className="text-2xl font-bold mb-2">Loops LLM ({ALL_LOOPS.length})</h1>}
 
       <div className="mb-5 bg-accent-soft border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
         Estes {ALL_LOOPS.length} loops ajustam o snatcher de forma autônoma.{' '}

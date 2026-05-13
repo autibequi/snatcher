@@ -9,15 +9,21 @@ import { JonfreyTab } from './settings/JonfreyTab'
 import { TeamTab } from './settings/TeamTab'
 import { AppearanceTab } from './settings/AppearanceTab'
 import { DangerTab } from './settings/DangerTab'
+import { LoopsTab } from './settings/LoopsTab'
+import { ParamsTab } from './settings/ParamsTab'
+import { AlertsTab } from './settings/AlertsTab'
 
 const TABS = [
-  { id: 'system', label: 'Sistema' },
-  { id: 'integrations', label: 'Integracoes' },
-  { id: 'llm', label: 'LLM' },
-  { id: 'jonfrey', label: 'Jonfrey' },
-  { id: 'team', label: 'Equipe' },
-  { id: 'appearance', label: 'Aparencia' },
-  { id: 'danger', label: 'Danger' },
+  { id: 'system',       label: 'Sistema' },
+  { id: 'integrations', label: 'Integrações' },
+  { id: 'loops',        label: 'Automação' },
+  { id: 'params',       label: 'Parâmetros' },
+  { id: 'alerts',       label: 'Alertas' },
+  { id: 'llm',          label: 'LLM' },
+  { id: 'jonfrey',      label: 'Jonfrey' },
+  { id: 'team',         label: 'Equipe' },
+  { id: 'appearance',   label: 'Aparência' },
+  { id: 'danger',       label: 'Danger' },
 ]
 
 const VALID_TABS = new Set(TABS.map(t => t.id))
@@ -33,7 +39,6 @@ export default function Settings() {
   const { pathname } = useLocation()
   const active = activeTabFromPath(pathname)
 
-  // Redirect bare /settings to /settings/system
   if (!VALID_TABS.has(pathname.split('/').filter(Boolean).pop() ?? '')) {
     return <Navigate to="/settings/system" replace />
   }
@@ -48,13 +53,16 @@ export default function Settings() {
           onChange={id => navigate(`/settings/${id}`)}
         />
         <div className="px-4 py-4 sm:p-6">
-          {active === 'system' && <SystemTab />}
+          {active === 'system'       && <SystemTab />}
           {active === 'integrations' && <IntegrationsTab />}
-          {active === 'llm' && <LLMTab />}
-          {active === 'jonfrey' && <JonfreyTab />}
-          {active === 'team' && <TeamTab />}
-          {active === 'appearance' && <AppearanceTab />}
-          {active === 'danger' && <DangerTab />}
+          {active === 'loops'        && <LoopsTab />}
+          {active === 'params'       && <ParamsTab />}
+          {active === 'alerts'       && <AlertsTab />}
+          {active === 'llm'          && <LLMTab />}
+          {active === 'jonfrey'      && <JonfreyTab />}
+          {active === 'team'         && <TeamTab />}
+          {active === 'appearance'   && <AppearanceTab />}
+          {active === 'danger'       && <DangerTab />}
         </div>
       </div>
     </div>
