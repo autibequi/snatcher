@@ -11,14 +11,15 @@ export interface ManualTutorialDef {
 
 /**
  * Lista única — índice em /manual e rotas /manual/:slug.
- * Ordem: quickstarter → manual operacional → fluxo do menu lateral (+ Match).
+ * Ordem: quickstarter → operacional → operação → catálogo → scraping → distribuição → análise → sistema.
  */
 export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
+  // ── Onboarding ──
   {
     slug: 'quickstarter',
     title: 'Quickstarter',
     description:
-      'Começa aqui se nunca abriste o painel: login, contas, crawlers, canal, primeiro disparo.',
+      'Começa aqui se nunca abriste o painel: login, modem, conta WA, canal, grupos, primeiro disparo.',
     icon: '🚀',
     path: '/',
   },
@@ -28,110 +29,111 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
     description: OPERATIONAL_MANUAL_META.description,
     icon: '📖',
   },
+
+  // ── Operação ──
   {
     slug: 'dashboard',
     title: 'Dashboard',
-    description: 'Resumo operacional, filas e sinais rápidos ao abrir o sistema.',
+    description: 'Resumo operacional, fila e sinais rápidos ao abrir o sistema.',
     icon: '🏠',
     path: '/',
   },
   {
     slug: 'compose',
     title: 'Compor disparo',
-    description: 'Montar mensagem, escolher produtos e canais, enviar ou agendar.',
-    icon: '📤',
+    description: 'Montar mensagem, escolher produtos e canais/grupos, enviar manualmente.',
+    icon: '✍️',
     path: '/compose',
   },
   {
-    slug: 'ads',
-    title: 'Anúncios pagos',
-    description: 'Campanhas recorrentes com cron, URL rastreada e canais alvo.',
-    icon: '💸',
-    path: '/ads',
+    slug: 'activity',
+    title: 'Atividade',
+    description: 'Histórico de disparos, status, erros e diagnóstico operacional.',
+    icon: '📋',
+    path: '/activity',
   },
   {
-    slug: 'automations',
-    title: 'Auto disparos',
-    description: 'Piloto, prévia do match, aprovações e linha do tempo de disparos.',
-    icon: '⚡',
-    path: '/automations',
+    slug: 'insights',
+    title: 'Insights L4',
+    description: 'Sugestões automáticas geradas pelos loops LLM — fila pra revisão.',
+    icon: '💡',
+    path: '/suggestions-l4',
   },
-  {
-    slug: 'canais',
-    title: 'Canais',
-    description: 'Por canal: audiência, grupos, threshold, cooldown e limites do auto-match.',
-    icon: '📢',
-    path: '/automations/channels',
-  },
-  {
-    slug: 'jonfrey',
-    title: 'Jonfrey',
-    description: 'Fluxos assistidos por IA e políticas do assistente no workspace.',
-    icon: '🤵',
-    path: '/automations/jonfrey',
-  },
-  {
-    slug: 'crawlers',
-    title: 'Crawlers',
-    description: 'Fontes de produto: marketplaces e grupos para espionagem de ofertas.',
-    icon: '🔄',
-    path: '/crawlers',
-  },
-  {
-    slug: 'curation',
-    title: 'Triagem',
-    description: 'Aprovar ou corrigir itens antes de irem ao match e aos disparos.',
-    icon: '✋',
-    path: '/curation',
-  },
+
+  // ── Catálogo ──
   {
     slug: 'catalog',
     title: 'Catálogo',
-    description: 'Produtos, busca e estado para composer e automações.',
+    description: 'Produtos canonicalizados, qualidade, send_ready, busca e auditoria.',
     icon: '📦',
-    path: '/catalog',
+    path: '/admin/catalog-canonical',
+  },
+  {
+    slug: 'taxonomy',
+    title: 'Taxonomia',
+    description: 'Categorias e padrões que alimentam scoring, match e relatórios.',
+    icon: '🏷️',
+    path: '/taxonomy',
+  },
+
+  // ── Scraping ──
+  {
+    slug: 'crawlers',
+    title: 'Crawlers',
+    description: 'Workers que puxam ofertas dos marketplaces e espionam grupos.',
+    icon: '🕷️',
+    path: '/crawlers',
+  },
+  {
+    slug: 'scrapers',
+    title: 'Scrapers (extratores)',
+    description: 'Configurações de extração por marketplace — seletores, shadow, promote.',
+    icon: '🕸️',
+    path: '/admin/scrapers',
+  },
+
+  // ── Distribuição ──
+  {
+    slug: 'canais',
+    title: 'Canais',
+    description: 'Canal lógico (grupo de grupos), sliders de categoria, threshold de qualidade.',
+    icon: '📺',
+    path: '/channels',
   },
   {
     slug: 'groups',
     title: 'Grupos',
-    description: 'Importar e vincular grupos WA/TG às contas e aos canais.',
+    description: 'Grupos WA/TG físicos vinculados aos canais. Importar e organizar.',
     icon: '👥',
     path: '/groups',
   },
   {
+    slug: 'templates',
+    title: 'Templates',
+    description: 'Mensagens parametrizadas com {variáveis} por categoria — usadas pelo dispatcher.',
+    icon: '💬',
+    path: '/admin/templates',
+  },
+  {
+    slug: 'modems',
+    title: 'Modems & Senders',
+    description: 'Modems 4G, HOST modem, contas WA conectadas, QR e cotas de envio.',
+    icon: '📡',
+    path: '/admin/senders',
+  },
+  {
     slug: 'accounts',
-    title: 'Contas conectadas',
-    description: 'WhatsApp, Telegram e estado de sessão para envio.',
+    title: 'Contas conectadas (legado)',
+    description: 'Convertido em "Modems & Senders" — vá direto pra esse tutorial.',
     icon: '📱',
-    path: '/accounts',
+    path: '/admin/senders',
   },
   {
-    slug: 'analytics',
-    title: 'Insights de cliques',
-    description: 'Performance de links e comparativo entre canais/ofertas.',
-    icon: '📊',
-    path: '/analytics',
-  },
-  {
-    slug: 'links',
-    title: 'Links públicos',
-    description: 'Páginas e redirecionamentos para divulgar entrada em grupos.',
-    icon: '🔗',
-    path: '/links',
-  },
-  {
-    slug: 'clusters',
-    title: 'Clusters',
-    description: 'Agrupar canais por comportamento de audiência.',
-    icon: '🧩',
-    path: '/clusters',
-  },
-  {
-    slug: 'logs',
-    title: 'Logs',
-    description: 'Filas, disparos, erros e jobs — diagnóstico operacional.',
-    icon: '📋',
-    path: '/logs',
+    slug: 'domains',
+    title: 'Domínios de redirect',
+    description: 'Rotação de domínios afiliados — anti-ban e tracking de cliques.',
+    icon: '🌐',
+    path: '/admin/domains',
   },
   {
     slug: 'affiliates',
@@ -141,32 +143,95 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
     path: '/affiliates',
   },
   {
-    slug: 'taxonomy',
-    title: 'Taxonomia',
-    description: 'Categorias e padrões que alimentam match e relatórios.',
-    icon: '🏷️',
-    path: '/taxonomy',
+    slug: 'links',
+    title: 'Links públicos',
+    description: 'Páginas e redirecionamentos para divulgar entrada em grupos.',
+    icon: '🔗',
+    path: '/links',
+  },
+
+  // ── Análise ──
+  {
+    slug: 'conversoes',
+    title: 'Conversões',
+    description: 'Vendas atribuídas, postbacks de afiliados, receita por grupo/produto.',
+    icon: '💵',
+    path: '/admin/conversions',
   },
   {
-    slug: 'settings',
-    title: 'Configurações',
-    description: 'Conta, LLM, limites e identidade — efeito global no app.',
-    icon: '⚙️',
-    path: '/settings',
+    slug: 'analytics',
+    title: 'Métricas & Insights',
+    description: 'Learned weights, daily metrics, A/B tests e ratio de viralização por grupo.',
+    icon: '📈',
+    path: '/admin/metrics',
   },
   {
-    slug: 'match',
-    title: 'Match',
-    description: 'Entender scores produto↔canal e por que algo não disparou.',
-    icon: '🎯',
-    path: '/match',
+    slug: 'clusters',
+    title: 'Clusters',
+    description: 'Agrupar canais por comportamento de audiência.',
+    icon: '🧩',
+    path: '/clusters',
   },
+
+  // ── Algoritmo ──
   {
     slug: 'scoring',
     title: 'Algoritmo de Scoring',
     description:
-      'Como o Score Engine decide qual produto vai para qual grupo e quando — fórmula, exploração, defesas e tunables.',
+      'Como o Score Engine decide qual produto vai para qual grupo — fórmula, exploração, defesas, tunables.',
     icon: '🧮',
+  },
+  {
+    slug: 'loops',
+    title: 'Loops LLM',
+    description: 'Os 9 loops que tunam o sistema com IA — affinity, cooldown, A/B, anti-saturação, etc.',
+    icon: '🔁',
+    path: '/settings/loops',
+  },
+  {
+    slug: 'params',
+    title: 'Parâmetros tunáveis',
+    description: 'Todos os ~25 tunables do scoring + flags strangler em um só lugar.',
+    icon: '🎛️',
+    path: '/admin/params',
+  },
+
+  // ── Sistema ──
+  {
+    slug: 'settings',
+    title: 'Configurações',
+    description: 'Senders, Loops, Alertas, Parâmetros, Audit — tabs do menu Sistema.',
+    icon: '⚙️',
+    path: '/settings',
+  },
+
+  // ── Legados (redirecionam ou apontam para conteúdo atual) ──
+  {
+    slug: 'automations',
+    title: 'Auto-disparos (legado)',
+    description: 'Conceito antigo — hoje virou Score Engine + Loops LLM. Veja Scoring e Loops.',
+    icon: '⚡',
+    path: '/settings/loops',
+  },
+  {
+    slug: 'jonfrey',
+    title: 'Jonfrey (legado)',
+    description: 'Assistente LLM antigo — substituído pelos 9 loops em Loops LLM.',
+    icon: '🤵',
+    path: '/settings/loops',
+  },
+  {
+    slug: 'match',
+    title: 'Match (legado)',
+    description: 'Conceito antigo de scoring produto↔canal — hoje em Algoritmo de Scoring.',
+    icon: '🎯',
+  },
+  {
+    slug: 'logs',
+    title: 'Logs (legado)',
+    description: 'Renomeado para Atividade — vá direto para esse tutorial.',
+    icon: '📋',
+    path: '/activity',
   },
 ]
 
@@ -176,7 +241,7 @@ export function manualTutorialTitle(slug: string): string | undefined {
 
 /**
  * Tutorial mais específico para a rota atual — usado pelo ❓ na top bar e pelo ManualModal.
- * Prefixos mais longos primeiro (ex.: /automations/channels antes de /automations).
+ * Prefixos mais longos primeiro (ex.: /admin/catalog-canonical antes de /admin).
  */
 export function resolveTutorialSlugFromPath(pathname: string): string {
   const p = pathname.replace(/\/+$/, '') || '/'
@@ -189,26 +254,36 @@ export function resolveTutorialSlugFromPath(pathname: string): string {
   }
 
   const prefixes: [string, string][] = [
-    ['/automations/channels', 'canais'],
-    ['/automations/jonfrey', 'jonfrey'],
-    ['/automations', 'automations'],
-    ['/settings', 'settings'],
-    ['/crawlers', 'crawlers'],
-    ['/curation', 'curation'],
-    ['/catalog', 'catalog'],
-    ['/channels', 'canais'],
-    ['/groups', 'groups'],
-    ['/accounts', 'accounts'],
-    ['/analytics', 'analytics'],
-    ['/links', 'links'],
-    ['/clusters', 'clusters'],
-    ['/logs', 'logs'],
-    ['/affiliates', 'affiliates'],
-    ['/taxonomy', 'taxonomy'],
-    ['/compose', 'compose'],
-    ['/ads', 'ads'],
-    ['/match', 'match'],
-    ['/scoring', 'scoring'],
+    ['/admin/catalog-canonical', 'catalog'],
+    ['/admin/conversions',       'conversoes'],
+    ['/admin/metrics',           'analytics'],
+    ['/admin/scrapers',          'scrapers'],
+    ['/admin/templates',         'templates'],
+    ['/admin/senders',           'modems'],
+    ['/admin/domains',           'domains'],
+    ['/admin/params',            'params'],
+    ['/admin/loops',             'loops'],
+    ['/admin/audit',             'settings'],
+    ['/admin/alerts',            'settings'],
+    ['/settings/loops',          'loops'],
+    ['/settings/params',         'params'],
+    ['/settings',                'settings'],
+    ['/crawlers',                'crawlers'],
+    ['/channels',                'canais'],
+    ['/groups',                  'groups'],
+    ['/affiliates',              'affiliates'],
+    ['/links',                   'links'],
+    ['/clusters',                'clusters'],
+    ['/taxonomy',                'taxonomy'],
+    ['/compose',                 'compose'],
+    ['/activity',                'activity'],
+    ['/suggestions-l4',          'insights'],
+    ['/scoring',                 'scoring'],
+    // Legados redirecionados
+    ['/ads',                     'activity'],
+    ['/logs',                    'activity'],
+    ['/automations',             'loops'],
+    ['/match',                   'scoring'],
   ]
 
   for (const [prefix, slug] of prefixes) {

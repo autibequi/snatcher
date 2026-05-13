@@ -23,50 +23,47 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="Antes de tudo">
         <Ul>
-          <li>
-            Este guia assume que já abriste o painel no navegador (URL que te deram) e fizeste <strong className="text-fg">login</strong>. Se ainda não tens utilizador,
-            pede a um <strong className="text-fg">admin</strong> para te criar na área de equipa.
-          </li>
-          <li>Este guia é o caminho mais curto até ter uma conta de envio ligada e um canal com destinos.</li>
-          <li>
-            Para compor com produtos reais, o <strong className="text-fg">Catálogo</strong> precisa ter ofertas — em geral vindas de{' '}
-            <strong className="text-fg">Crawlers</strong> ou importação; sem itens, a busca global não mostra nada útil.
-          </li>
-          <li>Se algo falhar, o primeiro sítio a olhar é <strong className="text-fg">Logs</strong>; o manual completo está em <strong className="text-fg">Manual operacional</strong> no menu.</li>
+          <li>Este guia assume que você já fez login no painel. Se não tem usuário, peça a um admin.</li>
+          <li>Caminho mais curto: <b>Modem → Conta WA → Canal com sliders → Grupos vinculados → Templates → Score Engine ligado</b>.</li>
+          <li>Sem produtos no Catálogo nada acontece — eles vêm dos <b>Crawlers</b> automaticamente.</li>
+          <li>Se algo travar, abra <strong className="text-fg">/activity</strong>; problemas profundos em <strong className="text-fg">/admin/audit</strong>.</li>
         </Ul>
       </Sec>
-      <Sec title="1 · Contas conectadas">
+
+      <Sec title="1 · Modems & Senders">
         <Ul>
-          <li>
-            Em <strong className="text-fg">Contas conectadas</strong>, adicione WhatsApp ou Telegram e conclua o fluxo (ex.: QR no WhatsApp).
-          </li>
-          <li>Só avance quando o estado indicar sessão ativa — sem conta ligada não há grupos nem envio.</li>
+          <li>Em <strong className="text-fg">Modems</strong> (sidebar Distribuição), confirme que existe ao menos 1 modem ativo. Em deploys cloud, o <b>HOST modem</b> é o servidor local (sem hardware 4G).</li>
+          <li>Clique <b>Conectar conta WA</b> em um modem. Aparece QR code da Evolution API — escaneie do celular operacional.</li>
+          <li>Após conectar, defina <b>telefone</b>, <b>nickname</b> e <b>cota diária</b> (default 50 msgs/dia). Status fica <code>primary</code>.</li>
         </Ul>
       </Sec>
-      <Sec title="2 · Canais e grupos">
+
+      <Sec title="2 · Canal lógico + sliders de categoria">
         <Ul>
-          <li>
-            Em <strong className="text-fg">Canais</strong> (Auto disparos → Canais), crie ou escolha um canal e defina audiência/limites quando fizer sentido.
-          </li>
-          <li>
-            Em <strong className="text-fg">Grupos</strong>, importe grupos da conta e associe-os ao canal — sem destino não há disparo.
-          </li>
+          <li>Em <strong className="text-fg">Canais</strong>, crie um canal (ex.: "Promo Geral"). Quality threshold (default 0.40) e daily cap (default 30 msgs).</li>
+          <li>Configure os <b>sliders de categoria</b> (0–100%): "este canal é 60% eletrônicos, 30% gaming, 10% casa". Total não precisa somar 100% — são pesos relativos.</li>
         </Ul>
       </Sec>
-      <Sec title="3 · Primeiro disparo">
+
+      <Sec title="3 · Grupos">
         <Ul>
-          <li>
-            Abra <strong className="text-fg">Compor disparo</strong>, escolha produto(s) no catálogo, canais/grupos e envie um teste ou agende.
-          </li>
-          <li>Se usar marketplace, confira <strong className="text-fg">Afiliados</strong> para o link curto comissionar certo.</li>
+          <li>Em <strong className="text-fg">Grupos</strong>, importe os grupos WhatsApp da conta primary recém-conectada.</li>
+          <li>Vincule cada grupo ao canal certo. Sem grupo no canal, o motor não tem onde mandar.</li>
         </Ul>
       </Sec>
-      <Sec title="4 · Auto disparos (opcional)">
+
+      <Sec title="4 · Templates (mensagem)">
         <Ul>
-          <li>
-            Em <strong className="text-fg">Auto disparos</strong> e <strong className="text-fg">Jonfrey</strong> ative fluxos quando já dominares o envio manual.
-          </li>
-          <li>Threshold, cooldown e aprovações aparecem nestas telas — comece conservador.</li>
+          <li>Em <strong className="text-fg">Templates</strong>, valide se existe pelo menos 1 template por categoria. Use variáveis: <code>{'{titulo}'}</code>, <code>{'{preco_de}'}</code>, <code>{'{preco_por}'}</code>, <code>{'{desconto}'}</code>, <code>{'{link}'}</code>.</li>
+          <li>Templates ficam ativos por padrão. Toggle de <code>enabled</code> permite pausar sem deletar.</li>
+        </Ul>
+      </Sec>
+
+      <Sec title="5 · Liga o motor (ou compõe manual)">
+        <p className="text-fg-2">Você tem dois caminhos a partir daqui:</p>
+        <Ul>
+          <li><b>Manual</b>: vá em <strong className="text-fg">Compor disparo</strong>, busque produtos, escolha canais/grupos, envie. Bom para testar.</li>
+          <li><b>Automático</b>: em <strong className="text-fg">/admin/params</strong>, ative <code>use_algo_tick</code>. A cada 5min o Score Engine escolhe e envia. Veja o tutorial <strong className="text-fg">Algoritmo de Scoring</strong> antes.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -78,17 +75,26 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="Visão geral">
         <Ul>
-          <li>
-            O <strong className="text-fg">Dashboard</strong> resume fila de trabalho, contas conectadas e sinais rápidos para o dia.
-          </li>
-          <li>Use como ponto de entrada: identifique pendências antes de ir a Auto disparos ou Composer.</li>
+          <li>Ponto de entrada operacional — fila de envio, conta WA ativa, últimos disparos, alertas.</li>
+          <li>Use ao começar o dia para confirmar que tudo está saudável antes de mexer em scoring ou compor.</li>
         </Ul>
       </Sec>
-      <Sec title="Boas práticas">
+      <Sec title="Checks rápidos">
         <Ul>
-          <li>Se o badge de contas estiver vermelho, resolva em <strong className="text-fg">Contas conectadas</strong> primeiro.</li>
-          <li>Combine com <strong className="text-fg">Logs</strong> quando algo parecer "travado" sem erro óbvio.</li>
+          <li><b>Topbar</b>: indicador de contas — verde = pelo menos 1 primary online; vermelho = nenhuma. Resolva em <strong className="text-fg">/admin/senders</strong>.</li>
+          <li><b>Card "fila"</b>: quantas mensagens pending em <code>send_queue</code>. Crescimento sustentado indica modem travado.</li>
+          <li><b>Card "tick"</b>: se Score Engine está ON, último horário de run e quantos envios na hora.</li>
+          <li><b>Alertas</b>: regras de <code>alert_rules</code> disparadas (cota próxima, conta caída). Detalhe em <strong className="text-fg">/admin/alerts</strong>.</li>
         </Ul>
+      </Sec>
+      <Sec title="Quando algo está estranho">
+        <p className="text-fg-2">Roteiro padrão:</p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li><strong className="text-fg">/activity</strong> — vê se houve disparo recente, status, erros.</li>
+          <li><strong className="text-fg">/admin/senders</strong> — confirma sessão WA viva (api_online + wa_status).</li>
+          <li><strong className="text-fg">/admin/audit</strong> — logs do backend, exceptions, jobs falhando.</li>
+          <li><strong className="text-fg">/admin/params</strong> — alguém pode ter desligado <code>use_algo_tick</code>.</li>
+        </ol>
       </Sec>
     </Shell>
   ),
@@ -97,19 +103,25 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
     <Shell>
       <Sec title="O que é">
         <Ul>
-          <li>
-            <strong className="text-fg">Compor disparo</strong> monta a mensagem, escolhe produtos e canais/grupos, e envia na hora ou agenda.
-          </li>
-          <li>
-            O preview ao lado (ou no topo em telas estreitas) atualiza em tempo real conforme você edita texto e seleção.
-          </li>
+          <li>Disparo manual para 1+ grupos. Use para teste, blast pontual ou conteúdo não-coberto pelo Score Engine.</li>
+          <li>Endpoint: <code>POST /api/dispatch/manual</code>. Expande canais → grupos automaticamente.</li>
         </Ul>
       </Sec>
-      <Sec title="Checklist rápido">
+      <Sec title="Fluxo">
+        <ol className="list-decimal pl-5 space-y-1">
+          <li><b>Buscar produto</b> no catálogo (filtros por categoria, source, qualidade).</li>
+          <li><b>Escolher template</b> ou escrever mensagem livre. Variáveis aceitas: <code>{'{produto}'}</code>, <code>{'{de}'}</code>, <code>{'{por}'}</code>, <code>{'{desconto}'}</code>, <code>{'{link}'}</code>.</li>
+          <li><b>Selecionar canais e/ou grupos</b>. Canais expandem para todos os grupos vinculados.</li>
+          <li><b>Preview</b> do lado direito mostra como vai aparecer no WhatsApp.</li>
+          <li><b>Disparar</b>. Resultado vai pra <strong className="text-fg">/activity</strong>.</li>
+        </ol>
+      </Sec>
+      <Sec title="Gotchas">
         <Ul>
-          <li>Produtos com afiliado: confira tags em <strong className="text-fg">Afiliados</strong> para o link curto correto.</li>
-          <li>Use a busca (<kbd className="text-xs bg-surface-2 px-1 rounded">⌘K</kbd>) para puxar produtos do catálogo rápido.</li>
-          <li>Revise preview WhatsApp antes de confirmar envio em massa.</li>
+          <li>Manual <b>não</b> respeita anti-repeat 7d — você é responsável por não saturar.</li>
+          <li>Cada grupo recebe um shortlink único para atribuição correta de clicks (vai pra <code>group_shortlinks</code>).</li>
+          <li>Sem afiliado configurado, o link sai "seco" (canonical). Configure em <strong className="text-fg">/affiliates</strong>.</li>
+          <li>Imagem do produto vem do cache local quando disponível — sem isso, baixa da URL no momento do envio.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -117,20 +129,15 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   ads: () => (
     <Shell>
-      <Sec title="Campanhas recorrentes">
+      <Sec title="Página deprecada">
+        <p className="text-fg-2">
+          A página <code>/ads</code> foi removida e redireciona para <strong className="text-fg">/activity</strong>.
+          O conceito de "anúncios pagos com cron" foi absorvido pelo <b>Score Engine</b> + <b>Templates</b>.
+        </p>
+        <p className="text-fg-2 mt-3">Para o caso de uso equivalente hoje:</p>
         <Ul>
-          <li>
-            <strong className="text-fg">Anúncios pagos por terceiros</strong> — disparos recorrentes nos grupos com tracking de cliques via short link.
-          </li>
-          <li>
-            <strong className="text-fg">Anúncios pagos</strong> disparam em cron com URL rastreada e canais alvo — útil para ritmo fixo (ex.: manhã/noite).
-          </li>
-          <li>Cada campanha deve ter janela de envio coerente com o hábito da audiência.</li>
-        </Ul>
-      </Sec>
-      <Sec title="Monitoração">
-        <Ul>
-          <li>Acompanhe performance em <strong className="text-fg">Insights</strong> e links rastreados onde configurado.</li>
+          <li><b>Disparos recorrentes automáticos</b> → ligue o Score Engine (<code>use_algo_tick</code>) e configure os pesos no canal. Veja <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
+          <li><b>Conteúdo de terceiros pago</b> → use <strong className="text-fg">Compor disparo</strong> manual com a frequência desejada.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -138,52 +145,20 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   automations: () => (
     <Shell>
-      <Sec title="Esta página">
-        <Ul>
-          <li>
-            <strong className="text-fg">Piloto global</strong>, prévia do match, <strong className="text-fg">pendentes de aprovação</strong> e{' '}
-            <strong className="text-fg">linha do tempo</strong> — o mesmo fluxo que você vê na tela; conceitos longos ficam aqui (ou no índice em /manual).
-          </li>
-          <li>
-            Auto-match roda em ciclo: novos produtos entram na prévia; acima do threshold viram candidatos a dispatch.
-          </li>
-        </Ul>
-      </Sec>
-
-      <Sec title="Pipeline agendado vs auto-match">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-1.5">Pipeline agendado</p>
+      <Sec title="Conceito antigo">
         <p className="text-fg-2">
-          Fluxo <strong className="text-fg">scan → process → evaluate</strong>: dentro da <strong className="text-fg">janela de envio</strong> e com{' '}
-          <code className="text-xs bg-surface-2 px-1 rounded">events_enabled</code> no canal, detecta novidades, quedas de preço e mínimos e dispara por adapters.
-          É o caminho de <em>eventos</em> — <strong className="text-fg">não</strong> é a fila contínua do auto-match.
-        </p>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mt-5 mb-1.5">Auto-match</p>
-        <p className="text-fg-2">
-          A cada ~<strong className="text-fg">1 min</strong>, lê produtos recentes do catálogo, pontua contra a audiência dos canais e cria dispatches{' '}
-          <code className="text-xs bg-surface-2 px-1 rounded">composed_by=auto-match</code>. Com <strong className="text-fg">full-auto</strong> desligado no Jonfrey,
-          o status fica <code className="text-xs bg-surface-2 px-1 rounded">pending_approval</code> até você aprovar; só{' '}
-          <code className="text-xs bg-surface-2 px-1 rounded">queued</code> entra no worker Evolution (WhatsApp).{' '}
-          <strong className="text-fg">Rate limit:</strong> 3 mensagens/hora/grupo.
+          "Auto-match" / "auto disparos" eram um sistema heurístico que cruzava produtos com canais e pedia aprovação.
+          Foi <b>substituído pelo Score Engine</b> — fórmula composta de 7 sinais + MMR + opcionalmente ε-greedy e Thompson Sampling.
         </p>
       </Sec>
-
-      <Sec title="Atalho mental">
+      <Sec title="Onde tudo isso virou">
         <Ul>
-          <li>
-            <strong className="text-fg">Eventos</strong> (por canal + <code className="text-xs bg-surface-2 px-1 rounded">events_enabled</code>): novidades, quedas, mínimos — respeita janela de envio.
-          </li>
-          <li>
-            <strong className="text-fg">Fila / auto-match</strong>: scoring contínuo; threshold e limites por canal em <strong className="text-fg">Canais</strong>.
-          </li>
-        </Ul>
-      </Sec>
-
-      <Sec title="Linha do tempo (bloco na página)">
-        <Ul>
-          <li>
-            De cima para baixo: <strong className="text-fg">próximos</strong> (prévia do auto-match), depois <strong className="text-fg">sua fila</strong> se full-auto estiver
-            desligado, por fim <strong className="text-fg">histórico</strong> do que já disparou.
-          </li>
+          <li><b>Auto-match</b> → <strong className="text-fg">Score Engine</strong> em /admin/params (flag <code>use_algo_tick</code>). Tutorial: <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
+          <li><b>Threshold global</b> → <code>quality_threshold</code> (default 0.40) em /admin/params.</li>
+          <li><b>Threshold por canal</b> → <code>quality_threshold</code> próprio em <strong className="text-fg">/channels</strong> (cada canal pode sobrescrever).</li>
+          <li><b>Rate limit</b> → <code>cap_max</code> (msgs/dia/grupo) + <code>cooldown_seconds</code> entre envios do mesmo modem.</li>
+          <li><b>Pendente de aprovação</b> → não existe mais; o motor só envia o que passa pelos filtros.</li>
+          <li><b>Jonfrey</b> → os 9 loops LLM, gerenciáveis em <strong className="text-fg">/settings/loops</strong>.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -191,21 +166,32 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   canais: () => (
     <Shell>
-      <Sec title="Por canal">
+      <Sec title="Canal lógico = grupo de grupos">
         <Ul>
-          <li>
-            Esta tela é <strong className="text-fg">configuração e monitor</strong> dos canais lógicos (lista, criar, sugerir).
-          </li>
-          <li>
-            Cada linha é um <strong className="text-fg">canal lógico</strong>: audiência, grupos de destino, threshold do match, cooldown e limites por ciclo.
-          </li>
-          <li>Abra o detalhe do canal para audiência, grupos WA/TG e política de disparo.</li>
+          <li>Um <b>canal</b> agrupa N <b>grupos WA/TG</b> com configuração compartilhada: threshold de qualidade, daily cap e <b>sliders de categoria</b>.</li>
+          <li>Tabela <code>channels_v2</code>. Migrou do "canal v1" antigo que tinha audiência fixa por categoria única.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Sliders de categoria (0–100%)">
+        <Ul>
+          <li>Cada canal declara, por categoria, um <b>peso 0–100</b>. Tabela <code>channel_category_weights</code>.</li>
+          <li>Esse peso entra na fórmula composta como termo <code>w_w · channel_weight</code>. Sliders altos puxam mais produtos daquela categoria.</li>
+          <li>Categoria sem slider = peso 0 = não aparece no canal. Use para excluir explicitamente.</li>
+          <li>Os pesos NÃO precisam somar 100% — são relativos. Ex: gaming=80, casa=20 dá o mesmo ranking que gaming=4, casa=1.</li>
+        </Ul>
+      </Sec>
+      <Sec title="Parâmetros por canal">
+        <Ul>
+          <li><code>quality_threshold</code> — produto precisa ter score &ge; esse valor para entrar no funil deste canal.</li>
+          <li><code>daily_cap</code> — máximo de mensagens por dia somando todos os grupos do canal.</li>
+          <li><code>active</code> — toggle on/off do canal sem precisar deletar.</li>
         </Ul>
       </Sec>
       <Sec title="Boas práticas">
         <Ul>
-          <li>Canal pausado ou sem grupos não gera candidatos — verifique antes de reclamar da prévia vazia.</li>
-          <li>Cooldown alto reduz spam; threshold alto aumenta qualidade e reduz volume.</li>
+          <li>Canal sem grupos = canal sem destino = nada acontece. Sempre vincule pelo menos 1 grupo em <strong className="text-fg">/groups</strong>.</li>
+          <li>Comece com 2–3 categorias com pesos parecidos; ajuste depois de 7d com base em <strong className="text-fg">/admin/metrics → Learned Weights</strong>.</li>
+          <li>Threshold alto (0.6+) = só "ofertão"; baixo (0.3) = volume e ruído.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -213,26 +199,20 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
 
   jonfrey: () => (
     <Shell>
-      <Sec title="Visão geral">
+      <Sec title="Conceito antigo — virou Loops LLM">
         <p className="text-fg-2">
-          <strong className="text-fg">Jonfrey</strong> é um assistente que orquestra automaticamente outras automações — configura crawlers, audita pendências e ajusta thresholds. O histórico de execuções fica em{' '}
-          <strong className="text-fg">Logs → aba Jonfrey</strong> (e na fila ⏱ na barra superior).
-        </p>
-        <p className="text-fg-2 mt-3">
-          Com o <strong className="text-fg">Auto-pilot</strong> ligado, o Jonfrey corre em ciclo e dispara as automações que estão ativas na lista da página.
+          "Jonfrey" era um assistente LLM monolítico que orquestrava sugestões. Foi <b>quebrado em 9 loops especializados</b>,
+          cada um com escopo, frequência e gate próprios. Ver <strong className="text-fg">/settings/loops</strong> e o tutorial{' '}
+          <strong className="text-fg">Loops LLM</strong>.
         </p>
       </Sec>
-      <Sec title="Assistente IA">
+      <Sec title="Equivalências">
         <Ul>
-          <li>
-            <strong className="text-fg">Jonfrey</strong> executa <strong className="text-fg">ações configuráveis</strong> por tipo (incluindo tarefas com LLM quando aplicável).
-            O que aparece na lista depende do backend do workspace — cada ação tem auditoria em <strong className="text-fg">Logs → Jonfrey</strong>.
-          </li>
-        </Ul>
-      </Sec>
-      <Sec title="Transparência">
-        <Ul>
-          <li>Revise logs e histórico sugerido antes de escalar automação em produção.</li>
+          <li>"Jonfrey configurando crawlers" → loop <code>scraper_fix</code></li>
+          <li>"Jonfrey ajustando threshold" → loop <code>auto_tuning</code></li>
+          <li>"Jonfrey sugerindo categorias" → loop <code>taxonomy_grow</code></li>
+          <li>"Jonfrey pausando grupos saturados" → loop <code>anomaly_pause</code></li>
+          <li>"Histórico do Jonfrey" → <strong className="text-fg">/admin/audit</strong> filtrado por loop</li>
         </Ul>
       </Sec>
     </Shell>
