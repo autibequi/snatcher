@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -84,16 +85,41 @@ func (a *EvolutionAdapter) GetStatus(ctx context.Context) (string, error) {
 	}
 	var resp stateResp
 	if err := a.get(ctx, fmt.Sprintf("/instance/connectionState/%s", a.instance), &resp); err != nil {
-		return "error", err
+		// 404 = instância não existe (não criada ainda) — não é erro de rede
+		if strings.Contains(err.Error(), "status 404") || strings.Contains(err.Error(), "does not exist") {
+			return "disconnected", nil
+		}
+		return "unreachable", err
 	}
 	switch resp.Instance.State {
 	case "open":
 		return "connected", nil
-	case "close":
+	case "close", "":
 		return "disconnected", nil
 	default:
 		return resp.Instance.State, nil
 	}
+}
+
+// CreateInstance cria a instância no Evolution se não existir.
+func (a *EvolutionAdapter) CreateInstance(ctx context.Context) error {
+	body := map[string]any{
+		"instanceName": a.instance,
+		"integration":  "WHATSAPP-BAILEYS",
+	}
+	return a.post(ctx, "/instance/create", body, nil)
+}
+
+// EnsureInstance cria a instância se ela não existir ainda.
+func (a *EvolutionAdapter) EnsureInstance(ctx context.Context) error {
+	// Tenta buscar o estado — se 404, cria
+	if err := a.get(ctx, fmt.Sprintf("/instance/connectionState/%s", a.instance), nil); err != nil {
+		if strings.Contains(err.Error(), "status 404") || strings.Contains(err.Error(), "does not exist") {
+			return a.CreateInstance(ctx)
+		}
+		return err
+	}
+	return nil
 }
 
 func (a *EvolutionAdapter) ListGroups(ctx context.Context) ([]map[string]any, error) {

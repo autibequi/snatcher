@@ -103,6 +103,11 @@ func (h *AccountsV2Handler) WAQRCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	// Garante que a instância existe antes de pedir o QR
+	if err := evo.EnsureInstance(context.Background()); err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao criar instância: "+err.Error())
+		return
+	}
 	qr, err := evo.GetQRCode(context.Background())
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "erro ao obter QR code: "+err.Error())
@@ -152,18 +157,13 @@ func (h *AccountsV2Handler) EvolutionHealth(w http.ResponseWriter, r *http.Reque
 	}
 	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
 	status, err := evo.GetStatus(context.Background())
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"configured": true,
-			"status":     "unreachable",
-			"instance":   instance,
-			"error":      err.Error(),
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"configured": true,
 		"status":     status,
 		"instance":   instance,
-	})
+	}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
