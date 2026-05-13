@@ -39,13 +39,6 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: 'Análise',
-    items: [
-      { to: '/analytics', label: 'Analytics', icon: '📈' },
-      { to: '/clusters',  label: 'Clusters',  icon: '🧩' },
-    ],
-  },
-  {
     label: 'Sistema',
     items: [
       { to: '/settings', label: 'Configurações', icon: '⚙️' },
@@ -54,7 +47,7 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: 'Snatcher v2 · Controlar',
+    label: 'Controlar',
     items: [
       { to: '/admin/params',     label: 'Parâmetros',       icon: '🎛️' },
       { to: '/admin/loops',      label: 'Loops LLM',        icon: '🔁' },
@@ -65,13 +58,15 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: 'Snatcher v2 · Analisar',
+    label: 'Analisar',
     items: [
       { to: '/admin/conversions',       label: 'Conversões',     icon: '💵' },
       { to: '/admin/metrics',           label: 'Métricas',       icon: '📈' },
-      { to: '/admin/catalog-canonical', label: 'Catálogo v2',    icon: '📦' },
+      { to: '/analytics',               label: 'Analytics',      icon: '📊' },
+      { to: '/clusters',                label: 'Clusters',       icon: '🧩' },
+      { to: '/admin/catalog-canonical', label: 'Catálogo',       icon: '📦' },
       { to: '/admin/audit',             label: 'Audit Timeline', icon: '📜' },
-      { to: '/admin/scrapers',          label: 'Scrapers',       icon: '🕷️' },
+      { to: '/admin/scrapers',          label: 'Scrapers',       icon: '🕸️' },
     ],
   },
 ]

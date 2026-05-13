@@ -7,11 +7,16 @@ import { MessagePreview } from '../../components/MessagePreview'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Account {
+interface SenderAccount {
   id: number
-  name?: string
-  phone?: string
-  role: string
+  phone: string
+  modem_id: number
+  modem_slug: string
+  status: string
+  daily_send_quota: number
+  last_sent_at: string | null
+  consecutive_failures: number
+  sent_today: number
 }
 
 export interface SpyGroup {
@@ -56,12 +61,12 @@ export function CreateSpyModal({ open, onClose }: { open: boolean; onClose: () =
   const [form, setForm] = React.useState<SpyFormData>(defaultSpyForm)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
 
-  const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['accounts', 'wa', 'reader'],
+  const { data: accounts = [] } = useQuery<SenderAccount[]>({
+    queryKey: ['accounts', 'senders', 'reader'],
     queryFn: () =>
-      apiClient.get('/api/accounts/wa?role=reader').then(r =>
-        Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
-      ).catch(() => []),
+      apiClient.get<SenderAccount[]>('/api/admin/senders/accounts')
+        .then(r => (Array.isArray(r.data) ? r.data : []).filter(a => a.status !== 'banned'))
+        .catch(() => []),
     enabled: open,
   })
 
@@ -158,7 +163,7 @@ export function CreateSpyModal({ open, onClose }: { open: boolean; onClose: () =
             <option value="">Sem conta especifica</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>
-                {a.name || a.phone || `Conta #${a.id}`}
+                {a.phone || `Conta #${a.id}`}
               </option>
             ))}
           </select>
@@ -174,12 +179,12 @@ function ChangeReaderModal({ spy, onClose }: { spy: SpyGroup; onClose: () => voi
   const qc = useQueryClient()
   const [readerId, setReaderId] = React.useState<string>(String(spy.reader_wa_id ?? ''))
 
-  const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['accounts', 'wa', 'reader'],
+  const { data: accounts = [] } = useQuery<SenderAccount[]>({
+    queryKey: ['accounts', 'senders', 'reader'],
     queryFn: () =>
-      apiClient.get('/api/accounts/wa?role=reader').then(r =>
-        Array.isArray(r.data) ? r.data : (r.data?.items ?? [])
-      ).catch(() => []),
+      apiClient.get<SenderAccount[]>('/api/admin/senders/accounts')
+        .then(r => (Array.isArray(r.data) ? r.data : []).filter(a => a.status !== 'banned'))
+        .catch(() => []),
   })
 
   const saveMut = useMutation({
@@ -220,7 +225,7 @@ function ChangeReaderModal({ spy, onClose }: { spy: SpyGroup; onClose: () => voi
             <option value="">Sem conta especifica</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>
-                {a.name || a.phone || `Conta #${a.id}`}
+                {a.phone || `Conta #${a.id}`}
               </option>
             ))}
           </select>

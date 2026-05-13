@@ -31,6 +31,13 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+interface SenderAccount {
+  id: number
+  phone: string
+  modem_slug: string
+  status: string
+}
+
 interface GroupDetail {
   id: string | number
   short_id?: string
@@ -72,13 +79,6 @@ interface GroupMember {
   last_click_at?: string
   role?: 'admin' | 'member' | string
   engagement?: 'engaged' | 'active' | 'dormant' | string
-}
-
-interface AccountOption {
-  id: number
-  name: string
-  phone?: string
-  platform: 'wa' | 'tg'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -236,18 +236,16 @@ function AddAdminModal({ groupId, onClose, onSuccess }: { groupId: string | numb
   const [selectedId, setSelectedId] = React.useState<string>('')
   const [submitting, setSubmitting] = React.useState(false)
 
-  const { data: waAccounts = [] } = useQuery<AccountOption[]>({
-    queryKey: ['accounts', 'wa'],
-    queryFn: () => apiClient.get('/api/accounts/wa').then(r => (Array.isArray(r.data) ? r.data.map((a: any) => ({ ...a, platform: 'wa' as const })) : [])).catch(() => []),
-    staleTime: 30_000,
-  })
-  const { data: tgAccounts = [] } = useQuery<AccountOption[]>({
-    queryKey: ['accounts', 'tg'],
-    queryFn: () => apiClient.get('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data.map((a: any) => ({ ...a, platform: 'tg' as const })) : [])).catch(() => []),
+  const { data: senderAccounts = [] } = useQuery<SenderAccount[]>({
+    queryKey: ['admin-senders-accounts'],
+    queryFn: () =>
+      apiClient.get<SenderAccount[]>('/api/admin/senders/accounts')
+        .then(r => (Array.isArray(r.data) ? r.data : []).filter(a => a.status !== 'banned'))
+        .catch(() => []),
     staleTime: 30_000,
   })
 
-  const allAccounts = [...waAccounts, ...tgAccounts]
+  const allAccounts = senderAccounts.map(a => ({ ...a, platform: 'wa' as const }))
 
   const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault()
@@ -270,17 +268,10 @@ function AddAdminModal({ groupId, onClose, onSuccess }: { groupId: string | numb
           <select required value={selectedId} onChange={e => setSelectedId(e.target.value)}
             className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg">
             <option value="">Selecionar conta...</option>
-            {waAccounts.length > 0 && (
-              <optgroup label="WhatsApp">
-                {waAccounts.map(a => <option key={`wa-${a.id}`} value={String(a.id)}>{a.name}{a.phone ? ` (${a.phone})` : ''}</option>)}
-              </optgroup>
-            )}
-            {tgAccounts.length > 0 && (
-              <optgroup label="Telegram">
-                {tgAccounts.map(a => <option key={`tg-${a.id}`} value={String(a.id)}>{a.name}{a.phone ? ` (${a.phone})` : ''}</option>)}
-              </optgroup>
-            )}
-            {allAccounts.length === 0 && <option disabled value="">Nenhuma conta disponível</option>}
+            {senderAccounts.map(a => (
+              <option key={a.id} value={String(a.id)}>📱 {a.phone} ({a.modem_slug})</option>
+            ))}
+            {senderAccounts.length === 0 && <option disabled value="">Nenhuma conta disponível</option>}
           </select>
         </div>
         <div className="flex gap-2 justify-end pt-1">

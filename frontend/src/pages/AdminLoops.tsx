@@ -131,7 +131,7 @@ export default function AdminLoops() {
   )
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+    <div className={pageContainer}>
       <h1 className="text-2xl font-bold mb-2">Loops LLM ({ALL_LOOPS.length})</h1>
 
       <div className="mb-5 bg-accent-soft border border-blue-200 rounded-lg p-4 text-sm text-blue-900">

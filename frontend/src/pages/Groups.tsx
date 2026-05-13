@@ -25,19 +25,11 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface WAAccount {
+interface SenderAccount {
   id: number
-  name: string
+  phone: string
+  modem_slug: string
   status: string
-  active: boolean
-}
-
-interface TGAccount {
-  id: number
-  name: string
-  bot_username?: string
-  active: boolean
-  role: string
 }
 
 interface WAGroupOption {
@@ -278,12 +270,12 @@ function ImportGroupModal({
 }: {
   open: boolean
   onClose: () => void
-  activeWA: WAAccount[]
+  activeWA: SenderAccount[]
   linkedJIDs: Set<string>
 }) {
   const qc = useQueryClient()
   const [importAccountId, setImportAccountId] = useState(() => {
-    const first = activeWA.find(a => a.status === 'connected') ?? activeWA[0]
+    const first = activeWA.find(a => a.status === 'primary') ?? activeWA[0]
     return first ? String(first.id) : ''
   })
   const [modalSearch, setModalSearch] = useState('')
@@ -294,14 +286,8 @@ function ImportGroupModal({
   const { data: waGroupOptions = [], isLoading: waGroupsLoading, isFetching: waGroupsFetching, refetch: refetchWaModal } =
     useQuery<WAGroupOption[]>({
       queryKey: ['wa-groups-import-modal', importAccountId],
-      queryFn: () =>
-        apiClient.get(`/api/accounts/wa/${importAccountId}/groups`).then(r => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
-      enabled: open && !!importAccountId && importAccount?.status === 'connected',
-      refetchInterval: (q) => {
-        if (pollSuspendedRef.current) return false
-        const data = q.state.data as WAGroupOption[] | undefined
-        return data && data.length > 0 ? 60_000 : 15_000
-      },
+      queryFn: () => [],
+      enabled: false,
     })
 
   const importOneMut = useMutation({
@@ -330,7 +316,7 @@ function ImportGroupModal({
   )
 
   const waModalLoadingEmpty =
-    !!importAccountId && importAccount?.status === 'connected' &&
+    !!importAccountId && importAccount?.status === 'primary' &&
     waGroupOptions.length === 0 && (waGroupsLoading || waGroupsFetching)
 
   return (
@@ -345,15 +331,15 @@ function ImportGroupModal({
           onChange={e => setImportAccountId(e.target.value)}
         >
           {activeWA.map(a => (
-            <option key={a.id} value={a.id}>{a.name}{a.status !== 'connected' ? ' (desconectada)' : ''}</option>
+            <option key={a.id} value={a.id}>{a.phone} ({a.modem_slug}){a.status !== 'primary' ? ' (inativa)' : ''}</option>
           ))}
         </select>
-        {importAccount && importAccount.status !== 'connected' && (
-          <p className="text-xs text-warning mt-2">Conecte esta conta em Contas para listar grupos da Evolution.</p>
+        {importAccount && importAccount.status !== 'primary' && (
+          <p className="text-xs text-warning mt-2">Esta conta não está primária. Grupos não podem ser listados.</p>
         )}
       </div>
 
-      {importAccount?.status === 'connected' && (
+      {importAccount?.status === 'primary' && (
         <>
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <input
@@ -440,15 +426,13 @@ export default function Groups() {
   const [accountFilter, setAccountFilter] = useState('')
   const [showImport, setShowImport] = useState(false)
 
-  const { data: waAccounts = [], isLoading: waLoading } = useQuery<WAAccount[]>({
-    queryKey: ['accounts', 'wa'],
-    queryFn: () => apiClient.get('/api/accounts/wa').then(r => (Array.isArray(r.data) ? r.data : [])),
-    refetchInterval: 60_000,
-  })
-
-  const { data: tgAccounts = [], isLoading: tgLoading } = useQuery<TGAccount[]>({
-    queryKey: ['accounts', 'tg'],
-    queryFn: () => apiClient.get('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data : [])),
+  const { data: senderAccounts = [], isLoading: accountsLoading } = useQuery<SenderAccount[]>({
+    queryKey: ['admin-senders-accounts'],
+    queryFn: () =>
+      apiClient.get<SenderAccount[]>('/api/admin/senders/accounts')
+        .then(r => (Array.isArray(r.data) ? r.data : []).filter(a => a.status !== 'banned'))
+        .catch(() => []),
+    staleTime: 30_000,
   })
 
   const { data: groupsRaw = [], isLoading: groupsLoading } = useQuery<GroupRow[]>({
@@ -459,10 +443,9 @@ export default function Groups() {
   })
 
   const groups = useMemo(() => dedupeGroupsByPhysicalJid(groupsRaw), [groupsRaw])
-  const activeWA = waAccounts.filter(a => a.active)
-  const activeTG = tgAccounts.filter(a => a.active)
-  const connectedWA = waAccounts.filter(a => a.status === 'connected').length
-  const isLoading = waLoading || tgLoading || groupsLoading
+  const activeAccounts = senderAccounts.filter(a => a.status === 'primary' || a.status === 'backup')
+  const connectedCount = senderAccounts.filter(a => a.status === 'primary').length
+  const isLoading = accountsLoading || groupsLoading
 
   const linkedJIDs = useMemo(
     () => new Set(groupsRaw.map(g => String(g.jid ?? '').trim().toLowerCase()).filter(Boolean)),
@@ -475,12 +458,12 @@ export default function Groups() {
         title="Grupos"
         subtitle={
           !isLoading
-            ? `${connectedWA} WA conectada${connectedWA !== 1 ? 's' : ''} · ${activeTG.length} TG configurada${activeTG.length !== 1 ? 's' : ''} · ${groups.length} grupo${groups.length !== 1 ? 's' : ''}`
+            ? `${connectedCount} WA primária${connectedCount !== 1 ? 's' : ''} · ${activeAccounts.length} conta${activeAccounts.length !== 1 ? 's' : ''} ativa${activeAccounts.length !== 1 ? 's' : ''} · ${groups.length} grupo${groups.length !== 1 ? 's' : ''}`
             : undefined
         }
         className="mb-4"
         actions={
-          <Button variant="primary" size="sm" disabled={activeWA.length === 0} onClick={() => setShowImport(true)}>
+          <Button variant="primary" size="sm" disabled={activeAccounts.length === 0} onClick={() => setShowImport(true)}>
             Importar grupo
           </Button>
         }
@@ -490,10 +473,10 @@ export default function Groups() {
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-11 w-full" />)}
         </div>
-      ) : activeWA.length === 0 && activeTG.length === 0 ? (
+      ) : activeAccounts.length === 0 ? (
         <EmptyState
           title="Nenhuma conta configurada"
-          description="Conecte uma conta WhatsApp ou Telegram em Contas conectadas."
+          description="Configure uma conta de envio em Contas conectadas."
           cta={{ label: 'Ir para Contas', onClick: () => (window.location.href = '/accounts') }}
         />
       ) : (
@@ -509,15 +492,14 @@ export default function Groups() {
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
-            {(waAccounts.length > 0 || tgAccounts.length > 0) && (
+            {senderAccounts.length > 0 && (
               <select
                 className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg h-9"
                 value={accountFilter}
                 onChange={e => setAccountFilter(e.target.value)}
               >
                 <option value="">Todas as contas</option>
-                {waAccounts.map(a => <option key={`wa-${a.id}`} value={a.name}>📱 {a.name}</option>)}
-                {tgAccounts.map(a => <option key={`tg-${a.id}`} value={a.name}>✈️ {a.name}</option>)}
+                {senderAccounts.map(a => <option key={`acc-${a.id}`} value={String(a.id)}>📱 {a.phone} ({a.modem_slug})</option>)}
               </select>
             )}
           </div>
@@ -531,11 +513,11 @@ export default function Groups() {
         </>
       )}
 
-      {showImport && activeWA.length > 0 && (
+      {showImport && activeAccounts.length > 0 && (
         <ImportGroupModal
           open={showImport}
           onClose={() => setShowImport(false)}
-          activeWA={activeWA}
+          activeWA={activeAccounts}
           linkedJIDs={linkedJIDs}
         />
       )}

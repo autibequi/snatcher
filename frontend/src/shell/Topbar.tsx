@@ -13,15 +13,16 @@ import { resolveTutorialSlugFromPath } from '../content/tutorials'
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
-interface WAAccount {
+interface SenderAccount {
   id: number
+  phone: string
+  modem_id: number
+  modem_slug: string
   status: string
-  active: boolean
-}
-
-interface TGAccount {
-  id: number
-  active: boolean
+  daily_send_quota: number
+  last_sent_at: string | null
+  consecutive_failures: number
+  sent_today: number
 }
 
 interface JobActivityRow {
@@ -120,15 +121,12 @@ function useAccountsStatus() {
   return useQuery({
     queryKey: ['accounts-stats'],
     queryFn: async () => {
-      const [waRes, tgRes] = await Promise.all([
-        apiClient.get<WAAccount[]>('/api/accounts/wa').then(r => (Array.isArray(r.data) ? r.data : [])),
-        apiClient.get<TGAccount[]>('/api/accounts/tg').then(r => (Array.isArray(r.data) ? r.data : [])),
-      ])
-      const total = waRes.length + tgRes.length
-      const connected =
-        waRes.filter(a => a.status === 'connected').length +
-        tgRes.filter(a => a.active).length
-      return { connected, total }
+      const res = await apiClient.get<SenderAccount[]>('/api/admin/senders/accounts')
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => [])
+      const active = res.filter(a => a.status !== 'banned')
+      const connected = res.filter(a => a.status === 'primary').length
+      return { connected, total: active.length }
     },
     staleTime: 8_000,
     refetchInterval: 10_000,

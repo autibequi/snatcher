@@ -276,6 +276,7 @@ export default function Composer() {
     queryFn: () => apiClient.get(`/api/dispatches/${draftId}`).then(r => r.data),
     enabled: !!draftId,
     staleTime: Infinity,
+    retry: false,
     select: (data: any) => {
       if (data?.dispatch?.message?.text && !text) {
         setText(data.dispatch.message.text)

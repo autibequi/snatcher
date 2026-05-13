@@ -213,7 +213,7 @@ export default function AdminAlerts() {
       : []
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+    <div className={pageContainer}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Alert Rules</h1>
