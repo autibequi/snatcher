@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"snatcher/backendv2/internal/models"
 )
+
 
 // ---- GroupAdmin ----
 
@@ -91,6 +94,9 @@ func (s *SQLStore) CountGroupsWithSameJID(platform, jid string) (int, error) {
 func (s *SQLStore) FindConflictingRedesignGroup(g models.RedesignGroup, excludeID int64) (*models.RedesignGroup, error) {
 	var out models.RedesignGroup
 	err := s.db.Get(&out, `SELECT * FROM groups WHERE platform=$1 AND jid=$2 AND id<>$3 LIMIT 1`, g.Platform, g.JID, excludeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
