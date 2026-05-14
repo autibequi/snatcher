@@ -485,7 +485,107 @@ function ChannelCard({
             allGroups={allGroups}
             onClose={onToggleExpand}
           />
+          <ChannelCandidatesPanel channelId={channel.id} />
         </>
+      )}
+    </div>
+  )
+}
+
+// ── Channel Candidates Panel ──────────────────────────────────────────────────
+
+interface ChannelCandidate {
+  id: number
+  title: string
+  image_url?: string
+  source_id: string
+  category_name?: string
+  price_current: number
+  discount_pct?: number
+  quality_score: number
+  channel_weight: number
+  composite_score: number
+  below_threshold: boolean
+  send_ready: boolean
+  url_alive: boolean
+}
+
+function ChannelCandidatesPanel({ channelId }: { channelId: number }) {
+  const [show, setShow] = useState(false)
+
+  const { data: candidates = [], isFetching } = useQuery<ChannelCandidate[]>({
+    queryKey: ['channel-candidates', channelId],
+    queryFn: () => authFetchJSON<ChannelCandidate[]>(`/api/channels/${channelId}/candidates?limit=20`, []),
+    enabled: show,
+    staleTime: 30_000,
+  })
+
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+  return (
+    <div className="border-t border-border px-4 py-3">
+      <button
+        className="text-xs font-semibold text-fg-2 uppercase tracking-wide flex items-center gap-1 hover:text-accent"
+        onClick={() => setShow(v => !v)}
+      >
+        {show ? '▾' : '▸'} Produtos pontuados para este canal
+        <span className="ml-1 text-[10px] text-fg-3 normal-case font-normal">(debug — mostra mesmo abaixo do threshold)</span>
+      </button>
+
+      {show && (
+        <div className="mt-3">
+          {isFetching && <p className="text-xs text-fg-3">Carregando…</p>}
+          {!isFetching && candidates.length === 0 && (
+            <p className="text-xs text-fg-3">Nenhum produto no catálogo com quality_score calculado.</p>
+          )}
+          {!isFetching && candidates.length > 0 && (
+            <div className="border rounded-lg bg-surface overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-surface-2 border-b">
+                  <tr>
+                    <th className="text-left px-2 py-1.5 font-medium text-fg-2">Produto</th>
+                    <th className="text-left px-2 py-1.5 font-medium text-fg-2">Categoria</th>
+                    <th className="text-right px-2 py-1.5 font-medium text-fg-2">Preço</th>
+                    <th className="text-right px-2 py-1.5 font-medium text-fg-2">Quality</th>
+                    <th className="text-right px-2 py-1.5 font-medium text-fg-2">Canal%</th>
+                    <th className="text-right px-2 py-1.5 font-medium text-fg-2">Score</th>
+                    <th className="text-center px-2 py-1.5 font-medium text-fg-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {candidates.map(c => (
+                    <tr key={c.id} className={c.below_threshold ? 'opacity-50' : ''}>
+                      <td className="px-2 py-1.5 max-w-[220px]">
+                        <p className="truncate text-fg" title={c.title}>{c.title}</p>
+                        <p className="text-fg-3 text-[10px]">{c.source_id} #{c.id}</p>
+                      </td>
+                      <td className="px-2 py-1.5 text-fg-3">{c.category_name ?? '—'}</td>
+                      <td className="px-2 py-1.5 text-right text-fg">{brl(c.price_current)}</td>
+                      <td className={`px-2 py-1.5 text-right font-mono ${c.below_threshold ? 'text-danger' : 'text-fg'}`}>
+                        {c.quality_score.toFixed(2)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-fg-3">
+                        {c.channel_weight > 0 ? `${c.channel_weight}%` : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-accent">
+                        {c.composite_score.toFixed(3)}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        {!c.send_ready && <span title="não send_ready">🔴</span>}
+                        {!c.url_alive && <span title="URL morta">💀</span>}
+                        {c.below_threshold && <span title="abaixo do threshold">⚠️</span>}
+                        {c.send_ready && c.url_alive && !c.below_threshold && <span title="elegível">✅</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="px-2 py-1 text-[10px] text-fg-3 border-t">
+                ✅ elegível · ⚠️ abaixo do threshold de qualidade · 🔴 não send_ready · 💀 URL morta
+              </p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
