@@ -79,12 +79,14 @@ func (s *SQLStore) SetDispatchWaRRCursor(cursor int) error {
 }
 
 // ApplyGlobalDailyLimitToAccounts aplica o limite diário configurado em appconfig a todas as contas.
+// waaccount (v1) foi dropada na migration 20260520200002 — usa accounts v2 (daily_send_quota).
 func (s *SQLStore) ApplyGlobalDailyLimitToAccounts(limit int) error {
-	if _, err := s.db.Exec(`UPDATE waaccount SET daily_limit = $1`, limit); err != nil {
+	if _, err := s.db.Exec(`UPDATE accounts SET daily_send_quota = $1`, limit); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`UPDATE tgaccount SET daily_limit = $1`, limit)
-	return err
+	// tgaccount pode ou não existir dependendo do schema; ignora se ausente.
+	_, _ = s.db.Exec(`UPDATE tgaccount SET daily_limit = $1 WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='tgaccount')`, limit)
+	return nil
 }
 
 // AutoMatchProductChannelInFlight implementa anti-duplicata antes de CreateDispatch.

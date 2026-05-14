@@ -403,6 +403,7 @@ func Build(
 		// Score Engine status — widget do dashboard
 		r.Get("/api/admin/algo/status", adminhnd.AlgoStatusHandler(db))
 		r.Post("/api/admin/algo/toggle", adminhnd.AlgoToggleHandler(db))
+		r.Get("/api/admin/algo/dry-run", adminhnd.AlgoDryRunHandler(db))
 
 		// Metrics dashboard — learned weights, daily metrics, A/B tests, virality
 		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))

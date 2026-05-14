@@ -159,6 +159,21 @@ function AlgoStatusWidget() {
           </p>
         )}
 
+        {/* Dry-run link — aparece quando está ok mas nenhum grupo enviou */}
+        {status?.state === 'ok' && status.last_enqueued === 0 && (
+          <p className="mt-1 text-[11px] text-warning">
+            Nenhum grupo enfileirado no último tick —{' '}
+            <a
+              href="/api/admin/algo/dry-run"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-fg"
+            >
+              ver diagnóstico grupo a grupo →
+            </a>
+          </p>
+        )}
+
         {/* Last tick info quando não é erro */}
         {status?.last_tick_at && status.state !== 'error' && (
           <p className="mt-0.5 text-[11px] text-fg-3">
