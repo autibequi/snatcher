@@ -59,9 +59,20 @@ func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
 }
 
 func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
-	_, err := s.db.Exec(
-		`UPDATE groups SET name=$1, status=$2 WHERE id=$3`,
-		g.Name, g.Status, g.ID,
+	_, err := s.db.Exec(`
+		UPDATE groups SET
+			name=$1, status=$2, platform=$3,
+			jid=NULLIF($4,''), whatsapp_jid=NULLIF($5,''),
+			invite_link=NULLIF($6,''), member_count=$7,
+			wa_account_id=NULLIF($8,0), tg_account_id=NULLIF($9,0),
+			channel_id=NULLIF($10,0), category_id=NULLIF($11,0)
+		WHERE id=$12`,
+		g.Name, g.Status, g.Platform,
+		g.JID.String, g.WhatsappJID.String,
+		g.InviteLink.String, g.MemberCount,
+		g.WAAccountID.Int64, g.TGAccountID.Int64,
+		g.ChannelID.Int64, g.CategoryID.Int64,
+		g.ID,
 	)
 	return err
 }
