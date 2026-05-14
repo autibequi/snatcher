@@ -50,6 +50,8 @@ function ChannelForm({ initial, onSave, onCancel, saving }: {
   onCancel: () => void; saving: boolean
 }) {
   const [form, setForm] = useState<ChannelFormValues>(initial ?? defaultForm())
+  // Reseta o form quando initial muda (ex: após refetch bem-sucedido do canal)
+  useEffect(() => { if (initial) setForm(initial) }, [JSON.stringify(initial)])
   const set = <K extends keyof ChannelFormValues>(k: K, v: ChannelFormValues[K]) =>
     setForm(p => ({ ...p, [k]: v }))
   return (
@@ -294,12 +296,18 @@ function ChannelModal({
   }, [onClose])
 
   const updateMut = useMutation({
-    mutationFn: (values: ChannelFormValues) =>
-      authFetch(`/api/channels/${channel.id}`, {
+    mutationFn: async (values: ChannelFormValues) => {
+      const res = await authFetch(`/api/channels/${channel.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ name: values.name, quality_threshold: values.quality_threshold, daily_cap: values.daily_cap, active: values.active }),
-      }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? `Erro ${res.status}`)
+      }
+    },
     onSuccess: () => { setEditing(false); void qc.invalidateQueries({ queryKey: ['channels'] }) },
+    onError: (err: Error) => alert(`Não foi possível salvar: ${err.message}`),
   })
   const deleteMut = useMutation({
     mutationFn: () => authFetch(`/api/channels/${channel.id}`, { method: 'DELETE' }),
