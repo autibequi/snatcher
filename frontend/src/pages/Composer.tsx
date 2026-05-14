@@ -300,6 +300,13 @@ export default function Composer() {
   const [tone, setTone] = React.useState('promocional')
   const [customContext, setCustomContext] = React.useState('')
 
+  const { data: allTemplates = [] } = useQuery<MessageTemplate[]>({
+    queryKey: ['composer-templates-main'],
+    queryFn: () => authFetchJSON<MessageTemplate[]>('/api/admin/templates', []),
+    staleTime: 5 * 60_000,
+    select: (data) => data.filter((t) => t.enabled),
+  })
+
   // Buscar dados de TODOS os produtos.
   // Usa /api/admin/catalog-canonical?ids=X,Y — endpoint existente em todas as versões.
   // Fallback para /api/catalog/:id (novo) se o primeiro falhar.
