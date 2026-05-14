@@ -445,21 +445,25 @@ export default function AdminSenders() {
                           disabled={!!anyBusy}
                           className="px-2 py-0.5 bg-warning-soft text-warning rounded hover:bg-warning-soft/80 disabled:opacity-50"
                         >Pausar 6h</button>
-                        {modem.status === 'paused' && (
-                          <button
-                            onClick={() => handleResume(modem.slug, modem.id)}
-                            disabled={!!anyBusy}
-                            className="px-2 py-0.5 bg-success-soft text-success rounded hover:bg-success-soft/80 disabled:opacity-50"
-                          >Resumir</button>
-                        )}
                       </>
                     )}
-                    <button
-                      onClick={() => setConnectingModem(modem)}
-                      className="text-xs px-2 py-0.5 bg-accent text-white rounded hover:bg-accent-hover ml-1"
-                    >
-                      + Conectar
-                    </button>
+                    {/* Resumir aparece para qualquer modem pausado, incluindo HOST */}
+                    {modem.status === 'paused' && (
+                      <button
+                        onClick={() => handleResume(modem.slug, modem.id)}
+                        disabled={!!anyBusy}
+                        className="px-2 py-0.5 bg-success-soft text-success rounded hover:bg-success-soft/80 disabled:opacity-50"
+                      >Resumir</button>
+                    )}
+                    {/* Conectar só aparece quando ainda não há conta vinculada */}
+                    {modemAccounts.length === 0 && (
+                      <button
+                        onClick={() => setConnectingModem(modem)}
+                        className="text-xs px-2 py-0.5 bg-accent text-white rounded hover:bg-accent-hover ml-1"
+                      >
+                        + Conectar
+                      </button>
+                    )}
                     <button
                       onClick={() => setExpandedModem(isExpanded ? null : modem.slug)}
                       className="text-accent hover:underline ml-1"
