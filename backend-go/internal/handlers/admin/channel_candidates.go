@@ -67,7 +67,19 @@ func ChannelCandidatesHandler(db *sqlx.DB) http.HandlerFunc {
 			             / GREATEST(COALESCE(get_param('half_life_freshness','global',NULL), 7.0) * 24.0, 1.0)
 			           ) * COALESCE(get_param('score_weight_freshness','global',NULL), 0.05)
 			         AS composite_score,
-			       COALESCE(c.quality_score, 0) < COALESCE(get_param('quality_threshold','global',NULL), 0.4)
+			       -- below_threshold = composite_score abaixo do threshold.
+			       -- quality_score está OK (≥ threshold) mas o composite pode ser baixo
+			       -- porque o canal não tem sliders configurados (Canal%=0).
+			       -- O operador vê isso como "este produto não seria competitivo neste canal".
+			       (
+			           COALESCE(c.quality_score, 0) * COALESCE(get_param('score_weight_quality','global',NULL), 0.30)
+			           + COALESCE(ccw.weight, 0) / 100.0 * COALESCE(get_param('score_weight_channel','global',NULL), 0.15)
+			           + exp(-0.693
+			                 * EXTRACT(EPOCH FROM (now() - COALESCE(c.send_ready_at, c.created_at)))
+			                 / 3600.0
+			                 / GREATEST(COALESCE(get_param('half_life_freshness','global',NULL), 7.0) * 24.0, 1.0)
+			               ) * COALESCE(get_param('score_weight_freshness','global',NULL), 0.05)
+			       ) < COALESCE(get_param('quality_threshold','global',NULL), 0.4)
 			         AS below_threshold,
 			       c.send_ready,
 			       c.canonical_url_alive AS url_alive
