@@ -278,7 +278,11 @@ function TabProdutos({ channelId }: { channelId: number }) {
             </thead>
             <tbody className="divide-y divide-border">
               {candidates.map(c => (
-                <tr key={c.id} className={c.below_threshold ? 'opacity-50' : 'bg-success/8 hover:bg-success/15'}>
+                <tr
+                  key={c.id}
+                  className={c.below_threshold ? 'opacity-50' : ''}
+                  style={!c.below_threshold ? { backgroundColor: 'rgba(34,197,94,0.10)' } : undefined}
+                >
                   <td className="px-2 py-1.5 max-w-[200px]">
                     <p className="truncate text-fg" title={c.title}>{c.title}</p>
                     <p className="text-fg-3 text-[10px]">{c.source_id} #{c.id}</p>
@@ -311,9 +315,154 @@ function TabProdutos({ channelId }: { channelId: number }) {
   )
 }
 
+// ── Tab: Scoring ──────────────────────────────────────────────────────────────
+
+interface ScoringParam { param_name: string; current_value: number; default_value: number }
+
+function TabScoring({ channel }: { channel: Channel }) {
+  const { data: params = [] } = useQuery<ScoringParam[]>({
+    queryKey: ['scoring-params'],
+    queryFn: () => authFetchJSON<ScoringParam[]>('/api/admin/parameters', []),
+    staleTime: 30_000,
+  })
+
+  const { data: weights = [] } = useQuery<CategoryWeight[]>({
+    queryKey: ['channel-weights', channel.id],
+    queryFn: () => authFetchJSON<CategoryWeight[]>(`/api/channels/${channel.id}/weights`, []),
+    staleTime: 30_000,
+  })
+
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ['template-categories'],
+    queryFn: () => authFetchJSON<Category[]>('/api/admin/templates/categories', []),
+    staleTime: 60_000,
+  })
+
+  const scoreWeights = params.filter(p => p.param_name.startsWith('score_weight_'))
+  const otherRelevant = params.filter(p => [
+    'quality_threshold','anti_saturation_decay','diversity_bonus_weight',
+    'half_life_freshness','epsilon_base','click_reward_weight',
+    'antirepeat_window_days','repromo_drop_threshold',
+  ].includes(p.param_name))
+
+  const Row = ({ p }: { p: ScoringParam }) => (
+    <div className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+      <span className="text-xs font-mono text-fg-2">{p.param_name}</span>
+      <div className="flex items-center gap-2">
+        {p.current_value !== p.default_value && (
+          <span className="text-[10px] text-fg-3 line-through">{p.default_value}</span>
+        )}
+        <span className={`text-xs font-mono font-semibold ${p.current_value !== p.default_value ? 'text-accent' : 'text-fg'}`}>
+          {p.current_value}
+        </span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="p-4 space-y-5 text-sm">
+
+      {/* Config do canal */}
+      <section>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-2">Config deste canal</h3>
+        <div className="rounded-lg border border-border bg-surface-2 divide-y divide-border">
+          {([
+            ['quality_threshold', channel.quality_threshold, 'Score mínimo para entrar no funil'],
+            ['daily_cap', channel.daily_cap, 'Máx mensagens/dia'],
+            ['price_min', channel.price_min ?? '—', 'Preço mínimo (R$)'],
+            ['price_max', channel.price_max ?? '—', 'Preço máximo (R$)'],
+            ['min_discount_pct', (channel.min_discount_pct ?? 0) + '%', 'Desconto mínimo exigido'],
+          ] as [string, string | number, string][]).map(([k, v, desc]) => (
+            <div key={k} className="flex items-center justify-between px-3 py-1.5">
+              <div>
+                <span className="text-xs font-mono text-fg-2">{k}</span>
+                <span className="ml-2 text-[10px] text-fg-3">{desc}</span>
+              </div>
+              <span className="text-xs font-semibold text-fg">{v}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Sliders de categoria do canal */}
+      <section>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-2">
+          Pesos de categoria <span className="normal-case font-normal">(term w_channel × slider / 100 na fórmula)</span>
+        </h3>
+        {weights.length === 0
+          ? <p className="text-xs text-fg-3 italic">Nenhum peso configurado — categoria não influencia o score neste canal.</p>
+          : (
+            <div className="rounded-lg border border-border bg-surface-2 divide-y divide-border overflow-hidden">
+              {categories
+                .map(cat => ({ cat, w: weights.find(w => w.category_id === cat.id)?.weight ?? 0 }))
+                .filter(({ w }) => w > 0)
+                .sort((a, b) => b.w - a.w)
+                .map(({ cat, w }) => (
+                  <div key={cat.id} className="flex items-center gap-3 px-3 py-1.5">
+                    <span className="text-xs text-fg-2 w-28 flex-shrink-0">{cat.name}</span>
+                    <div className="flex-1 bg-border rounded-full h-1.5">
+                      <div className="bg-accent h-1.5 rounded-full" style={{ width: `${w}%` }} />
+                    </div>
+                    <span className="text-xs font-mono font-semibold text-accent w-10 text-right">{w}%</span>
+                  </div>
+                ))
+              }
+            </div>
+          )
+        }
+      </section>
+
+      {/* Pesos da fórmula */}
+      <section>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-2">
+          Pesos da fórmula composta <span className="normal-case font-normal">(score = Σ w_* × sinal)</span>
+        </h3>
+        <div className="rounded-lg border border-border bg-surface-2 px-3">
+          {scoreWeights.length === 0
+            ? <p className="py-2 text-xs text-fg-3">Carregando…</p>
+            : scoreWeights.map(p => <Row key={p.param_name} p={p} />)
+          }
+        </div>
+        <p className="text-[10px] text-fg-3 mt-1">Valores em destaque (roxo) diferem do default. Configure em <span className="font-mono">/admin/params</span>.</p>
+      </section>
+
+      {/* Outros parâmetros relevantes */}
+      <section>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-2">Outros parâmetros que afetam o score</h3>
+        <div className="rounded-lg border border-border bg-surface-2 px-3">
+          {otherRelevant.length === 0
+            ? <p className="py-2 text-xs text-fg-3">Carregando…</p>
+            : otherRelevant.map(p => <Row key={p.param_name} p={p} />)
+          }
+        </div>
+      </section>
+
+      {/* Fórmula resumida */}
+      <section>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3 mb-2">Fórmula resumida</h3>
+        <pre className="text-[10px] bg-surface-2 border border-border rounded-lg p-3 overflow-x-auto leading-snug text-fg-2">
+{`score = w_quality    × quality_score           (intrínseco do produto)
+      + w_affinity   × affinity(grupo, cat)    (histórico do grupo)
+      + w_channel    × slider_canal / 100      (sliders desta aba Categorias)
+      + w_ctr        × ctr_blended             (CTR com shrinkage grupo↔canal)
+      + w_epc        × epc_blended             (EPC com shrinkage)
+      + w_freshness  × exp(-decay × idade)     (recência do produto)
+      - w_saturation × (1 - decay^n_sent_hoje) (penalidade por repetição)
+
+Filtros duros (eliminam antes do score):
+  quality_score ≥ quality_threshold do canal
+  preço ∈ [price_min, price_max] se definido
+  desconto ≥ min_discount_pct se > 0
+  anti-repeat 7d por grupo`}
+        </pre>
+      </section>
+    </div>
+  )
+}
+
 // ── Channel Modal ─────────────────────────────────────────────────────────────
 
-type ModalTab = 'config' | 'categorias' | 'grupos' | 'produtos'
+type ModalTab = 'config' | 'categorias' | 'grupos' | 'produtos' | 'scoring'
 
 function ChannelModal({
   channel, categories, allGroups, onClose,
@@ -359,10 +508,11 @@ function ChannelModal({
   })
 
   const TABS: { id: ModalTab; label: string }[] = [
-    { id: 'config', label: 'Configuração' },
-    { id: 'categorias', label: 'Categorias' },
-    { id: 'grupos', label: `Grupos (${channel.groups_count ?? 0})` },
-    { id: 'produtos', label: 'Produtos' },
+    { id: 'config',    label: 'Configuração' },
+    { id: 'categorias',label: 'Categorias' },
+    { id: 'grupos',    label: `Grupos (${channel.groups_count ?? 0})` },
+    { id: 'produtos',  label: 'Produtos' },
+    { id: 'scoring',   label: '🧮 Scoring' },
   ]
 
   return (
@@ -461,6 +611,7 @@ function ChannelModal({
           {tab === 'categorias' && <TabCategorias channelId={channel.id} categories={categories} />}
           {tab === 'grupos'     && <TabGrupos channelId={channel.id} allGroups={allGroups} />}
           {tab === 'produtos'   && <TabProdutos channelId={channel.id} />}
+          {tab === 'scoring'   && <TabScoring channel={channel} />}
         </div>
       </div>
     </div>
