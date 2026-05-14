@@ -510,8 +510,15 @@ export default function Composer() {
         }
       }
       if (linkResolved && !t.includes(linkResolved)) {
+        // Tenta substituir marcadores existentes
+        const before = t
         t = t.replace(/👉\s*$/gm, `👉 ${linkResolved}`)
         t = t.replace(/👉\s*\n/g, `👉 ${linkResolved}\n`)
+        // Se nenhum marcador encontrado e link ainda não está no texto,
+        // appenda no final (cobre caso onde {link} foi substituído por '' anteriormente)
+        if (t === before && !t.includes(linkResolved)) {
+          t = t.trimEnd() + `\n\n👉 ${linkResolved}`
+        }
       }
       return t
     },
