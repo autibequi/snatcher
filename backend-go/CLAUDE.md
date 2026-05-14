@@ -13,33 +13,64 @@ cmd/
   seed/        — Seed inicial (taxonomia, sources)
 
 internal/
-  adapters/    — Evolution API (WA) + Telegram (deprecated)
-  affiliates/  — Programas de afiliados (ML, Amazon, Awin)
-  algo/        — Score Engine v2 (Thompson, MMR, epsilon, pacing)
-  auth/        — JWT (admin/user roles)
-  compose/     — Composição de prompts LLM (preview)
-  curator/     — Webhook dispatcher (Fase 6)
-  db/          — PostgreSQL pool + RunMigrations (auto no startup)
-  handlers/    — HTTP handlers (admin/ e public/)
-  invitelinks/ — Fetch + cache de links WA
-  jobs/        — Background jobs (PostgreSQL-persisted)
-  llm/         — Clients LLM (OpenRouter, Ollama, vLLM)
-  loops/       — Loops de autonomia LLM (Fase 5)
-  middleware/  — Auth, CORS, rate limit, métricas
-  models/      — Data structs (AppConfig, Group, Dispatch, etc.)
-  notifier/    — Eventos + relatórios em grupo WA
-  pipeline/    — Runner de crawl + orchestração
-  prompts/     — Templates YAML de prompts
-  redirect/    — Short link redirector (com prewarm)
-  router/      — Chi router (Build + BuildPublic)
-  scheduler/   — Gocron (pipeline, jonfrey, sender, sync, GC)
-  scrapers/    — Implementações por marketplace (ML, AMZ)
-  scraperbridge/ — Adaptador de scrapers
-  senders/     — 1 goroutine por modem (send_queue → Evolution)
-  spy/         — Group spy crawlers
-  store/       — DAL (abstrações de queries)
-  ws/          — WebSocket hub (Activity em tempo real)
+  handlers/          — HTTP handlers (recebem request, delegam, retornam response)
+    admin/           — Endpoints autenticados (JWT)
+    public/          — Endpoints públicos (shortlinks, webhooks)
+
+  services/          — Regras de negócio (toda lógica fica aqui)
+    adapters/        — Evolution API (WA)
+    affiliates/      — Programas de afiliados (ML, Amazon, Awin)
+    algo/            — Score Engine v2 (Thompson, MMR, epsilon, pacing)
+    compose/         — Composição de prompts LLM (preview)
+    curation/        — Scripts de curadoria de catálogo
+    curator/         — Webhook dispatcher e alertas WA
+    invitelinks/     — Fetch + cache de links WA
+    jobs/            — Background jobs (PostgreSQL-persisted)
+    llm/             — Clients LLM (OpenRouter, Ollama, vLLM)
+    loops/           — Loops de autonomia LLM
+    messaging/       — Abstração de gateways de mensagem
+    notifier/        — Eventos + relatórios em grupo WA
+    pipeline/        — Runner de crawl + orchestração
+    prompts/         — Templates YAML de prompts
+    redirect/        — Short link redirector (com prewarm)
+    scheduler/       — Gocron (pipeline, jonfrey, sender, sync, GC)
+    scraperbridge/   — Adaptador de scrapers externos
+    scrapers/        — Implementações por marketplace (ML, AMZ)
+    senders/         — 1 goroutine por modem (send_queue → Evolution)
+    spy/             — Group spy crawlers
+
+  repositories/      — Acesso a dados (só queries SQL, sem lógica)
+    store.go         — Interface Store (contrato do repositório)
+    sql_store.go     — Implementação PostgreSQL
+    sql_*.go         — Queries por domínio (grupos, contas, catálogo, etc.)
+
+  models/            — Structs de dados compartilhados (sem lógica)
+  middleware/        — Auth, CORS, rate limit, métricas
+  router/            — Chi router (Build + BuildPublic)
+  auth/              — JWT (admin/user roles)
+  db/                — PostgreSQL pool + RunMigrations (auto no startup)
+  ws/                — WebSocket hub (Activity em tempo real)
 ```
+
+## Regras de camada (TODO: refactor progressivo)
+
+> As regras abaixo descrevem o **estado desejado**. O código atual ainda mistura
+> lógica nos handlers. Ao editar, mova regras de negócio para `services/` e queries para `repositories/`.
+
+### handlers/ — só HTTP
+- Recebe request, valida input, chama service, serializa response
+- **Proibido**: lógica de negócio, queries SQL diretas, cálculos de score
+- Pode: `decodeBody`, `writeJSON`, `writeErr`, chamar métodos de `store.Store` para casos simples de CRUD puro
+
+### services/ — toda a regra de negócio
+- Orquestra fluxos de negócio, aplica regras, coordena múltiplos repositories
+- **Proibido**: `http.ResponseWriter`, `*http.Request`, lógica de serialização HTTP
+- Pode: acessar banco via `repositories`, chamar outros services, chamar adapters externos
+
+### repositories/ — só queries
+- Executa SQL e mapeia resultados para structs de `models/`
+- **Proibido**: lógica de negócio, cálculos, validações de domínio
+- Pode: JOIN complexos, transações, upserts — mas sem decisão de negócio
 
 ## Migrations
 
