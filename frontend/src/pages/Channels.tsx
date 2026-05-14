@@ -278,7 +278,7 @@ function TabProdutos({ channelId }: { channelId: number }) {
             </thead>
             <tbody className="divide-y divide-border">
               {candidates.map(c => (
-                <tr key={c.id} className={c.below_threshold ? 'opacity-50' : ''}>
+                <tr key={c.id} className={c.below_threshold ? 'opacity-50' : 'bg-success/8 hover:bg-success/15'}>
                   <td className="px-2 py-1.5 max-w-[200px]">
                     <p className="truncate text-fg" title={c.title}>{c.title}</p>
                     <p className="text-fg-3 text-[10px]">{c.source_id} #{c.id}</p>
