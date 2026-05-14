@@ -142,7 +142,7 @@ func enqueueSend(ctx context.Context, db *sqlx.DB, groupID int64, item catalogIt
 		JOIN group_admins ga ON ga.account_id = a.id
 		WHERE ga.group_id = $1
 		  AND a.status IN ('primary', 'backup')
-		ORDER BY ga.priority ASC
+		ORDER BY CASE a.status WHEN 'primary' THEN 0 ELSE 1 END, ga.added_at ASC
 		LIMIT 1
 	`, groupID, item.ID, score)
 	return err
