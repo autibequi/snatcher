@@ -101,6 +101,11 @@ func ResumeModemHandler(db *sqlx.DB) http.HandlerFunc {
 		_, _ = db.ExecContext(r.Context(), `
 			UPDATE modems SET status='active', paused_until=NULL, paused_reason=NULL WHERE id=$1
 		`, id)
+		// Limpa ban_events recentes para não re-pausar imediatamente por ban_rate histórico.
+		_, _ = db.ExecContext(r.Context(), `DELETE FROM ban_events WHERE modem_id=$1 AND detected_at > now() - INTERVAL '24 hours'`, id)
+		// Zera consecutive_failures e restaura contas em quarentena.
+		_, _ = db.ExecContext(r.Context(), `UPDATE accounts SET consecutive_failures=0 WHERE modem_id=$1`, id)
+		_, _ = db.ExecContext(r.Context(), `UPDATE accounts SET status='primary', status_changed_at=now() WHERE modem_id=$1 AND status='quarantine'`, id)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
