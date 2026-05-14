@@ -241,6 +241,7 @@ func Build(
 
 		// ReDesign: Groups
 		r.Get("/api/groups", groups.List)
+		r.Get("/api/groups/from-evolution", groups.ListFromEvolution) // antes de /{id}
 		r.Post("/api/groups", groups.Create)
 		r.Get("/api/groups/{id}", groups.Get)
 		r.Patch("/api/groups/{id}", groups.Update)
@@ -401,8 +402,9 @@ func Build(
 		r.Get("/api/admin/scrapers/health", adminhnd.ScraperHealthHandler(db))
 		r.Get("/api/admin/scrapers/logs", adminhnd.ExtractionLogsHandler(db))
 
-		// Fila de envio (send_queue) — visualização na aba Activity
+		// Fila de envio (send_queue) e histórico (send_log) — aba Activity
 		r.Get("/api/admin/send-queue", adminhnd.SendQueueHandler(db))
+		r.Get("/api/admin/send-log", adminhnd.SendLogHandler(db))
 
 		// Score Engine status — widget do dashboard
 		r.Get("/api/admin/algo/status", adminhnd.AlgoStatusHandler(db))

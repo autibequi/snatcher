@@ -30,6 +30,101 @@ interface QueueItem {
   enqueued_at: string
 }
 
+// ── Histórico de disparos (send_log) ─────────────────────────────────────────
+
+interface SendLogItem {
+  id: number
+  group_id: number
+  group_name?: string
+  phone?: string
+  catalog_id?: number
+  product_title?: string
+  status: string
+  sent_at: string
+  source?: string
+}
+
+const STATUS_LOG_DOT: Record<string, string> = {
+  sent:   'bg-success',
+  failed: 'bg-danger',
+  manual: 'bg-accent',
+}
+
+const LOG_COLUMNS: ColumnDef<SendLogItem, unknown>[] = [
+  {
+    accessorKey: 'status',
+    header: '',
+    cell: ({ getValue }) => {
+      const s = getValue<string>()
+      return <span className={`inline-block h-2 w-2 rounded-full ${STATUS_LOG_DOT[s] ?? 'bg-fg-3'}`} title={s} />
+    },
+  },
+  {
+    accessorKey: 'source',
+    header: 'Tipo',
+    cell: ({ getValue }) => {
+      const s = getValue<string | undefined>()
+      return <span className={`text-xs px-1.5 py-0.5 rounded ${s === 'manual' ? 'bg-accent/15 text-accent' : 'bg-surface-2 text-fg-3'}`}>{s === 'manual' ? 'manual' : 'auto'}</span>
+    },
+  },
+  { accessorKey: 'group_name', header: 'Grupo', cell: ({ getValue }) => <span className="font-medium">{getValue<string>() ?? '—'}</span> },
+  { accessorKey: 'product_title', header: 'Produto', cell: ({ getValue }) => <span className="text-fg-2 text-xs truncate max-w-xs block" title={getValue<string>()}>{getValue<string>() ?? '—'}</span> },
+  { accessorKey: 'phone', header: 'Conta', cell: ({ getValue }) => <span className="text-fg-3 text-xs font-mono">{getValue<string>() ?? '—'}</span> },
+  {
+    accessorKey: 'sent_at',
+    header: 'Enviado em',
+    cell: ({ getValue }) => (
+      <span className="text-xs text-fg-3 whitespace-nowrap">
+        {new Date(getValue<string>()).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+      </span>
+    ),
+  },
+]
+
+function DispatchesTab() {
+  const [statusFilter, setStatusFilter] = React.useState('')
+  const { data: items = [], isFetching, refetch } = useQuery<SendLogItem[]>({
+    queryKey: ['send-log', statusFilter],
+    queryFn: () =>
+      apiClient
+        .get(`/api/admin/send-log?limit=200${statusFilter ? `&status=${statusFilter}` : ''}`)
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
+    refetchInterval: 15_000,
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-1.5">
+          {(['', 'sent', 'failed'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={[
+                'px-2.5 py-1 rounded text-xs font-medium border transition-colors',
+                statusFilter === s ? 'bg-accent text-white border-accent' : 'bg-surface text-fg-3 border-border hover:border-accent/50',
+              ].join(' ')}
+            >
+              {s === '' ? 'Todos' : s}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => refetch()} className="text-xs text-accent hover:underline">
+          {isFetching ? 'atualizando…' : '↻ atualizar'}
+        </button>
+      </div>
+
+      <DataTable
+        data={items}
+        columns={LOG_COLUMNS}
+        pageSize={20}
+        emptyMessage="Nenhum disparo registrado ainda."
+      />
+    </div>
+  )
+}
+
 const QUEUE_COLUMNS: ColumnDef<QueueItem, unknown>[] = [
   {
     accessorKey: 'status',
@@ -122,20 +217,21 @@ function SendQueueTab() {
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'queue' | 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
+type ActivityTab = 'queue' | 'dispatches' | 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
 
-const VALID_TABS = new Set<string>(['queue', 'crawl', 'jonfrey', 'loops', 'llm', 'audit'])
+const VALID_TABS = new Set<string>(['queue', 'dispatches', 'crawl', 'jonfrey', 'loops', 'llm', 'audit'])
 
 function resolveTab(raw: string | null): ActivityTab {
-  if (!raw) return 'queue'
+  if (!raw) return 'dispatches'
   if (raw === 'crawlers') return 'crawl'
   if (VALID_TABS.has(raw)) return raw as ActivityTab
-  return 'queue'
+  return 'dispatches'
 }
 
 const TAB_LIST = [
-  { id: 'queue',   label: 'Fila de envio' },
-  { id: 'crawl',   label: 'Crawlers' },
+  { id: 'dispatches', label: 'Disparos' },
+  { id: 'queue',      label: 'Fila' },
+  { id: 'crawl',      label: 'Crawlers' },
   { id: 'jonfrey', label: 'Jonfrey' },
   { id: 'loops',   label: 'Loops LLM' },
   { id: 'llm',     label: 'LLM' },
@@ -343,6 +439,9 @@ export default function Activity() {
 
       {/* Tab content */}
       <div className={`flex-1 px-4 py-4 ${tab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'} mx-auto w-full`}>
+        {tab === 'dispatches' && (
+          <DispatchesTab />
+        )}
         {tab === 'queue' && (
           <SendQueueTab />
         )}

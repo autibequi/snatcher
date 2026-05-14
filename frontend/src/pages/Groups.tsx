@@ -286,8 +286,13 @@ function ImportGroupModal({
   const { data: waGroupOptions = [], isLoading: waGroupsLoading, isFetching: waGroupsFetching, refetch: refetchWaModal } =
     useQuery<WAGroupOption[]>({
       queryKey: ['wa-groups-import-modal', importAccountId],
-      queryFn: () => [],
-      enabled: false,
+      queryFn: () =>
+        apiClient
+          .get<WAGroupOption[]>('/api/groups/from-evolution')
+          .then(r => (Array.isArray(r.data) ? r.data : []))
+          .catch(() => []),
+      enabled: !!importAccountId,
+      staleTime: 30_000,
     })
 
   const importOneMut = useMutation({

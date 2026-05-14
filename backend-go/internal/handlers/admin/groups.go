@@ -1017,3 +1017,54 @@ func (h *GroupsHandler) promoteWAAccountAsGroupAdmin(ctx context.Context, g mode
 	}
 	return nil
 }
+
+// GET /api/groups/from-evolution — lista grupos da Evolution API para o modal de importar.
+// Retorna [{id, name, size}] filtrado pelos grupos que ainda não existem no banco.
+func (h *GroupsHandler) ListFromEvolution(w http.ResponseWriter, r *http.Request) {
+	cfg, err := h.store.GetConfig()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "config: "+err.Error())
+		return
+	}
+	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+		return
+	}
+
+	ctx := r.Context()
+	evoGroups, err := h.fetchAllGroupsWithParticipantsCached(ctx, baseURL, apiKey, instance)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "Evolution: "+err.Error())
+		return
+	}
+
+	type option struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Size int    `json:"size"`
+	}
+	out := make([]option, 0, len(evoGroups))
+	for _, g := range evoGroups {
+		id, _ := g["id"].(string)
+		if id == "" {
+			id, _ = g["groupJid"].(string)
+		}
+		name, _ := g["subject"].(string)
+		if name == "" {
+			name, _ = g["name"].(string)
+		}
+		size := 0
+		if p, ok := g["participants"].([]any); ok {
+			size = len(p)
+		} else if sz, ok := g["size"].(float64); ok {
+			size = int(sz)
+		}
+		if id == "" {
+			continue
+		}
+		out = append(out, option{ID: id, Name: name, Size: size})
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
