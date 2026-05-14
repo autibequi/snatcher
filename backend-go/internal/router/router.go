@@ -73,7 +73,7 @@ func Build(
 	team        := adminhnd.NewTeamHandler(db)
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy      := adminhnd.NewTaxonomyHandler(st)
-	linksH        := adminhnd.NewLinksHandler(st)
+	linksH        := adminhnd.NewLinksHandlerWithDB(st, db)
 	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
 	// Notifier compartilhado: handlers + scheduler postam resumos no grupo
 	// configurado em Settings → Notificações. Sem grupo configurado = no-op.

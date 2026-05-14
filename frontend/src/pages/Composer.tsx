@@ -472,7 +472,8 @@ export default function Composer() {
     const porStr = realPrice > 0 ? realPriceStr : 'R$ --'
     const descontoPct =
       dePrice > 0 && realPrice > 0 ? Math.round((1 - realPrice / dePrice) * 100) : 0
-    const descontoStr = descontoPct > 0 ? `-${descontoPct}%` : realSource || ''
+    // Sem % no descontoStr: o template do DB já tem "% OFF" então {desconto} = só o número/sinal
+    const descontoStr = descontoPct > 0 ? `-${descontoPct}` : realSource || ''
     return { deStr, porStr, descontoStr, descontoPct }
   }, [realPrice, realPriceStr, realSource])
 

@@ -4,16 +4,23 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
+
 	"snatcher/backendv2/internal/affiliates"
 	"snatcher/backendv2/internal/store"
 )
 
 type LinksHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
 func NewLinksHandler(st store.Store) *LinksHandler {
 	return &LinksHandler{store: st}
+}
+
+func NewLinksHandlerWithDB(st store.Store, db *sqlx.DB) *LinksHandler {
+	return &LinksHandler{store: st, db: db}
 }
 
 // Shorten cria um short link rastreável para uma URL de produto com afiliado embutido.
@@ -61,11 +68,27 @@ func (h *LinksHandler) Shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Buscar domínio configurado
+	if shortID == "" {
+		writeErr(w, http.StatusInternalServerError, "não foi possível gerar short link")
+		return
+	}
+
+	// Buscar domínio: AppDomain > primeiro redirect_domain ativo > fallback
 	cfg, _ := h.store.GetConfig()
-	domain := "beta.autibequi.com"
+	domain := ""
 	if cfg.AppDomain.Valid && cfg.AppDomain.String != "" {
 		domain = cfg.AppDomain.String
+	}
+	if domain == "" && h.db != nil {
+		var d string
+		if err := h.db.QueryRowContext(r.Context(),
+			`SELECT host FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1`,
+		).Scan(&d); err == nil && d != "" {
+			domain = d
+		}
+	}
+	if domain == "" {
+		domain = "jon.promo"
 	}
 
 	shortURL := "https://" + domain + "/v/" + shortID

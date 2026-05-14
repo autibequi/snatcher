@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"snatcher/backendv2/internal/models"
@@ -21,11 +22,56 @@ func (s *SQLStore) GetVariantStats(variantID int64, windowDays int) (*models.Var
 
 // ---- ShortLinks ----
 
-func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) { return "", nil }
+func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) {
+	// Tenta buscar shortlink existente para a URL
+	var existing string
+	if err := s.db.Get(&existing, `SELECT short_id FROM short_links WHERE dest_url=$1`, destURL); err == nil && existing != "" {
+		return existing, nil
+	}
+	// Cria novo shortlink com ID aleatório (8 chars base62)
+	shortID := randomShortID(8)
+	var returned string
+	err := s.db.QueryRow(`
+		INSERT INTO short_links (short_id, dest_url, source) VALUES ($1, $2, $3)
+		ON CONFLICT (dest_url) DO UPDATE SET short_id = short_links.short_id
+		RETURNING short_id
+	`, shortID, destURL, source).Scan(&returned)
+	if err == nil && returned != "" {
+		return returned, nil
+	}
+	return shortID, err
+}
+
+// randomShortID gera um ID aleatório base62 de n caracteres.
+func randomShortID(n int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	r := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = chars[r.Intn(len(chars))]
+	}
+	return string(b)
+}
+
 func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	var r struct {
+		DestURL string `db:"dest_url"`
+		Source  string `db:"source"`
+	}
+	if err := s.db.Get(&r, `UPDATE short_links SET click_count=click_count+1 WHERE short_id=$1 RETURNING dest_url, source`, shortID); err == nil {
+		return r.DestURL, r.Source, true
+	}
 	return "", "", false
 }
+
 func (s *SQLStore) PeekShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	var r struct {
+		DestURL string `db:"dest_url"`
+		Source  string `db:"source"`
+	}
+	if err := s.db.Get(&r, `SELECT dest_url, source FROM short_links WHERE short_id=$1`, shortID); err == nil {
+		return r.DestURL, r.Source, true
+	}
 	return "", "", false
 }
 func (s *SQLStore) GetShortIDByURL(url string) string { return "" }
