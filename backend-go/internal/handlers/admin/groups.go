@@ -386,7 +386,7 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		Engagement  string `json:"engagement,omitempty"`
 	}
 
-	if group.Platform != "whatsapp" || !group.JID.Valid || group.JID.String == "" || !group.WAAccountID.Valid {
+	if group.Platform != "whatsapp" || !group.JID.Valid || group.JID.String == "" {
 		writeJSON(w, http.StatusOK, []Member{})
 		return
 	}
