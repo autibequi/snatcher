@@ -137,55 +137,53 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 				continue
 			}
 
+			// Conta candidatos usando a mesma lógica do selectTopKForGroup (LEFT JOIN,
+			// não filtro hard por categoria). Produtos sem category_id passam mas recebem
+			// score de canal = 0.
 			var candidates int
 			_ = db.QueryRowContext(ctx, `
 				SELECT COUNT(*) FROM catalog c
 				WHERE c.send_ready = true
 				  AND c.canonical_url_alive = true
 				  AND COALESCE(c.quality_score, 0) >= $1
-				  AND EXISTS (
-				      SELECT 1 FROM channel_category_weights ccw
-				      WHERE ccw.channel_id = $2
-				        AND ccw.category_id = c.category_id
-				        AND ccw.weight > 0
-				  )
 				  AND NOT EXISTS (
 				      SELECT 1 FROM group_sent_history h
-				      WHERE h.group_id = $3 AND h.dedup_key = c.dedup_key
+				      WHERE h.group_id = $2 AND h.dedup_key = c.dedup_key
 				        AND h.sent_at > now() - INTERVAL '7 days'
 				  )
-			`, qThreshold, channelID, g.ID).Scan(&candidates)
+				  AND NOT EXISTS (
+				      SELECT 1 FROM send_queue q
+				      WHERE q.group_id = $2 AND q.catalog_id = c.id
+				        AND q.status IN ('pending','sending')
+				  )
+			`, qThreshold, g.ID).Scan(&candidates)
 			res.CandidatesFound = candidates
 
+			// Sub-diagnóstico extra (informativo, não bloqueante)
 			if candidates == 0 {
-				// Tenta diagnosticar sub-causa
-				var sendReadyForChannel int
+				var antiRepeatBlock int
 				_ = db.QueryRowContext(ctx, `
 					SELECT COUNT(*) FROM catalog c
 					WHERE c.send_ready=true AND c.canonical_url_alive=true
 					  AND COALESCE(c.quality_score,0)>=$1
-					  AND EXISTS (
-					      SELECT 1 FROM channel_category_weights ccw
-					      WHERE ccw.channel_id=$2 AND ccw.category_id=c.category_id AND ccw.weight>0
-					  )
-				`, qThreshold, channelID).Scan(&sendReadyForChannel)
-
-				if sendReadyForChannel == 0 {
-					var channelHasWeights int
-					_ = db.QueryRowContext(ctx,
-						`SELECT COUNT(*) FROM channel_category_weights WHERE channel_id=$1 AND weight>0`,
-						channelID).Scan(&channelHasWeights)
-					if channelHasWeights == 0 {
-						res.Reason = "canal sem sliders de categoria configurados — defina pesos em /channels"
-					} else {
-						res.Reason = "sem produtos send_ready nessas categorias (quality_score abaixo do threshold ou sem produtos nas categorias do canal)"
-					}
-				} else {
+				`, qThreshold).Scan(&antiRepeatBlock)
+				if antiRepeatBlock > 0 {
 					res.Reason = "todos os produtos elegíveis já foram enviados nos últimos 7 dias (anti-repeat 7d)"
+				} else {
+					res.Reason = "sem produtos send_ready com quality_score >= threshold"
 				}
 				res.Blocked = true
 				results = append(results, res)
 				continue
+			}
+
+			// Tem candidatos mas canal sem pesos — produtos aparecerão mas com score baixo
+			var channelHasWeights int
+			_ = db.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM channel_category_weights WHERE channel_id=$1 AND weight>0`,
+				channelID).Scan(&channelHasWeights)
+			if channelHasWeights == 0 {
+				res.Reason = "ok (canal sem sliders configurados — produtos serão enviados mas sem peso de categoria, score menor)"
 			}
 
 			res.Blocked = false
