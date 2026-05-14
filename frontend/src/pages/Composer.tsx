@@ -15,11 +15,15 @@ interface MessageTemplate {
   enabled: boolean
 }
 
-/** Converte variáveis do formato DB ({titulo},{preco_de},...) para o formato do Composer ({produto},{de},...). */
+/** Converte variáveis do formato DB ({titulo},{preco_de},...) para o formato do Composer ({produto},{de},...).
+ *  Remove o prefixo "R$ " antes de {preco_de}/{preco_por} quando presente no template,
+ *  pois os valores substituídos (deStr/porStr) já incluem "R$ ". */
 function dbBodyToComposer(body: string): string {
   return body
     .replace(/\{titulo\}/g, '{produto}')
+    .replace(/R\$\s*\{preco_de\}/g, '{de}')
     .replace(/\{preco_de\}/g, '{de}')
+    .replace(/R\$\s*\{preco_por\}/g, '{por}')
     .replace(/\{preco_por\}/g, '{por}')
     .replace(/\{emoji\}/g, '🔥')
 }
@@ -176,9 +180,9 @@ function resolveCatalogPricing(
   product: Record<string, unknown> | null | undefined,
   variants: CatalogRow['variants'],
 ): { price: number; url: string; source: string } {
-  let price = coerceMoney(product?.lowest_price)
-  let url = nullStr(product?.lowest_price_url)
-  let source = nullStr(product?.lowest_price_source)
+  let price = coerceMoney(product?.lowest_price) || coerceMoney(product?.price_current)
+  let url = nullStr(product?.lowest_price_url) || nullStr(product?.canonical_url)
+  let source = nullStr(product?.lowest_price_source) || nullStr(product?.source_id)
   if (price > 0) {
     if (!url || !source) {
       for (const v of variants) {
@@ -361,7 +365,7 @@ export default function Composer() {
   const realProductName = React.useMemo(() => {
     for (const row of catalogRows) {
       const p = row.product
-      const n = (nullStr(p?.canonical_name) || (p?.canonical_name as string) || '').trim()
+      const n = (nullStr(p?.canonical_name) || nullStr(p?.title) || '').trim()
       if (n) return n
     }
     return ''
