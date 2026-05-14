@@ -284,6 +284,10 @@ func Build(
 		r.Delete("/api/public-links/{id}", publLinks.Delete)
 		r.Get("/api/public-links/{id}/analytics", publLinks.Analytics)
 
+		// Catalog canônico — lookup e busca (Composer + Topbar)
+		r.Get("/api/catalog/search", handlers.CatalogSearchHandler(db)) // antes de /{id}
+		r.Get("/api/catalog/{id}", handlers.CatalogGetHandler(db))
+
 		// ReDesign: Affiliate Programs
 		r.Get("/api/affiliates/programs", affPrograms.List)
 		r.Post("/api/affiliates/programs", affPrograms.Create)
