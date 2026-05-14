@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, KpiCard, Switch, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
@@ -62,6 +63,125 @@ function renderDynamicSubtitle(inboxCount: number, nextDispatchEta?: string) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+
+// ── Score Engine Status Widget ──────────────────────────────────────────────
+
+interface AlgoStatus {
+  state: 'disabled' | 'paused' | 'error' | 'ok'
+  last_tick_at?: string
+  last_enqueued?: number
+  last_error?: string
+  tick_duration_ms?: number
+  in_send_window: boolean
+  use_algo_tick: boolean
+  next_tick_seconds: number
+}
+
+const STATE_CONFIG = {
+  disabled: { label: 'Desligado',   dot: 'bg-fg-3',     text: 'text-fg-3',    border: 'border-border' },
+  paused:   { label: 'Pausado',     dot: 'bg-warning',   text: 'text-warning', border: 'border-warning/30' },
+  error:    { label: 'Com erro',    dot: 'bg-danger',    text: 'text-danger',  border: 'border-danger/30' },
+  ok:       { label: 'Aguardando',  dot: 'bg-success',   text: 'text-success', border: 'border-success/30' },
+} as const
+
+function useCountdown(seconds: number) {
+  const [remaining, setRemaining] = useState(seconds)
+  useEffect(() => {
+    setRemaining(seconds)
+    const id = setInterval(() => setRemaining(s => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(id)
+  }, [seconds])
+  const m = Math.floor(remaining / 60)
+  const s = remaining % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function AlgoStatusWidget() {
+  const qc = useQueryClient()
+
+  const { data: status } = useQuery<AlgoStatus>({
+    queryKey: ['algo-status'],
+    queryFn: () => apiClient.get('/api/admin/algo/status').then(r => r.data),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+
+  const toggleMut = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiClient.post('/api/admin/algo/toggle', { enabled }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['algo-status'] })
+    },
+  })
+
+  const countdown = useCountdown(status?.next_tick_seconds ?? 0)
+  const cfg = status ? STATE_CONFIG[status.state] : STATE_CONFIG.disabled
+  const showToggle = status && (status.state === 'ok' || status.state === 'disabled')
+
+  return (
+    <div className={`flex items-start gap-3 rounded-lg border ${cfg.border} bg-surface px-4 py-3`}>
+      {/* Dot pulsante */}
+      <span className="relative mt-0.5 flex-shrink-0">
+        <span className={`block h-2.5 w-2.5 rounded-full ${cfg.dot}`} />
+        {status?.state === 'ok' && (
+          <span className={`absolute inset-0 rounded-full ${cfg.dot} animate-ping opacity-60`} />
+        )}
+      </span>
+
+      {/* Corpo */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-sm font-semibold ${cfg.text}`}>{cfg.label}</span>
+          {status?.state === 'ok' && (
+            <span className="text-xs text-fg-3">
+              próximo tick em <span className="font-mono text-fg-2">{countdown}</span>
+              {status.last_enqueued !== undefined && status.last_enqueued !== null && (
+                <> · {status.last_enqueued} grupo{status.last_enqueued !== 1 ? 's' : ''} no último</>
+              )}
+            </span>
+          )}
+          {status?.state === 'paused' && (
+            <span className="text-xs text-fg-3">
+              fora da janela de envio (21h–6h SP)
+            </span>
+          )}
+          {status?.state === 'disabled' && (
+            <span className="text-xs text-fg-3">
+              Score Engine desligado — nenhuma mensagem automática será enviada
+            </span>
+          )}
+        </div>
+
+        {/* Erro expandido */}
+        {status?.state === 'error' && status.last_error && (
+          <p className="mt-1 text-xs font-mono text-danger bg-danger/8 rounded px-2 py-1 break-all">
+            {status.last_error}
+          </p>
+        )}
+
+        {/* Last tick info quando não é erro */}
+        {status?.last_tick_at && status.state !== 'error' && (
+          <p className="mt-0.5 text-[11px] text-fg-3">
+            último tick às {new Date(status.last_tick_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            {status.tick_duration_ms !== undefined && ` (${status.tick_duration_ms}ms)`}
+          </p>
+        )}
+      </div>
+
+      {/* Toggle */}
+      {showToggle && (
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-xs text-fg-3">{status.use_algo_tick ? 'Desligar' : 'Ligar'}</span>
+          <Switch
+            checked={status.use_algo_tick}
+            disabled={toggleMut.isPending}
+            onChange={v => toggleMut.mutate(v)}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -258,6 +378,9 @@ export default function Dashboard() {
           }
         />
       </div>
+
+      {/* ── 3.5 Score Engine Status ──────────────────────────────────────────── */}
+      <AlgoStatusWidget />
 
       {/* ── 4. Inbox | dica LLM ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

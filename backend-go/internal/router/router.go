@@ -400,6 +400,10 @@ func Build(
 		r.Get("/api/admin/scrapers/health", adminhnd.ScraperHealthHandler(db))
 		r.Get("/api/admin/scrapers/logs", adminhnd.ExtractionLogsHandler(db))
 
+		// Score Engine status — widget do dashboard
+		r.Get("/api/admin/algo/status", adminhnd.AlgoStatusHandler(db))
+		r.Post("/api/admin/algo/toggle", adminhnd.AlgoToggleHandler(db))
+
 		// Metrics dashboard — learned weights, daily metrics, A/B tests, virality
 		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))
 		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
