@@ -28,7 +28,7 @@ func ShouldEnqueueGroup(ctx context.Context, db *sqlx.DB, groupID int64, cap int
 	_ = db.GetContext(ctx, &lastSent, `SELECT MAX(sent_at) FROM send_log WHERE group_id = $1`, groupID)
 
 	remaining := cap - sentToday
-	minutesLeft := minutesUntilWindowEnd()
+	minutesLeft := minutesUntilWindowEnd(ctx, db)
 	if minutesLeft <= 0 {
 		return false
 	}
@@ -41,17 +41,4 @@ func ShouldEnqueueGroup(ctx context.Context, db *sqlx.DB, groupID int64, cap int
 	return sinceLast >= targetGap*0.5
 }
 
-func minutesUntilWindowEnd() int {
-	now := time.Now().In(saoPaulo)
-	h := now.Hour()
-	if h >= 21 {
-		// janela termina às 06h do dia seguinte
-		end := time.Date(now.Year(), now.Month(), now.Day()+1, 6, 0, 0, 0, saoPaulo)
-		return int(end.Sub(now).Minutes())
-	}
-	if h < 6 {
-		end := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, saoPaulo)
-		return int(end.Sub(now).Minutes())
-	}
-	return 0
-}
+// minutesUntilWindowEnd foi movida para window.go — delegate

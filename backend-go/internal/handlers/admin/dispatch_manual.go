@@ -1,25 +1,25 @@
 package admin
 
 import (
-	"context"
-	"fmt"
 	"net/http"
-	"os"
 
-	"snatcher/backendv2/internal/adapters"
+	"github.com/jmoiron/sqlx"
 	"snatcher/backendv2/internal/store"
 )
 
 type ManualDispatchHandler struct {
 	store store.Store
+	db    *sqlx.DB
 }
 
-func NewManualDispatchHandler(st store.Store) *ManualDispatchHandler {
-	return &ManualDispatchHandler{store: st}
+func NewManualDispatchHandler(st store.Store, db *sqlx.DB) *ManualDispatchHandler {
+	return &ManualDispatchHandler{store: st, db: db}
 }
 
 // POST /api/dispatch/manual
 // Body: { group_ids: [1,2,3], message: "texto", image_url?: "https://..." }
+// Insere na send_queue (não vai direto para a Evolution API).
+// O worker de sender processa a fila e envia respeitando throttling/anti-ban.
 func (h *ManualDispatchHandler) Send(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		GroupIDs []int64 `json:"group_ids"`
@@ -31,47 +31,40 @@ func (h *ManualDispatchHandler) Send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := os.Getenv("EVOLUTION_URL")
-	apiKey := os.Getenv("EVOLUTION_API_KEY")
-	instance := os.Getenv("EVOLUTION_INSTANCE")
-	if instance == "" {
-		instance = "default"
-	}
-	if baseURL == "" {
-		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
-		return
-	}
-
-	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
-
 	results := make([]map[string]any, 0, len(req.GroupIDs))
 	for _, gid := range req.GroupIDs {
-		g, err := h.store.GetRedesignGroup(gid)
+		// Resolve conta WA primary/backup e seu modem via group_admins.
+		var queueID int64
+		err := h.db.QueryRowContext(r.Context(), `
+			INSERT INTO send_queue
+			    (modem_id, group_id, catalog_id, account_id, message_override, image_url_override, source, status, enqueued_at)
+			SELECT
+			    a.modem_id,
+			    $1,
+			    NULL,
+			    a.id,
+			    $2,
+			    NULLIF($3, ''),
+			    'manual',
+			    'pending',
+			    now()
+			FROM accounts a
+			JOIN group_admins ga ON ga.account_id = a.id
+			WHERE ga.group_id = $1
+			  AND a.status IN ('primary', 'backup')
+			ORDER BY CASE a.status WHEN 'primary' THEN 0 ELSE 1 END, ga.added_at ASC
+			LIMIT 1
+			RETURNING id
+		`, gid, req.Message, req.ImageURL).Scan(&queueID)
+
 		if err != nil {
-			results = append(results, map[string]any{"group_id": gid, "ok": false, "error": "grupo não encontrado"})
+			results = append(results, map[string]any{
+				"group_id": gid, "ok": false,
+				"error": "sem conta WA primary/backup vinculada ao grupo — vincule em /admin/senders",
+			})
 			continue
 		}
-		jid := ""
-		if g.WhatsappJID.Valid {
-			jid = g.WhatsappJID.String
-		} else if g.JID.Valid {
-			jid = g.JID.String
-		}
-		if jid == "" {
-			results = append(results, map[string]any{"group_id": gid, "ok": false, "error": "grupo sem JID"})
-			continue
-		}
-		var sendErr error
-		if req.ImageURL != "" {
-			sendErr = evo.SendImage(context.Background(), jid, req.ImageURL, req.Message)
-		} else {
-			sendErr = evo.SendText(context.Background(), jid, req.Message)
-		}
-		if sendErr != nil {
-			results = append(results, map[string]any{"group_id": gid, "ok": false, "error": fmt.Sprintf("%v", sendErr)})
-		} else {
-			results = append(results, map[string]any{"group_id": gid, "ok": true})
-		}
+		results = append(results, map[string]any{"group_id": gid, "ok": true, "queue_id": queueID})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})

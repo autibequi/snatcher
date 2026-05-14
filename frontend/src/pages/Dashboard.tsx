@@ -171,7 +171,7 @@ function AlgoStatusWidget() {
           )}
           {status?.state === 'paused' && (
             <span className="text-xs text-fg-3">
-              fora da janela de envio (21h–6h SP)
+              fora da janela de envio configurada em Settings
             </span>
           )}
           {status?.state === 'disabled' && (

@@ -435,7 +435,7 @@ func Build(
 		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
 
 		// Dispatch manual (Composer)
-		manualDispatch := adminhnd.NewManualDispatchHandler(st)
+		manualDispatch := adminhnd.NewManualDispatchHandler(st, db)
 		r.Post("/api/dispatch/manual", manualDispatch.Send)
 	})
 

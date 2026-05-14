@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/adapters"
 )
 
 // RunSender é a goroutine principal do sender de 1 modem.
@@ -72,16 +74,20 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	var qid, groupID, catalogID int64
+	var qid, groupID int64
+	var catalogID *int64
 	var accountID, templateID, domainID *int64
+	var messageOverride, imageURLOverride sql.NullString
 	err = tx.QueryRowxContext(ctx, `
-		SELECT id, group_id, catalog_id, account_id, template_id, domain_id
+		SELECT id, group_id, catalog_id, account_id, template_id, domain_id,
+		       message_override, image_url_override
 		FROM send_queue
 		WHERE modem_id=$1 AND status='pending'
 		ORDER BY enqueued_at ASC
 		FOR UPDATE SKIP LOCKED
 		LIMIT 1
-	`, modemID).Scan(&qid, &groupID, &catalogID, &accountID, &templateID, &domainID)
+	`, modemID).Scan(&qid, &groupID, &catalogID, &accountID, &templateID, &domainID,
+		&messageOverride, &imageURLOverride)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -144,7 +150,14 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 	}
 
 	// envio (fora da TX para não segurar lock)
-	err = sendViaEvolution(ctx, db, modemID, groupID, catalogID, *accountID, templateID, domainID)
+	// Disparo manual: message_override presente → texto direto, sem produto.
+	if messageOverride.Valid && messageOverride.String != "" {
+		err = sendRawText(ctx, db, modemID, groupID, *accountID, messageOverride.String, imageURLOverride.String)
+	} else if catalogID != nil {
+		err = sendViaEvolution(ctx, db, modemID, groupID, *catalogID, *accountID, templateID, domainID)
+	} else {
+		err = fmt.Errorf("send_queue id=%d: sem catalog_id nem message_override", qid)
+	}
 	if err != nil {
 		markFailed(ctx, db, qid, *accountID, modemID, err)
 		return true, nil
@@ -248,6 +261,42 @@ func renderTemplateBody(body, titulo string, precoDeNull sql.NullFloat64, precoP
 	return r.Replace(body)
 }
 
+// sendRawText envia texto pré-montado (disparo manual) sem buscar produto no catálogo.
+func sendRawText(ctx context.Context, db *sqlx.DB, modemID, groupID, accountID int64, message, imageURL string) error {
+	// Busca JID do grupo e instância Evolution da conta.
+	var jid sql.NullString
+	_ = db.GetContext(ctx, &jid, `SELECT whatsapp_jid FROM groups WHERE id=$1`, groupID)
+	if !jid.Valid || jid.String == "" {
+		return fmt.Errorf("grupo %d sem whatsapp_jid — importe o grupo em /admin/senders", groupID)
+	}
+
+	var evoURL, evoKey sql.NullString
+	_ = db.GetContext(ctx, &evoURL, `SELECT value FROM app_config WHERE key='EVOLUTION_URL' LIMIT 1`)
+	_ = db.GetContext(ctx, &evoKey, `SELECT value FROM app_config WHERE key='EVOLUTION_API_KEY' LIMIT 1`)
+
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if evoURL.Valid && evoURL.String != "" {
+		baseURL = evoURL.String
+	}
+	if evoKey.Valid && evoKey.String != "" {
+		apiKey = evoKey.String
+	}
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		return fmt.Errorf("Evolution URL não configurada")
+	}
+
+	evo := adapters.NewEvolutionWithAccount(accountID, baseURL, apiKey, instance)
+	if imageURL != "" {
+		return evo.SendImage(ctx, jid.String, imageURL, message)
+	}
+	return evo.SendText(ctx, jid.String, message)
+}
+
 func formatMoney(v float64) string {
 	// ex: 1234.5 → "1.234,50"
 	s := fmt.Sprintf("%.2f", v)
@@ -273,7 +322,7 @@ func pickEmoji(pct float64) string {
 	}
 }
 
-func markSent(ctx context.Context, db *sqlx.DB, qid, groupID, catalogID, accountID int64, templateID, domainID *int64) {
+func markSent(ctx context.Context, db *sqlx.DB, qid, groupID int64, catalogID *int64, accountID int64, templateID, domainID *int64) {
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return
@@ -284,13 +333,14 @@ func markSent(ctx context.Context, db *sqlx.DB, qid, groupID, catalogID, account
 		INSERT INTO send_log (send_queue_id, group_id, account_id, catalog_id, domain_id, template_id, status, sent_at)
 		VALUES ($1, $2, $3, $4, $5, $6, 'sent', now())
 	`, qid, groupID, accountID, catalogID, domainID, templateID)
-	// anti-repeat: registra no histórico de envio por grupo + preço para detectar
-	// re-promoções que justificam bypass do filtro de 7 dias.
-	_, _ = tx.ExecContext(ctx, `
-		INSERT INTO group_sent_history (group_id, dedup_key, sent_at, price_at_send)
-		SELECT $1, dedup_key, now(), price_current FROM catalog WHERE id=$2
-		ON CONFLICT DO NOTHING
-	`, groupID, catalogID)
+	// anti-repeat: só registra histórico se há produto (disparos manuais sem catalog_id não entram no anti-repeat)
+	if catalogID != nil {
+		_, _ = tx.ExecContext(ctx, `
+			INSERT INTO group_sent_history (group_id, dedup_key, sent_at, price_at_send)
+			SELECT $1, dedup_key, now(), price_current FROM catalog WHERE id=$2
+			ON CONFLICT DO NOTHING
+		`, groupID, *catalogID)
+	}
 	// touch account
 	_, _ = tx.ExecContext(ctx, "UPDATE accounts SET last_sent_at=now(), consecutive_failures=0 WHERE id=$1", accountID)
 	_ = tx.Commit()

@@ -7,6 +7,7 @@ import {
   statusChipDanger,
   statusChipMuted,
   normalizeStatus,
+  statusTone,
 } from '../lib/uiTokens'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
 import { resolveTutorialSlugFromPath } from '../content/tutorials'
@@ -404,8 +405,12 @@ export function StatusZone() {
 
   const items = useMemo(() => wqData?.items ?? [], [wqData?.items])
   const runningCount = useMemo(() => items.filter(isQueueItemRunning).length, [items])
-  const failedCount = useMemo(() => items.filter(i => i.status === 'failed').length, [items])
-  const queuedOnlyCount = items.length - runningCount - failedCount
+  const failedCount = useMemo(() => items.filter(i => statusTone(i.status) === 'failed').length, [items])
+  // Conta só itens genuinamente pendentes — success/done/completed NÃO contam.
+  const queuedOnlyCount = useMemo(
+    () => items.filter(i => statusTone(i.status) === 'pending').length,
+    [items]
+  )
 
   const accountsConnected = accountsData?.connected ?? null
   const accountsTotal = accountsData?.total ?? 0

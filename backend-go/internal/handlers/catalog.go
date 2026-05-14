@@ -40,7 +40,8 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			CreatedAt         string   `db:"created_at"          json:"created_at"`
 		}
 		var p product
-		if err := db.GetContext(r.Context(), &p, `
+		// Tenta catálogo v2 primeiro; se não achar, busca no catalogproduct legado.
+		err = db.GetContext(r.Context(), &p, `
 			SELECT c.id, c.short_id, c.source_id, c.category_id,
 			       ct.display_name AS category_name,
 			       c.title, c.image_url, c.canonical_url,
@@ -51,8 +52,37 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			FROM catalog c
 			LEFT JOIN categories ct ON ct.id = c.category_id
 			WHERE c.id = $1
-		`, id); err != nil {
-			http.NotFound(w, r)
+		`, id)
+		if err != nil {
+			// Fallback: catálogo legado (catalogproduct) — campo compat com interface do Composer.
+			var lp struct {
+				ID           int64   `db:"id"           json:"id"`
+				Title        string  `db:"title"        json:"title"`
+				ImageURL     *string `db:"image_url"    json:"image_url,omitempty"`
+				CanonicalURL string  `db:"canonical_url" json:"canonical_url"`
+				PriceCurrent float64 `db:"price_current" json:"price_current"`
+				DiscountPct  *float64 `db:"discount_pct" json:"discount_pct,omitempty"`
+				CreatedAt    string  `db:"created_at"   json:"created_at"`
+			}
+			legacyErr := db.GetContext(r.Context(), &lp, `
+				SELECT p.id, p.title, p.image_url, p.canonical_url,
+				       COALESCE(v.price, p.lowest_price, 0) AS price_current,
+				       p.discount_pct, p.created_at::text AS created_at
+				FROM catalogproduct p
+				LEFT JOIN LATERAL (
+				    SELECT price FROM catalogvariant WHERE catalog_product_id=p.id ORDER BY price ASC LIMIT 1
+				) v ON true
+				WHERE p.id = $1
+			`, id)
+			if legacyErr != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"product":  lp,
+				"variants": []any{},
+			})
 			return
 		}
 

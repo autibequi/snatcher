@@ -62,7 +62,7 @@ func AlgoStatusHandler(db *sqlx.DB) http.HandlerFunc {
 		_ = db.QueryRowContext(r.Context(),
 			`SELECT COALESCE(get_param('use_algo_tick','global',NULL), 0)`).Scan(&flagVal)
 		enabled := flagVal != 0
-		inWindow := algo.InSendWindow()
+		inWindow := algo.InSendWindow(r.Context(), db)
 
 		// Calcula segundos até próximo tick (cron */5 * * * *).
 		now := time.Now()

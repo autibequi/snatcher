@@ -19,9 +19,9 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 		return nil // tick desligado — não registra em algo_status (status é derivado da flag)
 	}
 
-	// 1. Janela 21h-6h SP
-	if !InSendWindow() {
-		return nil // pausado — não registra (frontend detecta pela janela)
+	// 1. Janela de envio configurada nas settings (send_start_hour / send_end_hour)
+	if !InSendWindow(ctx, db) {
+		return nil // pausado — não registra
 	}
 
 	// 2. Advisory lock (singleton — evita overlap de ticks concorrentes)
