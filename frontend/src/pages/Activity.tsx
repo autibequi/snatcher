@@ -10,20 +10,128 @@ import { LLMTab } from './activity/LLMTab'
 import { LoopActionsTab } from './activity/LoopActionsTab'
 import { AuditTab } from './activity/AuditTab'
 
+// ── Fila de envio ─────────────────────────────────────────────────────────────
+
+const STATUS_DOT: Record<string, string> = {
+  pending: 'bg-warning',
+  sending: 'bg-accent animate-pulse',
+  sent:    'bg-success',
+  failed:  'bg-danger',
+}
+
+interface QueueItem {
+  id: number
+  status: string
+  group_name: string
+  product_title: string
+  score: number
+  modem_name?: string
+  enqueued_at: string
+}
+
+function SendQueueTab() {
+  const [statusFilter, setStatusFilter] = React.useState('')
+
+  const { data: items = [], isFetching, refetch } = useQuery<QueueItem[]>({
+    queryKey: ['send-queue', statusFilter],
+    queryFn: () =>
+      apiClient
+        .get(`/api/admin/send-queue?limit=100${statusFilter ? `&status=${statusFilter}` : ''}`)
+        .then(r => (Array.isArray(r.data) ? r.data : []))
+        .catch(() => []),
+    refetchInterval: 10_000,
+  })
+
+  const counts = items.reduce<Record<string, number>>((acc, i) => {
+    acc[i.status] = (acc[i.status] ?? 0) + 1
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-4">
+      {/* Filtros + resumo */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-1.5">
+          {(['', 'pending', 'sending', 'sent', 'failed'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={[
+                'px-2.5 py-1 rounded text-xs font-medium border transition-colors',
+                statusFilter === s
+                  ? 'bg-accent text-white border-accent'
+                  : 'bg-surface text-fg-3 border-border hover:border-accent/50',
+              ].join(' ')}
+            >
+              {s === '' ? 'Todos' : s}
+              {s !== '' && counts[s] !== undefined ? ` (${counts[s]})` : ''}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="text-xs text-accent hover:underline"
+        >
+          {isFetching ? 'atualizando…' : '↻ atualizar'}
+        </button>
+      </div>
+
+      {/* Tabela */}
+      {items.length === 0 ? (
+        <p className="text-sm text-fg-3 py-8 text-center">
+          {statusFilter ? `Nenhum item com status "${statusFilter}"` : 'Fila vazia'}
+        </p>
+      ) : (
+        <div className="border rounded-lg bg-surface shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-2 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-fg-2 w-6">&#8203;</th>
+                <th className="text-left px-3 py-2 font-medium text-fg-2">Grupo</th>
+                <th className="text-left px-3 py-2 font-medium text-fg-2">Produto</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Score</th>
+                <th className="text-left px-3 py-2 font-medium text-fg-2">Modem</th>
+                <th className="text-right px-3 py-2 font-medium text-fg-2">Enfileirado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {items.map(item => (
+                <tr key={item.id} className="hover:bg-surface-2">
+                  <td className="px-3 py-2">
+                    <span className={`inline-block h-2 w-2 rounded-full ${STATUS_DOT[item.status] ?? 'bg-fg-3'}`} title={item.status} />
+                  </td>
+                  <td className="px-3 py-2 text-fg font-medium">{item.group_name}</td>
+                  <td className="px-3 py-2 text-fg-2 max-w-xs truncate" title={item.product_title}>{item.product_title}</td>
+                  <td className="px-3 py-2 text-right font-mono text-fg-3 text-xs">{item.score.toFixed(3)}</td>
+                  <td className="px-3 py-2 text-fg-3 text-xs">{item.modem_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-right text-fg-3 text-xs whitespace-nowrap">
+                    {new Date(item.enqueued_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
+type ActivityTab = 'queue' | 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
 
-const VALID_TABS = new Set<string>(['crawl', 'jonfrey', 'loops', 'llm', 'audit'])
+const VALID_TABS = new Set<string>(['queue', 'crawl', 'jonfrey', 'loops', 'llm', 'audit'])
 
 function resolveTab(raw: string | null): ActivityTab {
-  if (!raw) return 'crawl'
+  if (!raw) return 'queue'
   if (raw === 'crawlers') return 'crawl'
   if (VALID_TABS.has(raw)) return raw as ActivityTab
-  return 'crawl'
+  return 'queue'
 }
 
 const TAB_LIST = [
+  { id: 'queue',   label: 'Fila de envio' },
   { id: 'crawl',   label: 'Crawlers' },
   { id: 'jonfrey', label: 'Jonfrey' },
   { id: 'loops',   label: 'Loops LLM' },
@@ -232,6 +340,9 @@ export default function Activity() {
 
       {/* Tab content */}
       <div className={`flex-1 px-4 py-4 ${tab === 'llm' ? 'max-w-[min(100%,96rem)]' : 'max-w-5xl'} mx-auto w-full`}>
+        {tab === 'queue' && (
+          <SendQueueTab />
+        )}
         {tab === 'crawl' && (
           <CrawlLogsTab q={q} status={status} />
         )}

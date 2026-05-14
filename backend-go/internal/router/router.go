@@ -400,6 +400,9 @@ func Build(
 		r.Get("/api/admin/scrapers/health", adminhnd.ScraperHealthHandler(db))
 		r.Get("/api/admin/scrapers/logs", adminhnd.ExtractionLogsHandler(db))
 
+		// Fila de envio (send_queue) — visualização na aba Activity
+		r.Get("/api/admin/send-queue", adminhnd.SendQueueHandler(db))
+
 		// Score Engine status — widget do dashboard
 		r.Get("/api/admin/algo/status", adminhnd.AlgoStatusHandler(db))
 		r.Post("/api/admin/algo/toggle", adminhnd.AlgoToggleHandler(db))
