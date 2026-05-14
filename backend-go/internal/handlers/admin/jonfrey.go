@@ -1246,13 +1246,30 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 			nil
 	}
 	var before int
-	_ = h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`)
+	if err := h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`); err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42P01" {
+			// Tabela dispatches removida — sistema migrou para Score Engine (send_queue).
+			// Este loop é no-op nesse schema. O Score Engine controla envios via use_algo_tick.
+			slog.Info("jonfrey auto_release_pending: tabela dispatches ausente — sistema usa Score Engine, ignorando")
+			return map[string]any{"dispatches_table": "absent"},
+				map[string]any{"released": 0, "note": "sistema migrou para Score Engine"},
+				"Tabela dispatches não existe — o sistema usa Score Engine (send_queue). Envios automáticos são controlados pelo flag use_algo_tick em /admin/params.",
+				nil
+		}
+	}
 	slog.Info("jonfrey auto_release_pending: antes do UPDATE",
 		"pending_approval_count", before,
 		"full_auto_mode", cfg.FullAutoMode,
 	)
 	res, err := h.db.ExecContext(ctx, `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42P01" {
+			slog.Info("jonfrey auto_release_pending: tabela dispatches ausente no UPDATE — no-op")
+			return map[string]any{"dispatches_table": "absent"},
+				map[string]any{"released": 0},
+				"Score Engine ativo — dispatches não são mais usados.",
+				nil
+		}
 		slog.Error("jonfrey auto_release_pending: UPDATE falhou", "err", err)
 		return nil, nil, "", err
 	}
