@@ -20,7 +20,9 @@ func RunCGNATCheck(ctx context.Context, db *sqlx.DB) error {
 		PublicIP *string `db:"public_ip"`
 	}
 	var modems []modem
-	if err := db.SelectContext(ctx, &modems, `SELECT id, slug, public_ip::text FROM modems WHERE status='active'`); err != nil {
+	// HOST modem não tem IP de modem 4G — excluir do CGNAT check para evitar
+	// pausas falsas por variação de IP do servidor (cloud, balanceamento de saída, CDN).
+	if err := db.SelectContext(ctx, &modems, `SELECT id, slug, public_ip::text FROM modems WHERE status='active' AND slug <> 'host'`); err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: 8 * time.Second}
@@ -45,11 +47,12 @@ func RunCGNATCheck(ctx context.Context, db *sqlx.DB) error {
 			continue
 		}
 		if m.PublicIP != nil && *m.PublicIP != "" && *m.PublicIP != ip {
-			_, _ = db.ExecContext(ctx,
-				`UPDATE modems SET status='paused', paused_until=now()+INTERVAL '1 hour', paused_reason='cgnat_change' WHERE id=$1`,
-				m.ID,
-			)
-			slog.Warn("cgnat.changed", "modem", m.Slug, "old", *m.PublicIP, "new", ip)
+			// IP mudou — atualiza o registro mas NÃO pausa automaticamente.
+			// A mudança de IP CGNAT não necessariamente derruba a sessão WA;
+			// o worker de sender detectará falhas reais e pausará por consecutive_failures.
+			// Pausar cegamente 1h gerava interrupções desnecessárias de até 1h por troca de IP.
+			slog.Warn("cgnat.changed", "modem", m.Slug, "old", *m.PublicIP, "new", ip,
+				"action", "apenas log — sem pausa automática; sender detecta falha real")
 		} else {
 			_, _ = db.ExecContext(ctx,
 				`UPDATE modems SET public_ip=$1::inet WHERE id=$2 AND (public_ip IS NULL OR public_ip::text <> $1)`,
