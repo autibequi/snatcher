@@ -15,6 +15,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"snatcher/backendv2/internal/adapters"
+	"snatcher/backendv2/internal/algo"
 )
 
 // RunSender é a goroutine principal do sender de 1 modem.
@@ -59,11 +60,11 @@ func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
 			continue
 		}
 
-		// gate: janela 21h-6h SP — defesa em profundidade
-		if !inSendWindow() {
+		// gate: janela de envio configurada em Settings (send_start_hour / send_end_hour)
+		if !algo.InSendWindow(ctx, db) {
 			loc, _ := time.LoadLocation("America/Sao_Paulo")
 			gateLog("window", slog.LevelInfo,
-				"modem", modemID, "hour_sp", time.Now().In(loc).Hour(), "window", "21h-6h")
+				"modem", modemID, "hour_sp", time.Now().In(loc).Hour())
 			time.Sleep(2 * time.Minute)
 			continue
 		}
@@ -402,8 +403,3 @@ func getCooldownSeconds(ctx context.Context, db *sqlx.DB, modemID int64) float64
 	return v
 }
 
-func inSendWindow() bool {
-	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	h := time.Now().In(loc).Hour()
-	return h >= 21 || h < 6
-}

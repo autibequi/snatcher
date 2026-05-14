@@ -44,6 +44,7 @@ func (h *ManualDispatchHandler) Send(w http.ResponseWriter, r *http.Request) {
 	for _, gid := range req.GroupIDs {
 		result, err := h.sendToGroup(r.Context(), gid, req.Message, req.ImageURL)
 		if err != nil {
+			slog.Error("dispatch_manual: falhou", "group_id", gid, "err", err)
 			results = append(results, map[string]any{"group_id": gid, "ok": false, "error": err.Error()})
 		} else {
 			results = append(results, result)
