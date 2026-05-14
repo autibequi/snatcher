@@ -94,9 +94,7 @@ func RunMigrations(db *sqlx.DB) error {
 			}
 			if _, err := db.Exec(stmt); err != nil {
 				if isIgnorableError(err) {
-					continue
-				}
-				if strings.Contains(strings.ToUpper(stmt), "ALTER TABLE") {
+					// Erros idempotentes (duplicate_column, duplicate_table, etc.) são OK.
 					continue
 				}
 				preview := stmt

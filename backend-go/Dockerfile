@@ -19,7 +19,7 @@ WORKDIR /app
 COPY --from=builder /app/backendv2 .
 COPY --from=builder /app/seed .
 EXPOSE 8000
-HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=5s \
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=60s \
   CMD wget -qO- http://localhost:8000/api/health || exit 1
 ENTRYPOINT ["./backendv2"]
 

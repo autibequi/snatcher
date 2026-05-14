@@ -34,7 +34,7 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 	// 3. Para cada grupo ativo, seleciona top-K via fórmula composta + MMR
 	type group struct {
 		ID          int64  `db:"id"`
-		ChannelID   int64  `db:"channel_id"`
+		ChannelID   *int64 `db:"channel_id"` // nullable — grupos sem canal são pulados
 		CategoryID  *int64 `db:"category_id"`
 		DailyMsgCap int    `db:"daily_msg_cap"`
 		Timezone    string `db:"timezone"`
@@ -61,6 +61,13 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 
 	enqueued := 0
 	for _, g := range groups {
+		// Pula grupos sem canal — não há como aplicar channel_category_weights.
+		if g.ChannelID == nil {
+			slog.Debug("algo.tick: grupo sem channel_id, pulando", "group", g.ID)
+			continue
+		}
+		channelID := *g.ChannelID
+
 		if !ShouldEnqueueGroup(ctx, db, g.ID, g.DailyMsgCap) {
 			continue
 		}
@@ -68,14 +75,14 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 		// senão usa a categoria fixa do grupo (g.CategoryID, pode ser nil).
 		effectiveCat := g.CategoryID
 		if thompsonOn {
-			if err := ensureBanditArmsForGroup(ctx, db, g.ID, g.ChannelID); err != nil {
+			if err := ensureBanditArmsForGroup(ctx, db, g.ID, channelID); err != nil {
 				slog.Warn("algo.tick: ensureBanditArmsForGroup", "err", err, "group", g.ID)
 			}
-			if cat := selectCategoryThompson(ctx, db, g.ID, g.ChannelID); cat != nil {
+			if cat := selectCategoryThompson(ctx, db, g.ID, channelID); cat != nil {
 				effectiveCat = cat
 			}
 		}
-		candidates, err := selectTopKForGroup(ctx, db, g.ID, g.ChannelID, effectiveCat)
+		candidates, err := selectTopKForGroup(ctx, db, g.ID, channelID, effectiveCat)
 		if err != nil || len(candidates) == 0 {
 			continue
 		}
