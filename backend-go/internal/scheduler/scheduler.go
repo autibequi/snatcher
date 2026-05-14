@@ -130,13 +130,13 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Job de sync de grupos WA — atualiza member_count a cada 30min
+	// Job de sync de grupos WA — atualiza member_count e auto-associa contas a cada 30min
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(30*time.Minute),
 			gocron.NewTask(func() {
 				slog.Info("scheduler: group sync started")
-				RunGroupSyncWorker(ctx, sc.storeRef)
+				RunGroupSyncWorker(ctx, sc.storeRef, sc.db)
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
