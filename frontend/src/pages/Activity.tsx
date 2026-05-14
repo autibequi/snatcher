@@ -40,6 +40,7 @@ interface SendLogItem {
   catalog_id?: number
   product_title?: string
   status: string
+  error_code?: string
   sent_at: string
   source?: string
 }
@@ -68,7 +69,20 @@ const LOG_COLUMNS: ColumnDef<SendLogItem, unknown>[] = [
     },
   },
   { accessorKey: 'group_name', header: 'Grupo', cell: ({ getValue }) => <span className="font-medium">{getValue<string>() ?? '—'}</span> },
-  { accessorKey: 'product_title', header: 'Produto', cell: ({ getValue }) => <span className="text-fg-2 text-xs truncate max-w-xs block" title={getValue<string>()}>{getValue<string>() ?? '—'}</span> },
+  {
+    accessorKey: 'product_title',
+    header: 'Produto',
+    cell: ({ getValue, row }) => {
+      const title = getValue<string>()
+      const err = (row.original as SendLogItem).error_code
+      return (
+        <div className="max-w-xs">
+          <span className="text-fg-2 text-xs truncate block" title={title ?? undefined}>{title ?? '—'}</span>
+          {err && <span className="text-danger text-xs truncate block" title={err}>⚠ {err}</span>}
+        </div>
+      )
+    },
+  },
   { accessorKey: 'phone', header: 'Conta', cell: ({ getValue }) => <span className="text-fg-3 text-xs font-mono">{getValue<string>() ?? '—'}</span> },
   {
     accessorKey: 'sent_at',

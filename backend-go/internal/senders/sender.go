@@ -396,8 +396,8 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 
 	// Registra falha no send_log para aparecer no Activity → visibilidade de erros silenciosos.
 	_, _ = db.ExecContext(ctx, `
-		INSERT INTO send_log (send_queue_id, group_id, account_id, status, error_code, sent_at)
-		SELECT $1, group_id, $2, 'failed', $3, now()
+		INSERT INTO send_log (send_queue_id, group_id, account_id, catalog_id, template_id, domain_id, status, error_code, sent_at)
+		SELECT $1, group_id, $2, catalog_id, template_id, domain_id, 'failed', $3, now()
 		FROM send_queue WHERE id=$1
 	`, qid, accountID, sendErr.Error())
 

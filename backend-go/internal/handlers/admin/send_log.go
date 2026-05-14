@@ -28,6 +28,7 @@ func SendLogHandler(db *sqlx.DB) http.HandlerFunc {
 			CatalogID   *int64   `db:"catalog_id"    json:"catalog_id,omitempty"`
 			ProductTitle *string `db:"product_title" json:"product_title,omitempty"`
 			Status      string   `db:"status"        json:"status"`
+			ErrorCode   *string  `db:"error_code"    json:"error_code,omitempty"`
 			SentAt      string   `db:"sent_at"       json:"sent_at"`
 			// Fonte: 'auto' (Score Engine) ou 'manual' (Composer)
 			Source      *string  `db:"source"        json:"source,omitempty"`
@@ -53,6 +54,7 @@ func SendLogHandler(db *sqlx.DB) http.HandlerFunc {
 			       sl.catalog_id,
 			       COALESCE(c.title, 'Produto #' || sl.catalog_id) AS product_title,
 			       sl.status,
+			       sl.error_code,
 			       sl.sent_at::text AS sent_at,
 			       sq.source
 			FROM send_log sl
