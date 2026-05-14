@@ -7,7 +7,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type DangerHandler struct {

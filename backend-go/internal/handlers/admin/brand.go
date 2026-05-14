@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type BrandHandler struct {

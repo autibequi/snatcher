@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"snatcher/backendv2/internal/jobs"
+	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 // WorkQueueHandler expõe GET /api/work-queue — visão unificada FIFO de jobs (persistidos em background_jobs quando configurado) + auditoria Jonfrey.

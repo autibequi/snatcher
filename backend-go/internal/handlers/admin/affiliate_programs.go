@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"snatcher/backendv2/internal/affiliates"
+	"snatcher/backendv2/internal/services/affiliates"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/jmoiron/sqlx"
 )

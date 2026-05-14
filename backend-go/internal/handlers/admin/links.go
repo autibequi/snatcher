@@ -6,8 +6,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"snatcher/backendv2/internal/affiliates"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/affiliates"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type LinksHandler struct {

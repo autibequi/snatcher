@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"snatcher/backendv2/internal/llm"
-	"snatcher/backendv2/internal/llm/eval"
-	"snatcher/backendv2/internal/prompts"
+	"snatcher/backendv2/internal/services/llm"
+	"snatcher/backendv2/internal/services/llm/eval"
+	"snatcher/backendv2/internal/services/prompts"
 )
 
 func main() {

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 
-	"snatcher/backendv2/internal/jobs"
-	"snatcher/backendv2/internal/pipeline"
-	"snatcher/backendv2/internal/scheduler"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/jobs"
+	"snatcher/backendv2/internal/services/pipeline"
+	"snatcher/backendv2/internal/services/scheduler"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type ScanHandler struct {

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"snatcher/backendv2/internal/curator"
+	"snatcher/backendv2/internal/services/curator"
 
 	"github.com/jmoiron/sqlx"
 )

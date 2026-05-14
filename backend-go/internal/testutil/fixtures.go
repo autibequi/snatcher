@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 var fixtureSeq uint64

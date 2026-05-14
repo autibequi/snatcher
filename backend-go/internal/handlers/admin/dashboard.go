@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/notifier"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/notifier"
+	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/jmoiron/sqlx"
 )

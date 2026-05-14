@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type EvolutionWebhookHandler struct {

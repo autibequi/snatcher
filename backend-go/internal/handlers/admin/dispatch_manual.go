@@ -10,8 +10,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	"snatcher/backendv2/internal/adapters"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/adapters"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type ManualDispatchHandler struct {

@@ -3,8 +3,8 @@ package public
 import (
 	"net/http"
 
-	"snatcher/backendv2/internal/redirect"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/redirect"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 // ShortLinkRedirect resolve /v/{shortID} → URL final de afiliado.

@@ -12,9 +12,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
-	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type TaxonomyHandler struct {

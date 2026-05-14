@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type TaxonomyPatternHandler struct {

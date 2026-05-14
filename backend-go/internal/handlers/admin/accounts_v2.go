@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"snatcher/backendv2/internal/adapters"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/adapters"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 type AccountsV2Handler struct {

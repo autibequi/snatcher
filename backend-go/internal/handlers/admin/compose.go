@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"snatcher/backendv2/internal/compose"
-	"snatcher/backendv2/internal/llm"
+	"snatcher/backendv2/internal/services/compose"
+	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 // ComposeHandler implementa POST /api/compose/preview.

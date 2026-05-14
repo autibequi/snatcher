@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"snatcher/backendv2/internal/jobs"
+	"snatcher/backendv2/internal/services/jobs"
 )
 
 type JobsHandler struct{}

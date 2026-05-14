@@ -19,8 +19,8 @@ import (
 	"snatcher/backendv2/internal/db"
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	"snatcher/backendv2/internal/middleware"
-	"snatcher/backendv2/internal/redirect"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/redirect"
+	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"

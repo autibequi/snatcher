@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"snatcher/backendv2/internal/algo"
+	"snatcher/backendv2/internal/services/algo"
 )
 
 // POST /api/admin/algo/toggle

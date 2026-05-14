@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"snatcher/backendv2/internal/invitelinks"
-	"snatcher/backendv2/internal/redirect"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/invitelinks"
+	"snatcher/backendv2/internal/services/redirect"
+	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/go-chi/chi/v5"
 )

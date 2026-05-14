@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"snatcher/backendv2/internal/models"
-	"snatcher/backendv2/internal/store"
+	store "snatcher/backendv2/internal/repositories"
 )
 
 // GroupSpiesHandler expõe CRUD para group_spies.

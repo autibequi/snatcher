@@ -4,13 +4,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"snatcher/backendv2/internal/pipeline"
-	"snatcher/backendv2/internal/redirect"
+	"snatcher/backendv2/internal/services/pipeline"
+	"snatcher/backendv2/internal/services/redirect"
 	"snatcher/backendv2/internal/router"
-	"snatcher/backendv2/internal/scheduler"
-	"snatcher/backendv2/internal/scraperbridge"
-	"snatcher/backendv2/internal/scrapers"
-	"snatcher/backendv2/internal/store"
+	"snatcher/backendv2/internal/services/scheduler"
+	"snatcher/backendv2/internal/services/scraperbridge"
+	"snatcher/backendv2/internal/services/scrapers"
+	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
@@ -45,7 +45,7 @@ func NewTestServer(t *testing.T, db *sqlx.DB) *TestServer {
 	adapters := pipeline.AdapterRegistry{}
 
 	runner := pipeline.NewRunner(st, scrapersMap, adapters)
-	sched, err := scheduler.New(60, runner, nil, st, nil)
+	sched, err := scheduler.New(60, runner, st, nil)
 	if err != nil {
 		t.Fatalf("scheduler.New: %v", err)
 	}
