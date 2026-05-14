@@ -21,6 +21,18 @@ import (
 // Drena send_queue WHERE modem_id=X com FOR UPDATE SKIP LOCKED.
 func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
 	slog.Info("sender.start", "modem", modemID)
+
+	// lastGateLog rastreia quando cada gate logou pela última vez para evitar spam.
+	// Cada gate loga na primeira ocorrência e depois a cada 5 minutos.
+	lastGateLog := map[string]time.Time{}
+	gateLog := func(gate string, lvl slog.Level, args ...any) {
+		if time.Since(lastGateLog[gate]) < 5*time.Minute {
+			return
+		}
+		lastGateLog[gate] = time.Now()
+		slog.Log(ctx, lvl, "sender.gate."+gate, args...)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -31,6 +43,9 @@ func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
 		// gate global: flag use_send_queue
 		var flag float64
 		if err := db.GetContext(ctx, &flag, "SELECT get_param('use_send_queue','global',NULL)"); err != nil || flag == 0 {
+			gateLog("queue_flag", slog.LevelWarn,
+				"modem", modemID, "flag", flag,
+				"fix", "habilite use_send_queue via tunable_params ou app_config")
 			time.Sleep(30 * time.Second)
 			continue
 		}
@@ -38,12 +53,17 @@ func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
 		// gate: modem status
 		var status string
 		if err := db.GetContext(ctx, &status, "SELECT status FROM modems WHERE id=$1", modemID); err == nil && status != "active" {
+			gateLog("modem_status", slog.LevelWarn,
+				"modem", modemID, "status", status)
 			time.Sleep(60 * time.Second)
 			continue
 		}
 
 		// gate: janela 21h-6h SP — defesa em profundidade
 		if !inSendWindow() {
+			loc, _ := time.LoadLocation("America/Sao_Paulo")
+			gateLog("window", slog.LevelInfo,
+				"modem", modemID, "hour_sp", time.Now().In(loc).Hour(), "window", "21h-6h")
 			time.Sleep(2 * time.Minute)
 			continue
 		}
