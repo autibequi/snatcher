@@ -96,14 +96,43 @@ function useCountdown(seconds: number) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+interface DryRunGroup {
+  group_id: number
+  group_name: string
+  channel_name?: string
+  blocked: boolean
+  reason: string
+  daily_msg_cap: number
+  sent_today: number
+  candidates_found: number
+  has_modem: boolean
+}
+
+interface DryRunResult {
+  total_groups: number
+  would_enqueue: number
+  blocked: number
+  catalog_send_ready: number
+  send_queue_exists: boolean
+  groups: DryRunGroup[]
+}
+
 function AlgoStatusWidget() {
   const qc = useQueryClient()
+  const [showDryRun, setShowDryRun] = useState(false)
 
   const { data: status } = useQuery<AlgoStatus>({
     queryKey: ['algo-status'],
     queryFn: () => apiClient.get('/api/admin/algo/status').then(r => r.data),
     refetchInterval: 30_000,
     retry: false,
+  })
+
+  const { data: dryRun, isFetching: dryRunLoading } = useQuery<DryRunResult>({
+    queryKey: ['algo-dry-run'],
+    queryFn: () => apiClient.get('/api/admin/algo/dry-run').then(r => r.data),
+    enabled: showDryRun,
+    staleTime: 30_000,
   })
 
   const toggleMut = useMutation({
@@ -159,19 +188,45 @@ function AlgoStatusWidget() {
           </p>
         )}
 
-        {/* Dry-run link — aparece quando está ok mas nenhum grupo enviou */}
+        {/* Dry-run inline — aparece quando está ok mas nenhum grupo enviou */}
         {status?.state === 'ok' && status.last_enqueued === 0 && (
-          <p className="mt-1 text-[11px] text-warning">
-            Nenhum grupo enfileirado no último tick —{' '}
-            <a
-              href="/api/admin/algo/dry-run"
-              target="_blank"
-              rel="noreferrer"
-              className="underline hover:text-fg"
+          <div className="mt-1">
+            <button
+              onClick={() => setShowDryRun(v => !v)}
+              className="text-[11px] text-warning hover:text-fg underline"
             >
-              ver diagnóstico grupo a grupo →
-            </a>
-          </p>
+              {showDryRun ? 'ocultar diagnóstico ↑' : 'ver diagnóstico grupo a grupo →'}
+            </button>
+
+            {showDryRun && (
+              <div className="mt-2 border border-border rounded-md bg-surface-2 overflow-hidden">
+                {dryRunLoading && (
+                  <p className="px-3 py-2 text-xs text-fg-3">Carregando…</p>
+                )}
+                {dryRun && (
+                  <>
+                    <div className="px-3 py-1.5 border-b border-border text-xs text-fg-3 flex gap-4">
+                      <span>Catálogo send_ready: <b className="text-fg">{dryRun.catalog_send_ready}</b></span>
+                      <span>Grupos bloqueados: <b className="text-danger">{dryRun.blocked}</b></span>
+                      <span>Enfileiraria: <b className="text-success">{dryRun.would_enqueue}</b></span>
+                    </div>
+                    <div className="divide-y divide-border max-h-64 overflow-y-auto">
+                      {dryRun.groups.map(g => (
+                        <div key={g.group_id} className="px-3 py-1.5 flex items-start gap-2">
+                          <span className={`mt-0.5 h-2 w-2 rounded-full flex-shrink-0 ${g.blocked ? 'bg-danger' : 'bg-success'}`} />
+                          <div className="min-w-0">
+                            <span className="text-xs font-medium text-fg">{g.group_name}</span>
+                            {g.channel_name && <span className="text-xs text-fg-3 ml-1">({g.channel_name})</span>}
+                            <p className="text-[11px] text-fg-3 mt-0.5">{g.reason}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Last tick info quando não é erro */}
