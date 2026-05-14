@@ -210,7 +210,7 @@ LIMIT 1
 ```
 ⚠️ `group_admins` NÃO tem coluna `priority` — não usar ORDER BY ga.priority.
 
-### Sender (senders/)
+### Sender (services/senders/)
 1 goroutine por modem (scheduler.go inicia N senders).
 Dequeue de `send_queue` onde `status = 'pending'` e `modem_id = X`.
 Envia via Evolution API. Registra em `send_log` e `group_sent_history`.
