@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -19,13 +20,34 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 		}
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
+		// Filtro por IDs específicos: ?ids=1,2,3 — usado pelo Composer como fallback de /api/catalog/:id
+		var specificIDs []int64
+		if idsParam := r.URL.Query().Get("ids"); idsParam != "" {
+			for _, s := range strings.Split(idsParam, ",") {
+				s = strings.TrimSpace(s)
+				if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
+					specificIDs = append(specificIDs, id)
+				}
+			}
+		}
+
 		where := []string{"1=1"}
 		args := []any{}
 		i := 1
 		if readyOnly {
 			where = append(where, "c.send_ready = true AND c.canonical_url_alive = true")
 		}
-		if categoryID > 0 {
+		if len(specificIDs) > 0 {
+			placeholders := make([]string, len(specificIDs))
+			for j, id := range specificIDs {
+				placeholders[j] = "$" + strconv.Itoa(i)
+				args = append(args, id)
+				i++
+			}
+			where = append(where, "c.id IN ("+strings.Join(placeholders, ",")+")")
+			limit = len(specificIDs) // retorna exatamente os IDs pedidos
+			offset = 0
+		} else if categoryID > 0 {
 			where = append(where, "c.category_id = $"+strconv.Itoa(i))
 			args = append(args, categoryID)
 			i++

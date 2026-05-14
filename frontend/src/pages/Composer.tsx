@@ -300,10 +300,24 @@ export default function Composer() {
   const [tone, setTone] = React.useState('promocional')
   const [customContext, setCustomContext] = React.useState('')
 
-  // Buscar dados de TODOS os produtos (inclui variantes para preço quando lowest_price está NULL)
+  // Buscar dados de TODOS os produtos.
+  // Usa /api/admin/catalog-canonical?ids=X,Y — endpoint existente em todas as versões.
+  // Fallback para /api/catalog/:id (novo) se o primeiro falhar.
   const { data: catalogRows = [] } = useQuery<CatalogRow[]>({
     queryKey: ['catalog-multi', productIds],
     queryFn: async () => {
+      if (productIds.length === 0) return []
+
+      // Tentativa 1: endpoint canônico com filtro ids= (suportado desde sempre)
+      try {
+        const r = await apiClient.get(`/api/admin/catalog-canonical?ids=${productIds.join(',')}&limit=${productIds.length}`)
+        const items: Record<string, unknown>[] = Array.isArray(r.data) ? r.data : []
+        if (items.length > 0) {
+          return items.map(p => ({ product: p, variants: [] })).filter(Boolean) as CatalogRow[]
+        }
+      } catch { /* fallback abaixo */ }
+
+      // Tentativa 2: novo endpoint /api/catalog/:id (disponível após deploy)
       const results = await Promise.all(
         productIds.map((id) =>
           apiClient
@@ -321,7 +335,7 @@ export default function Composer() {
     },
     enabled: productIds.length > 0,
     staleTime: 5 * 60_000,
-    retry: 2,
+    retry: 1,
   })
 
   const productData = (catalogRows[0]?.product ?? null) as Record<string, unknown> | null
