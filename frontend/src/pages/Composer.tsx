@@ -373,10 +373,8 @@ export default function Composer() {
   /** URL para shortlink / 👉 mesmo quando o melhor preço veio numa linha sem URL (fallback qualquer produto). */
   const urlForShortLink = (realUrl || fallbackCatalogUrl).trim()
 
-  // Boilerplate WhatsApp: negrito/itálico com *…* ; preços e link são variáveis ou substituídos ao vivo
-  const DEFAULT_TEMPLATE = `🔥 OFERTA RELÂMPAGO
-
-*{produto}*
+  // Fallback quando não há templates na base
+  const DEFAULT_TEMPLATE = `🔥 {produto}
 
 💰 De ~{de}~ por *{por}*
 🏷️ {desconto} OFF
@@ -385,10 +383,16 @@ export default function Composer() {
 
   React.useEffect(() => {
     if (!text && !draftId) {
-      setText(DEFAULT_TEMPLATE)
+      // Usa template aleatório da base; cai no hardcoded se ainda não carregou
+      if (templates.length > 0) {
+        const pick = templates[Math.floor(Math.random() * templates.length)]
+        setText(toComposerFormat(pick.body))
+      } else {
+        setText(DEFAULT_TEMPLATE)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId])
+  }, [draftId, templates.length])
 
   const loadingPreview = false
 
