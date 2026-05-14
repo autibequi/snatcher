@@ -1355,14 +1355,20 @@ func actionArchiveOldLogs(ctx context.Context, h *JonfreyHandler) (map[string]an
 	return beforeMap, afterMap, reasoning, nil
 }
 
-// actionComputeClusters: removido em v2 (clusters package deleted)
+// actionComputeClusters: removido em v2 — clusters são gerenciados externamente.
 func actionComputeClusters(_ context.Context, _ *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	return nil, nil, "", fmt.Errorf("clusters removed in v2")
+	return map[string]any{"removed": true},
+		map[string]any{"skipped": true},
+		"Clusters foram removidos do pipeline v2. Ação sem efeito.",
+		nil
 }
 
-// actionOptimizeAudienceFromClicks: removido em v2 (Channel removido)
+// actionOptimizeAudienceFromClicks: removido em v2 — modelo Channel foi substituído por channels_v2 com sliders.
 func actionOptimizeAudienceFromClicks(_ context.Context, _ *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	return nil, nil, "", fmt.Errorf("optimize_audience_from_clicks removed in v2 (Channel model deleted)")
+	return map[string]any{"removed": true},
+		map[string]any{"skipped": true},
+		"optimize_audience_from_clicks removida em v2. Audiência agora é controlada pelos sliders de categoria por canal em /channels.",
+		nil
 }
 
 // actionPurgeInactiveProducts: remove produtos marcados como inativos com 60+ dias sem update

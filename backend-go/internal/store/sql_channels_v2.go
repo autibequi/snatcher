@@ -2,19 +2,22 @@ package store
 
 import "snatcher/backendv2/internal/models"
 
+const channelV2Select = `
+	SELECT c.id, c.name, c.quality_threshold, c.daily_cap, c.active, c.created_at,
+	       c.price_min, c.price_max,
+	       COALESCE(c.min_discount_pct, 0) AS min_discount_pct,
+	       COALESCE((SELECT COUNT(*) FROM groups g WHERE g.channel_id = c.id), 0) AS groups_count
+	FROM channels_v2 c`
+
 func (s *SQLStore) ListChannelsV2() ([]models.ChannelV2, error) {
 	var out []models.ChannelV2
-	err := s.db.Select(&out, `
-		SELECT c.id, c.name, c.quality_threshold, c.daily_cap, c.active, c.created_at,
-		       COALESCE((SELECT COUNT(*) FROM groups g WHERE g.channel_id = c.id), 0) AS groups_count
-		FROM channels_v2 c ORDER BY c.name
-	`)
+	err := s.db.Select(&out, channelV2Select+` ORDER BY c.name`)
 	return out, err
 }
 
 func (s *SQLStore) GetChannelV2(id int64) (models.ChannelV2, error) {
 	var c models.ChannelV2
-	err := s.db.Get(&c, `SELECT id, name, quality_threshold, daily_cap, active, created_at FROM channels_v2 WHERE id=$1`, id)
+	err := s.db.Get(&c, channelV2Select+` WHERE c.id=$1`, id)
 	return c, err
 }
 
@@ -29,8 +32,12 @@ func (s *SQLStore) CreateChannelV2(c models.ChannelV2) (int64, error) {
 
 func (s *SQLStore) UpdateChannelV2(c models.ChannelV2) error {
 	_, err := s.db.Exec(`
-		UPDATE channels_v2 SET name=$1, quality_threshold=$2, daily_cap=$3, active=$4 WHERE id=$5
-	`, c.Name, c.QualityThreshold, c.DailyCap, c.Active, c.ID)
+		UPDATE channels_v2
+		SET name=$1, quality_threshold=$2, daily_cap=$3, active=$4,
+		    price_min=$5, price_max=$6, min_discount_pct=$7
+		WHERE id=$8
+	`, c.Name, c.QualityThreshold, c.DailyCap, c.Active,
+		c.PriceMin, c.PriceMax, c.MinDiscountPct, c.ID)
 	return err
 }
 
@@ -69,7 +76,7 @@ func (s *SQLStore) SetChannelCategoryWeights(channelID int64, weights []models.C
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.Exec(`DELETE FROM channel_category_weights WHERE channel_id=$1`, channelID); err != nil {
 		return err
 	}

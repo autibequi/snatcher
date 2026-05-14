@@ -472,6 +472,10 @@ type ChannelV2 struct {
 	Active           bool      `db:"active"            json:"active"`
 	CreatedAt        time.Time `db:"created_at"        json:"created_at"`
 	GroupsCount      int       `db:"groups_count"      json:"groups_count"`
+	// Filtros duros por faixa de preço e desconto (NULL = sem filtro).
+	PriceMin        *float64  `db:"price_min"         json:"price_min,omitempty"`
+	PriceMax        *float64  `db:"price_max"         json:"price_max,omitempty"`
+	MinDiscountPct  float64   `db:"min_discount_pct"  json:"min_discount_pct"`
 }
 
 // ChannelCategoryWeight peso de uma categoria num canal (sliders somam 100%).

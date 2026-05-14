@@ -77,10 +77,13 @@ func (h *ChannelsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name             *string  `json:"name"`
-		CategoryID       *int64   `json:"category_id"`
+		CategoryID       *int64   `json:"category_id"` // deprecated, ignorado
 		QualityThreshold *float64 `json:"quality_threshold"`
 		DailyCap         *int     `json:"daily_cap"`
 		Active           *bool    `json:"active"`
+		PriceMin         *float64 `json:"price_min"`
+		PriceMax         *float64 `json:"price_max"`
+		MinDiscountPct   *float64 `json:"min_discount_pct"`
 	}
 	if err := decodeBody(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "json inválido")
@@ -97,6 +100,15 @@ func (h *ChannelsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Active != nil {
 		existing.Active = *req.Active
+	}
+	if req.PriceMin != nil {
+		existing.PriceMin = req.PriceMin
+	}
+	if req.PriceMax != nil {
+		existing.PriceMax = req.PriceMax
+	}
+	if req.MinDiscountPct != nil {
+		existing.MinDiscountPct = *req.MinDiscountPct
 	}
 	if err := h.store.UpdateChannelV2(existing); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao atualizar")

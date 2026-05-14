@@ -13,6 +13,7 @@ import {
 interface Channel {
   id: number; name: string; quality_threshold: number
   daily_cap: number; active: boolean; created_at: string
+  price_min?: number | null; price_max?: number | null; min_discount_pct?: number
 }
 interface ChannelWithCount extends Channel { groups_count?: number }
 interface ChannelDetail extends Channel { groups: Group[] }
@@ -30,12 +31,16 @@ interface ChannelCandidate {
 }
 interface ChannelFormValues {
   name: string; quality_threshold: number; daily_cap: number; active: boolean
+  price_min: string; price_max: string; min_discount_pct: number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const defaultForm = (): ChannelFormValues => ({ name: '', quality_threshold: 0.40, daily_cap: 30, active: true })
+const defaultForm = (): ChannelFormValues => ({
+  name: '', quality_threshold: 0.40, daily_cap: 30, active: true,
+  price_min: '', price_max: '', min_discount_pct: 0,
+})
 
 function platformBadge(platform: string) {
   if (platform === 'whatsapp' || platform === 'wa') return <span className={statusChipAccent}>WA</span>
@@ -75,6 +80,37 @@ function ChannelForm({ initial, onSave, onCancel, saving }: {
             onChange={e => set('daily_cap', parseInt(e.target.value) || 1)} />
         </div>
       </div>
+      {/* Faixa de preço */}
+      <div className={formGroup}>
+        <label className={formLabel}>Faixa de preço <span className="font-normal text-fg-3">(filtro duro — vazio = sem limite)</span></label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-fg-3">R$</span>
+            <input type="number" placeholder="Mínimo" min={0} step={1}
+              className="w-full text-sm border border-border rounded-md pl-7 pr-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              value={form.price_min} onChange={e => set('price_min', e.target.value)} />
+          </div>
+          <span className="text-fg-3 text-xs flex-shrink-0">até</span>
+          <div className="relative flex-1">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-fg-3">R$</span>
+            <input type="number" placeholder="Máximo" min={0} step={1}
+              className="w-full text-sm border border-border rounded-md pl-7 pr-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+              value={form.price_max} onChange={e => set('price_max', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Desconto mínimo */}
+      <div className={formGroup}>
+        <label className={formLabel}>Desconto mínimo <span className="font-normal text-fg-3">(0 = sem filtro)</span></label>
+        <div className="flex items-center gap-3">
+          <input type="range" min={0} max={80} step={5} value={form.min_discount_pct}
+            onChange={e => set('min_discount_pct', Number(e.target.value))}
+            className="flex-1 accent-accent" />
+          <span className="text-sm font-mono text-fg-2 w-10 text-right">{form.min_discount_pct}%</span>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between py-1">
         <span className={formLabel}>Ativo</span>
         <Switch checked={form.active} onChange={v => set('active', v)} />
@@ -299,7 +335,15 @@ function ChannelModal({
     mutationFn: async (values: ChannelFormValues) => {
       const res = await authFetch(`/api/channels/${channel.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: values.name, quality_threshold: values.quality_threshold, daily_cap: values.daily_cap, active: values.active }),
+        body: JSON.stringify({
+          name: values.name,
+          quality_threshold: values.quality_threshold,
+          daily_cap: values.daily_cap,
+          active: values.active,
+          price_min: values.price_min !== '' ? parseFloat(values.price_min) : null,
+          price_max: values.price_max !== '' ? parseFloat(values.price_max) : null,
+          min_discount_pct: values.min_discount_pct,
+        }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -375,21 +419,39 @@ function ChannelModal({
             editing
               ? <div className="p-4">
                   <ChannelForm
-                    initial={{ name: channel.name, quality_threshold: channel.quality_threshold, daily_cap: channel.daily_cap, active: channel.active }}
+                    initial={{
+                      name: channel.name,
+                      quality_threshold: channel.quality_threshold,
+                      daily_cap: channel.daily_cap,
+                      active: channel.active,
+                      price_min: channel.price_min != null ? String(channel.price_min) : '',
+                      price_max: channel.price_max != null ? String(channel.price_max) : '',
+                      min_discount_pct: channel.min_discount_pct ?? 0,
+                    }}
                     saving={updateMut.isPending}
                     onSave={values => updateMut.mutate(values)}
                     onCancel={() => setEditing(false)}
                   />
                 </div>
               : <div className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3">
                     {[
                       { label: 'Score mínimo', value: channel.quality_threshold.toFixed(2) },
-                      { label: 'Cap diário', value: String(channel.daily_cap) },
+                      { label: 'Cap diário', value: `${channel.daily_cap}/dia` },
+                      {
+                        label: 'Faixa de preço',
+                        value: channel.price_min != null || channel.price_max != null
+                          ? `${channel.price_min != null ? `R$${channel.price_min}` : '—'} → ${channel.price_max != null ? `R$${channel.price_max}` : '—'}`
+                          : 'sem filtro',
+                      },
+                      {
+                        label: 'Desconto mínimo',
+                        value: (channel.min_discount_pct ?? 0) > 0 ? `≥ ${channel.min_discount_pct}%` : 'sem filtro',
+                      },
                     ].map(r => (
                       <div key={r.label} className="rounded-lg border border-border bg-surface-2 px-3 py-2.5">
                         <p className="text-[10px] text-fg-3 uppercase tracking-wide">{r.label}</p>
-                        <p className="text-lg font-semibold text-fg tabular-nums">{r.value}</p>
+                        <p className="text-sm font-semibold text-fg tabular-nums">{r.value}</p>
                       </div>
                     ))}
                   </div>

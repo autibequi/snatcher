@@ -28,7 +28,11 @@ const topK = 10
 func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int64, categoryID *int64) ([]catalogItem, error) {
 	var items []catalogItem
 	err := db.SelectContext(ctx, &items, `
-		WITH gst AS (
+		WITH channel_limits AS (
+		    SELECT price_min, price_max, COALESCE(min_discount_pct, 0) AS min_discount_pct
+		    FROM channels_v2 WHERE id = $2
+		),
+		gst AS (
 			SELECT cat.category_id, COUNT(*) AS n_sent
 			FROM send_log sl
 			JOIN catalog cat ON cat.id = sl.catalog_id
@@ -85,6 +89,7 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		      AND lwc.category_id = c.category_id
 		      AND lwc.source_id   = c.source_id
 		LEFT JOIN gst ON gst.category_id = c.category_id
+		CROSS JOIN channel_limits cl
 		LEFT JOIN LATERAL (
 		    SELECT MAX(sent_at)              AS last_sent_at,
 		           MAX(price_at_send)        AS last_price_at_send
@@ -95,6 +100,10 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		  AND c.canonical_url_alive = true
 		  AND COALESCE(c.quality_score, 0) >= COALESCE(
 		      get_param('quality_threshold','global',NULL), 0.4)
+		  -- Filtros duros do canal: faixa de preço e desconto mínimo (NULL = sem limite)
+		  AND (cl.price_min IS NULL OR c.price_current >= cl.price_min)
+		  AND (cl.price_max IS NULL OR c.price_current <= cl.price_max)
+		  AND COALESCE(c.discount_pct, 0) >= cl.min_discount_pct
 		  AND ($3::bigint IS NULL OR c.category_id = $3)
 		  -- Anti-repeat com bypass condicional ("re-promo"):
 		  --   A) nunca enviado nesse grupo
