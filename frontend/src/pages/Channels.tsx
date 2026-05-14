@@ -134,12 +134,16 @@ function TabCategorias({ channelId, categories }: { channelId: number; categorie
     staleTime: 10_000,
   })
   const [weights, setWeights] = useState<Record<number, number>>({})
+  // ids das categorias adicionadas à lista (com peso 0 ou >0)
+  const [active, setActive] = useState<Set<number>>(new Set())
   const [synced, setSynced] = useState(false)
   if (!synced && saved.length > 0) {
     const map: Record<number, number> = {}
-    saved.forEach(w => { map[w.category_id] = w.weight })
-    setWeights(map); setSynced(true)
+    const ids = new Set<number>()
+    saved.forEach(w => { map[w.category_id] = w.weight; ids.add(w.category_id) })
+    setWeights(map); setActive(ids); setSynced(true)
   }
+
   const saveMut = useMutation({
     mutationFn: () => authFetch(`/api/channels/${channelId}/weights`, {
       method: 'PUT',
@@ -148,41 +152,78 @@ function TabCategorias({ channelId, categories }: { channelId: number; categorie
     }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['channel-weights', channelId] }),
   })
-  const total = Object.values(weights).reduce((s, v) => s + v, 0)
+
+  const total = [...active].reduce((s, id) => s + (weights[id] ?? 0), 0)
+
+  // Categorias ainda não adicionadas ao canal
+  const available = categories.filter(c => !active.has(c.id))
+
+  const addCategory = (id: number) => {
+    setActive(prev => new Set([...prev, id]))
+    setWeights(prev => ({ ...prev, [id]: prev[id] ?? 50 }))
+  }
+
+  const removeCategory = (id: number) => {
+    setActive(prev => { const s = new Set(prev); s.delete(id); return s })
+    setWeights(prev => { const n = { ...prev }; delete n[id]; return n })
+  }
+
+  const activeCategories = categories.filter(c => active.has(c.id))
+
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-fg-3">Peso relativo de cada categoria para este canal (0–100%).</p>
+        <p className="text-xs text-fg-3">Categorias que este canal considera ao pontuar produtos.</p>
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-mono ${total > 100 ? 'text-danger' : total === 100 ? 'text-success' : 'text-fg-3'}`}>{total}%</span>
-          <Button size="sm" variant={total === 100 ? 'primary' : 'secondary'} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+          <span className={`text-xs font-mono ${total > 100 ? 'text-danger' : total > 0 ? 'text-success' : 'text-fg-3'}`}>{total}%</span>
+          <Button size="sm" variant="primary" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
             Salvar
           </Button>
         </div>
       </div>
-      {categories.length === 0
-        ? <p className="text-xs text-fg-3">Nenhuma categoria cadastrada.</p>
-        : <div className="space-y-2">
-          {categories.map(cat => {
+
+      {/* Categorias ativas */}
+      {activeCategories.length === 0 ? (
+        <p className="text-xs text-fg-3 py-2">Nenhuma categoria adicionada — adicione abaixo para pontuar produtos por categoria.</p>
+      ) : (
+        <div className="space-y-2">
+          {activeCategories.map(cat => {
             const val = weights[cat.id] ?? 0
             return (
               <div key={cat.id} className="flex items-center gap-3">
-                <span className="text-xs text-fg-2 w-32 flex-shrink-0 truncate">{cat.name}</span>
+                <span className="text-xs text-fg-2 w-36 flex-shrink-0 truncate">{cat.name}</span>
                 <input type="range" min={0} max={100} step={5} value={val}
                   onChange={e => setWeights(p => ({ ...p, [cat.id]: Number(e.target.value) }))}
                   className="flex-1 accent-accent" />
                 <span className="text-xs font-mono text-fg-2 w-10 text-right">{val}%</span>
-                {val > 0 && (
-                  <button type="button" onClick={() => setWeights(p => ({ ...p, [cat.id]: 0 }))}
-                    className="text-[10px] text-fg-3 hover:text-fg">✕</button>
-                )}
+                <button type="button" onClick={() => removeCategory(cat.id)}
+                  className="text-[10px] text-fg-3 hover:text-danger transition-colors flex-shrink-0" title="Remover categoria">✕</button>
               </div>
             )
           })}
         </div>
-      }
+      )}
+
       {total > 100 && <p className="text-xs text-danger">Total ultrapassa 100%. Reduza alguns pesos.</p>}
-      {total === 0 && <p className="text-xs text-fg-3">Sem categorias configuradas — usará produtos de todas as categorias.</p>}
+
+      {/* Seletor para adicionar categorias */}
+      {available.length > 0 && (
+        <div className="pt-2 border-t border-border">
+          <p className="text-[11px] text-fg-3 mb-1.5">Adicionar categoria:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {available.map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => addCategory(cat.id)}
+                className="px-2 py-1 text-xs rounded-full border border-border text-fg-3 hover:border-accent hover:text-accent transition-colors"
+              >
+                + {cat.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

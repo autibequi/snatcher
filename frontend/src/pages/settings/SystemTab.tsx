@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Switch } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
@@ -26,6 +26,103 @@ interface GroupOption {
   status?: string
   member_count?: number
   archived?: boolean
+}
+
+function NotifGroupCombobox({
+  groups,
+  value,
+  onChange,
+}: {
+  groups: GroupOption[]
+  value: number | null
+  onChange: (id: number | null) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const selected = value != null ? groups.find(g => g.id === value) : null
+  const displayName = selected
+    ? `${selected.name}${selected.channel_name ? ` · ${selected.channel_name}` : ''}`
+    : ''
+
+  const filtered = groups.filter(g =>
+    g.name.toLowerCase().includes(query.toLowerCase()) ||
+    (g.channel_name ?? '').toLowerCase().includes(query.toLowerCase()),
+  ).slice(0, 30)
+
+  const handleSelect = (g: GroupOption | null) => {
+    onChange(g ? g.id : null)
+    setQuery('')
+    setOpen(false)
+    inputRef.current?.blur()
+  }
+
+  // Fecha ao clicar fora
+  const handleBlur = (e: React.FocusEvent) => {
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative w-full max-w-md" onBlur={handleBlur}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={open ? query : displayName}
+        placeholder={value == null ? '— Desativado (sem notificações) —' : ''}
+        onFocus={() => { setOpen(true); setQuery('') }}
+        onChange={e => setQuery(e.target.value)}
+        className="w-full text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent pr-8"
+      />
+      {/* Clear button */}
+      {value != null && !open && (
+        <button
+          tabIndex={-1}
+          onClick={() => handleSelect(null)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-3 hover:text-fg text-xs px-1"
+          title="Desativar notificações"
+        >
+          ✕
+        </button>
+      )}
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-surface shadow-lg max-h-72 overflow-y-auto">
+          {/* Opção "Desativado" */}
+          <button
+            tabIndex={0}
+            onMouseDown={() => handleSelect(null)}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-2 text-fg-3 italic ${value == null ? 'bg-accent/10 text-accent not-italic font-medium' : ''}`}
+          >
+            — Desativado —
+          </button>
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-fg-3">Nenhum grupo encontrado</p>
+          ) : (
+            filtered.map(g => (
+              <button
+                key={g.id}
+                tabIndex={0}
+                onMouseDown={() => handleSelect(g)}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-2 transition-colors ${g.id === value ? 'bg-accent/10 text-accent font-medium' : 'text-fg'}`}
+              >
+                <span className="font-medium">{g.name}</span>
+                {g.channel_name && (
+                  <span className="ml-1.5 text-xs text-fg-3">{g.channel_name}</span>
+                )}
+                {g.member_count != null && g.member_count > 0 && (
+                  <span className="ml-1.5 text-xs text-fg-3">· {g.member_count} membros</span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function SystemTab() {
@@ -135,20 +232,11 @@ export function SystemTab() {
         </p>
         <div className={formGroup}>
           <label className={formLabel}>Grupo de destino</label>
-          <select
-            value={merged.notifications_group_id ?? ''}
-            onChange={e => upd('notifications_group_id', e.target.value ? Number(e.target.value) : null)}
-            className="w-full max-w-md text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg"
-          >
-            <option value="">— Desativado —</option>
-            {notificationGroupOptions.map(g => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-                {g.channel_name ? ` · ${g.channel_name}` : ''}
-                {g.account_label ? ` · ${g.account_label}` : ''}
-              </option>
-            ))}
-          </select>
+          <NotifGroupCombobox
+            groups={notificationGroupOptions}
+            value={merged.notifications_group_id ?? null}
+            onChange={id => upd('notifications_group_id', id)}
+          />
           <p className={formHint}>
             Apenas grupos WhatsApp já cadastrados na página <strong>Grupos</strong> aparecem aqui.
             Se a lista estiver vazia, importe um grupo lá primeiro.
