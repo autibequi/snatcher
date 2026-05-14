@@ -646,31 +646,37 @@ func (h *DashboardHandler) UpcomingDispatches(w http.ResponseWriter, r *http.Req
 	}
 
 	type UpcomingItem struct {
-		ID         string  `json:"id"`
-		Name       string  `json:"name"`
-		Subtitle   string  `json:"subtitle"`
-		ETASeconds int     `json:"eta_seconds"`
-		Kind       string  `json:"kind"` // "group" | "digest"
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Subtitle   string `json:"subtitle"`
+		ETASeconds int    `json:"eta_seconds"`
+		Kind       string `json:"kind"` // "group" | "digest"
 	}
 
-	// dispatches tabela usa scheduled_for (não scheduled_at).
-	// status='scheduled' indica disparos futuros pendentes.
-	// kind: derivado de composed_by — se contém "digest" → "digest", caso contrário "group".
+	// send_queue substituiu dispatches. Mostra itens pending/sending ordenados
+	// por enqueued_at. ETA estimado = posição na fila × 30s por envio.
 	type rawRow struct {
-		ID           int64   `db:"id"`
-		ComposedBy   string  `db:"composed_by"`
-		ETASeconds   int     `db:"eta_seconds"`
+		ID          int64  `db:"id"`
+		GroupName   string `db:"group_name"`
+		ProductName string `db:"product_name"`
+		EnqueuedAt  string `db:"enqueued_at"`
+		Status      string `db:"status"`
+		Position    int    `db:"position"` // posição relativa na fila do grupo
 	}
 
 	var raws []rawRow
 	err := h.db.SelectContext(r.Context(), &raws, `
-		SELECT id,
-		       COALESCE(composed_by, '') as composed_by,
-		       EXTRACT(EPOCH FROM (scheduled_for - now()))::int as eta_seconds
-		FROM dispatches
-		WHERE status = 'scheduled'
-		  AND scheduled_for > now()
-		ORDER BY scheduled_for ASC
+		SELECT sq.id,
+		       COALESCE(g.name, g.whatsapp_jid, sq.group_id::text) AS group_name,
+		       COALESCE(c.title, 'Produto #' || sq.catalog_id)     AS product_name,
+		       sq.enqueued_at::text AS enqueued_at,
+		       sq.status,
+		       ROW_NUMBER() OVER (ORDER BY sq.enqueued_at ASC)::int AS position
+		FROM send_queue sq
+		LEFT JOIN groups  g ON g.id = sq.group_id
+		LEFT JOIN catalog c ON c.id = sq.catalog_id
+		WHERE sq.status IN ('pending', 'sending')
+		ORDER BY sq.enqueued_at ASC
 		LIMIT $1
 	`, limit)
 
@@ -681,16 +687,16 @@ func (h *DashboardHandler) UpcomingDispatches(w http.ResponseWriter, r *http.Req
 
 	items := make([]UpcomingItem, 0, len(raws))
 	for _, raw := range raws {
-		kind := "group"
-		if raw.ComposedBy == "digest" {
-			kind = "digest"
+		etaSecs := raw.Position * 30 // ~30s por envio na fila
+		if raw.Status == "sending" {
+			etaSecs = 5
 		}
 		items = append(items, UpcomingItem{
 			ID:         fmt.Sprintf("%d", raw.ID),
-			Name:       fmt.Sprintf("Disparo #%d", raw.ID),
-			Subtitle:   "",
-			ETASeconds: raw.ETASeconds,
-			Kind:       kind,
+			Name:       raw.GroupName,
+			Subtitle:   raw.ProductName,
+			ETASeconds: etaSecs,
+			Kind:       "group",
 		})
 	}
 
