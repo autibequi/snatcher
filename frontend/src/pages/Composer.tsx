@@ -869,7 +869,7 @@ export default function Composer() {
                   onChange={e => setText(e.target.value)}
                   rows={6}
                   className="w-full resize-none text-sm text-fg bg-transparent outline-none placeholder:text-fg-3"
-                  placeholder={`🔥 OFERTA RELÂMPAGO\n\n*{produto}*\n\n💰 De ~{de}~ por *{por}*\n🏷️ {desconto} OFF\n\n👉 {link}`}
+                  placeholder={`🔥 {produto}\n\n💰 De ~{de}~ por *{por}*\n🏷️ {desconto} OFF\n\n👉 {link}`}
                 />
               )}
 
