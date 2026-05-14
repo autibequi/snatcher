@@ -393,6 +393,14 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 		`, accountID, modemID, int(quarantineThreshold), payload)
 	}
 	_ = tx.Commit()
+
+	// Registra falha no send_log para aparecer no Activity → visibilidade de erros silenciosos.
+	_, _ = db.ExecContext(ctx, `
+		INSERT INTO send_log (send_queue_id, group_id, account_id, status, error_code, sent_at)
+		SELECT $1, group_id, $2, 'failed', $3, now()
+		FROM send_queue WHERE id=$1
+	`, qid, accountID, sendErr.Error())
+
 	// se 3+ bans/24h no mesmo modem → pausa modem (era 2, aumentado para menos agressividade)
 	var bans24h int
 	_ = db.GetContext(ctx, &bans24h, `SELECT COUNT(*) FROM ban_events WHERE modem_id=$1 AND detected_at > now()-INTERVAL '24h'`, modemID)
