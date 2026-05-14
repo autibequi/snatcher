@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, PageHeader, Skeleton, Switch } from '../components/ui'
 import { authFetch, authFetchJSON } from '../lib/authFetch'
@@ -291,6 +292,7 @@ function TabGrupos({ channelId, allGroups }: { channelId: number; allGroups: Gro
 // ── Tab: Produtos ─────────────────────────────────────────────────────────────
 
 function TabProdutos({ channelId }: { channelId: number }) {
+  const navigate = useNavigate()
   const { data: candidates = [], isFetching } = useQuery<ChannelCandidate[]>({
     queryKey: ['channel-candidates', channelId],
     queryFn: () => authFetchJSON<ChannelCandidate[]>(`/api/channels/${channelId}/candidates?limit=20`, []),
@@ -315,6 +317,7 @@ function TabProdutos({ channelId }: { channelId: number }) {
                 <th className="text-right px-2 py-1.5 font-medium text-fg-2">Canal%</th>
                 <th className="text-right px-2 py-1.5 font-medium text-fg-2">Score</th>
                 <th className="text-center px-2 py-1.5 font-medium text-fg-2">Status</th>
+                <th className="px-2 py-1.5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -342,6 +345,15 @@ function TabProdutos({ channelId }: { channelId: number }) {
                     {!c.url_alive && <span title="URL morta">💀</span>}
                     {c.below_threshold && <span title="abaixo do threshold">⚠️</span>}
                     {c.send_ready && c.url_alive && !c.below_threshold && <span title="elegível">✅</span>}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <button
+                      onClick={() => navigate(`/compose?productIds=${c.id}`)}
+                      title="Abrir Composer com este produto"
+                      className="px-2 py-0.5 text-[10px] bg-accent text-white rounded hover:bg-accent-hover transition-colors whitespace-nowrap"
+                    >
+                      ✈ Disparar
+                    </button>
                   </td>
                 </tr>
               ))}
