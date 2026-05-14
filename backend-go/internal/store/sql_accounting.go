@@ -274,10 +274,15 @@ func (s *SQLStore) DeleteAccountV2(id int64) error {
 }
 
 // UpdateAccountV2 atualiza status e quota de uma conta WA v2.
+// Ao restaurar para primary/backup, zera consecutive_failures para evitar re-quarentena imediata.
 func (s *SQLStore) UpdateAccountV2(id int64, status string, quota int) error {
+	resetFailures := status == "primary" || status == "backup"
 	_, err := s.db.Exec(`
-		UPDATE accounts SET status=$1, daily_send_quota=$2, status_changed_at=now() WHERE id=$3
-	`, status, quota, id)
+		UPDATE accounts
+		SET status=$1, daily_send_quota=$2, status_changed_at=now(),
+		    consecutive_failures = CASE WHEN $4 THEN 0 ELSE consecutive_failures END
+		WHERE id=$3
+	`, status, quota, id, resetFailures)
 	return err
 }
 

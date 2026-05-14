@@ -180,6 +180,7 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 		err = fmt.Errorf("send_queue id=%d: sem catalog_id nem message_override", qid)
 	}
 	if err != nil {
+		slog.Error("sender.send_failed", "queue_id", qid, "modem", modemID, "group", groupID, "err", err)
 		markFailed(ctx, db, qid, *accountID, modemID, err)
 		return true, nil
 	}
