@@ -57,7 +57,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			SELECT c.id, c.short_id, c.dedup_key, c.source_id, c.category_id,
 			       ct.display_name AS category_name,
 			       c.title, c.image_url, c.price_original, c.price_current, c.discount_pct,
-			       c.quality_score, c.send_ready, c.canonical_url_alive,
+			       c.quality_score, c.send_ready, c.canonical_url_alive, c.canonical_url,
 			       c.created_at::text AS created_at, c.send_ready_at::text AS send_ready_at
 			FROM catalog c
 			LEFT JOIN categories ct ON ct.id = c.category_id
@@ -80,6 +80,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			QualityScore      *float64 `db:"quality_score" json:"quality_score,omitempty"`
 			SendReady         bool     `db:"send_ready" json:"send_ready"`
 			CanonicalURLAlive bool     `db:"canonical_url_alive" json:"canonical_url_alive"`
+			CanonicalURL      *string  `db:"canonical_url" json:"canonical_url,omitempty"`
 			CreatedAt         string   `db:"created_at" json:"created_at"`
 			SendReadyAt       *string  `db:"send_ready_at" json:"send_ready_at,omitempty"`
 		}
