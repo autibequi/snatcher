@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -598,14 +599,16 @@ func (h *JonfreyHandler) executeAction(ctx context.Context, def actionDef, trigg
 	action.FinishedAt = models.NullTime{NullTime: sql.NullTime{Time: time.Now(), Valid: true}}
 
 	// Graceful skip para ações legadas que referenciam tabelas v1 removidas (42P01).
+	// Usa errors.As para desempacotar erros wrappados com fmt.Errorf("...: %w", pgErr).
 	if runErr != nil {
-		if pqErr, ok := runErr.(*pq.Error); ok && string(pqErr.Code) == "42P01" {
+		var pgErr *pq.Error
+		if errors.As(runErr, &pgErr) && string(pgErr.Code) == "42P01" {
 			slog.Info("jonfrey: tabela v1 ausente — ação ignorada",
-				"action", def.Type, "table", pqErr.Table)
+				"action", def.Type, "table", pgErr.Table)
 			runErr = nil
 			action.Status = "success"
-			reasoning = fmt.Sprintf("Ação ignorada — tabela '%s' foi removida na migração v2. Sem efeito.", pqErr.Table)
-			before = map[string]any{"legacy_table": pqErr.Table}
+			reasoning = fmt.Sprintf("Ação ignorada — tabela '%s' foi removida na migração v2. Sem efeito.", pgErr.Table)
+			before = map[string]any{"legacy_table": pgErr.Table}
 			after = map[string]any{"skipped": true}
 		}
 	}
