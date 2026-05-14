@@ -236,6 +236,7 @@ func Build(
 		r.Post("/api/channels/{id}/groups/{groupId}", chV2.LinkGroup)
 		r.Delete("/api/channels/{id}/groups/{groupId}", chV2.UnlinkGroup)
 		r.Get("/api/channels/{id}/weights", chV2.GetWeights)
+		r.Get("/api/channels/{id}/candidates", adminhnd.ChannelCandidatesHandler(db))
 		r.Put("/api/channels/{id}/weights", chV2.SetWeights)
 
 		// ReDesign: Groups
