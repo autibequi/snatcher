@@ -65,12 +65,23 @@ func (s *SQLStore) GetShortLinkByID(shortID string) (destURL string, source stri
 }
 
 func (s *SQLStore) PeekShortLinkByID(shortID string) (destURL string, source string, found bool) {
+	// 1. short_links — links do Composer/manual
 	var r struct {
 		DestURL string `db:"dest_url"`
 		Source  string `db:"source"`
 	}
 	if err := s.db.Get(&r, `SELECT dest_url, source FROM short_links WHERE short_id=$1`, shortID); err == nil {
 		return r.DestURL, r.Source, true
+	}
+	// 2. group_shortlinks — links do auto-dispatch (ensure_group_shortlink)
+	var canonicalURL string
+	if err := s.db.Get(&canonicalURL, `
+		SELECT c.canonical_url FROM group_shortlinks gs
+		JOIN catalog c ON c.id = gs.catalog_id
+		WHERE gs.short_id = $1 AND c.canonical_url IS NOT NULL
+		LIMIT 1
+	`, shortID); err == nil && canonicalURL != "" {
+		return canonicalURL, "auto", true
 	}
 	return "", "", false
 }
