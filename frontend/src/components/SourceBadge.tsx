@@ -18,7 +18,7 @@ function getSourceColorIndex(id: string): number {
 
 const sourceColors = [
   { bg: 'bg-indigo-100', fg: 'text-indigo-900' },
-  { bg: 'bg-green-100', fg: 'text-green-900' },
+  { bg: 'bg-success/15', fg: 'text-success' },
   { bg: 'bg-pink-100', fg: 'text-pink-900' },
   { bg: 'bg-amber-100', fg: 'text-amber-900' },
   { bg: 'bg-blue-100', fg: 'text-blue-900' },
@@ -32,7 +32,7 @@ export function SourceBadge({ sourceId, size = 'md' }: SourceBadgeProps) {
 
   if (isLoading) {
     return (
-      <span className={`inline-flex items-center rounded-full font-medium bg-gray-200 text-gray-700 ${size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}>
+      <span className={`inline-flex items-center rounded-full font-medium bg-surface-2 text-fg-2 ${size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}>
         ...
       </span>
     )
@@ -42,7 +42,7 @@ export function SourceBadge({ sourceId, size = 'md' }: SourceBadgeProps) {
 
   if (!source) {
     return (
-      <span className={`inline-flex items-center rounded-full font-medium bg-red-100 text-red-700 ${size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}>
+      <span className={`inline-flex items-center rounded-full font-medium bg-danger/20 text-danger ${size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}>
         ?
       </span>
     )

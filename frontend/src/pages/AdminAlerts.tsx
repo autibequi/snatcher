@@ -252,7 +252,7 @@ export default function AdminAlerts({ embedded = false }: { embedded?: boolean }
                 <th className="px-4 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-border">
               {rules.map(rule => (
                 <tr key={rule.id} className="hover:bg-surface-2 transition-colors">
                   <td className="px-4 py-3 font-semibold text-fg font-mono text-xs">

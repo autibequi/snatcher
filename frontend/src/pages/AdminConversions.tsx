@@ -58,10 +58,10 @@ const brl = (v: number) =>
 const fmtDate = (s: string) => s.slice(0, 10)
 
 const statusColor: Record<string, string> = {
-  confirmed: 'text-green-400',
-  pending:   'text-yellow-400',
-  cancelled: 'text-red-400',
-  rejected:  'text-red-500',
+  confirmed: 'text-success',
+  pending:   'text-warning',
+  cancelled: 'text-danger',
+  rejected:  'text-danger',
 }
 
 // ---------- KPI card ----------
@@ -144,7 +144,7 @@ export default function AdminConversions() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+        <div className="bg-danger/20 border border-danger/30 text-danger text-sm rounded-lg px-4 py-3">
           Erro ao carregar dados: {error}
         </div>
       )}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { uiFocusRing } from './tokens'
+import * as TabsPrimitive from '@radix-ui/react-tabs'
+import { cn } from '@/lib/utils'
 
 interface Tab {
   id: string
@@ -34,23 +35,26 @@ function renderBadge(badge: Tab['badge']) {
 
 export function Tabs({ tabs, active, onChange, className = '' }: TabsProps) {
   return (
-    <div className={`flex border-b border-border ${className}`}>
-      {tabs.map(tab => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          title={tab.title}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px rounded-t-md inline-flex items-center ${uiFocusRing} ${
-            active === tab.id
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-2 hover:text-fg hover:border-border-strong'
-          }`}
-        >
-          {tab.label}
-          {renderBadge(tab.badge)}
-        </button>
-      ))}
-    </div>
+    <TabsPrimitive.Root value={active} onValueChange={onChange}>
+      <TabsPrimitive.List className={cn('flex border-b border-border', className)}>
+        {tabs.map(tab => (
+          <TabsPrimitive.Trigger
+            key={tab.id}
+            value={tab.id}
+            title={tab.title}
+            className={cn(
+              'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px rounded-t-md inline-flex items-center',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+              'data-[state=active]:border-accent data-[state=active]:text-accent',
+              'data-[state=inactive]:border-transparent data-[state=inactive]:text-fg-2',
+              'data-[state=inactive]:hover:text-fg data-[state=inactive]:hover:border-border-strong'
+            )}
+          >
+            {tab.label}
+            {renderBadge(tab.badge)}
+          </TabsPrimitive.Trigger>
+        ))}
+      </TabsPrimitive.List>
+    </TabsPrimitive.Root>
   )
 }

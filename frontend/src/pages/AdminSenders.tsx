@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { authFetch, authFetchJSON } from '../lib/authFetch'
-import { pageContainer } from '../lib/uiTokens'
+import { pageContainer, closeButton } from '../lib/uiTokens'
 
 interface ModemStatus {
   id: number
@@ -101,17 +101,33 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
 
       // Tenta obter QR até 5x com 2s de intervalo (instância pode precisar de um momento após criar)
       let qrValue = ''
+      let lastErr = ''
       for (let attempt = 0; attempt < 5; attempt++) {
         if (attempt > 0) await new Promise(res => setTimeout(res, 2000))
         const r = await authFetch(`/api/admin/modems/${modem.id}/qrcode`)
-        const body = await r.json().catch(() => null)
+        // Tenta ler como JSON; se falhar, lê como texto (ex: HTML de erro 502 do nginx)
+        let body: { error?: string; qr_base64?: string } | null = null
+        const raw = await r.text().catch(() => '')
+        try { body = raw ? JSON.parse(raw) : null } catch { /* raw é HTML */ }
         if (!r.ok) {
-          setErrorMsg(body?.error ?? `HTTP ${r.status}: ${r.statusText}`)
-          setStatus('error')
-          return
+          const detail = body?.error ?? raw.slice(0, 120) ?? `HTTP ${r.status}`
+          lastErr = `Erro ${r.status}: ${detail}`
+          if (r.status === 502 || r.status === 503) {
+            // Evolution API offline — não adianta tentar mais
+            setErrorMsg(`Evolution API inacessível (${r.status}). Verifique se o serviço está rodando e se EVOLUTION_URL está correto.\n\n${detail}`)
+            setStatus('error')
+            return
+          }
+          // Outro erro — tenta próxima tentativa
+          continue
         }
         qrValue = body?.qr_base64 ?? ''
         if (qrValue) break
+      }
+      if (!qrValue && lastErr) {
+        setErrorMsg(lastErr)
+        setStatus('error')
+        return
       }
 
       if (!qrValue) {
@@ -156,7 +172,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
       <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">Conectar conta</h2>
-          <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none">✕</button>
+          <button onClick={onClose} className={closeButton}>✕</button>
         </div>
 
         {/* Seleção de plataforma */}
@@ -253,7 +269,17 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
             {status === 'error' && (
               <div className="rounded-lg bg-danger-soft border border-danger/30 px-3 py-3 space-y-2 text-left">
                 <p className="text-xs font-medium text-danger">Erro ao conectar</p>
-                <p className="text-xs text-danger break-words">{errorMsg}</p>
+                <p className="text-xs text-danger break-words whitespace-pre-wrap">{errorMsg}</p>
+                {(errorMsg.includes('502') || errorMsg.includes('inacessível')) && (
+                  <div className="text-[10px] text-fg-3 space-y-1">
+                    <p>Possíveis causas:</p>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      <li>Evolution API não está rodando — reinicie o serviço</li>
+                      <li>EVOLUTION_URL incorreto nas variáveis de ambiente</li>
+                      <li>Firewall bloqueando a porta da Evolution</li>
+                    </ul>
+                  </div>
+                )}
                 {errorMsg.includes('não configurada') && (
                   <p className="text-[10px] text-fg-3">
                     Configure EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCE nas variáveis de ambiente do backend.

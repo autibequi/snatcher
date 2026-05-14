@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../lib/authFetch'
-import { sectionCard, pageContainer } from '../lib/uiTokens'
 
 // ---------- types ----------
 
@@ -61,8 +60,8 @@ function KpiCard({ label, value, color }: { label: string; value: number; color?
 function TypeBadge({ type }: { type: string }) {
   const cfg: Record<string, { label: string; cls: string }> = {
     llm_action:   { label: 'LLM Action',    cls: 'bg-blue-900/50 text-blue-300 border-blue-700' },
-    system_pause: { label: 'System Pause',  cls: 'bg-yellow-900/50 text-yellow-300 border-yellow-700' },
-    ban_event:    { label: 'Ban Event',     cls: 'bg-red-900/50 text-red-300 border-red-700' },
+    system_pause: { label: 'System Pause',  cls: 'bg-warning/20 text-warning border-warning/30' },
+    ban_event:    { label: 'Ban Event',     cls: 'bg-danger/20 text-danger border-danger/30' },
   }
   const c = cfg[type] ?? { label: type, cls: 'bg-surface-2 text-fg-3 border-border' }
   return (
@@ -74,9 +73,9 @@ function TypeBadge({ type }: { type: string }) {
 
 function EvalBadge({ eval: ev }: { eval?: string }) {
   if (!ev) return <span className="text-fg-3">—</span>
-  if (ev === 'success')  return <span className="text-green-400 font-medium">&#10003; success</span>
+  if (ev === 'success')  return <span className="text-success font-medium">&#10003; success</span>
   if (ev === 'rollback') return <span className="text-orange-400 font-medium">&#8617; rollback</span>
-  return <span className="text-yellow-400 font-medium">&#9203; {ev}</span>
+  return <span className="text-warning font-medium">&#9203; {ev}</span>
 }
 
 // ---------- main ----------
@@ -135,7 +134,7 @@ export default function AdminAudit() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+        <div className="bg-danger/20 border border-danger/30 text-danger text-sm rounded-lg px-4 py-3">
           Erro ao carregar dados: {error}
         </div>
       )}
@@ -151,10 +150,10 @@ export default function AdminAudit() {
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <KpiCard label="LLM Actions" value={stats.llm_actions} />
-            <KpiCard label="Success" value={stats.llm_success} color="text-green-400" />
+            <KpiCard label="Success" value={stats.llm_success} color="text-success" />
             <KpiCard label="Rollback" value={stats.llm_rollback} color="text-orange-400" />
-            <KpiCard label="System Pauses" value={stats.system_pauses} color="text-yellow-400" />
-            <KpiCard label="Ban Events" value={stats.ban_events} color="text-red-400" />
+            <KpiCard label="System Pauses" value={stats.system_pauses} color="text-warning" />
+            <KpiCard label="Ban Events" value={stats.ban_events} color="text-danger" />
           </div>
 
           {/* Filters */}

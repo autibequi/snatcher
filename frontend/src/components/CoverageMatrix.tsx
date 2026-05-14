@@ -1,4 +1,4 @@
-import React, { useState, FC } from 'react'
+import { useState, FC } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCoverage, postCoverageSync } from '../api'
 
@@ -20,21 +20,21 @@ interface ConfirmModalProps {
 const ConfirmModal: FC<ConfirmModalProps> = ({ accountId, accountName, targetIds, targetNames, onConfirm, onCancel }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 max-w-md mx-4">
-        <h3 className="text-base font-semibold text-white mb-4">Confirmar sincronizacao</h3>
-        <p className="text-sm text-gray-300 mb-4">
+      <div className="bg-surface-2 border border-border rounded-lg p-6 max-w-md mx-4">
+        <h3 className="text-base font-semibold text-fg mb-4">Confirmar sincronizacao</h3>
+        <p className="text-sm text-fg-2 mb-4">
           Esta acao adicionara conta <strong>{accountName}</strong> em {targetIds.length} grupo(s):
         </p>
-        <ul className="bg-gray-900 border border-gray-700 rounded p-3 mb-4 max-h-48 overflow-y-auto">
+        <ul className="bg-surface border border-border rounded p-3 mb-4 max-h-48 overflow-y-auto">
           {targetIds.map(tid => (
-            <li key={tid} className="text-xs text-gray-400 py-1">• {targetNames[tid] || tid}</li>
+            <li key={tid} className="text-xs text-fg-3 py-1">• {targetNames[tid] || tid}</li>
           ))}
         </ul>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-white">
+          <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg bg-surface-2 hover:bg-surface-3 text-fg">
             Cancelar
           </button>
-          <button onClick={onConfirm} className="px-4 py-2 text-sm rounded-lg bg-green-700 hover:bg-green-600 text-white">
+          <button onClick={onConfirm} className="px-4 py-2 text-sm rounded-lg bg-success/20 hover:bg-success/30 text-fg">
             Confirmar
           </button>
         </div>
@@ -65,8 +65,8 @@ export const CoverageMatrix: FC = () => {
     targetIds: string[]
   } | null>(null)
 
-  if (isLoading) return <div className="text-gray-400 text-sm">Carregando matriz...</div>
-  if (!coverage) return <div className="text-red-400 text-sm">Erro ao carregar cobertura</div>
+  if (isLoading) return <div className="text-fg-3 text-sm">Carregando matriz...</div>
+  if (!coverage) return <div className="text-danger text-sm">Erro ao carregar cobertura</div>
 
   const { accounts, targets, matrix } = coverage
 
@@ -115,10 +115,10 @@ export const CoverageMatrix: FC = () => {
 
   const getCellColor = (cell: string) => {
     switch (cell) {
-      case 'present': return 'bg-green-900'
-      case 'fallback': return 'bg-yellow-900'
-      case 'absent': return 'bg-red-900 cursor-pointer hover:bg-red-800'
-      default: return 'bg-gray-700'
+      case 'present': return 'bg-success/20'
+      case 'fallback': return 'bg-warning/20'
+      case 'absent': return 'bg-danger/20 cursor-pointer hover:bg-danger/30'
+      default: return 'bg-surface-2'
     }
   }
 
@@ -138,42 +138,42 @@ export const CoverageMatrix: FC = () => {
         <button
           onClick={handleSyncAll}
           disabled={Object.keys(redByAccount).length === 0 || sync.isPending}
-          className="text-xs bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg">
+          className="text-xs bg-success/20 hover:bg-success/30 disabled:opacity-50 text-fg px-3 py-1.5 rounded-lg">
           {sync.isPending ? '...' : `Sincronizar ${Object.keys(redByAccount).length} actas`}
         </button>
       </div>
 
       {/* Legenda */}
-      <div className="flex gap-4 text-xs text-gray-300">
+      <div className="flex gap-4 text-xs text-fg-2">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-green-900 rounded"></div>
+          <div className="w-4 h-4 bg-success/20 rounded"></div>
           <span>Ativa (present)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-yellow-900 rounded"></div>
+          <div className="w-4 h-4 bg-warning/20 rounded"></div>
           <span>Fallback (fallback)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-red-900 rounded"></div>
+          <div className="w-4 h-4 bg-danger/20 rounded"></div>
           <span>Ausente (absent)</span>
         </div>
       </div>
 
       {/* Grid */}
-      <div className="overflow-x-auto border border-gray-700 rounded-lg">
+      <div className="overflow-x-auto border border-border rounded-lg">
         <table className="w-full text-xs">
-          <thead className="bg-gray-800 sticky top-0">
+          <thead className="bg-surface-2 sticky top-0">
             <tr>
-              <th className="bg-gray-800 sticky left-0 z-10 px-3 py-2 text-left font-semibold text-gray-300 border-r border-gray-700">Conta</th>
+              <th className="bg-surface-2 sticky left-0 z-10 px-3 py-2 text-left font-semibold text-fg-2 border-r border-border">Conta</th>
               {targets.map(t => (
-                <th key={t.id} className="px-2 py-2 text-left font-semibold text-gray-300 whitespace-nowrap">{t.name}</th>
+                <th key={t.id} className="px-2 py-2 text-left font-semibold text-fg-2 whitespace-nowrap">{t.name}</th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-700">
+          <tbody className="divide-y divide-border">
             {accounts.map((acc, ai) => (
-              <tr key={acc.id} className="divide-x divide-gray-700">
-                <td className="bg-gray-900 sticky left-0 z-10 px-3 py-2 font-medium text-gray-300 border-r border-gray-700">{acc.name}</td>
+              <tr key={acc.id} className="divide-x divide-border">
+                <td className="bg-surface sticky left-0 z-10 px-3 py-2 font-medium text-fg-2 border-r border-border">{acc.name}</td>
                 {matrix[ai]?.map((cell, ti) => (
                   <td
                     key={`${ai}-${ti}`}

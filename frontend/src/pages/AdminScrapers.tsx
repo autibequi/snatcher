@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
-import { sectionCard, pageContainer } from '../lib/uiTokens'
+import { rateColor as rateColorToken, statusBg } from '../lib/uiTokens'
 
 const SOURCE_LABEL: Record<string, string> = {
   amazon: 'Amazon', mercadolivre: 'Mercado Livre', shopee: 'Shopee',
@@ -48,16 +48,13 @@ interface ExtractionLog {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function rateColor(rate?: number): string {
-  if (rate == null) return 'text-fg-4'
-  if (rate >= 0.7) return 'text-green-600 font-semibold'
-  if (rate >= 0.3) return 'text-yellow-600 font-semibold'
-  return 'text-red-600 font-semibold'
+  return rateColorToken(rate) + (rate != null ? ' font-semibold' : '')
 }
 
 function rateBg(rate?: number): string {
   if (rate == null) return ''
-  if (rate >= 0.7) return 'bg-green-50'
-  if (rate >= 0.3) return 'bg-yellow-50'
+  if (rate >= 0.7) return statusBg('success')
+  if (rate >= 0.3) return statusBg('warning')
   return 'bg-danger-soft'
 }
 
@@ -221,7 +218,7 @@ export default function AdminScrapers() {
                   <th className="text-left px-4 py-2 font-medium text-fg-2">Computed At</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {health.length === 0 && (
                   <tr><td colSpan={5} className="px-4 py-4 text-fg-4 text-center">Nenhum dado</td></tr>
                 )}
@@ -288,7 +285,7 @@ export default function AdminScrapers() {
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {configs.length === 0 && (
                   <tr><td colSpan={9} className="px-4 py-4 text-fg-4 text-center">Nenhuma config encontrada</td></tr>
                 )}
@@ -388,7 +385,7 @@ export default function AdminScrapers() {
                   <th className="text-left px-4 py-2 font-medium text-fg-2">Attempted At</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {logs.map(log => (
                   <tr key={log.id} className={`hover:bg-surface-2 transition-colors ${!log.extraction_successful ? 'bg-danger-soft' : ''}`}>
                     <td className="px-4 py-2 text-right tabular-nums text-fg-4 text-xs">{log.id}</td>
@@ -397,12 +394,12 @@ export default function AdminScrapers() {
                     <td className="px-4 py-2 text-xs text-fg-4 tabular-nums">{log.scraper_config_id ?? '—'}</td>
                     <td className="px-4 py-2">
                       {log.extraction_successful
-                        ? <span className="text-green-600 font-medium text-xs">OK</span>
-                        : <span className="text-red-600 font-medium text-xs">FAIL</span>}
+                        ? <span className="text-success font-medium text-xs">OK</span>
+                        : <span className="text-danger font-medium text-xs">FAIL</span>}
                     </td>
                     <td className="px-4 py-2 max-w-xs">
                       {log.error_message
-                        ? <span className="text-red-600 text-xs font-mono" title={log.error_message}>{truncate(log.error_message, 80)}</span>
+                        ? <span className="text-danger text-xs font-mono" title={log.error_message}>{truncate(log.error_message, 80)}</span>
                         : <span className="text-fg-4 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-2 text-xs text-fg-4">{log.attempted_at}</td>

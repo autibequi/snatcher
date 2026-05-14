@@ -17,7 +17,7 @@ function specFor(p: Platform): Spec {
     return {
       label: 'WA',
       className:
-        'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 ring-1 ring-green-300/60 dark:ring-green-700/60',
+        'bg-success/15 text-success ring-1 ring-success/30',
     }
   }
   if (v === 'telegram' || v === 'tg') {

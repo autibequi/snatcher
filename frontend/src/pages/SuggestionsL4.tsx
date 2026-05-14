@@ -79,13 +79,13 @@ export default function SuggestionsL4() {
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => approve(s.id)}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
+                className="px-4 py-2 bg-success text-white rounded hover:bg-success/80 text-sm font-medium"
               >
                 Aprovar
               </button>
               <button
                 onClick={() => dismiss(s.id)}
-                className="px-4 py-2 bg-surface-3 rounded hover:bg-gray-300 text-sm font-medium"
+                className="px-4 py-2 bg-surface-3 rounded hover:bg-surface-3 text-sm font-medium"
               >
                 Rejeitar
               </button>

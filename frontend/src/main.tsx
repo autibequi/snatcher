@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { TooltipProvider } from '@radix-ui/react-tooltip'
 import { AuthProvider } from './lib/auth'
 import App from './App'
 import './index.css'
@@ -17,7 +18,9 @@ if (root) {
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <App />
+          <TooltipProvider delayDuration={300}>
+            <App />
+          </TooltipProvider>
         </AuthProvider>
       </QueryClientProvider>
     </React.StrictMode>,

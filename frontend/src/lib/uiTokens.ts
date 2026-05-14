@@ -138,3 +138,19 @@ export function statusTone(raw: string | null | undefined): StatusTone {
 export const pageContainer = 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6'
 export const responsiveGrid = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'
 export const responsiveKpiGrid = 'grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3'
+
+// Ações genéricas (close, link)
+export const closeButton = 'text-fg-3 hover:text-fg p-1 rounded transition-colors'
+export const linkButton = 'text-accent hover:underline text-sm'
+
+// Chips de categoria
+export const categoryChip = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface-2 text-fg-2'
+
+// Helpers de cor semântica
+export const rateColor = (rate?: number | null): string =>
+  rate == null ? 'text-fg-3' : rate >= 0.7 ? 'text-success' : rate >= 0.3 ? 'text-warning' : 'text-danger'
+
+export const statusColor = (ok: boolean): string => ok ? 'text-success' : 'text-danger'
+
+export const statusBg = (tone: 'success' | 'warning' | 'danger'): string =>
+  tone === 'success' ? 'bg-success/10' : tone === 'warning' ? 'bg-warning/10' : 'bg-danger/10'

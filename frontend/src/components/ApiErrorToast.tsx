@@ -38,10 +38,10 @@ export function ApiErrorToast() {
     <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-md">
       {toasts.map(t => {
         const colorClass =
-          (t.status ?? 0) >= 500 ? 'bg-red-600' :
+          (t.status ?? 0) >= 500 ? 'bg-danger' :
           (t.status ?? 0) === 404 ? 'bg-amber-600' :
           (t.status ?? 0) >= 400 ? 'bg-orange-600' :
-          'bg-red-600'
+          'bg-danger'
         return (
           <div
             key={t.id}

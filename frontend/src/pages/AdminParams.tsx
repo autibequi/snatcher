@@ -262,7 +262,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {grouped[scope].map(p => {
                   const isBusy = saving[p.id]
                   return (

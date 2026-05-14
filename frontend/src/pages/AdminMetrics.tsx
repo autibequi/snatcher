@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../lib/authFetch'
+import { DataTable } from '../components/ui'
+import type { ColumnDef } from '@tanstack/react-table'
 
 const SOURCE_LABEL: Record<string, string> = {
   amazon: 'Amazon', mercadolivre: 'Mercado Livre', shopee: 'Shopee',
@@ -76,8 +78,8 @@ const fmtDate = (s: string) => s.slice(0, 10)
 
 const statusBadge: Record<string, string> = {
   running:      'bg-blue-900/40 text-blue-300 border border-blue-700',
-  promoted:     'bg-green-900/40 text-green-300 border border-green-700',
-  rolled_back:  'bg-red-900/40 text-red-300 border border-red-700',
+  promoted:     'bg-success/20 text-success border border-success/30',
+  rolled_back:  'bg-danger/20 text-danger border border-danger/30',
 }
 
 function Badge({ status }: { status: string }) {
@@ -151,7 +153,7 @@ function ViralityTab() {
                 <th className="text-right px-3 py-2 font-medium text-fg-2">Virality</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-border">
               {rows.map(row => (
                 <tr key={row.group_id} className="hover:bg-surface-2">
                   <td className="px-3 py-2 text-fg">{row.group_name ?? `#${row.group_id}`}</td>
@@ -175,6 +177,17 @@ function ViralityTab() {
 }
 
 // ---------- Aba 1 — Learned Weights ----------
+
+const LEARNED_WEIGHTS_COLUMNS: ColumnDef<LearnedWeight, unknown>[] = [
+  { accessorKey: 'group_name', header: 'Grupo', cell: ({ row }) => row.original.group_name ?? (row.original.group_id != null ? `#${row.original.group_id}` : '—') },
+  { accessorKey: 'category_name', header: 'Categoria', cell: ({ row }) => <span className="text-fg-2">{row.original.category_name ?? (row.original.category_id != null ? `#${row.original.category_id}` : '—')}</span> },
+  { accessorKey: 'source_name', header: 'Source', cell: ({ row }) => <span className="text-fg-2">{row.original.source_name ?? (row.original.source_id != null ? sourceLabel(row.original.source_id) : '—')}</span> },
+  { accessorKey: 'samples_30d', header: 'Samples', cell: ({ getValue }) => <span className="text-right block">{getValue<number>().toLocaleString('pt-BR')}</span> },
+  { accessorKey: 'ctr_30d', header: 'CTR 30d', cell: ({ getValue }) => <span className="text-right block text-fg-2">{getValue<number | undefined>() != null ? fmtPct(getValue<number>()) : '—'}</span> },
+  { accessorKey: 'epc_30d', header: 'EPC 30d', cell: ({ getValue }) => <span className="text-right block text-accent font-mono">{getValue<number | undefined>() != null ? brl(getValue<number>()) : '—'}</span> },
+  { accessorKey: 'confidence', header: 'Confiança', cell: ({ getValue }) => <span className="text-right block text-fg-2">{getValue<number | undefined>() != null ? fmtNum(getValue<number>(), 2) : '—'}</span> },
+  { accessorKey: 'updated_at', header: 'Atualizado', cell: ({ getValue }) => <span className="font-mono text-xs text-fg-3">{fmtDate(getValue<string>())}</span> },
+]
 
 function LearnedWeightsTab() {
   const [minSamples, setMinSamples] = useState(50)
@@ -222,7 +235,7 @@ function LearnedWeightsTab() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+        <div className="bg-danger/20 border border-danger/30 text-danger text-sm rounded-lg px-4 py-3">
           Erro: {error}
         </div>
       )}
@@ -231,58 +244,13 @@ function LearnedWeightsTab() {
         <div className="flex items-center justify-center py-12">
           <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-fg-3">Sem registros para o filtro atual.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2 text-fg-3 text-left">
-                <th className="px-4 py-2.5 font-medium">Grupo</th>
-                <th className="px-4 py-2.5 font-medium">Categoria</th>
-                <th className="px-4 py-2.5 font-medium">Source</th>
-                <th className="px-4 py-2.5 font-medium text-right">Samples</th>
-                <th className="px-4 py-2.5 font-medium text-right">CTR 30d</th>
-                <th className="px-4 py-2.5 font-medium text-right">EPC 30d</th>
-                <th className="px-4 py-2.5 font-medium text-right">Confianca</th>
-                <th className="px-4 py-2.5 font-medium">Atualizado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr
-                  key={i}
-                  className="border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors"
-                >
-                  <td className="px-4 py-2 text-fg">
-                    {row.group_name ?? (row.group_id != null ? `#${row.group_id}` : '—')}
-                  </td>
-                  <td className="px-4 py-2 text-fg-2">
-                    {row.category_name ?? (row.category_id != null ? `#${row.category_id}` : '—')}
-                  </td>
-                  <td className="px-4 py-2 text-fg-2">
-                    {row.source_name ?? (row.source_id != null ? sourceLabel(row.source_id) : '—')}
-                  </td>
-                  <td className="px-4 py-2 text-right text-fg">
-                    {row.samples_30d.toLocaleString('pt-BR')}
-                  </td>
-                  <td className="px-4 py-2 text-right text-fg-2">
-                    {row.ctr_30d != null ? fmtPct(row.ctr_30d) : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right text-accent font-mono">
-                    {row.epc_30d != null ? brl(row.epc_30d) : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right text-fg-2">
-                    {row.confidence != null ? fmtNum(row.confidence, 2) : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-fg-3 font-mono text-xs">
-                    {fmtDate(row.updated_at)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      ) : error ? null : (
+        <DataTable
+          data={rows}
+          columns={LEARNED_WEIGHTS_COLUMNS}
+          pageSize={20}
+          emptyMessage="Sem registros para o filtro atual."
+        />
       )}
     </div>
   )
@@ -341,7 +309,7 @@ function DailyMetricsTab() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+        <div className="bg-danger/20 border border-danger/30 text-danger text-sm rounded-lg px-4 py-3">
           Erro: {error}
         </div>
       )}
@@ -435,7 +403,7 @@ function ABTestsTab() {
 
   const diffColor = (baseline?: number, test?: number): string => {
     if (baseline == null || test == null) return 'text-fg-3'
-    return test >= baseline ? 'text-green-400' : 'text-red-400'
+    return test >= baseline ? 'text-success' : 'text-danger'
   }
 
   return (
@@ -454,7 +422,7 @@ function ABTestsTab() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+        <div className="bg-danger/20 border border-danger/30 text-danger text-sm rounded-lg px-4 py-3">
           Erro: {error}
         </div>
       )}

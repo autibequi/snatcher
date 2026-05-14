@@ -229,7 +229,7 @@ export default function AdminCatalogCanonical() {
               <th className="px-3 py-2" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {loading ? (
               [...Array(10)].map((_, i) => (
                 <tr key={i}>

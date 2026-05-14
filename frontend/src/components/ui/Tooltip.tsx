@@ -1,4 +1,6 @@
 import React from 'react'
+import * as TooltipPrimitive from '@radix-ui/react-tooltip'
+import { cn } from '@/lib/utils'
 
 interface TooltipProps {
   content: string
@@ -8,36 +10,23 @@ interface TooltipProps {
 }
 
 export function Tooltip({ content, children, side = 'top', className = '' }: TooltipProps) {
-  const [visible, setVisible] = React.useState(false)
-  const ref = React.useRef<HTMLSpanElement>(null)
-  const show = () => setVisible(true)
-
-  const sideClasses: Record<string, string> = {
-    top:    '-translate-x-1/2 -translate-y-full mb-1.5 bottom-full left-1/2',
-    bottom: '-translate-x-1/2 translate-y-1 top-full left-1/2',
-    left:   '-translate-x-full -translate-y-1/2 right-full top-1/2 mr-1.5',
-    right:  'translate-y-[-50%] left-full top-1/2 ml-1.5',
-  }
-
   return (
-    <span
-      ref={ref}
-      className={`relative inline-flex items-center ${className}`}
-      onMouseEnter={show}
-      onMouseLeave={() => setVisible(false)}
-      onFocus={show}
-      onBlur={() => setVisible(false)}
-    >
-      {children}
-      {visible && (
-        <span
-          role="tooltip"
-          className={`absolute z-[9999] pointer-events-none px-2 py-1.5 rounded-md text-xs bg-fg text-surface max-w-[220px] whitespace-normal shadow-lg ${sideClasses[side]}`}
+    <TooltipPrimitive.Root>
+      <TooltipPrimitive.Trigger asChild>
+        <span className={cn('inline-flex items-center', className)}>
+          {children}
+        </span>
+      </TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content
+          side={side}
+          sideOffset={4}
+          className="z-[9999] pointer-events-none px-2 py-1.5 rounded-md text-xs bg-fg text-surface max-w-[220px] whitespace-normal shadow-lg animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2"
         >
           {content}
-        </span>
-      )}
-    </span>
+        </TooltipPrimitive.Content>
+      </TooltipPrimitive.Portal>
+    </TooltipPrimitive.Root>
   )
 }
 

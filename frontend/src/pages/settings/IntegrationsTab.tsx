@@ -83,7 +83,7 @@ export function IntegrationsTab() {
         <Button variant="primary" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
           Salvar
         </Button>
-        {saveMut.isSuccess && <p className="text-xs text-green-400">Salvo.</p>}
+        {saveMut.isSuccess && <p className="text-xs text-success">Salvo.</p>}
         {saveMut.isError && <p className="text-xs text-danger">Erro ao salvar.</p>}
       </div>
     </div>

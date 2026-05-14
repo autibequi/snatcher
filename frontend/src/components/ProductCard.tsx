@@ -47,7 +47,7 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
   }) as { data: PriceHistory[], isLoading: boolean }
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col">
+    <div className="bg-surface-2 border border-border rounded-xl overflow-hidden flex flex-col">
       <div className="flex">
         {product.image_url && (
           <img
@@ -59,9 +59,9 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
         <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-200 line-clamp-2">{product.title}</p>
+              <p className="text-sm text-fg line-clamp-2">{product.title}</p>
               {showGroup && product.group_name && (
-                <span className="inline-block text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded mt-1">
+                <span className="inline-block text-xs text-fg-3 bg-surface-2 px-1.5 py-0.5 rounded mt-1">
                   {product.group_name}
                 </span>
               )}
@@ -70,7 +70,7 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xl font-bold text-green-400">
+            <span className="text-xl font-bold text-success">
               R$ {product.price.toFixed(2).replace('.', ',')}
             </span>
             {product.sent_at && (
@@ -83,13 +83,13 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
               href={product.url}
               target="_blank"
               rel="noreferrer"
-              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-lg transition-colors"
+              className="text-xs bg-surface-2 hover:bg-surface-3 text-white px-3 py-1 rounded-lg transition-colors"
             >
               🔗 Ver produto
             </a>
             <button
               onClick={() => setShowHistory(h => !h)}
-              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-lg transition-colors"
+              className="text-xs bg-surface-2 hover:bg-surface-3 text-white px-3 py-1 rounded-lg transition-colors"
             >
               📈 {showHistory ? 'Fechar' : 'Histórico'}
             </button>
@@ -99,7 +99,7 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
                   if (window.confirm('Reenviar este produto para o grupo WA?')) send.mutate()
                 }}
                 disabled={send.isPending}
-                className="text-xs bg-gray-700 hover:bg-green-800 disabled:opacity-50 text-white px-3 py-1 rounded-lg transition-colors"
+                className="text-xs bg-surface-2 hover:bg-success/20 disabled:opacity-50 text-white px-3 py-1 rounded-lg transition-colors"
               >
                 {send.isPending ? '⏳' : '🔁 Reenviar'}
               </button>
@@ -107,14 +107,14 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
               <button
                 onClick={() => send.mutate()}
                 disabled={send.isPending}
-                className="text-xs bg-green-800 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1 rounded-lg transition-colors"
+                className="text-xs bg-success/20 hover:bg-success/30 disabled:opacity-50 text-white px-3 py-1 rounded-lg transition-colors"
               >
                 {send.isPending ? '⏳' : '📤 Enviar WA'}
               </button>
             )}
             <button
               onClick={() => del.mutate()}
-              className="text-xs bg-red-900 hover:bg-red-700 text-white px-3 py-1 rounded-lg transition-colors ml-auto"
+              className="text-xs bg-danger/20 hover:bg-danger/30 text-white px-3 py-1 rounded-lg transition-colors ml-auto"
             >
               🗑️
             </button>
@@ -124,12 +124,12 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
 
       {/* Painel de histórico de preços */}
       {showHistory && (
-        <div className="px-4 pb-4 border-t border-gray-800 mt-0 pt-3">
+        <div className="px-4 pb-4 border-t border-border mt-0 pt-3">
           {loadingHistory && (
-            <p className="text-xs text-gray-500">Carregando histórico...</p>
+            <p className="text-xs text-fg-3">Carregando histórico...</p>
           )}
           {!loadingHistory && history.length <= 1 && (
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-fg-3">
               {history.length === 0
                 ? 'Nenhum registro de histórico.'
                 : 'Sem variações de preço registradas ainda.'}
@@ -137,7 +137,7 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
           )}
           {!loadingHistory && history.length > 1 && (
             <>
-              <p className="text-xs text-gray-500 mb-2">
+              <p className="text-xs text-fg-3 mb-2">
                 Variações de preço ({history.length} pontos)
               </p>
               <ResponsiveContainer width="100%" height={110}>

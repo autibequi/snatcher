@@ -37,7 +37,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
       onClick={onChange}
       className={[
         'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-        value ? 'bg-green-500' : 'bg-gray-300',
+        value ? 'bg-success' : 'bg-surface-3',
       ].join(' ')}
       aria-label={value ? 'Desativar' : 'Ativar'}
     >
@@ -74,9 +74,9 @@ function Preview({ body }: { body: string }) {
     (m) => sample[m] ?? m,
   )
   return (
-    <div className="mt-2 rounded bg-green-50 border border-green-200 p-3">
-      <p className="text-xs text-green-700 font-medium mb-1">Preview com valores de exemplo:</p>
-      <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans">{rendered}</pre>
+    <div className="mt-2 rounded bg-success/10 border border-success/20 p-3">
+      <p className="text-xs text-success font-medium mb-1">Preview com valores de exemplo:</p>
+      <pre className="text-sm text-fg whitespace-pre-wrap font-sans">{rendered}</pre>
     </div>
   )
 }

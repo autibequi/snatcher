@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Skeleton, EmptyState } from '../ui'
 import { apiClient } from '../../lib/apiClient'
+import { closeButton } from '../../lib/uiTokens'
+import { cn } from '../../lib/utils'
 
 export type InboxItem = {
   id: string
@@ -46,7 +48,7 @@ function InboxItemRow({ item, isLast, onDismiss }: InboxItemRowProps) {
       <div
         className={`w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center text-base ${
           isCritico
-            ? 'bg-red-50 dark:bg-red-900/20'
+            ? 'bg-danger/10'
             : 'bg-amber-50 dark:bg-amber-900/20'
         }`}
       >
@@ -78,7 +80,7 @@ function InboxItemRow({ item, isLast, onDismiss }: InboxItemRowProps) {
         type="button"
         onClick={() => onDismiss(item.id)}
         title="Dispensar"
-        className="text-fg-3 hover:text-fg text-base leading-none flex-shrink-0 px-1"
+        className={cn(closeButton, 'flex-shrink-0 px-1')}
       >
         ×
       </button>
@@ -133,8 +135,8 @@ export function OperationInbox({ externalDismissed, onDismiss }: OperationInboxP
           <div
             className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
               items.length > 0
-                ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                ? 'bg-danger/20 text-danger'
+                : 'bg-success/20 text-success'
             }`}
           >
             {items.length > 0 ? items.length : '✓'}

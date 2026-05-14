@@ -49,13 +49,13 @@ function sourceLabel(s: string): string { return SOURCE_ALIAS[s.toLowerCase()] ?
 function sourceColorClasses(s: string): string {
   switch (sourceLabel(s)) {
     case 'amz':        return 'bg-orange-500/10 text-orange-600 border-orange-500/30'
-    case 'ml':         return 'bg-yellow-400/15 text-yellow-700 border-yellow-500/30'
+    case 'ml':         return 'bg-warning/15 text-warning border-warning/30'
     case 'magalu':     return 'bg-blue-500/10 text-blue-600 border-blue-500/30'
     case 'shopee':     return 'bg-orange-600/10 text-orange-700 border-orange-600/30'
-    case 'aliexpress': return 'bg-red-500/10 text-red-600 border-red-500/30'
+    case 'aliexpress': return 'bg-danger/10 text-danger border-danger/30'
     case 'casasbahia': return 'bg-rose-600/10 text-rose-700 border-rose-600/30'
     case 'kabum':      return 'bg-amber-500/10 text-amber-700 border-amber-500/30'
-    case 'americanas': return 'bg-red-600/10 text-red-700 border-red-600/30'
+    case 'americanas': return 'bg-danger/10 text-danger border-danger/30'
     default:           return 'bg-surface-2 text-fg-2 border-border'
   }
 }

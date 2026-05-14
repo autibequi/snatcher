@@ -206,7 +206,7 @@ export function SystemTab() {
           onClick={() => saveMut.mutate({ ...config, ...local })}>
           Salvar
         </Button>
-        {saveMut.isSuccess && <p className="text-xs text-green-400">Salvo.</p>}
+        {saveMut.isSuccess && <p className="text-xs text-success">Salvo.</p>}
         {saveMut.isError && <p className="text-xs text-danger">Erro ao salvar.</p>}
       </div>
     </div>

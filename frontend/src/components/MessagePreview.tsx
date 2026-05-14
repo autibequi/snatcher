@@ -1,4 +1,4 @@
-import React from 'react'
+
 
 export interface MessagePreviewProps {
   text?: string | null
@@ -90,7 +90,7 @@ export function MessagePreview({
             {text ? (
               <p className="text-sm text-white whitespace-pre-wrap break-words">{text}</p>
             ) : null}
-            <p className="text-xs text-green-300 mt-1 text-right opacity-60">agora ✓✓</p>
+            <p className="text-xs text-success/60 mt-1 text-right opacity-60">agora ✓✓</p>
           </div>
         </div>
       </div>

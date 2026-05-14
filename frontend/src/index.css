@@ -43,6 +43,27 @@
   --gap-6:          24px;
   --gap-8:          32px;
   --pad-y:          14px;
+
+  /* shadcn/ui aliases — mapeiam para sistema OKLCH existente */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: #fff;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--fg-3);
+  /* --accent omitted: conflict com --accent existente (brand color vs shadcn interactive bg) */
+  /* --accent-foreground omitted: depends on --accent */
+  --destructive: var(--danger);
+  /* --border omitted: var(--border) seria auto-referencial (no-op) */
+  --input: var(--border);
+  --ring: var(--accent);
+  --radius: 0.5rem;
 }
 
 /* ──────────────── Dracula Dark — base mais profunda (#12131a ~ #1a1b26), hierarquia coerente ──────────────── */

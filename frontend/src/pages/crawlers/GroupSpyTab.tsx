@@ -424,7 +424,7 @@ export function GroupSpyTab({ onNew }: { onNew: () => void }) {
             <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${
               s.platform === 'telegram'
                 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
-                : 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400'
+                : 'bg-success/15 text-success'
             }`}>
               {s.platform === 'telegram' ? 'TG' : 'WA'}
             </div>

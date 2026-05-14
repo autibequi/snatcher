@@ -1,7 +1,8 @@
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Input, PageHeader, Tabs } from '../components/ui'
+import { Button, Input, PageHeader, Tabs, DataTable } from '../components/ui'
+import type { ColumnDef } from '@tanstack/react-table'
 import { apiClient } from '../lib/apiClient'
 import { filterBar } from '../lib/uiTokens'
 import { CrawlLogsTab } from './activity/CrawlLogsTab'
@@ -28,6 +29,38 @@ interface QueueItem {
   modem_name?: string
   enqueued_at: string
 }
+
+const QUEUE_COLUMNS: ColumnDef<QueueItem, unknown>[] = [
+  {
+    accessorKey: 'status',
+    header: '',
+    cell: ({ getValue }) => {
+      const s = getValue<string>()
+      const dot = STATUS_DOT[s] ?? 'bg-fg-3'
+      return <span className={`inline-block h-2 w-2 rounded-full ${dot}`} title={s} />
+    },
+  },
+  { accessorKey: 'group_name', header: 'Grupo', cell: ({ getValue }) => <span className="font-medium">{getValue<string>()}</span> },
+  {
+    accessorKey: 'product_title',
+    header: 'Produto',
+    cell: ({ getValue }) => {
+      const v = getValue<string>()
+      return <span className="truncate max-w-xs block text-fg-2" title={v}>{v}</span>
+    },
+  },
+  { accessorKey: 'score', header: 'Score', cell: ({ getValue }) => <span className="font-mono text-xs text-fg-3">{getValue<number>().toFixed(3)}</span> },
+  { accessorKey: 'modem_name', header: 'Modem', cell: ({ getValue }) => <span className="text-xs text-fg-3">{getValue<string>() ?? '—'}</span> },
+  {
+    accessorKey: 'enqueued_at',
+    header: 'Enfileirado',
+    cell: ({ getValue }) => (
+      <span className="text-xs text-fg-3 whitespace-nowrap">
+        {new Date(getValue<string>()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </span>
+    ),
+  },
+]
 
 function SendQueueTab() {
   const [statusFilter, setStatusFilter] = React.useState('')
@@ -77,42 +110,12 @@ function SendQueueTab() {
       </div>
 
       {/* Tabela */}
-      {items.length === 0 ? (
-        <p className="text-sm text-fg-3 py-8 text-center">
-          {statusFilter ? `Nenhum item com status "${statusFilter}"` : 'Fila vazia'}
-        </p>
-      ) : (
-        <div className="border rounded-lg bg-surface shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-2 border-b">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-fg-2 w-6">&#8203;</th>
-                <th className="text-left px-3 py-2 font-medium text-fg-2">Grupo</th>
-                <th className="text-left px-3 py-2 font-medium text-fg-2">Produto</th>
-                <th className="text-right px-3 py-2 font-medium text-fg-2">Score</th>
-                <th className="text-left px-3 py-2 font-medium text-fg-2">Modem</th>
-                <th className="text-right px-3 py-2 font-medium text-fg-2">Enfileirado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.map(item => (
-                <tr key={item.id} className="hover:bg-surface-2">
-                  <td className="px-3 py-2">
-                    <span className={`inline-block h-2 w-2 rounded-full ${STATUS_DOT[item.status] ?? 'bg-fg-3'}`} title={item.status} />
-                  </td>
-                  <td className="px-3 py-2 text-fg font-medium">{item.group_name}</td>
-                  <td className="px-3 py-2 text-fg-2 max-w-xs truncate" title={item.product_title}>{item.product_title}</td>
-                  <td className="px-3 py-2 text-right font-mono text-fg-3 text-xs">{item.score.toFixed(3)}</td>
-                  <td className="px-3 py-2 text-fg-3 text-xs">{item.modem_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-right text-fg-3 text-xs whitespace-nowrap">
-                    {new Date(item.enqueued_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={items}
+        columns={QUEUE_COLUMNS}
+        pageSize={0}
+        emptyMessage={statusFilter ? `Nenhum item com status "${statusFilter}"` : 'Fila vazia'}
+      />
     </div>
   )
 }
