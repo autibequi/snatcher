@@ -66,19 +66,24 @@ func RunMigrations(db *sqlx.DB) error {
 		return entries[i].Name() < entries[j].Name()
 	})
 
+	applied := 0
+	skipped := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
 			continue
 		}
 
-		var applied bool
-		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, name).Scan(&applied); err != nil {
+		var alreadyApplied bool
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, name).Scan(&alreadyApplied); err != nil {
 			return fmt.Errorf("check migration %s: %w", name, err)
 		}
-		if applied {
+		if alreadyApplied {
+			skipped++
 			continue
 		}
+
+		slog.Info("migration: applying", "file", name)
 
 		data, err := migrationsFS.ReadFile("migrations/" + name)
 		if err != nil {
@@ -101,14 +106,18 @@ func RunMigrations(db *sqlx.DB) error {
 				if len(preview) > 200 {
 					preview = preview[:200] + "..."
 				}
-				return fmt.Errorf("migration %s: %w\nstatement: %s", name, err, preview)
+				return fmt.Errorf("migration %s FAILED: %w\nstatement: %s", name, err, preview)
 			}
 		}
 
 		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ($1)`, name); err != nil {
 			return fmt.Errorf("record migration %s: %w", name, err)
 		}
+		slog.Info("migration: applied", "file", name)
+		applied++
 	}
+
+	slog.Info("migrations done", "applied", applied, "skipped", skipped)
 	return nil
 }
 
