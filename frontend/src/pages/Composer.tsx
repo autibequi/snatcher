@@ -390,16 +390,15 @@ export default function Composer() {
 
   React.useEffect(() => {
     if (!text && !draftId) {
-      // Usa template aleatório da base; cai no hardcoded se ainda não carregou
-      if (templates.length > 0) {
-        const pick = templates[Math.floor(Math.random() * templates.length)]
-        setText(toComposerFormat(pick.body))
+      if (allTemplates.length > 0) {
+        const pick = allTemplates[Math.floor(Math.random() * allTemplates.length)]
+        setText(dbBodyToComposer(pick.body))
       } else {
         setText(DEFAULT_TEMPLATE)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, templates.length])
+  }, [draftId, allTemplates.length])
 
   const loadingPreview = false
 
