@@ -1,0 +1,1 @@
+ALTER TABLE send_log ALTER COLUMN catalog_id SET NOT NULL;
