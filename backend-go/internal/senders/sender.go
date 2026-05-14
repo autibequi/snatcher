@@ -379,19 +379,25 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	_, _ = tx.ExecContext(ctx, "UPDATE accounts SET consecutive_failures = consecutive_failures+1 WHERE id=$1", accountID)
 	var failures int
 	_ = tx.GetContext(ctx, &failures, "SELECT consecutive_failures FROM accounts WHERE id=$1", accountID)
-	if failures >= 3 {
+	// Threshold via tunable_params; default 5 (era 3, aumentado para tolerar falhas transientes da Evolution API).
+	var quarantineThreshold float64
+	_ = db.GetContext(ctx, &quarantineThreshold, `SELECT get_param('quarantine_threshold','global',NULL)`)
+	if quarantineThreshold <= 0 {
+		quarantineThreshold = 5
+	}
+	if float64(failures) >= quarantineThreshold {
 		_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine' WHERE id=$1", accountID)
 		_, _ = tx.ExecContext(ctx, `
 			INSERT INTO ban_events (account_id, modem_id, reason, raw_response)
-			VALUES ($1, $2, 'consecutive_failures>=3', $3)
-		`, accountID, modemID, payload)
+			VALUES ($1, $2, 'consecutive_failures>='||$3, $4)
+		`, accountID, modemID, int(quarantineThreshold), payload)
 	}
 	_ = tx.Commit()
-	// se 2+ bans/24h no mesmo modem → pausa modem
+	// se 3+ bans/24h no mesmo modem → pausa modem (era 2, aumentado para menos agressividade)
 	var bans24h int
 	_ = db.GetContext(ctx, &bans24h, `SELECT COUNT(*) FROM ban_events WHERE modem_id=$1 AND detected_at > now()-INTERVAL '24h'`, modemID)
-	if bans24h >= 2 {
-		_, _ = db.ExecContext(ctx, `UPDATE modems SET status='paused', paused_until=now()+INTERVAL '1 hour', paused_reason='2+ bans/24h' WHERE id=$1`, modemID)
+	if bans24h >= 3 {
+		_, _ = db.ExecContext(ctx, `UPDATE modems SET status='paused', paused_until=now()+INTERVAL '1 hour', paused_reason='3+ bans/24h' WHERE id=$1`, modemID)
 	}
 }
 
