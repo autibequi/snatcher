@@ -16,8 +16,10 @@ export interface UpcomingDispatch {
  * Retorna string relativa simples como "em 12 min", "em 1h 30min", "amanhã 09:00".
  * Não depende de date-fns.
  */
-export function formatRelativeEta(dateInput: string | Date): string {
+export function formatRelativeEta(dateInput: string | Date | null | undefined): string {
+  if (dateInput == null) return '—'
   const target = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+  if (isNaN(target.getTime())) return '—'
   const now = new Date()
   const diffMs = target.getTime() - now.getTime()
 
