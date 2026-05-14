@@ -148,6 +148,11 @@ type AppConfig struct {
 	// Quando setado, o notifier posta resumos (Jonfrey, dispatches, erros) nesse grupo via Evolution.
 	// FK SET NULL: se o grupo for deletado/arquivado, o campo silencia automaticamente.
 	NotificationsGroupID NullInt64 `db:"notifications_group_id" json:"notifications_group_id,omitempty"`
+
+	// Se true, o texto de cada disparo é reescrito pela LLM antes de enviar,
+	// tornando a mensagem mais natural e evitando parecer spam automático.
+	// Default: false — liga somente quando configurado em Settings.
+	UseLLMPersonalization bool `db:"use_llm_personalization" json:"use_llm_personalization"`
 }
 
 // AccountV2 é a conta WhatsApp v2 (tabela accounts) com afinidade fixa a modem.

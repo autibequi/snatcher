@@ -18,6 +18,8 @@ import (
 
 	"snatcher/backendv2/internal/services/adapters"
 	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/compose"
+	"snatcher/backendv2/internal/services/llm"
 )
 
 // RunSender é a goroutine principal do sender de 1 modem.
@@ -247,6 +249,15 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	// 5. interpola variáveis no template
 	msg := renderTemplateBody(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
 
+	// 5b. personalização via LLM (opcional — só se use_llm_personalization = true)
+	{
+		var usePersonalize bool
+		_ = db.GetContext(ctx, &usePersonalize, `SELECT use_llm_personalization FROM appconfig LIMIT 1`)
+		if usePersonalize {
+			msg = personalizeMsgWithLLM(ctx, db, msg)
+		}
+	}
+
 	// 6. define imagem: cached (base64) > remota (URL)
 	imagePath := ""
 	imageURL := ""
@@ -466,5 +477,36 @@ func getCooldownSeconds(ctx context.Context, db *sqlx.DB, modemID int64) float64
 		v = 90
 	}
 	return v
+}
+
+// personalizeMsgWithLLM chama a LLM para reescrever msg de forma mais humanizada.
+// Lê credenciais LLM do appconfig. Falha graciosamente: retorna original se LLM indisponível.
+func personalizeMsgWithLLM(ctx context.Context, db *sqlx.DB, original string) string {
+	var cfg struct {
+		Provider   string `db:"llm_provider"`
+		APIKey     string `db:"llm_api_key"`
+		Model      string `db:"llm_model"`
+		BaseURL    string `db:"llm_base_url"`
+	}
+	if err := db.GetContext(ctx, &cfg, `
+		SELECT COALESCE(llm_provider,'') AS llm_provider,
+		       COALESCE(llm_api_key,'') AS llm_api_key,
+		       COALESCE(llm_model,'') AS llm_model,
+		       COALESCE(llm_base_url,'') AS llm_base_url
+		FROM appconfig LIMIT 1
+	`); err != nil {
+		slog.Warn("personalizer: falha ao ler config LLM", "err", err)
+		return original
+	}
+	if cfg.APIKey == "" && cfg.BaseURL == "" {
+		slog.Warn("personalizer: LLM não configurada, usando texto original")
+		return original
+	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://openrouter.ai/api/v1"
+	}
+	cli := llm.NewOpenAICompat(baseURL, cfg.APIKey)
+	return compose.PersonalizeMessage(ctx, cli, original)
 }
 

@@ -67,7 +67,8 @@ func (s *SQLStore) UpdateConfig(cfg models.AppConfig) error {
 			dispatch_min_interval_ms=:dispatch_min_interval_ms,
 			dispatch_wa_rr_cursor=:dispatch_wa_rr_cursor,
 			dispatch_max_per_group_per_hour=:dispatch_max_per_group_per_hour,
-			notifications_group_id=:notifications_group_id
+			notifications_group_id=:notifications_group_id,
+			use_llm_personalization=:use_llm_personalization
 		WHERE id = 1`, cfg)
 	return err
 }
