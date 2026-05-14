@@ -145,8 +145,9 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 // enqueueSend insere em send_queue (tabela criada na Fase 4 — graceful skip se ausente).
 func enqueueSend(ctx context.Context, db *sqlx.DB, groupID int64, item catalogItem, score float64) error {
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO send_queue (modem_id, group_id, catalog_id, score, enqueued_at, status)
-		SELECT a.modem_id, $1, $2, $3, now(), 'pending'
+		INSERT INTO send_queue (modem_id, group_id, catalog_id, account_id, score, enqueued_at, status, domain_id)
+		SELECT a.modem_id, $1, $2, a.id, $3, now(), 'pending',
+		       (SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1)
 		FROM accounts a
 		JOIN group_admins ga ON ga.account_id = a.id
 		WHERE ga.group_id = $1
