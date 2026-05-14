@@ -1,6 +1,7 @@
 package senders
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -245,10 +247,20 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	// 5. interpola variáveis no template
 	msg := renderTemplateBody(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
 
-	// 6. define imagem (cached > remota)
+	// 6. define imagem: cached (base64) > remota (URL)
 	imagePath := ""
+	imageURL := ""
 	if cat.CachedImagePath.Valid && cat.CachedImagePath.String != "" {
-		imagePath = cat.CachedImagePath.String
+		if _, err := os.Stat(cat.CachedImagePath.String); err == nil {
+			imagePath = cat.CachedImagePath.String
+		} else {
+			// Arquivo cacheado não existe (container reiniciado) — limpa o registro e usa URL
+			slog.Warn("sender.cache_miss", "path", cat.CachedImagePath.String, "catalog", catalogID, "fallback", "image_url")
+			_, _ = db.ExecContext(ctx, `UPDATE catalog SET cached_image_path=NULL WHERE id=$1`, catalogID)
+		}
+	}
+	if imagePath == "" && cat.ImageURL.Valid && cat.ImageURL.String != "" {
+		imageURL = cat.ImageURL.String
 	}
 
 	// 7. envia via Evolution API
@@ -257,12 +269,50 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		instance = "default"
 	}
 	slog.Info("sender.send", "modem", modemID, "group", groupID, "catalog", catalogID, "template", templateID, "jid", jid.String)
-	return SendTextWithMedia(ctx, SendMediaArgs{
-		Instance:  instance,
-		JID:       jid.String,
-		Caption:   msg,
-		ImagePath: imagePath,
+	if imagePath != "" {
+		return SendTextWithMedia(ctx, SendMediaArgs{
+			Instance:  instance,
+			JID:       jid.String,
+			Caption:   msg,
+			ImagePath: imagePath,
+		})
+	}
+	if imageURL != "" {
+		return sendImageViaURL(ctx, instance, jid.String, imageURL, msg)
+	}
+	// sem imagem — envia só texto
+	return SendTextWithMedia(ctx, SendMediaArgs{Instance: instance, JID: jid.String, Caption: msg})
+}
+
+// sendImageViaURL envia imagem via URL remota usando Evolution /message/sendMedia.
+func sendImageViaURL(ctx context.Context, instance, jid, imageURL, caption string) error {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	if baseURL == "" {
+		return fmt.Errorf("evolution_url empty")
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"number":    jid,
+		"mediatype": "image",
+		"media":     imageURL,
+		"caption":   caption,
 	})
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/message/sendMedia/"+instance, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("apikey", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	cli := &http.Client{Timeout: 30 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("evolution sendMedia (url) status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // renderTemplateBody substitui as variáveis {xxx} pelo dados reais do produto.

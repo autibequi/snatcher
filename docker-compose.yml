@@ -115,7 +115,8 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     # shm_size necessário para o Chromium (Amazon scraping) não crashar no Pi
     shm_size: '128mb'
-    volumes: []
+    volumes:
+      - snatcher_images:/var/lib/snatcher/images
     environment:
       - DATABASE_URL=sqlite:///./data/app.db
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
@@ -246,6 +247,7 @@ volumes:
   evo_pg_data:
   evo_redis_data:
   app_pg_data:
+  snatcher_images:
 
 networks:
   nuvem:
