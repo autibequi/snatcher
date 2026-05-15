@@ -86,13 +86,17 @@ function SuggestionsWidget() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard', 'suggestions'] }),
   })
 
-  if (isLoading || items.length === 0) return null
-
   return (
     <div className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-fg-3">
-        💡 Sugestões dos Loops LLM ({items.length})
+        💡 Sugestões dos Loops LLM {items.length > 0 && `(${items.length})`}
       </p>
+      {isLoading && <p className="text-sm text-fg-3">Carregando...</p>}
+      {!isLoading && items.length === 0 && (
+        <div className="rounded-lg border border-border bg-surface px-4 py-3 text-sm text-fg-3">
+          Nenhuma sugestão pendente — loops estão otimizando em background.
+        </div>
+      )}
       <div className="space-y-2">
         {items.map(s => (
           <div key={s.id} className="rounded-lg border border-border bg-surface px-4 py-3 flex items-start gap-3">
