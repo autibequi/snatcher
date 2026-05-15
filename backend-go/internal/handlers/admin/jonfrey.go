@@ -19,6 +19,7 @@ import (
 
 	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/services/llm"
+	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/notifier"
 	store "snatcher/backendv2/internal/repositories"
@@ -240,6 +241,13 @@ var actionRegistry = map[string]actionDef{
 		Description: "Para cada categoria-raiz com >100 produtos sem subcategoria, LLM agrupa 50 amostras em 3-7 subcategorias coerentes; aplica se confiança ≥0.85",
 		UsesLLM:     true,
 		Run:         actionRefineSubcategories,
+	},
+	"channel_category_sync": {
+		Type:        "channel_category_sync",
+		Category:    "curation",
+		Description: "Analisa canais sem categoria dedicada → cria categoria com keywords heurísticas → re-classifica produtos da base que estão em 'Geral' ou sem categoria. Zero LLM, zero custo.",
+		UsesLLM:     false,
+		Run:         actionChannelCategorySync,
 	},
 }
 
@@ -1911,5 +1919,183 @@ func capJonfreyKeywords(src []string, maxN, maxRuneLen int) []string {
 		out = append(out, t)
 	}
 	return out
+}
+
+// ── channel_category_sync ────────────────────────────────────────────────────
+
+// channelKeywordMap define keywords ILIKE por slug de categoria.
+// Derivado heuristicamente dos nomes de canal. Sem LLM.
+var channelKeywordMap = map[string][]string{
+	"eletronico": {
+		"%smartphone%", "%celular%", "%notebook%", "%monitor%", "%tablet%",
+		"%processador%", "%placa de video%", "%memoria ram%", "%ssd%", "%hd externo%",
+		"%carregador%", "%cabo usb%", "%fone%", "%headphone%", "%earphone%",
+		"%smartwatch%", "%impressora%", "%roteador%", "%modem%",
+	},
+	"gaming": {
+		"%gamer%", "%gaming%", "%joystick%", "%controle%", "%console%",
+		"%playstation%", "%xbox%", "%nintendo%", "%geforce%", "%rtx%", "%gtx%",
+		"%headset%", "%mousepad%", "%cadeira gamer%", "%teclado mecânico%",
+	},
+	"casa": {
+		"%aspirador%", "%liquidificador%", "%micro-ondas%", "%panela%", "%frigideira%",
+		"%cafeteira%", "%torradeira%", "%organizador%", "%cortina%", "%tapete%",
+		"%ventilador%", "%umidificador%", "%purificador%", "%ferro de passar%",
+	},
+	"churras": {
+		"%churrasqueira%", "%grelha%", "%espeto%", "%carvão%", "%parrilla%",
+		"%defumador%", "%weber%", "%faca de churrasco%", "%tramontina%",
+	},
+	"cafe": {
+		"%café%", "%nespresso%", "%dolce gusto%", "%cápsula%", "%espresso%",
+		"%cafeteira%", "%moedor%", "%prensa francesa%", "%coador%", "%chemex%",
+	},
+	"cosmetico": {
+		"%batom%", "%base maquiagem%", "%blush%", "%sombra%", "%rímel%",
+		"%hidratante%", "%sérum%", "%protetor solar%", "%perfume%", "%colônia%",
+		"%shampoo%", "%condicionador%", "%creme%", "%esfoliante%", "%makeup%",
+	},
+	"moda": {
+		"%camiseta%", "%vestido%", "%calça%", "%blusa%", "%jaqueta%", "%casaco%",
+		"%bermuda%", "%shorts%", "%saia%", "%meia%", "%cinto%", "%bolsa%", "%mochila%",
+	},
+	"suplemento": {
+		"%whey%", "%proteína%", "%creatina%", "%bcaa%", "%pré-treino%",
+		"%suplemento%", "%glutamina%", "%hipercalórico%", "%vitamina%", "%colágeno%",
+	},
+	"tenis": {
+		"%tênis%", "%tenis%", "%calçado%", "%sapato%", "%bota esport%",
+		"%running%", "%sneaker%", "%esportivo%", "%chuteira%", "%sapatilha%",
+	},
+}
+
+// slugFromChannelName deriva um slug de categoria a partir do nome do canal.
+func slugFromChannelName(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "tênis") || strings.Contains(lower, "tenis") || strings.Contains(lower, "esporte"):
+		return "tenis"
+	case strings.Contains(lower, "cosm"):
+		return "cosmetico"
+	case strings.Contains(lower, "gaming") || strings.Contains(lower, "game"):
+		return "gaming"
+	case strings.Contains(lower, "café") || strings.Contains(lower, "cafe") || strings.Contains(lower, "bebida"):
+		return "cafe"
+	case strings.Contains(lower, "churras"):
+		return "churras"
+	case strings.Contains(lower, "casa") || strings.Contains(lower, "deco"):
+		return "casa"
+	case strings.Contains(lower, "moda") || strings.Contains(lower, "roupa"):
+		return "moda"
+	case strings.Contains(lower, "suplemento") || strings.Contains(lower, "whey"):
+		return "suplemento"
+	case strings.Contains(lower, "tech") || strings.Contains(lower, "eletr"):
+		return "eletronico"
+	default:
+		return ""
+	}
+}
+
+func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// 1. Carregar canais
+	type channel struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+	}
+	var channels []channel
+	if err := h.db.SelectContext(ctx, &channels, `SELECT id, name FROM channel ORDER BY id`); err != nil {
+		return nil, nil, "", fmt.Errorf("listar canais: %w", err)
+	}
+
+	// 2. Carregar categorias existentes (slug → id)
+	type cat struct {
+		ID   int64  `db:"id"`
+		Slug string `db:"slug"`
+		Name string `db:"display_name"`
+	}
+	var cats []cat
+	_ = h.db.SelectContext(ctx, &cats, `SELECT id, slug, display_name FROM categories`)
+	catBySlug := map[string]int64{}
+	for _, c := range cats {
+		catBySlug[c.Slug] = c.ID
+	}
+
+	created := 0
+	reclassified := 0
+	weightUpdated := 0
+
+	for _, ch := range channels {
+		slug := slugFromChannelName(ch.Name)
+		if slug == "" {
+			continue
+		}
+		keywords, ok := channelKeywordMap[slug]
+		if !ok {
+			continue
+		}
+
+		// 3. Criar categoria se não existir
+		catID, exists := catBySlug[slug]
+		if !exists {
+			var newID int64
+			err := h.db.QueryRowContext(ctx, `
+				INSERT INTO categories (slug, display_name, weight)
+				VALUES ($1, $2, 1.0)
+				ON CONFLICT (slug) DO UPDATE SET display_name = EXCLUDED.display_name
+				RETURNING id
+			`, slug, ch.Name).Scan(&newID)
+			if err != nil {
+				continue
+			}
+			catID = newID
+			catBySlug[slug] = catID
+			created++
+			_ = loops.AuditAction(ctx, h.db, "channel_category_sync", "applied", "categories", catID,
+				nil, map[string]any{"slug": slug, "name": ch.Name, "channel_id": ch.ID},
+				fmt.Sprintf("categoria criada para canal '%s'", ch.Name), 1.0)
+		}
+
+		// 4. Re-classificar produtos que estão em "Geral" ou sem categoria
+		// usando keywords ILIKE — só se a query retornar algum resultado
+		geral, _ := catBySlug["geral"]
+		for _, kw := range keywords {
+			q := `UPDATE catalog SET category_id = $1
+				WHERE (category_id IS NULL OR category_id = $2)
+				  AND LOWER(title) ILIKE $3`
+			res, err := h.db.ExecContext(ctx, q, catID, geral, kw)
+			if err == nil {
+				if rows, _ := res.RowsAffected(); rows > 0 {
+					reclassified += int(rows)
+					_ = loops.AuditAction(ctx, h.db, "channel_category_sync", "applied", "catalog", catID,
+						map[string]any{"category_id": geral}, map[string]any{"category_id": catID},
+						fmt.Sprintf("re-classificados %d produtos (keyword: %s)", rows, kw), 0.95)
+				}
+			}
+		}
+
+		// 5. Garantir que channel_category_weights aponta para a categoria correta
+		var existingWeight int
+		err := h.db.GetContext(ctx, &existingWeight, `
+			SELECT weight FROM channel_category_weights
+			WHERE channel_id = $1 AND category_id = $2`, ch.ID, catID)
+		if err != nil || existingWeight == 0 {
+			_, _ = h.db.ExecContext(ctx, `
+				INSERT INTO channel_category_weights (channel_id, category_id, weight)
+				VALUES ($1, $2, 100)
+				ON CONFLICT (channel_id, category_id) DO UPDATE SET weight = 100
+			`, ch.ID, catID)
+			weightUpdated++
+		}
+	}
+
+	before := map[string]any{"categories_created": 0, "products_reclassified": 0}
+	after := map[string]any{
+		"categories_created":   created,
+		"products_reclassified": reclassified,
+		"weights_updated":      weightUpdated,
+	}
+	reasoning := fmt.Sprintf("sync canal→categoria: %d categorias criadas, %d produtos re-classificados, %d pesos atualizados",
+		created, reclassified, weightUpdated)
+	return before, after, reasoning, nil
 }
 
