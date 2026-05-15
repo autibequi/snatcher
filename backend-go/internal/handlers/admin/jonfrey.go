@@ -1923,50 +1923,13 @@ func capJonfreyKeywords(src []string, maxN, maxRuneLen int) []string {
 
 // ── channel_category_sync ────────────────────────────────────────────────────
 
-// channelKeywordMap define keywords ILIKE por slug de categoria.
-// Derivado heuristicamente dos nomes de canal. Sem LLM.
-var channelKeywordMap = map[string][]string{
-	"eletronico": {
-		"%smartphone%", "%celular%", "%notebook%", "%monitor%", "%tablet%",
-		"%processador%", "%placa de video%", "%memoria ram%", "%ssd%", "%hd externo%",
-		"%carregador%", "%cabo usb%", "%fone%", "%headphone%", "%earphone%",
-		"%smartwatch%", "%impressora%", "%roteador%", "%modem%",
-	},
-	"gaming": {
-		"%gamer%", "%gaming%", "%joystick%", "%controle%", "%console%",
-		"%playstation%", "%xbox%", "%nintendo%", "%geforce%", "%rtx%", "%gtx%",
-		"%headset%", "%mousepad%", "%cadeira gamer%", "%teclado mecânico%",
-	},
-	"casa": {
-		"%aspirador%", "%liquidificador%", "%micro-ondas%", "%panela%", "%frigideira%",
-		"%cafeteira%", "%torradeira%", "%organizador%", "%cortina%", "%tapete%",
-		"%ventilador%", "%umidificador%", "%purificador%", "%ferro de passar%",
-	},
-	"churras": {
-		"%churrasqueira%", "%grelha%", "%espeto%", "%carvão%", "%parrilla%",
-		"%defumador%", "%weber%", "%faca de churrasco%", "%tramontina%",
-	},
-	"cafe": {
-		"%café%", "%nespresso%", "%dolce gusto%", "%cápsula%", "%espresso%",
-		"%cafeteira%", "%moedor%", "%prensa francesa%", "%coador%", "%chemex%",
-	},
-	"cosmetico": {
-		"%batom%", "%base maquiagem%", "%blush%", "%sombra%", "%rímel%",
-		"%hidratante%", "%sérum%", "%protetor solar%", "%perfume%", "%colônia%",
-		"%shampoo%", "%condicionador%", "%creme%", "%esfoliante%", "%makeup%",
-	},
-	"moda": {
-		"%camiseta%", "%vestido%", "%calça%", "%blusa%", "%jaqueta%", "%casaco%",
-		"%bermuda%", "%shorts%", "%saia%", "%meia%", "%cinto%", "%bolsa%", "%mochila%",
-	},
-	"suplemento": {
-		"%whey%", "%proteína%", "%creatina%", "%bcaa%", "%pré-treino%",
-		"%suplemento%", "%glutamina%", "%hipercalórico%", "%vitamina%", "%colágeno%",
-	},
-	"tenis": {
-		"%tênis%", "%tenis%", "%calçado%", "%sapato%", "%bota esport%",
-		"%running%", "%sneaker%", "%esportivo%", "%chuteira%", "%sapatilha%",
-	},
+// keywordsForCategory busca keywords da tabela category_keywords no banco.
+// Zero hardcode — tudo configurável pelo admin/Jonfrey.
+func keywordsForCategory(ctx context.Context, db *sqlx.DB, slug string) ([]string, error) {
+	var patterns []string
+	err := db.SelectContext(ctx, &patterns,
+		`SELECT pattern FROM category_keywords WHERE category_slug=$1 AND active=true ORDER BY id`, slug)
+	return patterns, err
 }
 
 // slugFromChannelName deriva um slug de categoria a partir do nome do canal.
@@ -2029,8 +1992,8 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 		if slug == "" {
 			continue
 		}
-		keywords, ok := channelKeywordMap[slug]
-		if !ok {
+		keywords, _ := keywordsForCategory(ctx, h.db, slug)
+		if len(keywords) == 0 {
 			continue
 		}
 
