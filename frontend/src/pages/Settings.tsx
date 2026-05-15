@@ -15,7 +15,7 @@ import { AlertsTab } from './settings/AlertsTab'
 const TABS = [
   { id: 'system',       label: 'Sistema' },
   { id: 'integrations', label: 'Integrações' },
-  { id: 'loops',        label: 'Loops LLM' },
+  { id: 'loops',        label: 'Jonfrey' },
   { id: 'params',       label: 'Parâmetros' },
   { id: 'alerts',       label: 'Alertas' },
   { id: 'llm',          label: 'LLM' },

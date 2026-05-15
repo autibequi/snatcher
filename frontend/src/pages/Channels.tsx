@@ -515,7 +515,7 @@ Filtros duros (eliminam antes do score):
 
 // ── Channel Modal ─────────────────────────────────────────────────────────────
 
-type ModalTab = 'config' | 'categorias' | 'grupos' | 'produtos' | 'scoring'
+type ModalTab = 'config' | 'categorias' | 'grupos' | 'produtos' | 'scoring' | 'links'
 
 function ChannelModal({
   channel, categories, allGroups, onClose,
@@ -566,6 +566,7 @@ function ChannelModal({
     { id: 'grupos',    label: `Grupos (${channel.groups_count ?? 0})` },
     { id: 'produtos',  label: 'Produtos' },
     { id: 'scoring',   label: '🧮 Scoring' },
+    { id: 'links',     label: '🔗 Links' },
   ]
 
   return (
@@ -665,8 +666,82 @@ function ChannelModal({
           {tab === 'grupos'     && <TabGrupos channelId={channel.id} allGroups={allGroups} />}
           {tab === 'produtos'   && <TabProdutos channelId={channel.id} />}
           {tab === 'scoring'   && <TabScoring channel={channel} />}
+          {tab === 'links'     && <TabLinks channelId={channel.id} channelName={channel.name} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Tab: Links públicos ───────────────────────────────────────────────────────
+
+function TabLinks({ channelId, channelName }: { channelId: number; channelName: string }) {
+  const qc = useQueryClient()
+  const [slug, setSlug] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  interface PubLink { id: number; slug: string; redirect_strategy: string; created_at?: string }
+  const { data: links = [], isLoading } = useQuery<PubLink[]>({
+    queryKey: ['public-links', channelId],
+    queryFn: () => authFetchJSON<PubLink[]>(`/api/public-links?channel_id=${channelId}`, []),
+    staleTime: 30_000,
+  })
+
+  const createMut = useMutation({
+    mutationFn: () => authFetch('/api/public-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'), channel_id: channelId }),
+    }),
+    onSuccess: () => { setSlug(''); setCreating(false); void qc.invalidateQueries({ queryKey: ['public-links', channelId] }) },
+  })
+
+  const deleteMutLink = useMutation({
+    mutationFn: (id: number) => authFetch(`/api/public-links/${id}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['public-links', channelId] }),
+  })
+
+  if (isLoading) return <p className="text-fg-3 text-sm">Carregando...</p>
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-fg-2">Links curtos públicos associados ao canal <strong>{channelName}</strong>.</p>
+
+      {links.length === 0 && !creating && (
+        <p className="text-sm text-fg-3">Nenhum link configurado.</p>
+      )}
+
+      {links.map(l => (
+        <div key={l.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5">
+          <span className="font-mono text-sm text-accent flex-1">/{l.slug}</span>
+          <span className="text-xs text-fg-3">{l.redirect_strategy ?? 'round-robin'}</span>
+          <button
+            onClick={() => { if (confirm(`Remover /${l.slug}?`)) deleteMutLink.mutate(l.id) }}
+            className="text-xs text-danger hover:opacity-70"
+          >Remover</button>
+        </div>
+      ))}
+
+      {creating ? (
+        <div className="flex items-center gap-2">
+          <span className="text-fg-3 text-sm">/</span>
+          <input
+            autoFocus
+            value={slug}
+            onChange={e => setSlug(e.target.value)}
+            placeholder="meu-canal-tech"
+            className="flex-1 text-sm border border-border rounded px-2 py-1 bg-surface focus:outline-none focus:border-accent"
+          />
+          <button
+            onClick={() => createMut.mutate()}
+            disabled={!slug.trim() || createMut.isPending}
+            className="text-xs px-3 py-1 rounded bg-accent text-white disabled:opacity-50"
+          >Criar</button>
+          <button onClick={() => setCreating(false)} className="text-xs text-fg-3">Cancelar</button>
+        </div>
+      ) : (
+        <button onClick={() => setCreating(true)} className="text-xs text-accent hover:underline">+ Novo link público</button>
+      )}
     </div>
   )
 }
