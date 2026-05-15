@@ -151,15 +151,24 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 // enqueueSend insere em send_queue (tabela criada na Fase 4 — graceful skip se ausente).
 func enqueueSend(ctx context.Context, db *sqlx.DB, groupID int64, item catalogItem, score float64) error {
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO send_queue (modem_id, group_id, catalog_id, account_id, score, enqueued_at, status, domain_id)
+		INSERT INTO send_queue (modem_id, group_id, catalog_id, account_id, score, enqueued_at, status, domain_id, template_id)
 		SELECT a.modem_id, $1, $2, a.id, $3, now(), 'pending',
-		       (SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1)
+		       (SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1),
+		       -- Seleciona template da categoria do produto, ponderado por peso e hora (A/B rotation)
+		       (SELECT id FROM templates
+		        WHERE category_id = $4 AND enabled = true
+		          AND (optimal_hours IS NULL OR EXTRACT(HOUR FROM now() AT TIME ZONE 'America/Sao_Paulo')::int = ANY(optimal_hours))
+		        ORDER BY random() * weight DESC
+		        LIMIT 1)
 		FROM accounts a
 		JOIN group_admins ga ON ga.account_id = a.id
 		WHERE ga.group_id = $1
 		  AND a.status IN ('primary', 'backup')
 		ORDER BY CASE a.status WHEN 'primary' THEN 0 ELSE 1 END, ga.added_at ASC
 		LIMIT 1
-	`, groupID, item.ID, score)
+	`, groupID, item.ID, score, func() interface{} {
+		if item.CategoryID != nil { return *item.CategoryID }
+		return nil
+	}())
 	return err
 }

@@ -229,7 +229,7 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		_ = db.GetContext(ctx, &body, `SELECT body FROM templates WHERE id=$1 AND enabled=true`, *templateID)
 	}
 	if body == "" {
-		body = "🔥 {titulo}\nDe R$ {preco_de} por R$ {preco_por} ({desconto}% OFF)\n{link}"
+		body = "{emoji} {titulo}\nDe R$ {preco_de} por R$ {preco_por} ({desconto}% OFF)\n{link}"
 	}
 
 	// 4. monta link de redirect — shortlink por (group, catalog) para
