@@ -27,6 +27,7 @@ type Scheduler struct {
 	storeRef store.Store
 	db       *sqlx.DB                    // para cron jobs que acessam DB diretamente
 	jonfreyTick func(ctx context.Context) // injetado via SetJonfreyTick — evita ciclo de import
+	catalogLLMFactory func() llm.Client // opcional: drena catalog_llm_queue (SetCatalogLLMProcessor)
 	notif    *notifier.Notifier // pode ser nil — todas as chamadas tratam isso
 }
 
@@ -34,6 +35,11 @@ type Scheduler struct {
 // Chamado pelo main.go após o handler do Jonfrey ser construído.
 func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context)) {
 	sc.jonfreyTick = fn
+}
+
+// SetCatalogLLMProcessor registra a factory LLM para o worker da fila catalog_llm_queue (opcional).
+func (sc *Scheduler) SetCatalogLLMProcessor(fn func() llm.Client) {
+	sc.catalogLLMFactory = fn
 }
 
 // SetNotifier registra o notifier para extensões futuras (o scheduler não
@@ -123,6 +129,39 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					"enabled_actions_count", len(cfg.EnabledActions),
 				)
 				sc.jonfreyTick(ctx)
+			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Worker catalog_llm_queue — até 5 itens a cada 2 min (eurística + LLM se necessário)
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("*/2 * * * *", false),
+			gocron.NewTask(func() {
+				if sc.catalogLLMFactory == nil {
+					return
+				}
+				var pending int
+				if err := sc.db.GetContext(context.Background(), &pending,
+					`SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'pending'`); err != nil || pending == 0 {
+					return
+				}
+				runCtx := context.Background()
+				for i := 0; i < 5; i++ {
+					out, err := jobs.RunCatalogLLMQueueOnce(runCtx, sc.db, sc.catalogLLMFactory)
+					if err != nil {
+						slog.Error("scheduler: catalog_llm_queue", "err", err)
+						break
+					}
+					proc, _ := out["processed"].(bool)
+					if !proc {
+						break
+					}
+				}
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)

@@ -108,6 +108,10 @@ func Build(
 	groups.SetLLMFn(composeH.BuildLLMClient)
 	jonfrey.SetLLMFn(composeH.BuildLLMClient)
 
+	if sched != nil {
+		sched.SetCatalogLLMProcessor(composeH.BuildLLMClient)
+	}
+
 	// WebSocket hub + handler
 	hub := wsmod.NewHub()
 	wsHandler := wsmod.NewHandler(hub, jwtSecret)
@@ -372,7 +376,7 @@ func Build(
 		r.Post("/api/admin/catalog-canonical/reprocess-heuristic", adminhnd.ReprocessCatalogHeuristicHandler(db))
 		r.Get("/api/admin/product-brands", adminhnd.ListProductBrandsHandler(db))
 		r.Get("/api/admin/catalog/{id}/price-history", adminhnd.CatalogPriceHistoryHandler(db))
-		r.Post("/api/admin/catalog-llm-queue/process-next", adminhnd.ProcessCatalogLLMQueueNextHandler(db))
+		r.Post("/api/admin/catalog-llm-queue/process-next", adminhnd.ProcessCatalogLLMQueueNextHandler(db, composeH.BuildLLMClient))
 
 		// Fase 4: Senders — status dos modems e filas de envio
 		r.Get("/api/admin/senders/status", adminhnd.SendersStatusHandler(db))

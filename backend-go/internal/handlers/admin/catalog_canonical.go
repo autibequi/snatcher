@@ -8,6 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/services/jobs"
+	"snatcher/backendv2/internal/services/llm"
 )
 
 // GET /api/admin/catalog-canonical?ready_only=1&category_id=N&limit=50&offset=0
@@ -444,19 +447,19 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 	}
 }
 
-// POST /api/admin/catalog-llm-queue/process-next — enriquecimento via LLM (worker; ainda não implementado).
-func ProcessCatalogLLMQueueNextHandler(db *sqlx.DB) http.HandlerFunc {
+// POST /api/admin/catalog-llm-queue/process-next — processa 1 item (eurística + LLM se necessário).
+func ProcessCatalogLLMQueueNextHandler(db *sqlx.DB, llmFactory func() llm.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = db
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		out, err := jobs.RunCatalogLLMQueueOnce(r.Context(), db, llmFactory)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "LLM queue: implementar extração (marca, categoria, …) e upsert em catalog / product_brands",
-			"hint":  "Itens pendentes em catalog_llm_queue; use heurística primeiro (POST /api/admin/catalog-canonical/reprocess-heuristic)",
-		})
+		_ = json.NewEncoder(w).Encode(out) //nolint:errcheck
 	}
 }

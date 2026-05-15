@@ -207,6 +207,7 @@ export default function AdminCatalogCanonical() {
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null)
   const [llmQueue, setLlmQueue] = useState<LLMQueueRow[] | null>(null)
   const [llmQueueLoading, setLlmQueueLoading] = useState(false)
+  const [processNextBusy, setProcessNextBusy] = useState(false)
   const [llmQueueStatus, setLlmQueueStatus] = useState<'active' | 'all' | 'pending' | 'processing' | 'done' | 'error'>('active')
   const LIMIT = 50
 
@@ -267,6 +268,31 @@ export default function AdminCatalogCanonical() {
   }, [tab, llmQueueStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendingLLM = stats?.llm_queue_pending ?? 0
+
+  const runProcessNext = async () => {
+    setProcessNextBusy(true)
+    try {
+      const r = await authFetch('/api/admin/catalog-llm-queue/process-next', { method: 'POST' })
+      const text = await r.text()
+      let j: Record<string, unknown> = {}
+      try {
+        j = JSON.parse(text) as Record<string, unknown>
+      } catch {
+        /* plain text error */
+      }
+      if (!r.ok) {
+        window.alert(text.slice(0, 500))
+        return
+      }
+      if (j.message && typeof j.message === 'string' && !j.processed) {
+        window.alert(j.message as string)
+      }
+      await Promise.all([loadStats(), loadLLMQueue()])
+    } finally {
+      setProcessNextBusy(false)
+    }
+  }
+
   const KPI_CARDS = stats
     ? [
         { key: 'total', label: 'Total', value: stats.total, color: 'text-accent' as const },
@@ -355,6 +381,15 @@ export default function AdminCatalogCanonical() {
             <option value="done">Só concluídos</option>
             <option value="all">Todos os status</option>
           </select>
+          <button
+            type="button"
+            onClick={() => void runProcessNext()}
+            disabled={processNextBusy}
+            className="text-xs px-2 py-1 border border-accent/40 rounded hover:bg-accent/10 disabled:opacity-50"
+            title="Processa um item pending (eurística + LLM). O servidor também drena a fila a cada 2 min."
+          >
+            {processNextBusy ? 'Processando…' : 'Processar 1'}
+          </button>
           <button
             type="button"
             onClick={() => void loadLLMQueue()}
