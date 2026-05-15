@@ -1027,14 +1027,6 @@ func actionCleanupDispatchQueue(ctx context.Context, h *JonfreyHandler) (map[str
 // actionMaintainTaxonomy: consolida marcas e categorias duplicadas e revisa taxonomia pendente.
 // Combina dedup_brands_categories e curate_taxonomy numa única action com 1 chamada LLM.
 func actionMaintainTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	if h.llmFn == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-	cli := h.llmFn()
-	if cli == nil {
-		return nil, nil, "", fmt.Errorf("LLM não configurado")
-	}
-
 	// Coleta dados do catálogo e taxonomia pendente
 	type strRow struct{ Val string `db:"val"` }
 	var brandRows, tagRows []strRow
@@ -1090,6 +1082,37 @@ func actionMaintainTaxonomy(ctx context.Context, h *JonfreyHandler) (map[string]
 	}
 	if len(compactApproved) > 32 {
 		compactApproved = compactApproved[:32]
+	}
+
+	// Sem sinais no catálogo (top marcas/tags) e sem taxonomia pendente → prompt só com
+	// instruções e JSON vazio; não chama LLM (custo/latência inúteis).
+	if len(brands) == 0 && len(tags) == 0 && len(compactPending) == 0 {
+		beforeMap := map[string]any{
+			"brands_evaluated": 0, "tags_evaluated": 0,
+			"pending_taxonomy": 0, "approved_taxonomy": len(approved),
+		}
+		afterMap := map[string]any{
+			"llm_skipped":        true,
+			"skip_reason":        "no_catalog_brands_tags_and_no_pending_taxonomy",
+			"brand_groups_found": 0,
+			"tag_groups_found":   0,
+			"brands_merged":      0,
+			"tags_merged":        0,
+			"taxonomy_approved":  0,
+			"taxonomy_rejected":  0,
+			"taxonomy_merged":    0,
+			"taxonomy_enriched":  0,
+		}
+		reasoning := "Catálogo sem marcas/tags entre produtos ativos e nenhum termo de taxonomia pendente — maintain_taxonomy não chamou LLM."
+		return beforeMap, afterMap, reasoning, nil
+	}
+
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
+	}
+	cli := h.llmFn()
+	if cli == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado")
 	}
 
 	brandsJSON, _ := json.Marshal(brands)
