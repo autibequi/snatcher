@@ -719,43 +719,55 @@ function TabLinks({ channelId, channelName }: { channelId: number; channelName: 
 
   if (isLoading) return <p className="text-fg-3 text-sm">Carregando...</p>
 
+  const existing = links[0] // máximo 1 link por canal
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg-2">Links curtos públicos do canal <strong>{channelName}</strong>.</p>
+      <p className="text-sm text-fg-2">
+        Link público de entrada do canal <strong>{channelName}</strong>.
+        Quando alguém acessa, é redirecionado ao grupo com vaga disponível.
+      </p>
 
-      {/* Links existentes */}
-      {links.map(l => (
-        <div key={l.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5">
-          <span className="font-mono text-sm text-accent flex-1">/{l.slug}</span>
-          <span className="text-xs text-fg-3">{l.redirect_strategy ?? 'round-robin'}</span>
+      {/* Link existente */}
+      {existing ? (
+        <div className="rounded-lg border border-border bg-surface px-4 py-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-base text-accent flex-1">/{existing.slug}</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-surface-2 text-fg-3">
+              {existing.redirect_strategy ?? 'round-robin'}
+            </span>
+            <button
+              onClick={() => { if (confirm(`Remover /${existing.slug}?`)) deleteMutLink.mutate(existing.id) }}
+              className="text-xs text-danger hover:opacity-70 shrink-0"
+            >Remover</button>
+          </div>
+          <p className="text-[11px] text-fg-3">
+            Estratégia: redireciona para o grupo do canal com mais vagas disponíveis (não-full).
+          </p>
+        </div>
+      ) : (
+        /* Formulário de criação — só aparece quando não tem link */
+        <div className="rounded-lg border border-border bg-surface px-3 py-3 space-y-2">
+          <p className="text-xs text-fg-3 font-medium">Criar link público</p>
+          <div className="flex items-center gap-2">
+            <span className="text-fg-3 text-sm font-mono shrink-0">/</span>
+            <input
+              value={slug}
+              onChange={e => setSlug(e.target.value)}
+              placeholder={slugifyChannelName(channelName)}
+              className="flex-1 min-w-0 text-sm font-mono border border-border rounded px-2 py-1.5 bg-surface-2 focus:outline-none focus:border-accent"
+            />
+          </div>
+          {error && <p className="text-xs text-danger">{error}</p>}
           <button
-            onClick={() => { if (confirm(`Remover /${l.slug}?`)) deleteMutLink.mutate(l.id) }}
-            className="text-xs text-danger hover:opacity-70 shrink-0"
-          >Remover</button>
+            onClick={() => createMut.mutate()}
+            disabled={!slug.trim() || createMut.isPending}
+            className="text-xs px-4 py-1.5 rounded bg-accent text-white disabled:opacity-50 hover:opacity-90 w-full"
+          >
+            {createMut.isPending ? 'Criando...' : 'Criar link'}
+          </button>
         </div>
-      ))}
-
-      {/* Formulário de criação — sempre visível */}
-      <div className="rounded-lg border border-border bg-surface px-3 py-3 space-y-2">
-        <p className="text-xs text-fg-3 font-medium">Novo link público</p>
-        <div className="flex items-center gap-2">
-          <span className="text-fg-3 text-sm font-mono shrink-0">/</span>
-          <input
-            value={slug}
-            onChange={e => setSlug(e.target.value)}
-            placeholder={slugifyChannelName(channelName)}
-            className="flex-1 min-w-0 text-sm font-mono border border-border rounded px-2 py-1.5 bg-surface-2 focus:outline-none focus:border-accent"
-          />
-        </div>
-        {error && <p className="text-xs text-danger">{error}</p>}
-        <button
-          onClick={() => createMut.mutate()}
-          disabled={!slug.trim() || createMut.isPending}
-          className="text-xs px-4 py-1.5 rounded bg-accent text-white disabled:opacity-50 hover:opacity-90 w-full"
-        >
-          {createMut.isPending ? 'Criando...' : 'Criar link'}
-        </button>
-      </div>
+      )}
     </div>
   )
 }
