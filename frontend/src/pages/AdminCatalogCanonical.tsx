@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAutocomplete'
+import { Tabs } from '../components/ui'
 import { authFetch } from '../lib/authFetch'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -173,8 +174,25 @@ function QualityBadge({ score }: { score?: number }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{score.toFixed(2)}</span>
 }
 
+type CatalogTab = 'catalog' | 'llm'
+
 export default function AdminCatalogCanonical() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: CatalogTab = searchParams.get('tab') === 'llm' ? 'llm' : 'catalog'
+
+  const setTab = (id: string) => {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        if (id === 'catalog') next.delete('tab')
+        else next.set('tab', 'llm')
+        return next
+      },
+      { replace: true },
+    )
+  }
+
   const [stats, setStats] = useState<Stats | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -189,7 +207,7 @@ export default function AdminCatalogCanonical() {
   const [page, setPage] = useState(0)
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null)
   const [llmQueue, setLlmQueue] = useState<LLMQueueRow[] | null>(null)
-  const [llmQueueLoading, setLlmQueueLoading] = useState(true)
+  const [llmQueueLoading, setLlmQueueLoading] = useState(false)
   const [llmQueueStatus, setLlmQueueStatus] = useState<'active' | 'all' | 'pending' | 'processing' | 'done' | 'error'>('active')
   const LIMIT = 50
 
@@ -244,17 +262,26 @@ export default function AdminCatalogCanonical() {
     authFetch('/api/admin/templates/categories').then(r => r.json()).then(d => setCategories(Array.isArray(d) ? d : []))
   }, [])
   useEffect(() => { loadItems() }, [readyOnly, categoryID, brandSlug, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { void loadLLMQueue() }, [llmQueueStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (tab !== 'llm') return
+    void loadLLMQueue()
+  }, [tab, llmQueueStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendingLLM = stats?.llm_queue_pending ?? 0
   const KPI_CARDS = stats
     ? [
-        { label: 'Total', value: stats.total, color: 'text-accent' },
-        { label: 'Send ready', value: stats.send_ready, color: 'text-success' },
-        { label: 'URLs mortas', value: stats.dead_urls, color: 'text-danger' },
-        { label: 'Sem score', value: stats.unscored, color: 'text-warning' },
-        { label: 'Imagens cached', value: stats.images_cached, color: 'text-fg-2' },
-        { label: 'Fila LLM (pendentes)', value: pendingLLM, color: pendingLLM > 0 ? ('text-warning' as const) : ('text-fg-2' as const) },
+        { key: 'total', label: 'Total', value: stats.total, color: 'text-accent' as const },
+        { key: 'ready', label: 'Send ready', value: stats.send_ready, color: 'text-success' as const },
+        { key: 'dead', label: 'URLs mortas', value: stats.dead_urls, color: 'text-danger' as const },
+        { key: 'unscored', label: 'Sem score', value: stats.unscored, color: 'text-warning' as const },
+        { key: 'images', label: 'Imagens cached', value: stats.images_cached, color: 'text-fg-2' as const },
+        {
+          key: 'llm',
+          label: 'Fila LLM (pendentes)',
+          value: pendingLLM,
+          color: pendingLLM > 0 ? ('text-warning' as const) : ('text-fg-2' as const),
+          goToLLM: true as const,
+        },
       ]
     : []
 
@@ -285,16 +312,46 @@ export default function AdminCatalogCanonical() {
         <div className="flex gap-4">{[...Array(6)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-          {KPI_CARDS.map(k => (
-            <div key={k.label} className="bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm">
-              <p className="text-xs text-fg-3 uppercase tracking-wide">{k.label}</p>
-              <p className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value.toLocaleString('pt-BR')}</p>
-            </div>
-          ))}
+          {KPI_CARDS.map(k => {
+            const inner = (
+              <>
+                <p className="text-xs text-fg-3 uppercase tracking-wide">{k.label}</p>
+                <p className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value.toLocaleString('pt-BR')}</p>
+              </>
+            )
+            const cardClass = 'bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm text-left'
+            if (k.goToLLM) {
+              return (
+                <button
+                  key={k.key}
+                  type="button"
+                  onClick={() => setTab('llm')}
+                  className={`${cardClass} transition-colors hover:border-accent/40 cursor-pointer`}
+                >
+                  {inner}
+                </button>
+              )
+            }
+            return (
+              <div key={k.key} className={cardClass}>
+                {inner}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Fila LLM (marca / enriquecimento) */}
+      <Tabs
+        className="mb-2"
+        tabs={[
+          { id: 'catalog', label: 'Catálogo' },
+          { id: 'llm', label: 'Fila LLM', badge: pendingLLM, title: 'catalog_llm_queue — enriquecimento marca/categoria' },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
+
+      {tab === 'llm' && (
       <div className="rounded-xl border border-border bg-surface dark:bg-bg shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-border bg-surface-2/50">
           <h2 className="text-sm font-semibold text-fg-2">Fila LLM <span className="text-fg-4 font-normal">(catalog_llm_queue)</span></h2>
@@ -383,7 +440,10 @@ export default function AdminCatalogCanonical() {
           )}
         </div>
       </div>
+      )}
 
+      {tab === 'catalog' && (
+      <>
       {/* Filtros */}
       <div className="rounded-lg border border-border bg-surface p-3 space-y-3">
         <div className="flex flex-wrap gap-3 items-center">
@@ -441,8 +501,10 @@ export default function AdminCatalogCanonical() {
           >
             {reprocessBusy ? 'Reprocessando…' : 'Reprocessar (eurística)'}
           </button>
-          <button onClick={() => { void loadItems(); void loadStats(); void loadLLMQueue() }}
-            className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 ml-auto">
+          <button
+            onClick={() => { void loadItems(); void loadStats() }}
+            className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 ml-auto"
+          >
             Atualizar
           </button>
         </div>
@@ -571,6 +633,8 @@ export default function AdminCatalogCanonical() {
           →
         </button>
       </div>
+      </>
+      )}
 
       {/* Modal detalhe */}
       {detailItem && <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />}
