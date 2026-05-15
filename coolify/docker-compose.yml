@@ -82,8 +82,13 @@ services:
     volumes:
       - snatcher-data:/app/data
     environment:
+      # Mantém ENV=dev por omissão. Coolify ou outro host pode injectar ENV=production;
+      # nesse caso defina ADMIN_PASS (≠ admin) e JWT_SECRET (≠ changeme) nos secrets.
+      - ENV=${ENV:-dev}
       - DATABASE_URL=postgres://snatcher:${SNATCHER_DB_PASS:-snatcher}@snatcher-postgres:5432/snatcher?sslmode=disable
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-please}
+      # Com ENV=prod|production, ADMIN_PASS não pode ser "admin" (ver internal/config).
+      # Defina ADMIN_PASS nos secrets da Coolify; este default só evita crash no 1.º deploy.
+      - ADMIN_PASS=${ADMIN_PASS:-snatcher-coolify-initial-password}
       - SCAN_INTERVAL=${SCAN_INTERVAL:-30}
       - EVOLUTION_URL=http://evolution:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}

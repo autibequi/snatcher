@@ -31,12 +31,23 @@ type Config struct {
 	LLMBudgetUSDDaily float64
 }
 
+// envRequiresSecureDefaults é true só para ambientes tratados como produção,
+// não para staging/qa/dev — evita o backend sair a 0 com ENV=production no host
+// sem ADMIN_PASS definido no compose (caso típico em Coolify).
+func envRequiresSecureDefaults(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
+}
+
 // Load reads configuration from environment variables and performs fail-fast
 // validation for production environments.
 //
-// In non-dev environments (ENV != "dev") it returns an error when insecure
-// defaults are detected so the caller (main.go) can call log.Fatal and abort
-// before accepting any traffic.
+// Quando ENV é "prod" ou "production" (case-insensitive), exige JWT_SECRET e
+// ADMIN_PASS diferentes dos defaults inseguros.
 func Load() (Config, error) {
 	c := Config{
 		DatabaseURL:   env("DATABASE_URL", "data/app.db"),
@@ -62,12 +73,12 @@ func Load() (Config, error) {
 		LLMBudgetUSDDaily: envFloat("LLM_BUDGET_USD_DAILY", 5.0),
 	}
 
-	if c.ENV != "dev" {
+	if envRequiresSecureDefaults(c.ENV) {
 		if c.JWTSecret == "changeme" {
-			return Config{}, errors.New("config: JWT_SECRET must not be the default value 'changeme' in non-dev environments")
+			return Config{}, errors.New("config: JWT_SECRET must not be the default value 'changeme' when ENV is prod/production")
 		}
 		if c.AdminPass == "admin" {
-			return Config{}, errors.New("config: ADMIN_PASS must not be the default value 'admin' in non-dev environments")
+			return Config{}, errors.New("config: ADMIN_PASS must not be the default value 'admin' when ENV is prod/production")
 		}
 	}
 
