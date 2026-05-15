@@ -123,6 +123,27 @@ export function LoopsTab() {
     },
   })
 
+  type HeuristicReprocessResult = { updated_rows?: number; llm_queue_pending?: number }
+
+  /** Reclassifica todo o catálogo com brand_keywords + category_keywords (sem LLM). Pode demorar em bases grandes. */
+  const reprocessHeuristicMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post<HeuristicReprocessResult>('/api/admin/catalog-canonical/reprocess-heuristic', undefined, {
+          timeout: 120_000,
+        })
+        .then(r => r.data),
+    onError: (err: unknown) => {
+      const ax = err as { response?: { data?: unknown }; message?: string }
+      const d = ax.response?.data
+      const msg =
+        typeof d === 'string'
+          ? d
+          : (d as { error?: string } | undefined)?.error ?? ax.message ?? 'Erro ao reprocessar eurística'
+      alert(msg)
+    },
+  })
+
   const actionMut = useMutation({
     mutationFn: ({ actionId, enable }: { actionId: string; enable: boolean }) => {
       const current = config?.enabled_actions ?? []
@@ -217,6 +238,39 @@ export function LoopsTab() {
             A execução é <strong className="text-fg-2">assíncrona</strong>; acompanhe em <span className="text-fg-2">Tempo real → Fila de trabalhos</span>.
             Com grupo de notificações em <strong className="text-fg-2">Configurações → Notificações</strong>, chega um alerta com o <strong className="text-fg-2">id do job</strong> ao enfileirar.
           </p>
+        </div>
+      </div>
+
+      <div className={sectionCard}>
+        <p className={sectionTitle}>Catálogo canónico — eurística</p>
+        <p className={`${sectionSubtitle} mt-0.5`}>
+          Reclassifica marca e categoria de <strong className="text-fg-2">todo</strong> o catálogo usando só keywords (sem LLM) e
+          atualiza a fila LLM. Pode demorar em bases grandes (timeout do pedido 120s).
+          Ver também{' '}
+          <a href="/admin/catalog-canonical" className="text-accent hover:underline">
+            Catálogo
+          </a>
+          .
+        </p>
+        <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-3">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            loading={reprocessHeuristicMut.isPending}
+            onClick={() => reprocessHeuristicMut.mutate()}
+          >
+            Reprocessar (eurística)
+          </Button>
+          {reprocessHeuristicMut.isSuccess && reprocessHeuristicMut.data != null && (
+            <p className="text-xs text-success">
+              Concluído — linhas tocadas:{' '}
+              <strong>{reprocessHeuristicMut.data.updated_rows ?? '—'}</strong>
+              {' · '}
+              fila LLM pending: <strong>{reprocessHeuristicMut.data.llm_queue_pending ?? '—'}</strong>
+            </p>
+          )}
+          {reprocessHeuristicMut.isError && <p className="text-xs text-danger">Falhou — ver alerta ou consola.</p>}
         </div>
       </div>
 
