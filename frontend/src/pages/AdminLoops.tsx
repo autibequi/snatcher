@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
 import { sectionCard, pageContainer } from '../lib/uiTokens'
 
@@ -132,6 +132,16 @@ export default function AdminLoops({ embedded = false }: { embedded?: boolean })
     load()
   }
 
+  const [running, setRunning] = React.useState<Record<string, boolean>>({})
+  const runNow = async (loopName: string) => {
+    setRunning(r => ({ ...r, [loopName]: true }))
+    await authFetch(`/api/admin/loops/${loopName}/run`, { method: 'POST' })
+    setTimeout(() => {
+      setRunning(r => ({ ...r, [loopName]: false }))
+      load()
+    }, 3000)
+  }
+
   // Merge server data with known loops list (to show all 9 even if DB is empty)
   const statusMap = Object.fromEntries(loops.map(l => [l.loop_name, l]))
   const rows: LoopStatus[] = ALL_LOOPS.map(
@@ -194,6 +204,14 @@ export default function AdminLoops({ embedded = false }: { embedded?: boolean })
                     <option value="disabled">Desligado</option>
                   </select>
                   <StatusBadge status={loop.status} />
+                  <button
+                    onClick={() => runNow(loop.loop_name)}
+                    disabled={running[loop.loop_name]}
+                    className="text-xs px-2 py-0.5 rounded bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-50"
+                    title="Executar agora"
+                  >
+                    {running[loop.loop_name] ? '⏳' : '▶ Run'}
+                  </button>
                   <button
                     onClick={() => toggleExpand(loop.loop_name)}
                     className="text-xs text-fg-3 hover:text-fg underline"
