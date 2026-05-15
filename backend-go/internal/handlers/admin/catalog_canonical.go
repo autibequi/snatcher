@@ -396,7 +396,9 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM catalog_llm_queue q
 			USING catalog c
-			WHERE q.catalog_id = c.id AND c.brand IS NOT NULL AND btrim(c.brand) <> ''
+			WHERE q.catalog_id = c.id
+			  AND c.brand IS NOT NULL AND btrim(c.brand) <> ''
+			  AND c.category_id IS NOT NULL
 		`); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -404,10 +406,17 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO catalog_llm_queue (catalog_id, status, reason)
-			SELECT id, 'pending', 'no_brand_keyword_match'
+			SELECT id, 'pending',
+				CASE
+					WHEN brand IS NULL OR btrim(brand) = '' THEN 'no_brand_keyword_match'
+					ELSE 'no_category_keyword_match'
+				END
 			FROM catalog
 			WHERE title IS NOT NULL AND btrim(title) <> ''
-			  AND (brand IS NULL OR btrim(brand) = '')
+			  AND (
+			    brand IS NULL OR btrim(brand) = ''
+			    OR category_id IS NULL
+			  )
 			ON CONFLICT (catalog_id) DO UPDATE SET
 				status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
 				reason = EXCLUDED.reason,

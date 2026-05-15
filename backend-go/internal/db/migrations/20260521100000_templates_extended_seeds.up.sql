@@ -460,112 +460,112 @@ ON CONFLICT DO NOTHING;
 -- ── Geral — 22 variações adicionais ─────────────────────────────────────────
 INSERT INTO templates (category_id, body, weight) VALUES
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Oferta do dia chegando! 🌅\n{titulo}\nDe R$ {preco_de} por R$ {preco_por}\n{desconto}% OFF\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Encontrei algo legal pra você 😊\n{titulo}\nR$ {preco_por} — {desconto}% de desconto\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'💥 Oferta bombando agora!\n{titulo}\nR$ {preco_de} → R$ {preco_por}\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Compra esperta do dia 🧠\n{titulo}\nR$ {preco_por} com {desconto}% de economia\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'{emoji} Preço mínimo histórico!\n{titulo}\nR$ {preco_por} ({desconto}% OFF)\nAcesse: {link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🔔 Alerta de promoção!\n{titulo}\nDe R$ {preco_de} por R$ {preco_por}\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Você pediu por isso? 👇\n{titulo}\nR$ {preco_por} — {desconto}% OFF\nClique: {link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'💰 Economize R$ {desconto}% agora!\n{titulo}\nDe R$ {preco_de} por R$ {preco_por}\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Hot deal de hoje 🔥\n{titulo}\nR$ {preco_por} ({desconto}% de desconto)\nSaiba mais: {link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Aproveita que tá barato! 🙏\n{titulo}\nR$ {preco_de} → R$ {preco_por}\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🌟 Produto em destaque\n{titulo}\nPreço especial: R$ {preco_por}\nDesconto: {desconto}%\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Radar de promoções ativado 📡\n{titulo}\nR$ {preco_por} — {desconto}% OFF\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Tá dormindo? Acorda! ⏰\n{titulo}\nR$ {preco_por} com {desconto}% de desconto\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'💡 Dica de economia:\n{titulo}\nDe R$ {preco_de} por R$ {preco_por}\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Corre que tá acabando! 🏃\n{titulo}\nR$ {preco_por} ({desconto}% OFF)\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🎯 Produto certeiro!\n{titulo}\nR$ {preco_de} → R$ {preco_por}\nDesconto: {desconto}%\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Curti essa oferta e vou compartilhar 🙌\n{titulo}\nR$ {preco_por} — {desconto}% de desconto\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🏷️ Etiqueta de preço atualizada!\n{titulo}\nNovo preço: R$ {preco_por} ({desconto}% OFF)\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Oferta que não pode perder 💎\n{titulo}\nDe R$ {preco_de} por R$ {preco_por}\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🛍️ Enchendo o carrinho!\n{titulo}\nR$ {preco_por} com {desconto}% de desconto\nVeja: {link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Que oferta boa, hein? 😍\n{titulo}\nR$ {preco_de} → R$ {preco_por} ({desconto}% OFF)\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'📦 Chegou a oferta que você esperava!\n{titulo}\nR$ {preco_por} — {desconto}% de economia\n{link}',
     1
 )

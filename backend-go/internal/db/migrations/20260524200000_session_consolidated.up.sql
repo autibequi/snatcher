@@ -228,8 +228,11 @@ BEGIN
                 '%shampoo%','%condicionador%','%creme%','%hidratante%'
              ])
             THEN 'moda'
-        ELSE 'geral'
+        ELSE NULL
     END;
+    IF v_slug IS NULL THEN
+        RETURN NULL;
+    END IF;
     SELECT id INTO v_id FROM categories WHERE slug = v_slug;
     RETURN v_id;
 END;

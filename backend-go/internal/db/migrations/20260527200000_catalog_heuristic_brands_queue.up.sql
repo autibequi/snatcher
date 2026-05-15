@@ -57,7 +57,7 @@ ORDER BY a.n_hit DESC, a.max_len DESC, a.brand_slug ASC
 LIMIT 1;
 $$ LANGUAGE sql STABLE;
 
--- Categoria: mesma lógica (soma de hits + pattern mais longo), fallback geral
+-- Categoria: mesma lógica (soma de hits + pattern mais longo); sem match → NULL
 CREATE OR REPLACE FUNCTION classify_catalog_category(p_title TEXT, p_source TEXT DEFAULT '')
 RETURNS BIGINT AS $$
 WITH hits AS (
@@ -81,10 +81,7 @@ winner AS (
     ORDER BY a.n_hit DESC, a.max_len DESC, a.category_slug ASC
     LIMIT 1
 )
-SELECT COALESCE(
-    (SELECT id FROM categories WHERE slug = (SELECT category_slug FROM winner)),
-    (SELECT id FROM categories WHERE slug = 'geral' LIMIT 1)
-);
+SELECT (SELECT id FROM categories WHERE slug = (SELECT category_slug FROM winner) LIMIT 1);
 $$ LANGUAGE sql STABLE;
 
 -- Trigger: 1) marca 2) só categoria se achou marca (heurística sem LLM)
@@ -114,20 +111,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Após persistir: enfileira itens sem marca; remove da fila quando marca existe
+-- Após persistir: enfileira sem marca ou sem categoria; remove da fila com ambos
 CREATE OR REPLACE FUNCTION trg_catalog_llm_queue_sync() RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.title IS NOT NULL AND btrim(NEW.title) <> '' AND NEW.brand IS NULL THEN
-        INSERT INTO catalog_llm_queue (catalog_id, status, reason)
-        VALUES (NEW.id, 'pending', 'no_brand_keyword_match')
-        ON CONFLICT (catalog_id) DO UPDATE SET
-            status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
-            reason = EXCLUDED.reason,
-            enqueued_at = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.enqueued_at ELSE now() END,
-            processed_at = NULL,
-            last_error = NULL;
-    ELSIF NEW.brand IS NOT NULL THEN
-        DELETE FROM catalog_llm_queue WHERE catalog_id = NEW.id;
+    IF NEW.title IS NOT NULL AND btrim(NEW.title) <> '' THEN
+        IF (NEW.brand IS NULL OR btrim(NEW.brand) = '') OR (NEW.category_id IS NULL) THEN
+            INSERT INTO catalog_llm_queue (catalog_id, status, reason)
+            VALUES (
+                NEW.id,
+                'pending',
+                CASE
+                    WHEN NEW.brand IS NULL OR btrim(NEW.brand) = '' THEN 'no_brand_keyword_match'
+                    ELSE 'no_category_keyword_match'
+                END
+            )
+            ON CONFLICT (catalog_id) DO UPDATE SET
+                status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
+                reason = EXCLUDED.reason,
+                enqueued_at = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.enqueued_at ELSE now() END,
+                processed_at = NULL,
+                last_error = NULL;
+        ELSE
+            DELETE FROM catalog_llm_queue WHERE catalog_id = NEW.id;
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -135,17 +141,30 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS catalog_llm_queue_sync ON catalog;
 CREATE TRIGGER catalog_llm_queue_sync
-    AFTER INSERT OR UPDATE OF title, source_id, brand ON catalog
+    AFTER INSERT OR UPDATE OF title, source_id, brand, category_id ON catalog
     FOR EACH ROW EXECUTE FUNCTION trg_catalog_llm_queue_sync();
 
--- Consistência pós-migration: fila só para catálogo sem marca
 DELETE FROM catalog_llm_queue q
 USING catalog c
-WHERE q.catalog_id = c.id AND c.brand IS NOT NULL AND btrim(c.brand) <> '';
+WHERE q.catalog_id = c.id
+  AND c.brand IS NOT NULL AND btrim(c.brand) <> ''
+  AND c.category_id IS NOT NULL;
 
 INSERT INTO catalog_llm_queue (catalog_id, status, reason)
-SELECT id, 'pending', 'no_brand_keyword_match'
+SELECT id, 'pending',
+  CASE
+    WHEN brand IS NULL OR btrim(brand) = '' THEN 'no_brand_keyword_match'
+    ELSE 'no_category_keyword_match'
+  END
 FROM catalog
 WHERE title IS NOT NULL AND btrim(title) <> ''
-  AND (brand IS NULL OR btrim(brand) = '')
-ON CONFLICT (catalog_id) DO NOTHING;
+  AND (
+    brand IS NULL OR btrim(brand) = ''
+    OR category_id IS NULL
+  )
+ON CONFLICT (catalog_id) DO UPDATE SET
+  status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
+  reason = EXCLUDED.reason,
+  enqueued_at = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.enqueued_at ELSE now() END,
+  processed_at = NULL,
+  last_error = NULL;

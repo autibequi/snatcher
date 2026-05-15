@@ -93,13 +93,10 @@ BEGIN
     LIMIT 1;
 
     IF v_slug IS NULL THEN
-        v_slug := 'geral';
+        RETURN NULL;
     END IF;
 
     SELECT id INTO v_id FROM categories WHERE slug = v_slug;
-    IF v_id IS NULL THEN
-        SELECT id INTO v_id FROM categories WHERE slug = 'geral';
-    END IF;
     RETURN v_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -107,5 +104,4 @@ $$ LANGUAGE plpgsql;
 -- Reclassifica produtos existentes usando a nova função
 UPDATE catalog
 SET category_id = classify_catalog_category(title, source_id)
-WHERE category_id = (SELECT id FROM categories WHERE slug = 'geral')
-   OR category_id IS NULL;
+WHERE category_id IS NULL;

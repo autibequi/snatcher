@@ -2062,19 +2062,17 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 				fmt.Sprintf("categoria criada para canal '%s'", ch.Name), 1.0)
 		}
 
-		// 4. Re-classificar produtos que estão em "Geral" ou sem categoria
-		// usando keywords ILIKE — só se a query retornar algum resultado
-		geral, _ := catBySlug["geral"]
+		// 4. Re-classificar produtos sem categoria usando keywords ILIKE — só se a query retornar algum resultado
 		for _, kw := range keywords {
 			q := `UPDATE catalog SET category_id = $1
-				WHERE (category_id IS NULL OR category_id = $2)
-				  AND LOWER(title) ILIKE $3`
-			res, err := h.db.ExecContext(ctx, q, catID, geral, kw)
+				WHERE category_id IS NULL
+				  AND LOWER(title) ILIKE $2`
+			res, err := h.db.ExecContext(ctx, q, catID, kw)
 			if err == nil {
 				if rows, _ := res.RowsAffected(); rows > 0 {
 					reclassified += int(rows)
 					_ = loops.AuditAction(ctx, h.db, "channel_category_sync", "applied", "catalog", catID,
-						map[string]any{"category_id": geral}, map[string]any{"category_id": catID},
+						nil, map[string]any{"category_id": catID},
 						fmt.Sprintf("re-classificados %d produtos (keyword: %s)", rows, kw), 0.95)
 				}
 			}

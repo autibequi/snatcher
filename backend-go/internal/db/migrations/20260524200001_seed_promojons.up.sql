@@ -89,9 +89,12 @@ BEGIN
              ])
             THEN 'moda'
 
-        ELSE 'geral'
+        ELSE NULL
     END;
 
+    IF v_slug IS NULL THEN
+        RETURN NULL;
+    END IF;
     SELECT id INTO v_id FROM categories WHERE slug = v_slug;
     RETURN v_id;
 END;
@@ -124,10 +127,9 @@ SELECT ch.id, cat.id,
        CASE cat.slug
            WHEN 'eletronico' THEN 100
            WHEN 'gaming'     THEN 30
-           WHEN 'geral'      THEN 10
        END
 FROM channels_v2 ch
-JOIN categories cat ON cat.slug IN ('eletronico', 'gaming', 'geral')
+JOIN categories cat ON cat.slug IN ('eletronico', 'gaming')
 WHERE ch.name = 'Tech'
 ON CONFLICT (channel_id, category_id) DO UPDATE SET weight = EXCLUDED.weight;
 

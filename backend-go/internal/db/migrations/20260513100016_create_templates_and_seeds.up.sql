@@ -127,27 +127,27 @@ ON CONFLICT DO NOTHING;
 -- ── Geral ────────────────────────────────────────────────────────────────────
 INSERT INTO templates (category_id, body, weight) VALUES
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🔥 {titulo}\nDe {preco_de} por {preco_por} ({desconto}% OFF)\n{link}',
     2
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'⚡ Promoção imperdível!\n{titulo}\n💰 {preco_por} (era {preco_de})\n👉 {link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'{emoji} {titulo}\nPreço: {preco_por}\nEconomize {desconto}%\n{link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'Aproveita! {titulo}\n{preco_de} → {preco_por}\nAcesse: {link}',
     1
 ),
 (
-    (SELECT id FROM categories WHERE slug = 'geral'),
+    (SELECT id FROM categories WHERE slug = 'eletronico'),
     E'🎯 {titulo}\n✅ {preco_por} ({desconto}% de desconto)\n🔗 {link}',
     1
 )

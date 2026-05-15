@@ -10,6 +10,5 @@ INSERT INTO categories (slug, display_name, weight) VALUES
     ('eletronico', 'Eletrônicos', 1.20),
     ('gaming',     'Gaming',      1.15),
     ('casa',       'Casa',        1.00),
-    ('moda',       'Moda',        0.95),
-    ('geral',      'Geral',       0.85)
+    ('moda',       'Moda',        0.95)
 ON CONFLICT DO NOTHING;
