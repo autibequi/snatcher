@@ -25,7 +25,7 @@ export function pageTitleFromPath(pathname: string): string {
     [/^\/settings(?:\/|$)/, 'Configurações'],
     [/^\/crawlers$/, 'Crawlers'],
     [/^\/channels$/, 'Canais'],
-    [/^\/compose$/, 'Compor'],
+    [/^\/compose$/, 'Composer'],
     [/^\/match$/, 'Match'],
     [/^\/logs$/, 'Logs'],
     [/^\/catalog$/, 'Catálogo'],

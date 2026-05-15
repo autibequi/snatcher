@@ -84,7 +84,11 @@ BEGIN
     IF v_short IS NOT NULL THEN RETURN v_short; END IF;
     FOR i IN 1..5 LOOP
         BEGIN
-            v_short := encode(gen_random_bytes(5), 'hex');
+            -- Sem pgcrypto: 10 hex chars (equiv. 5 bytes), cf. migration 20260526200000
+            v_short := substring(
+                md5(random()::text || clock_timestamp()::text || random()::text || i::text || p_catalog::text || p_group::text)
+                from 1 for 10
+            );
             INSERT INTO group_shortlinks (short_id, catalog_id, group_id)
             VALUES (v_short, p_catalog, p_group);
             RETURN v_short;

@@ -47,19 +47,6 @@ export function IntegrationsTab() {
         </div>
       </div>
 
-      {/* Evolution WA */}
-      <div className={sectionCard}>
-        <p className={`${sectionTitle} mb-3`}>Evolution WhatsApp</p>
-        <div className="space-y-3">
-          <Input label="URL" placeholder="https://evolution.meuservidor.com"
-            value={get('evolution_base_url')} onChange={e => set('evolution_base_url', e.target.value)} />
-          <Input label="API Key" type="password" placeholder="evolution_api_key"
-            value={get('evolution_api_key')} onChange={e => set('evolution_api_key', e.target.value)} />
-          <Input label="Instance" placeholder="minha_instancia"
-            value={get('evolution_instance')} onChange={e => set('evolution_instance', e.target.value)} />
-        </div>
-      </div>
-
       {/* Domain / White-label */}
       <div className={sectionCard}>
         <p className={`${sectionTitle} mb-3`}>White-label</p>

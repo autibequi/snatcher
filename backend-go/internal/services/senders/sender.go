@@ -330,7 +330,7 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	// 4b. Gera shortlink com a URL de afiliado (não a URL limpa).
 	var groupShort string
 	if err := db.GetContext(ctx, &groupShort, `SELECT ensure_group_shortlink($1, $2)`, catalogID, groupID); err != nil {
-		return nil, fmt.Errorf("ensure_group_shortlink(catalog=%d, group=%d): %w — verifique migration group_shortlinks e extensão pgcrypto", catalogID, groupID, err)
+		return nil, fmt.Errorf("ensure_group_shortlink(catalog=%d, group=%d): %w", catalogID, groupID, err)
 	}
 	groupShort = strings.TrimSpace(groupShort)
 	if groupShort == "" {

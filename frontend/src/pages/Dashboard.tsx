@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { Button, KpiCard, Switch, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
-import { ChannelPerformanceTable } from '../components/dashboard/ChannelPerformanceTable'
-import { UpcomingDispatches, formatRelativeEta, type UpcomingDispatch } from '../components/dashboard/UpcomingDispatches'
 import { apiClient } from '../lib/apiClient'
 import { useAuth } from '../lib/auth'
 import { pageContainer, responsiveKpiGrid } from '../lib/uiTokens'
@@ -85,37 +83,76 @@ function SuggestionsWidget() {
     mutationFn: (id: number) => apiClient.post(`/api/admin/suggestions/${id}/dismiss`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard', 'suggestions'] }),
   })
+  const dismissAllMut = useMutation({
+    mutationFn: () => apiClient.post<{ dismissed?: number }>('/api/admin/suggestions/dismiss-all'),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard', 'suggestions'] }),
+  })
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-fg-3">
-        💡 Sugestões dos Loops LLM {items.length > 0 && `(${items.length})`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-fg-3">
+          💡 Sugestões dos Loops LLM {items.length > 0 && `(${items.length})`}
+        </p>
+        {!isLoading && items.length > 0 && (
+          <button
+            type="button"
+            onClick={() => dismissAllMut.mutate()}
+            disabled={dismissAllMut.isPending}
+            className="text-xs px-2 py-1 rounded border border-border bg-surface-2 text-fg-3 hover:text-fg disabled:opacity-50"
+          >
+            {dismissAllMut.isPending ? 'Ignorando…' : 'Ignorar todas'}
+          </button>
+        )}
+      </div>
       {isLoading && <p className="text-sm text-fg-3">Carregando...</p>}
       {!isLoading && items.length === 0 && (
         <div className="rounded-lg border border-border bg-surface px-4 py-3 text-sm text-fg-3">
           Nenhuma sugestão pendente — loops estão otimizando em background.
         </div>
       )}
-      <div className="space-y-2">
-        {items.map(s => (
-          <div key={s.id} className="rounded-lg border border-border bg-surface px-4 py-3 flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">{s.loop_name}</span>
-                <span className="text-xs text-fg-3">{s.target_type} #{s.target_id}</span>
-                {s.confidence != null && <span className="text-xs text-fg-3">{(s.confidence * 100).toFixed(0)}%</span>}
+      {items.length > 0 && (
+        <div className="max-h-[min(24rem,50vh)] overflow-y-auto rounded-lg border border-border bg-surface/50 pr-1">
+          <div className="space-y-2 p-2">
+            {items.map(s => (
+              <div
+                key={s.id}
+                className="rounded-lg border border-border bg-surface px-4 py-3 flex items-start gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                      {s.loop_name}
+                    </span>
+                    <span className="text-xs text-fg-3">
+                      {s.target_type} #{s.target_id}
+                    </span>
+                    {s.confidence != null && (
+                      <span className="text-xs text-fg-3">{(s.confidence * 100).toFixed(0)}%</span>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium">{s.suggestion}</p>
+                  {s.reasoning && <p className="text-xs text-fg-3 mt-0.5">{s.reasoning}</p>}
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => approveMut.mutate(s.id)}
+                    className="text-xs px-2 py-1 rounded bg-success/15 text-success hover:bg-success/25"
+                  >
+                    Aplicar
+                  </button>
+                  <button
+                    onClick={() => dismissMut.mutate(s.id)}
+                    className="text-xs px-2 py-1 rounded bg-surface-2 text-fg-3 hover:text-fg"
+                  >
+                    Ignorar
+                  </button>
+                </div>
               </div>
-              <p className="text-sm font-medium">{s.suggestion}</p>
-              {s.reasoning && <p className="text-xs text-fg-3 mt-0.5">{s.reasoning}</p>}
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button onClick={() => approveMut.mutate(s.id)} className="text-xs px-2 py-1 rounded bg-success/15 text-success hover:bg-success/25">Aplicar</button>
-              <button onClick={() => dismissMut.mutate(s.id)} className="text-xs px-2 py-1 rounded bg-surface-2 text-fg-3 hover:text-fg">Ignorar</button>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -336,16 +373,6 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
-  const { data: dispatches = [] } = useQuery<UpcomingDispatch[]>({
-    queryKey: ['dashboard', 'upcoming-dispatches'],
-    queryFn: () =>
-      apiClient
-        .get('/api/dashboard/upcoming-dispatches?limit=5')
-        .then(r => (Array.isArray(r.data) ? (r.data as UpcomingDispatch[]) : []))
-        .catch(() => []),
-    refetchInterval: 60_000,
-  })
-
   const { data: jonfreyConfig } = useQuery<JonfreyConfigLite | null>({
     queryKey: ['jonfrey-config'],
     queryFn: () => apiClient.get('/api/jonfrey/config').then(r => r.data).catch(() => null),
@@ -387,13 +414,9 @@ export default function Dashboard() {
   function handleRefresh() {
     qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
     qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
-    qc.invalidateQueries({ queryKey: ['dashboard', 'upcoming-dispatches'] })
     qc.invalidateQueries({ queryKey: ['catalog'] })
     qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
   }
-
-  const nextDispatchEta =
-    dispatches.length > 0 ? formatRelativeEta(dispatches[0].scheduled_at) : undefined
 
   const firstName = user?.name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'você'
 
@@ -404,7 +427,7 @@ export default function Dashboard() {
       <PageHeader
         title={`Bom dia, ${firstName}`}
         subtitleId="dashboard-subtitle"
-        subtitle={renderDynamicSubtitle(inboxItems.length, nextDispatchEta)}
+        subtitle={renderDynamicSubtitle(inboxItems.length)}
         actions={
           <>
             <div
@@ -525,12 +548,6 @@ export default function Dashboard() {
         O contador de anomalias aparece no nome da aba e o grupo de
         notificações continua recebendo o resumo automaticamente.
       */}
-
-      {/* ── 5. Performance | Próximos disparos ───────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChannelPerformanceTable />
-        <UpcomingDispatches />
-      </div>
 
     </div>
   )

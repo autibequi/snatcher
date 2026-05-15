@@ -395,6 +395,7 @@ func Build(
 
 		// Fase 7: L4 suggestions dashboard — aprovar/rejeitar sugestões pendentes dos loops
 		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))
+		r.Post("/api/admin/suggestions/dismiss-all", adminhnd.DismissAllPendingSuggestionsHandler(db))
 		r.Post("/api/admin/suggestions/{id}/approve", adminhnd.ApproveSuggestionHandler(db))
 		r.Post("/api/admin/suggestions/{id}/dismiss", adminhnd.DismissSuggestionHandler(db))
 

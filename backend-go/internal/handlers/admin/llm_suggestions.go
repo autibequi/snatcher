@@ -135,3 +135,22 @@ func DismissSuggestionHandler(db *sqlx.DB) http.HandlerFunc {
 		w.WriteHeader(204)
 	}
 }
+
+// POST /api/admin/suggestions/dismiss-all — ignora todas as sugestões pendentes (dashboard).
+func DismissAllPendingSuggestionsHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reason := r.URL.Query().Get("reason")
+		if reason == "" {
+			reason = "dismiss_all_dashboard"
+		}
+		res, err := db.ExecContext(r.Context(),
+			"UPDATE llm_suggestions SET status='dismissed', dismissed_reason=$1, acted_at=now() WHERE status='pending'",
+			reason)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		n, _ := res.RowsAffected()
+		writeJSON(w, http.StatusOK, map[string]int64{"dismissed": n})
+	}
+}
