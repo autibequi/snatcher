@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -329,7 +330,8 @@ func sendImageViaURL(ctx context.Context, instance, jid, imageURL, caption strin
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("evolution sendMedia (url) status %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("evolution sendMedia status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
 	return nil
 }

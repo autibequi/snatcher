@@ -75,10 +75,21 @@ const LOG_COLUMNS: ColumnDef<SendLogItem, unknown>[] = [
     cell: ({ getValue, row }) => {
       const title = getValue<string>()
       const err = (row.original as SendLogItem).error_code
+      const [expanded, setExpanded] = React.useState(false)
       return (
-        <div className="max-w-xs">
+        <div className="max-w-sm">
           <span className="text-fg-2 text-xs truncate block" title={title ?? undefined}>{title ?? '—'}</span>
-          {err && <span className="text-danger text-xs truncate block" title={err}>⚠ {err}</span>}
+          {err && (
+            <button
+              type="button"
+              className="text-left w-full"
+              onClick={() => setExpanded(e => !e)}
+            >
+              <span className="text-danger text-xs block">
+                ⚠ {expanded ? err : err.slice(0, 60) + (err.length > 60 ? '…' : '')}
+              </span>
+            </button>
+          )}
         </div>
       )
     },
