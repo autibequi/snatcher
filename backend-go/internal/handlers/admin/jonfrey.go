@@ -2003,7 +2003,7 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 		Name string `db:"name"`
 	}
 	var channels []channel
-	if err := h.db.SelectContext(ctx, &channels, `SELECT id, name FROM channel ORDER BY id`); err != nil {
+	if err := h.db.SelectContext(ctx, &channels, `SELECT id, name FROM channels_v2 ORDER BY id`); err != nil {
 		return nil, nil, "", fmt.Errorf("listar canais: %w", err)
 	}
 
