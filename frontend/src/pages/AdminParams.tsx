@@ -56,6 +56,8 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   click_reward_weight:            { label: 'Recompensa por click (Thompson)', description: 'Quanto cada click incrementa em alpha do bandit. 0.10 = 10 clicks valem 1 conversão. Acelera convergência do Thompson Sampling.' },
   learned_half_life_days:         { label: 'Meia-vida do decay em CTR/EPC',   description: 'Dias após os quais um click/conversão dentro da janela 30d vale metade. Default 7d — sinaliza tendência recente sem perder cauda longa.' },
   click_cap_per_member:           { label: 'Cap viral · clicks/membro',       description: 'Limite de clicks que contam pro learning = k × member_count. Clicks acima são considerados viralização externa e ficam só em group_virality (não envenenam CTR/bandit). Default 3.0.' },
+  // Segurança de envio
+  quarantine_threshold:           { label: 'Quarentena · falhas consecutivas', description: 'Número de falhas de envio consecutivas antes de colocar a conta em quarentena. Aumente para reduzir quarentenas automáticas. 999 = desativado.' },
 }
 
 function paramLabel(name: string): string {
