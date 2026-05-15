@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -35,6 +36,19 @@ func (h *PublicLinksHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if links == nil {
 		links = []models.PublicLink{}
+	}
+	// Filtra por channel_id se fornecido
+	if chStr := r.URL.Query().Get("channel_id"); chStr != "" {
+		var chID int64
+		if _, err := fmt.Sscan(chStr, &chID); err == nil && chID > 0 {
+			filtered := links[:0]
+			for _, l := range links {
+				if l.ChannelID == chID {
+					filtered = append(filtered, l)
+				}
+			}
+			links = filtered
+		}
 	}
 	writeJSON(w, http.StatusOK, links)
 }
