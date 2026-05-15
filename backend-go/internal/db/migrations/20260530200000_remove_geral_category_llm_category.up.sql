@@ -16,7 +16,7 @@ BEGIN
         UPDATE templates SET category_id = fallback_id WHERE category_id = gid;
         UPDATE catalog SET category_id = NULL WHERE category_id = gid;
         UPDATE groups SET category_id = NULL WHERE category_id = gid;
-        UPDATE channels_v2 SET category_id = NULL WHERE category_id = gid;
+        -- channels_v2.category_id foi removida em 20260523200000 (pesos em channel_category_weights).
 
         DELETE FROM channel_category_weights WHERE category_id = gid;
         DELETE FROM group_category_affinity WHERE category_id = gid;
