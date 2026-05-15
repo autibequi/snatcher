@@ -25,7 +25,7 @@ func (s *SQLStore) GetVariantStats(variantID int64, windowDays int) (*models.Var
 func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) {
 	// Tenta buscar shortlink existente para a URL
 	var existing string
-	if err := s.db.Get(&existing, `SELECT short_id FROM short_links WHERE dest_url=$1`, destURL); err == nil && existing != "" {
+	if err := s.db.Get(&existing, `SELECT short_id FROM short_links WHERE dest_url=$1 ORDER BY created_at ASC LIMIT 1`, destURL); err == nil && existing != "" {
 		return existing, nil
 	}
 	// Cria novo shortlink com ID aleatório (8 chars base62)
@@ -33,7 +33,6 @@ func (s *SQLStore) GetOrCreateShortLink(destURL, source string) (string, error) 
 	var returned string
 	err := s.db.QueryRow(`
 		INSERT INTO short_links (short_id, dest_url, source) VALUES ($1, $2, $3)
-		ON CONFLICT (dest_url) DO UPDATE SET short_id = short_links.short_id
 		RETURNING short_id
 	`, shortID, destURL, source).Scan(&returned)
 	if err == nil && returned != "" {

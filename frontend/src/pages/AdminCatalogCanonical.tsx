@@ -37,6 +37,18 @@ interface Stats {
   by_source: { source_id: string; n: number }[]
 }
 
+interface LLMQueueRow {
+  catalog_id: number
+  status: string
+  reason?: string
+  enqueued_at: string
+  processed_at?: string
+  last_error?: string
+  title: string
+  source_id: string
+  category_name?: string
+}
+
 interface DetailModalProps {
   item: CatalogItem
   onClose: () => void
@@ -176,6 +188,9 @@ export default function AdminCatalogCanonical() {
   const [priceMax, setPriceMax] = useState('')
   const [page, setPage] = useState(0)
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null)
+  const [llmQueue, setLlmQueue] = useState<LLMQueueRow[] | null>(null)
+  const [llmQueueLoading, setLlmQueueLoading] = useState(true)
+  const [llmQueueStatus, setLlmQueueStatus] = useState<'active' | 'all' | 'pending' | 'processing' | 'done' | 'error'>('active')
   const LIMIT = 50
 
   const loadStats = async () => {
@@ -185,6 +200,22 @@ export default function AdminCatalogCanonical() {
       if (r.ok) setStats(await r.json())
     } finally {
       setStatsLoading(false)
+    }
+  }
+
+  const loadLLMQueue = async () => {
+    setLlmQueueLoading(true)
+    try {
+      const params = new URLSearchParams({ status: llmQueueStatus, limit: '200' })
+      const r = await authFetch(`/api/admin/catalog-canonical/llm-queue?${params}`)
+      if (r.ok) {
+        const d = (await r.json()) as LLMQueueRow[]
+        setLlmQueue(Array.isArray(d) ? d : [])
+      } else {
+        setLlmQueue([])
+      }
+    } finally {
+      setLlmQueueLoading(false)
     }
   }
 
@@ -213,17 +244,17 @@ export default function AdminCatalogCanonical() {
     authFetch('/api/admin/templates/categories').then(r => r.json()).then(d => setCategories(Array.isArray(d) ? d : []))
   }, [])
   useEffect(() => { loadItems() }, [readyOnly, categoryID, brandSlug, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadLLMQueue() }, [llmQueueStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingLLM = stats?.llm_queue_pending ?? 0
   const KPI_CARDS = stats
     ? [
-        { label: 'Total',          value: stats.total,          color: 'text-accent' },
-        { label: 'Send ready',     value: stats.send_ready,     color: 'text-success' },
-        { label: 'URLs mortas',    value: stats.dead_urls,      color: 'text-danger' },
-        { label: 'Sem score',      value: stats.unscored,       color: 'text-warning' },
-        { label: 'Imagens cached', value: stats.images_cached,  color: 'text-fg-2' },
-        ...(typeof stats.llm_queue_pending === 'number' && stats.llm_queue_pending > 0
-          ? [{ label: 'Fila LLM (marca)', value: stats.llm_queue_pending, color: 'text-warning' as const }]
-          : []),
+        { label: 'Total', value: stats.total, color: 'text-accent' },
+        { label: 'Send ready', value: stats.send_ready, color: 'text-success' },
+        { label: 'URLs mortas', value: stats.dead_urls, color: 'text-danger' },
+        { label: 'Sem score', value: stats.unscored, color: 'text-warning' },
+        { label: 'Imagens cached', value: stats.images_cached, color: 'text-fg-2' },
+        { label: 'Fila LLM (pendentes)', value: pendingLLM, color: pendingLLM > 0 ? ('text-warning' as const) : ('text-fg-2' as const) },
       ]
     : []
 
@@ -235,7 +266,7 @@ export default function AdminCatalogCanonical() {
         window.alert(await r.text())
         return
       }
-      await Promise.all([loadStats(), loadItems()])
+      await Promise.all([loadStats(), loadItems(), loadLLMQueue()])
     } finally {
       setReprocessBusy(false)
     }
@@ -251,9 +282,9 @@ export default function AdminCatalogCanonical() {
 
       {/* KPI cards */}
       {statsLoading ? (
-        <div className="flex gap-4">{[...Array(5)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
+        <div className="flex gap-4">{[...Array(6)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           {KPI_CARDS.map(k => (
             <div key={k.label} className="bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm">
               <p className="text-xs text-fg-3 uppercase tracking-wide">{k.label}</p>
@@ -263,6 +294,95 @@ export default function AdminCatalogCanonical() {
         </div>
       )}
 
+      {/* Fila LLM (marca / enriquecimento) */}
+      <div className="rounded-xl border border-border bg-surface dark:bg-bg shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-border bg-surface-2/50">
+          <h2 className="text-sm font-semibold text-fg-2">Fila LLM <span className="text-fg-4 font-normal">(catalog_llm_queue)</span></h2>
+          <select
+            value={llmQueueStatus}
+            onChange={e => {
+              setLlmQueueStatus(e.target.value as typeof llmQueueStatus)
+            }}
+            className="text-sm border border-border rounded px-2 py-1 bg-surface focus:outline-none focus:border-accent"
+            title="active = pendente + processando + erro; all inclui concluídos"
+          >
+            <option value="active">Ativos (pendente / processando / erro)</option>
+            <option value="pending">Só pendentes</option>
+            <option value="processing">Só processando</option>
+            <option value="error">Só erro</option>
+            <option value="done">Só concluídos</option>
+            <option value="all">Todos os status</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void loadLLMQueue()}
+            className="text-xs px-2 py-1 border border-border rounded hover:bg-surface-2 ml-auto sm:ml-0"
+          >
+            Atualizar fila
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          {llmQueueLoading ? (
+            <p className="px-3 py-4 text-sm text-fg-4">Carregando fila…</p>
+          ) : !llmQueue || llmQueue.length === 0 ? (
+            <p className="px-3 py-4 text-sm text-fg-4">Nenhum item neste filtro.</p>
+          ) : (
+            <table className="w-full text-xs sm:text-sm">
+              <thead className="bg-surface-2 border-b border-border">
+                <tr>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2">ID</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 min-w-[12rem]">Título</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 hidden md:table-cell">Source</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 hidden lg:table-cell">Categoria</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2">Status</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 hidden sm:table-cell">Motivo</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 hidden xl:table-cell max-w-[12rem]">Erro</th>
+                  <th className="text-left font-medium text-fg-2 px-3 py-2 whitespace-nowrap">Enfileirado</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {llmQueue.map(row => (
+                  <tr key={row.catalog_id} className="hover:bg-surface-2/80">
+                    <td className="px-3 py-2 font-mono tabular-nums">{row.catalog_id}</td>
+                    <td className="px-3 py-2 max-w-[20rem]"><span className="line-clamp-2">{row.title}</span></td>
+                    <td className="px-3 py-2 hidden md:table-cell text-fg-3">{row.source_id}</td>
+                    <td className="px-3 py-2 hidden lg:table-cell text-fg-3">{row.category_name ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        row.status === 'pending' ? 'text-warning font-medium'
+                          : row.status === 'processing' ? 'text-accent font-medium'
+                            : row.status === 'error' ? 'text-danger font-medium'
+                              : 'text-fg-3'
+                      }>{row.status}</span>
+                    </td>
+                    <td className="px-3 py-2 hidden sm:table-cell text-fg-3 max-w-[10rem] truncate" title={row.reason ?? ''}>{row.reason ?? '—'}</td>
+                    <td className="px-3 py-2 hidden xl:table-cell text-danger/90 max-w-[12rem] truncate" title={row.last_error ?? ''}>{row.last_error ?? '—'}</td>
+                    <td className="px-3 py-2 text-fg-3 whitespace-nowrap tabular-nums">
+                      {new Date(row.enqueued_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 bg-surface-2 rounded hover:bg-surface-3"
+                        onClick={() => {
+                          const found = items.find(i => i.id === row.catalog_id)
+                          if (found) setDetailItem(found)
+                          else void authFetch(`/api/admin/catalog-canonical?ids=${row.catalog_id}`).then(r => r.json()).then((d: CatalogItem[]) => {
+                            if (Array.isArray(d) && d[0]) setDetailItem(d[0])
+                          })
+                        }}
+                      >
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
 
       {/* Filtros */}
       <div className="rounded-lg border border-border bg-surface p-3 space-y-3">
@@ -321,7 +441,7 @@ export default function AdminCatalogCanonical() {
           >
             {reprocessBusy ? 'Reprocessando…' : 'Reprocessar (eurística)'}
           </button>
-          <button onClick={() => { void loadItems(); void loadStats() }}
+          <button onClick={() => { void loadItems(); void loadStats(); void loadLLMQueue() }}
             className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 ml-auto">
             Atualizar
           </button>

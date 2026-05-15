@@ -34,6 +34,19 @@ const CATEGORY_LABEL: Record<string, string> = {
   optimization: 'Otimização',
   dispatch:     'Disparo',
   scheduled:    'Agendado',
+  admin:        'Admin',
+}
+
+/** Ordem alinhada ao RunCycle do backend (cleanup → … → dispatch). */
+const JONFREY_CATEGORY_ORDER = ['cleanup', 'curation', 'health', 'optimization', 'dispatch'] as const
+
+const CATEGORY_SECTION_HINT: Record<string, string> = {
+  cleanup: 'Fila, logs e housekeeping',
+  curation: 'Taxonomia, qualidade de catálogo e filtros',
+  health: 'Canais, crawlers e sinais de problema',
+  optimization: 'Thresholds, audiência e performance',
+  dispatch: 'Aprovação e liberação para envio',
+  admin: 'Operações internas',
 }
 
 const LOOP_NAMES = [
@@ -150,6 +163,23 @@ export function LoopsTab() {
 
   const isLoading = loadingAvailable || loadingLoops
 
+  const sectionCategories = React.useMemo(() => {
+    const fromApi = new Set(available.map(a => a.category))
+    const fromLoops = new Set(LOOP_NAMES.map(n => LOOP_CATEGORY[n] ?? 'scheduled'))
+    const extras = [...fromApi, ...fromLoops].filter(
+      c => !JONFREY_CATEGORY_ORDER.includes(c as (typeof JONFREY_CATEGORY_ORDER)[number]),
+    )
+    const ordered = [...JONFREY_CATEGORY_ORDER, ...[...new Set(extras)].sort()]
+    return ordered.filter(cat => {
+      const hasJf = available.some(a => a.category === cat)
+      const hasLoop = LOOP_NAMES.some(n => (LOOP_CATEGORY[n] ?? '') === cat)
+      return hasJf || hasLoop
+    })
+  }, [available])
+
+  const categorySectionLabel = (cat: string) =>
+    CATEGORY_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
   return (
     <div className="space-y-6">
       {/* Auto-pilot global */}
@@ -174,7 +204,7 @@ export function LoopsTab() {
             loading={reprocessJonfreyMut.isPending}
             onClick={() => {
               if ((config?.enabled_actions ?? []).length === 0) {
-                alert('Nenhuma ação Jonfrey ativa — ative pelo menos uma na tabela abaixo.')
+                alert('Nenhuma ação Jonfrey ativa — ative pelo menos uma nas seções abaixo.')
                 return
               }
               reprocessJonfreyMut.mutate()
@@ -183,107 +213,128 @@ export function LoopsTab() {
             Reprocessar ciclo
           </Button>
           <p className="text-[11px] text-fg-3 max-w-xl">
-            Enfileira <strong className="text-fg-2 font-medium">todas as ações Jonfrey ativas</strong> na tabela abaixo.
+            Enfileira <strong className="text-fg-2 font-medium">todas as ações Jonfrey ativas</strong> nas seções abaixo.
             A execução é <strong className="text-fg-2">assíncrona</strong>; acompanhe em <span className="text-fg-2">Tempo real → Fila de trabalhos</span>.
             Com grupo de notificações em <strong className="text-fg-2">Configurações → Notificações</strong>, chega um alerta com o <strong className="text-fg-2">id do job</strong> ao enfileirar.
           </p>
         </div>
       </div>
 
-      {/* Tabela unificada */}
+      {/* Caixas por categoria (Jonfrey + loops LLM na mesma família) */}
       {isLoading ? (
-        <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
+        <div className="space-y-2">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
       ) : (
-        <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
-          {/* Header */}
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-2 bg-surface-2 text-[11px] font-medium text-fg-3 uppercase tracking-wide">
-            <span>Automação</span>
-            <span className="text-right">Tipo</span>
-            <span className="text-right">Última execução</span>
-            <span className="text-right">Estado</span>
-            <span className="text-right">Run</span>
-          </div>
+        <div className="space-y-5">
+          {sectionCategories.map(cat => {
+            const jfInCat = available.filter(a => a.category === cat).sort((a, b) => a.type.localeCompare(b.type))
+            const loopsInCat = LOOP_NAMES.filter(n => (LOOP_CATEGORY[n] ?? '') === cat)
+            const hint = CATEGORY_SECTION_HINT[cat]
 
-          {/* Jonfrey actions */}
-          {available.map(action => {
-            const last = lastByType(action.type)
-            const enabled = enabledActions.includes(action.type)
             return (
-              <div key={action.type} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-3 items-center bg-surface hover:bg-surface-2/50">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-fg truncate" title={action.description}>
-                    {action.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+              <div key={cat} className={sectionCard}>
+                <div className="mb-3 pb-2 border-b border-border">
+                  <p className={sectionTitle}>{categorySectionLabel(cat)}</p>
+                  {hint && <p className={`${sectionSubtitle} mt-0.5`}>{hint}</p>}
+                  <p className="text-[10px] text-fg-3 mt-1">
+                    {jfInCat.length} Jonfrey · {loopsInCat.length} loop(s) LLM nesta seção
                   </p>
-                  <p className="text-[11px] text-fg-3 truncate">{action.description.slice(0, 80)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">Jonfrey</span>
-                  <span className="text-[10px] text-fg-3">{CATEGORY_LABEL[action.category] ?? action.category}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  {last ? (
-                    <span className="text-[11px] text-fg-3">{relJonfreyTime(last.created_at)}</span>
-                  ) : (
-                    <span className="text-[11px] text-fg-4">nunca</span>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                  <Switch size="sm" checked={enabled} disabled={actionMut.isPending} onChange={v => actionMut.mutate({ actionId: action.type, enable: v })} />
-                  <span className="text-[10px] text-fg-3">{enabled ? 'ativa' : 'inativa'}</span>
-                </div>
-                <div className="shrink-0">
-                  <button
-                    onClick={() => runJonfrey(action.type)}
-                    disabled={running[action.type]}
-                    className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40"
-                  >
-                    {running[action.type] ? '⏳' : '▶'}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
+                <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
+                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-2 bg-surface-2 text-[11px] font-medium text-fg-3 uppercase tracking-wide">
+                    <span>Automação</span>
+                    <span className="text-right">Tipo</span>
+                    <span className="text-right">Última execução</span>
+                    <span className="text-right">Estado</span>
+                    <span className="text-right">Run</span>
+                  </div>
 
-          {/* Loops autônomos */}
-          {LOOP_NAMES.map(name => {
-            const loop = loopMap[name] ?? { loop_name: name, status: 'disabled', strikes_30d: 0, actions_last_7d: 0, suggestions_open: 0 }
-            const statusColor = loop.status === 'active' ? 'text-success' : loop.status === 'suggesting' ? 'text-warning' : 'text-fg-3'
-            return (
-              <div key={name} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-3 items-center bg-surface hover:bg-surface-2/50">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-fg">
-                    {name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                  </p>
-                  <p className="text-[11px] text-fg-3">{LOOP_SCHEDULE[name]} · {loop.actions_last_7d} ações/7d</p>
-                </div>
-                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-3 font-medium">Loop</span>
-                  <span className="text-[10px] text-fg-3">{CATEGORY_LABEL[LOOP_CATEGORY[name]] ?? 'Agendado'}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  {loop.strikes_30d > 0 && (
-                    <span className="text-[11px] text-danger">{loop.strikes_30d} strikes</span>
-                  )}
-                </div>
-                <div className="shrink-0">
-                  <select
-                    value={loop.status}
-                    onChange={e => setLoopStatus(name, e.target.value)}
-                    className={`text-xs rounded border border-border bg-surface px-1 py-0.5 ${statusColor} cursor-pointer`}
-                  >
-                    <option value="active">Ativo</option>
-                    <option value="suggesting">Sugestão</option>
-                    <option value="disabled">Inativo</option>
-                  </select>
-                </div>
-                <div className="shrink-0">
-                  <button
-                    onClick={() => runLoop(name)}
-                    disabled={running[name]}
-                    className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40"
-                  >
-                    {running[name] ? '⏳' : '▶'}
-                  </button>
+                  {jfInCat.map(action => {
+                    const last = lastByType(action.type)
+                    const enabled = enabledActions.includes(action.type)
+                    return (
+                      <div key={action.type} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-3 items-center bg-surface hover:bg-surface-2/50">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-fg truncate" title={action.description}>
+                            {action.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                          </p>
+                          <p className="text-[11px] text-fg-3 truncate">{action.description.slice(0, 80)}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">Jonfrey</span>
+                          {action.uses_llm && (
+                            <span className="text-[9px] text-fg-3">LLM</span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          {last ? (
+                            <span className="text-[11px] text-fg-3">{relJonfreyTime(last.created_at)}</span>
+                          ) : (
+                            <span className="text-[11px] text-fg-4">nunca</span>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <Switch size="sm" checked={enabled} disabled={actionMut.isPending} onChange={v => actionMut.mutate({ actionId: action.type, enable: v })} />
+                          <span className="text-[10px] text-fg-3">{enabled ? 'ativa' : 'inativa'}</span>
+                        </div>
+                        <div className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => runJonfrey(action.type)}
+                            disabled={running[action.type]}
+                            className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40"
+                          >
+                            {running[action.type] ? '⏳' : '▶'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {loopsInCat.map(name => {
+                    const loop = loopMap[name] ?? { loop_name: name, status: 'disabled', strikes_30d: 0, actions_last_7d: 0, suggestions_open: 0 }
+                    const statusColor = loop.status === 'active' ? 'text-success' : loop.status === 'suggesting' ? 'text-warning' : 'text-fg-3'
+                    return (
+                      <div key={name} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-3 items-center bg-surface hover:bg-surface-2/50">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-fg">
+                            {name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                          </p>
+                          <p className="text-[11px] text-fg-3">{LOOP_SCHEDULE[name]} · {loop.actions_last_7d} ações/7d</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-3 font-medium">Loop LLM</span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          {loop.strikes_30d > 0 ? (
+                            <span className="text-[11px] text-danger">{loop.strikes_30d} strikes</span>
+                          ) : (
+                            <span className="text-[11px] text-fg-4">—</span>
+                          )}
+                        </div>
+                        <div className="shrink-0">
+                          <select
+                            value={loop.status}
+                            onChange={e => setLoopStatus(name, e.target.value)}
+                            className={`text-xs rounded border border-border bg-surface px-1 py-0.5 ${statusColor} cursor-pointer`}
+                          >
+                            <option value="active">Ativo</option>
+                            <option value="suggesting">Sugestão</option>
+                            <option value="disabled">Inativo</option>
+                          </select>
+                        </div>
+                        <div className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => runLoop(name)}
+                            disabled={running[name]}
+                            className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40"
+                          >
+                            {running[name] ? '⏳' : '▶'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )

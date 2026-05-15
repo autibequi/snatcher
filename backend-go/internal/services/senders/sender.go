@@ -346,9 +346,9 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	if _, err := db.ExecContext(ctx, `
 				INSERT INTO short_links (short_id, dest_url, source)
 				VALUES ($1, $2, $3)
-				ON CONFLICT (short_id) DO UPDATE SET dest_url = EXCLUDED.dest_url
+				ON CONFLICT (short_id) DO UPDATE SET dest_url = EXCLUDED.dest_url, source = EXCLUDED.source
 			`, groupShort, affiliateURL, marketplace); err != nil {
-		return nil, fmt.Errorf("short_links gravar dest_url: %w — possível colisão UNIQUE(dest_url) com outro short_id", err)
+		return nil, fmt.Errorf("short_links: %w", err)
 	}
 	link := "https://" + domainHost + "/v/" + groupShort
 

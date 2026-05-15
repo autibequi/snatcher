@@ -367,6 +367,7 @@ func Build(
 
 		// Catalog Canônico v2
 		r.Get("/api/admin/catalog-canonical/stats", adminhnd.CatalogCanonicalStatsHandler(db))
+		r.Get("/api/admin/catalog-canonical/llm-queue", adminhnd.ListCatalogLLMQueueHandler(db))
 		r.Get("/api/admin/catalog-canonical", adminhnd.ListCatalogCanonicalHandler(db))
 		r.Post("/api/admin/catalog-canonical/reprocess-heuristic", adminhnd.ReprocessCatalogHeuristicHandler(db))
 		r.Get("/api/admin/product-brands", adminhnd.ListProductBrandsHandler(db))

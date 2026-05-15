@@ -126,6 +126,76 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 	}
 }
 
+// GET /api/admin/catalog-canonical/llm-queue?status=active|all|pending|processing|done|error&limit=100
+func ListCatalogLLMQueueHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		statusFilter := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("status")))
+		if statusFilter == "" {
+			statusFilter = "active"
+		}
+		limit := 100
+		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
+			limit = v
+		}
+
+		whereStatus := ""
+		args := []any{}
+		switch statusFilter {
+		case "active":
+			whereStatus = "q.status IN ('pending', 'processing', 'error')"
+		case "all":
+			whereStatus = "TRUE"
+		case "pending", "processing", "done", "error":
+			whereStatus = "q.status = $1"
+			args = append(args, statusFilter)
+		default:
+			http.Error(w, "invalid status (use active, all, pending, processing, done, error)", http.StatusBadRequest)
+			return
+		}
+
+		argN := len(args) + 1
+		args = append(args, limit)
+
+		q := `
+			SELECT q.catalog_id, q.status, q.reason,
+			       q.enqueued_at::text AS enqueued_at, q.processed_at::text AS processed_at, q.last_error,
+			       c.title, c.source_id,
+			       ct.display_name AS category_name
+			FROM catalog_llm_queue q
+			INNER JOIN catalog c ON c.id = q.catalog_id
+			LEFT JOIN categories ct ON ct.id = c.category_id
+			WHERE ` + whereStatus + `
+			ORDER BY q.enqueued_at DESC
+			LIMIT $` + strconv.Itoa(argN)
+
+		type row struct {
+			CatalogID    int64   `db:"catalog_id" json:"catalog_id"`
+			Status       string  `db:"status" json:"status"`
+			Reason       *string `db:"reason" json:"reason,omitempty"`
+			EnqueuedAt   string  `db:"enqueued_at" json:"enqueued_at"`
+			ProcessedAt  *string `db:"processed_at" json:"processed_at,omitempty"`
+			LastError    *string `db:"last_error" json:"last_error,omitempty"`
+			Title        string  `db:"title" json:"title"`
+			SourceID     string  `db:"source_id" json:"source_id"`
+			CategoryName *string `db:"category_name" json:"category_name,omitempty"`
+		}
+		var rows []row
+		if err := db.SelectContext(r.Context(), &rows, q, args...); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if rows == nil {
+			rows = []row{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(rows) //nolint:errcheck
+	}
+}
+
 // GET /api/admin/catalog-canonical/stats
 func CatalogCanonicalStatsHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
