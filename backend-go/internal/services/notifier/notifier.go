@@ -41,6 +41,7 @@ const (
 	KindDispatchFailed     Kind = "dispatch-failed"
 	KindAccountIssue       Kind = "account-issue"
 	KindLLMSuggestion      Kind = "llm-suggestion"
+	KindLoopFailure        Kind = "loop-failure"
 	KindJonfreyJobQueued   Kind = "jonfrey-job-queued"
 	KindGenericInfo        Kind = "info"
 )
