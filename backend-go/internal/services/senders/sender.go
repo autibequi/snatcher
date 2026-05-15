@@ -17,7 +17,9 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/adapters"
+	"snatcher/backendv2/internal/services/affiliates"
 	"snatcher/backendv2/internal/services/algo"
 	"snatcher/backendv2/internal/services/compose"
 	"snatcher/backendv2/internal/services/llm"
@@ -242,17 +244,37 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		}
 	}
 
-	link := cat.CanonicalURL
+	// 4a. Injetar código de afiliado — OBRIGATÓRIO. Sem afiliado = falha no envio.
+	var affiliatePrograms []models.AffiliateProgram
+	_ = db.SelectContext(ctx, &affiliatePrograms, `SELECT id, marketplace, credentials, active FROM affiliate_programs WHERE active=true`)
+	marketplace := affiliates.InferMarketplaceFromProductURL(cat.CanonicalURL)
+	affiliateURL, _, affiliateErr := affiliates.BuildLinkStrict(cat.CanonicalURL, marketplace, affiliatePrograms)
+	if affiliateErr != nil {
+		return fmt.Errorf("sem programa de afiliado para %s — link sem código não pode ser enviado: %w", marketplace, affiliateErr)
+	}
+
+	// 4b. Gera shortlink com a URL de afiliado (não a URL limpa).
+	link := affiliateURL // fallback: URL de afiliado direta (sem shortener)
 	if domainID != nil {
 		var groupShort sql.NullString
 		_ = db.GetContext(ctx, &groupShort,
 			`SELECT ensure_group_shortlink($1, $2)`, catalogID, groupID)
 		if groupShort.Valid && groupShort.String != "" {
+			// Armazena URL de afiliado no short_links para que o redirect use ela
+			_, _ = db.ExecContext(ctx, `
+				INSERT INTO short_links (short_id, dest_url, source)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (short_id) DO UPDATE SET dest_url = EXCLUDED.dest_url
+			`, groupShort.String, affiliateURL, marketplace)
 			var domain sql.NullString
 			if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
 				link = "https://" + domain.String + "/" + groupShort.String
 			}
 		}
+	}
+	if link == affiliateURL {
+		// Não conseguiu shortlink — obrigatório ter shortlink para rastreamento
+		return fmt.Errorf("shortlink não pôde ser gerado (sem domínio configurado) — envio cancelado para preservar rastreamento")
 	}
 
 	// 5. interpola variáveis no template
