@@ -402,6 +402,7 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 			WHERE q.catalog_id = c.id
 			  AND c.brand IS NOT NULL AND btrim(c.brand) <> ''
 			  AND c.category_id IS NOT NULL
+			  AND c.brand_id IS NOT NULL
 		`); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -412,13 +413,15 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 			SELECT id, 'pending',
 				CASE
 					WHEN brand IS NULL OR btrim(brand) = '' THEN 'no_brand_keyword_match'
-					ELSE 'no_category_keyword_match'
+					WHEN category_id IS NULL THEN 'no_category_keyword_match'
+					ELSE 'no_brand_id_match'
 				END
 			FROM catalog
 			WHERE title IS NOT NULL AND btrim(title) <> ''
 			  AND (
 			    brand IS NULL OR btrim(brand) = ''
 			    OR category_id IS NULL
+			    OR brand_id IS NULL
 			  )
 			ON CONFLICT (catalog_id) DO UPDATE SET
 				status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,

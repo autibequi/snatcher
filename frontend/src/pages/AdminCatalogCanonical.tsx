@@ -532,7 +532,6 @@ export default function AdminCatalogCanonical() {
               <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell">Categoria</th>
               <th className="text-right px-3 py-2 font-medium text-fg-2">Preço</th>
               <th className="text-center px-3 py-2 font-medium text-fg-2 hidden lg:table-cell">Score</th>
-              <th className="text-center px-3 py-2 font-medium text-fg-2">Ready</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -594,12 +593,6 @@ export default function AdminCatalogCanonical() {
                   {/* Score */}
                   <td className="px-3 py-2 text-center hidden lg:table-cell">
                     <QualityBadge score={item.quality_score} />
-                  </td>
-                  {/* send_ready */}
-                  <td className="px-3 py-2 text-center">
-                    <span className={item.send_ready ? 'text-success' : 'text-danger'}>
-                      {item.send_ready ? '✓' : '✗'}
-                    </span>
                   </td>
                   {/* Ações */}
                   <td className="px-3 py-2">

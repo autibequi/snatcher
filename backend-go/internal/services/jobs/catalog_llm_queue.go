@@ -14,9 +14,23 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// catalogRowCompleteForCatalogEntry exige slug de marca, FK em product_brands e categoria — alinhado ao trigger trg_catalog_llm_queue_sync.
+func catalogRowCompleteForCatalogEntry(brand sql.NullString, brandID sql.NullInt64, catID sql.NullInt64) bool {
+	if !brand.Valid || strings.TrimSpace(brand.String) == "" {
+		return false
+	}
+	if !brandID.Valid || brandID.Int64 <= 0 {
+		return false
+	}
+	if !catID.Valid || catID.Int64 <= 0 {
+		return false
+	}
+	return true
+}
+
 // RunCatalogLLMQueueOnce reivindica um item pending da catalog_llm_queue, tenta eurística no catálogo
 // e, se ainda faltar marca ou categoria, chama o LLM (JSON) para sugerir slugs válidos.
-// Sucesso: trigger em catalog remove a linha da fila quando brand+category_id estão preenchidos.
+// Sucesso: trigger em catalog remove a linha da fila quando brand, brand_id e category_id estão preenchidos.
 // Retorno típico: {"processed":true|false,"catalog_id":N,"mode":"heuristic"|"llm"|"none","message":"..."}
 func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() llm.Client) (map[string]any, error) {
 	out := map[string]any{"processed": false}
@@ -88,12 +102,13 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 	}
 
 	var brand sql.NullString
+	var brandID sql.NullInt64
 	var catID sql.NullInt64
-	if err := db.QueryRowxContext(ctx, `SELECT brand, category_id FROM catalog WHERE id = $1`, catalogID).Scan(&brand, &catID); err != nil {
+	if err := db.QueryRowxContext(ctx, `SELECT brand, brand_id, category_id FROM catalog WHERE id = $1`, catalogID).Scan(&brand, &brandID, &catID); err != nil {
 		_ = markQueueLLMError(ctx, db, catalogID, "ler catalog: "+truncateErr(err.Error()))
 		return out, err
 	}
-	if brand.Valid && strings.TrimSpace(brand.String) != "" && catID.Valid && catID.Int64 > 0 {
+	if catalogRowCompleteForCatalogEntry(brand, brandID, catID) {
 		out["processed"] = true
 		out["catalog_id"] = catalogID
 		out["mode"] = "heuristic"
@@ -103,8 +118,8 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 
 	cli := llmFactory()
 	if cli == nil {
-		_ = markQueueLLMError(ctx, db, catalogID, "LLM não configurado (Settings → LLM / API key)")
-		out["message"] = "LLM não configurado"
+		_ = markQueueLLMRequeuePending(ctx, db, catalogID, "LLM não configurado — mantendo pending (Settings → LLM / API key)")
+		out["message"] = "LLM não configurado; item voltou para pending"
 		return out, nil
 	}
 
@@ -216,6 +231,16 @@ Origem/source (pode ser vazio): %q`,
 		return out, err
 	}
 
+	if err := db.QueryRowxContext(ctx, `SELECT brand, brand_id, category_id FROM catalog WHERE id = $1`, catalogID).Scan(&brand, &brandID, &catID); err != nil {
+		_ = markQueueLLMError(ctx, db, catalogID, "pós-LLM ler catalog: "+truncateErr(err.Error()))
+		return out, err
+	}
+	if !catalogRowCompleteForCatalogEntry(brand, brandID, catID) {
+		_ = markQueueLLMRequeuePending(ctx, db, catalogID, "pós-LLM: marca/categoria/brand_id ainda incompletos após UPDATE")
+		out["message"] = "UPDATE aplicado mas linha incompleta; re-enfileirado como pending"
+		return out, nil
+	}
+
 	out["processed"] = true
 	out["catalog_id"] = catalogID
 	out["mode"] = "llm"
@@ -229,6 +254,17 @@ func markQueueLLMError(ctx context.Context, db *sqlx.DB, catalogID int64, msg st
 	_, err := db.ExecContext(ctx, `
 		UPDATE catalog_llm_queue
 		SET status = 'error', last_error = $2, processed_at = now()
+		WHERE catalog_id = $1 AND status = 'processing'
+	`, catalogID, msg)
+	return err
+}
+
+// markQueueLLMRequeuePending libera claim `processing` → pending para nova tentativa (ex.: LLM off, dados inconsistentes).
+func markQueueLLMRequeuePending(ctx context.Context, db *sqlx.DB, catalogID int64, msg string) error {
+	msg = truncateErr(msg)
+	_, err := db.ExecContext(ctx, `
+		UPDATE catalog_llm_queue
+		SET status = 'pending', last_error = $2, processed_at = NULL
 		WHERE catalog_id = $1 AND status = 'processing'
 	`, catalogID, msg)
 	return err
