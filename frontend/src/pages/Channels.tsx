@@ -697,11 +697,23 @@ function TabLinks({ channelId, channelName }: { channelId: number; channelName: 
     staleTime: 30_000,
   })
 
+  // Busca grupos do canal para popular fallback_chain
+  const { data: channelDetail } = useQuery<{ groups?: { id: number }[] }>({
+    queryKey: ['channel-detail', channelId],
+    queryFn: () => authFetchJSON(`/api/channels/${channelId}`, {}),
+    staleTime: 60_000,
+  })
+
   const createMut = useMutation({
-    mutationFn: () => apiClient.post('/api/public-links', {
-      slug: slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-      channel_id: channelId,
-    }).then(r => r.data),
+    mutationFn: () => {
+      const groupIds = (channelDetail as { groups?: { id: number }[] })?.groups?.map(g => g.id) ?? []
+      return apiClient.post('/api/public-links', {
+        slug: slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        channel_id: channelId,
+        fallback_chain: groupIds,
+        redirect_strategy: 'round-robin',
+      }).then(r => r.data)
+    },
     onSuccess: () => {
       setError('')
       void qc.invalidateQueries({ queryKey: ['public-links', channelId] })
@@ -722,12 +734,12 @@ function TabLinks({ channelId, channelName }: { channelId: number; channelName: 
   const existing = links[0]
 
   return (
-    <div className="space-y-3">
+    <div className="p-4 space-y-3">
       <p className="text-xs text-fg-3">Link de entrada do canal — redireciona para o grupo com vaga.</p>
 
       {existing ? (
         <div className="flex items-center gap-2 rounded border border-border bg-surface px-3 py-2">
-          <span className="font-mono text-sm text-accent flex-1">/{existing.slug}</span>
+          <span className="font-mono text-sm text-accent flex-1">jon.promo/g/{existing.slug}</span>
           <button
             onClick={() => { if (confirm(`Remover /${existing.slug}?`)) deleteMutLink.mutate(existing.id) }}
             className="text-xs text-danger hover:opacity-70"
@@ -735,7 +747,7 @@ function TabLinks({ channelId, channelName }: { channelId: number; channelName: 
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-fg-3 text-sm font-mono shrink-0">/</span>
+          <span className="text-fg-3 text-sm font-mono shrink-0">jon.promo/g/</span>
           <input
             value={slug}
             onChange={e => setSlug(e.target.value)}
