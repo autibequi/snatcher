@@ -239,7 +239,7 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	// Se domainID não veio na send_queue, busca o primeiro domínio ativo.
 	if domainID == nil {
 		var id int64
-		if err := db.GetContext(ctx, &id, `SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1`); err == nil {
+		if err := db.GetContext(ctx, &id, `SELECT id FROM redirect_domains WHERE active=true ORDER BY id LIMIT 1`); err == nil {
 			domainID = &id
 		}
 	}
@@ -268,7 +268,7 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 			`, groupShort.String, affiliateURL, marketplace)
 			var domain sql.NullString
 			if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
-				link = "https://" + domain.String + "/" + groupShort.String
+				link = "https://" + domain.String + "/v/" + groupShort.String
 			}
 		}
 	}

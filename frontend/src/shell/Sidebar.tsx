@@ -48,9 +48,8 @@ const NAV: NavGroup[] = [
   {
     label: 'Análise',
     items: [
-      { to: '/admin/conversions', label: 'Conversões', icon: '💵' },
-      { to: '/admin/metrics',     label: 'Métricas',   icon: '📈' },
-      { to: '/clusters',          label: 'Clusters',   icon: '🧩' },
+      { to: '/admin/metrics', label: 'Métricas', icon: '📈' },
+      { to: '/clusters',      label: 'Clusters', icon: '🧩' },
     ],
   },
   {
