@@ -105,6 +105,12 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		  AND (cl.price_max IS NULL OR c.price_current <= cl.price_max)
 		  AND COALESCE(c.discount_pct, 0) >= cl.min_discount_pct
 		  AND ($3::bigint IS NULL OR c.category_id = $3)
+		  -- Se o canal tem pesos de categoria configurados, restringe a essas categorias.
+		  -- Canal sem pesos → aceita qualquer produto (backward compat).
+		  AND (
+		      NOT EXISTS (SELECT 1 FROM channel_category_weights WHERE channel_id = $2 AND weight > 0)
+		      OR c.category_id IN (SELECT category_id FROM channel_category_weights WHERE channel_id = $2 AND weight > 0)
+		  )
 		  -- Anti-repeat com bypass condicional ("re-promo"):
 		  --   A) nunca enviado nesse grupo
 		  --   B) janela padrão expirou (default 7d, ou 14d se preço subiu)
