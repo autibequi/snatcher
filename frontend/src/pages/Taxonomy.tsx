@@ -61,6 +61,88 @@ const TABS = [
   { id: 'patterns', label: 'Patterns' },
 ]
 
+// ── KeywordsTab — categoria_keywords / brand_keywords ────────────────────────
+
+function KeywordsTab({ type, search, onSearch, isLoading, items, onDelete, onAdd }: {
+  type: 'category' | 'brand'
+  search: string
+  onSearch: (v: string) => void
+  isLoading: boolean
+  items: Record<string, unknown>[]
+  onDelete: (id: number) => void
+  onAdd: (slug: string, pattern: string, display?: string) => void
+}) {
+  const [newSlug, setNewSlug] = useState('')
+  const [newPattern, setNewPattern] = useState('')
+  const [newDisplay, setNewDisplay] = useState('')
+
+  // Agrupar por slug
+  const grouped: Record<string, Record<string, unknown>[]> = {}
+  for (const item of items) {
+    const key = String(type === 'category' ? item.category_slug : item.brand_slug)
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(item)
+  }
+
+  return (
+    <div className="space-y-4">
+      <Input placeholder="Buscar..." value={search} onChange={e => onSearch(e.target.value)} />
+
+      {isLoading ? <p className="text-sm text-fg-3">Carregando...</p>
+        : items.length === 0 ? (
+          <EmptyState title="Nenhum keyword cadastrado"
+            description="As keywords são usadas para classificar produtos automaticamente." />
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(grouped).map(([slug, kws]) => (
+              <div key={slug} className={tableContainer}>
+                <div className="px-3 py-2 bg-surface-2 border-b border-border flex items-center gap-2">
+                  <span className="font-medium text-sm">{slug}</span>
+                  {type === 'brand' && kws[0] && (
+                    <span className="text-xs text-fg-3">({String((kws[0] as Record<string, unknown>).brand_display)})</span>
+                  )}
+                  <span className="text-xs text-fg-3 ml-auto">{kws.length} patterns</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                  {kws.map(kw => (
+                    <span key={String(kw.id)} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-surface-2 border border-border">
+                      <code>{String(kw.pattern)}</code>
+                      <button onClick={() => onDelete(Number(kw.id))} className="text-fg-4 hover:text-danger ml-0.5">✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      }
+
+      {/* Adicionar nova keyword */}
+      <div className="rounded-lg border border-border bg-surface p-3 space-y-2">
+        <p className="text-xs font-medium text-fg-3 uppercase tracking-wide">Adicionar keyword</p>
+        <div className="flex gap-2 flex-wrap">
+          <input value={newSlug} onChange={e => setNewSlug(e.target.value)}
+            placeholder={type === 'category' ? 'Slug (ex: tenis)' : 'Brand slug (ex: nike)'}
+            className="text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent flex-1 min-w-0" />
+          {type === 'brand' && (
+            <input value={newDisplay} onChange={e => setNewDisplay(e.target.value)}
+              placeholder="Nome exibição (ex: Nike)"
+              className="text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent w-40" />
+          )}
+          <input value={newPattern} onChange={e => setNewPattern(e.target.value)}
+            placeholder="Pattern ILIKE (ex: %nike%)"
+            className="text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent flex-1 min-w-0" />
+          <button
+            onClick={() => { if (newSlug && newPattern) { onAdd(newSlug, newPattern, newDisplay); setNewSlug(''); setNewPattern(''); setNewDisplay('') } }}
+            disabled={!newSlug || !newPattern}
+            className="text-xs px-3 py-1 rounded bg-accent text-white disabled:opacity-50 shrink-0"
+          >Adicionar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Taxonomy() {
@@ -76,14 +158,22 @@ export default function Taxonomy() {
       ? ['taxonomy', 'pending']
       : tab === 'patterns'
         ? ['patterns', selectedTaxonomyId]
-        : ['taxonomy', tab]
+        : tab === 'category'
+          ? ['category-keywords']
+          : tab === 'brand'
+            ? ['brand-keywords']
+            : ['taxonomy', tab]
 
   const url =
     tab === 'pending'
       ? '/api/taxonomy/pending'
       : tab === 'patterns'
         ? `/api/taxonomy/patterns?taxonomy_id=${selectedTaxonomyId}`
-        : `/api/taxonomy?type=${tab}`
+        : tab === 'category'
+          ? '/api/admin/category-keywords'
+          : tab === 'brand'
+            ? '/api/admin/brand-keywords'
+            : `/api/taxonomy?type=${tab}`
 
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey,
@@ -91,9 +181,12 @@ export default function Taxonomy() {
     enabled: tab !== 'patterns' || selectedTaxonomyId !== null,
   })
 
-  const filtered = items.filter(
-    i => !search || i.name.toLowerCase().includes(search.toLowerCase()),
-  )
+  // Para category/brand keywords, campo de busca usa category_slug/brand_slug
+  const filtered = items.filter(i => {
+    if (!search) return true
+    const text = (i.name ?? i.category_slug ?? i.brand_slug ?? i.brand_display ?? '').toLowerCase()
+    return text.includes(search.toLowerCase()) || (i.pattern ?? '').toLowerCase().includes(search.toLowerCase())
+  })
 
   const approveMut = useMutation({
     mutationFn: (id: number) => apiClient.post(`/api/taxonomy/${id}/approve`),
@@ -156,6 +249,27 @@ export default function Taxonomy() {
             if (confirm('Excluir este pattern?')) deletePatternMut.mutate(id)
           }}
           onAdd={() => setShowCreate(true)}
+        />
+      ) : tab === 'category' || tab === 'brand' ? (
+        <KeywordsTab
+          type={tab}
+          search={search}
+          onSearch={setSearch}
+          isLoading={isLoading}
+          items={filtered}
+          onDelete={id => {
+            const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
+            if (confirm('Remover keyword?')) apiClient.delete(`/api/admin/${endpoint}/${id}`)
+              .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
+          }}
+          onAdd={(slug, pattern, display) => {
+            const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
+            const body = tab === 'category'
+              ? { category_slug: slug, pattern }
+              : { brand_slug: slug, brand_display: display || slug, pattern }
+            apiClient.post(`/api/admin/${endpoint}`, body)
+              .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
+          }}
         />
       ) : (
         <TaxonomyTab

@@ -261,6 +261,14 @@ func Build(
 		// ReDesign: Match
 
 		// Taxonomy (categorias e marcas para autocomplete + admin)
+		// Keywords de categoria e marca (tabelas dinâmicas editáveis)
+		r.Get("/api/admin/category-keywords", adminhnd.CategoryKeywordsListHandler(db))
+		r.Post("/api/admin/category-keywords", adminhnd.CategoryKeywordsAddHandler(db))
+		r.Delete("/api/admin/category-keywords/{id}", adminhnd.CategoryKeywordsDeleteHandler(db))
+		r.Get("/api/admin/brand-keywords", adminhnd.BrandKeywordsListHandler(db))
+		r.Post("/api/admin/brand-keywords", adminhnd.BrandKeywordsAddHandler(db))
+		r.Delete("/api/admin/brand-keywords/{id}", adminhnd.BrandKeywordsDeleteHandler(db))
+
 		r.Get("/api/taxonomy", taxonomy.List)
 		r.Get("/api/taxonomy/pending", taxonomy.ListPending)
 		r.Post("/api/taxonomy/suggest", taxonomy.Suggest)
