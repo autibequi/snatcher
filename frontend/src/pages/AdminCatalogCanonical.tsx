@@ -12,6 +12,7 @@ interface CatalogItem {
   category_id?: number
   category_name?: string
   title: string
+  brand?: string
   image_url?: string
   price_original?: number
   price_current: number
@@ -19,6 +20,7 @@ interface CatalogItem {
   quality_score?: number
   send_ready: boolean
   canonical_url_alive: boolean
+  canonical_url?: string
   created_at: string
   send_ready_at?: string
 }
@@ -53,26 +55,26 @@ function DetailModal({ item, onClose }: DetailModalProps) {
             ✕
           </button>
         </div>
-        <dl className="text-sm space-y-1">
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">ID</dt><dd>{item.id}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">short_id</dt><dd className="font-mono text-xs">{item.short_id}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">dedup_key</dt><dd className="font-mono text-xs break-all">{item.dedup_key}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">source_id</dt><dd>{item.source_id}</dd></div>
+        <dl className="text-sm space-y-1.5">
+          {item.brand && <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Marca</dt><dd className="font-semibold">{item.brand}</dd></div>}
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Categoria</dt><dd>{item.category_name ?? item.category_id ?? '—'}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço atual</dt><dd>{brl.format(item.price_current)}</dd></div>
-          {item.price_original != null && (
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Source</dt><dd>{item.source_id}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço atual</dt><dd className="font-medium">{brl.format(item.price_current)}</dd></div>
+          {item.price_original != null && item.price_original > 0 && (
             <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço original</dt><dd>{brl.format(item.price_original)}</dd></div>
           )}
-          {item.discount_pct != null && (
-            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Desconto</dt><dd>{item.discount_pct.toFixed(1)}%</dd></div>
+          {item.discount_pct != null && item.discount_pct > 0 && (
+            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Desconto</dt><dd className="text-success">{item.discount_pct.toFixed(1)}%</dd></div>
           )}
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Quality score</dt><dd>{item.quality_score != null ? item.quality_score.toFixed(3) : '—'}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Quality score</dt><dd>{item.quality_score?.toFixed(3) ?? '—'}</dd></div>
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">send_ready</dt><dd>{item.send_ready ? '✓' : '✗'}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">canonical_url_alive</dt><dd>{item.canonical_url_alive ? '✓' : '✗'}</dd></div>
-          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Criado em</dt><dd>{item.created_at}</dd></div>
-          {item.send_ready_at && (
-            <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">send_ready_at</dt><dd>{item.send_ready_at}</dd></div>
+          {item.canonical_url && (
+            <div className="flex gap-2 items-start"><dt className="text-fg-3 w-36 flex-shrink-0">URL</dt>
+              <dd><a href={item.canonical_url} target="_blank" rel="noreferrer" className="text-accent text-xs break-all hover:underline">{item.canonical_url}</a></dd>
+            </div>
           )}
+          <div className="flex gap-2 font-mono text-xs"><dt className="text-fg-3 w-36 flex-shrink-0">dedup_key</dt><dd className="break-all">{item.dedup_key}</dd></div>
+          <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Criado em</dt><dd>{item.created_at}</dd></div>
         </dl>
       </div>
     </div>
@@ -221,11 +223,11 @@ export default function AdminCatalogCanonical() {
             <tr>
               <th className="w-14 px-3 py-2" />
               <th className="text-left px-3 py-2 font-medium text-fg-2">Título</th>
-              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell">Source / Categoria</th>
+              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden sm:table-cell">Marca</th>
+              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell">Categoria</th>
               <th className="text-right px-3 py-2 font-medium text-fg-2">Preço</th>
               <th className="text-center px-3 py-2 font-medium text-fg-2 hidden lg:table-cell">Score</th>
               <th className="text-center px-3 py-2 font-medium text-fg-2">Ready</th>
-              <th className="text-center px-3 py-2 font-medium text-fg-2">URL</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -233,14 +235,14 @@ export default function AdminCatalogCanonical() {
             {loading ? (
               [...Array(10)].map((_, i) => (
                 <tr key={i}>
-                  <td colSpan={8} className="px-3 py-2">
+                  <td colSpan={7} className="px-3 py-2">
                     <div className="h-4 bg-surface-2 rounded animate-pulse" />
                   </td>
                 </tr>
               ))
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-fg-4">Nenhum item encontrado.</td>
+                <td colSpan={7} className="px-3 py-6 text-center text-fg-4">Nenhum item encontrado.</td>
               </tr>
             ) : (
               items.map(item => (
@@ -264,10 +266,18 @@ export default function AdminCatalogCanonical() {
                       {item.title.length > 60 ? item.title.slice(0, 60) + '…' : item.title}
                     </span>
                   </td>
-                  {/* Source / Categoria */}
+                  {/* Marca */}
+                  <td className="px-3 py-2 hidden sm:table-cell text-sm">
+                    {item.brand ? (
+                      <span className="font-medium text-fg">{item.brand}</span>
+                    ) : (
+                      <span className="text-fg-4 text-xs">—</span>
+                    )}
+                  </td>
+                  {/* Categoria */}
                   <td className="px-3 py-2 hidden md:table-cell text-xs text-fg-3">
-                    <div>{item.source_id}</div>
-                    {item.category_name && <div className="text-fg-4">{item.category_name}</div>}
+                    <div className="text-[10px] text-fg-4">{item.source_id}</div>
+                    {item.category_name && <div>{item.category_name}</div>}
                   </td>
                   {/* Preço */}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -284,12 +294,6 @@ export default function AdminCatalogCanonical() {
                   <td className="px-3 py-2 text-center">
                     <span className={item.send_ready ? 'text-success' : 'text-danger'}>
                       {item.send_ready ? '✓' : '✗'}
-                    </span>
-                  </td>
-                  {/* canonical_url_alive */}
-                  <td className="px-3 py-2 text-center">
-                    <span className={item.canonical_url_alive ? 'text-success' : 'text-danger'}>
-                      {item.canonical_url_alive ? '✓' : '✗'}
                     </span>
                   </td>
                   {/* Ações */}
