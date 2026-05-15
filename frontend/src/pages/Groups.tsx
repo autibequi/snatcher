@@ -172,6 +172,18 @@ function StatusDot({ status }: { status?: string }) {
 
 function AudienceBadge({ audienceStatus }: { audienceStatus?: string }) {
   if (!audienceStatus) return <span className="text-xs text-fg-3">—</span>
+  // GET /api/groups hoje devolve `sem_perfil` para todos (enrich ainda não cruza canal/audiência).
+  // Não mostrar como falha — só alerta quando vier explícito `no_profile` ou similar no futuro.
+  if (audienceStatus === 'sem_perfil') {
+    return (
+      <span
+        className="text-xs text-fg-3"
+        title="A listagem ainda não calcula perfil de audiência. No detalhe do grupo use inferir audiência / canal para enriquecer."
+      >
+        —
+      </span>
+    )
+  }
   const ok = hasAudienceProfile(audienceStatus)
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border ${

@@ -105,11 +105,8 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	}
 	enriched.ChannelsCount = channelsCount
 
-	if g.ChannelID.Valid {
-		enriched.AudienceStatus = "sem_perfil"
-	} else {
-		enriched.AudienceStatus = "sem_perfil"
-	}
+	// TODO: cruzar canal / audiência / taxonomia para "perfil" vs "sem_perfil". Por ora listagem não distingue.
+	enriched.AudienceStatus = "sem_perfil"
 
 	if g.WAAccountID.Valid {
 		if acc, err := h.store.GetAccountV2(g.WAAccountID.Int64); err == nil {
