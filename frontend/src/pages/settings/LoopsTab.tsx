@@ -123,7 +123,12 @@ export function LoopsTab() {
     },
   })
 
-  type HeuristicReprocessResult = { updated_rows?: number; llm_queue_pending?: number }
+  type HeuristicReprocessResult = {
+    updated_rows?: number
+    llm_queue_pending?: number
+    llm_queue_processing?: number
+    llm_queue_error?: number
+  }
 
   /** Reclassifica todo o catálogo com brand_keywords + category_keywords (sem LLM). Pode demorar em bases grandes. */
   const reprocessHeuristicMut = useMutation({
@@ -268,6 +273,10 @@ export function LoopsTab() {
               <strong>{reprocessHeuristicMut.data.updated_rows ?? '—'}</strong>
               {' · '}
               fila LLM pending: <strong>{reprocessHeuristicMut.data.llm_queue_pending ?? '—'}</strong>
+              {' · '}
+              processing: <strong>{reprocessHeuristicMut.data.llm_queue_processing ?? '—'}</strong>
+              {' · '}
+              erro: <strong>{reprocessHeuristicMut.data.llm_queue_error ?? '—'}</strong>
             </p>
           )}
           {reprocessHeuristicMut.isError && <p className="text-xs text-danger">Falhou — ver alerta ou consola.</p>}

@@ -13,10 +13,11 @@ import (
 	"snatcher/backendv2/internal/services/llm"
 )
 
-// GET /api/admin/catalog-canonical?ready_only=1&category_id=N&limit=50&offset=0
+// GET /api/admin/catalog-canonical?ready_only=1&incomplete_enrichment=1&category_id=N&limit=50&offset=0
 func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		readyOnly := r.URL.Query().Get("ready_only") == "1"
+		incompleteEnrichment := r.URL.Query().Get("incomplete_enrichment") == "1"
 		categoryID, _ := strconv.ParseInt(r.URL.Query().Get("category_id"), 10, 64)
 		limit := 50
 		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 200 {
@@ -40,6 +41,15 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 		i := 1
 		if readyOnly {
 			where = append(where, "c.send_ready = true AND c.canonical_url_alive = true")
+		}
+		if incompleteEnrichment {
+			// Mesmo critério da fila LLM: precisa marca (texto), brand_id e categoria para sair do pipeline.
+			where = append(where, `c.title IS NOT NULL AND btrim(c.title) <> ''
+				AND (
+					c.brand IS NULL OR btrim(c.brand) = ''
+					OR c.category_id IS NULL
+					OR c.brand_id IS NULL
+				)`)
 		}
 		if len(specificIDs) > 0 {
 			placeholders := make([]string, len(specificIDs))
@@ -216,6 +226,20 @@ func CatalogCanonicalStatsHandler(db *sqlx.DB) http.HandlerFunc {
 		out["images_cached"] = n
 		_ = db.GetContext(r.Context(), &n, "SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'pending'")
 		out["llm_queue_pending"] = n
+		_ = db.GetContext(r.Context(), &n, "SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'processing'")
+		out["llm_queue_processing"] = n
+		_ = db.GetContext(r.Context(), &n, "SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'error'")
+		out["llm_queue_error"] = n
+		_ = db.GetContext(r.Context(), &n, `
+			SELECT COUNT(*) FROM catalog c
+			WHERE c.title IS NOT NULL AND btrim(c.title) <> ''
+			  AND (
+			    c.brand IS NULL OR btrim(c.brand) = ''
+			    OR c.category_id IS NULL
+			    OR c.brand_id IS NULL
+			  )
+		`)
+		out["catalog_incomplete_enrichment"] = n
 
 		type srcCount struct {
 			SourceID string `db:"source_id" json:"source_id"`
@@ -424,9 +448,12 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 			    OR brand_id IS NULL
 			  )
 			ON CONFLICT (catalog_id) DO UPDATE SET
-				status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
+				status = 'pending',
 				reason = EXCLUDED.reason,
-				enqueued_at = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.enqueued_at ELSE now() END,
+				enqueued_at = CASE
+					WHEN catalog_llm_queue.status = 'pending' THEN catalog_llm_queue.enqueued_at
+					ELSE now()
+				END,
 				processed_at = NULL,
 				last_error = NULL
 		`); err != nil {
@@ -434,8 +461,10 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 
-		var qPending int
+		var qPending, qProcessing, qError int
 		_ = tx.GetContext(ctx, &qPending, `SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'pending'`)
+		_ = tx.GetContext(ctx, &qProcessing, `SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'processing'`)
+		_ = tx.GetContext(ctx, &qError, `SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'error'`)
 
 		if err := tx.Commit(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -444,8 +473,10 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"updated_rows":      nUpd,
-			"llm_queue_pending": qPending,
+			"updated_rows":           nUpd,
+			"llm_queue_pending":      qPending,
+			"llm_queue_processing":   qProcessing,
+			"llm_queue_error":        qError,
 		})
 	}
 }

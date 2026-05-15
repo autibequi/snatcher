@@ -194,7 +194,12 @@ export function JonfreyTab() {
   const reprocessHeuristicMut = useMutation({
     mutationFn: () =>
       apiClient
-        .post('/api/admin/catalog-canonical/reprocess-heuristic', undefined, { timeout: 120_000 })
+        .post<{
+          updated_rows?: number
+          llm_queue_pending?: number
+          llm_queue_processing?: number
+          llm_queue_error?: number
+        }>('/api/admin/catalog-canonical/reprocess-heuristic', undefined, { timeout: 120_000 })
         .then(r => r.data),
     onError: (err: unknown) => {
       const ax = err as { response?: { data?: unknown }; message?: string }
@@ -296,8 +301,13 @@ export function JonfreyTab() {
           >
             Reprocessar (eurística)
           </Button>
-          {reprocessHeuristicMut.isSuccess && (
-            <p className="text-xs text-success">Concluído.</p>
+          {reprocessHeuristicMut.isSuccess && reprocessHeuristicMut.data != null && (
+            <p className="text-xs text-success">
+              Concluído — tocadas: <strong>{reprocessHeuristicMut.data.updated_rows ?? '—'}</strong>
+              {' · '}pending: <strong>{reprocessHeuristicMut.data.llm_queue_pending ?? '—'}</strong>
+              {' · '}processing: <strong>{reprocessHeuristicMut.data.llm_queue_processing ?? '—'}</strong>
+              {' · '}erro: <strong>{reprocessHeuristicMut.data.llm_queue_error ?? '—'}</strong>
+            </p>
           )}
           {reprocessHeuristicMut.isError && (
             <p className="text-xs text-danger">Falhou — ver alerta.</p>

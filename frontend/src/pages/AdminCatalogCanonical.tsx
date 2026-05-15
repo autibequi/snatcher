@@ -35,6 +35,9 @@ interface Stats {
   unscored: number
   images_cached: number
   llm_queue_pending?: number
+  llm_queue_processing?: number
+  llm_queue_error?: number
+  catalog_incomplete_enrichment?: number
   by_source: { source_id: string; n: number }[]
 }
 
@@ -198,6 +201,7 @@ export default function AdminCatalogCanonical() {
   const [loading, setLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
   const [readyOnly, setReadyOnly] = useState(false)
+  const [incompleteEnrichment, setIncompleteEnrichment] = useState(false)
   const [categoryID, setCategoryID] = useState('')
   const [brandSlug, setBrandSlug] = useState('')
   const [brandInput, setBrandInput] = useState('')
@@ -245,6 +249,7 @@ export default function AdminCatalogCanonical() {
         offset: String(page * LIMIT),
       })
       if (readyOnly) params.set('ready_only', '1')
+      if (incompleteEnrichment) params.set('incomplete_enrichment', '1')
       if (categoryID) params.set('category_id', categoryID)
       if (brandSlug) params.set('brand_slug', brandSlug)
       if (priceMin.trim()) params.set('price_min', priceMin.trim())
@@ -261,13 +266,15 @@ export default function AdminCatalogCanonical() {
     loadStats()
     authFetch('/api/admin/templates/categories').then(r => r.json()).then(d => setCategories(Array.isArray(d) ? d : []))
   }, [])
-  useEffect(() => { loadItems() }, [readyOnly, categoryID, brandSlug, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadItems() }, [readyOnly, incompleteEnrichment, categoryID, brandSlug, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (tab !== 'llm') return
     void loadLLMQueue()
   }, [tab, llmQueueStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendingLLM = stats?.llm_queue_pending ?? 0
+  const processingLLM = stats?.llm_queue_processing ?? 0
+  const incompleteCat = stats?.catalog_incomplete_enrichment ?? 0
 
   const runProcessNext = async () => {
     setProcessNextBusy(true)
@@ -301,10 +308,23 @@ export default function AdminCatalogCanonical() {
         { key: 'unscored', label: 'Sem score', value: stats.unscored, color: 'text-warning' as const },
         { key: 'images', label: 'Imagens cached', value: stats.images_cached, color: 'text-fg-2' as const },
         {
+          key: 'incomplete',
+          label: 'Sem marca / cat. / brand_id',
+          value: incompleteCat,
+          color: incompleteCat > 0 ? ('text-warning' as const) : ('text-fg-2' as const),
+        },
+        {
           key: 'llm',
           label: 'Fila LLM (pendentes)',
           value: pendingLLM,
           color: pendingLLM > 0 ? ('text-warning' as const) : ('text-fg-2' as const),
+          goToLLM: true as const,
+        },
+        {
+          key: 'llmproc',
+          label: 'Fila em processando',
+          value: processingLLM,
+          color: processingLLM > 0 ? ('text-accent' as const) : ('text-fg-2' as const),
           goToLLM: true as const,
         },
       ]
@@ -315,14 +335,17 @@ export default function AdminCatalogCanonical() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Catálogo</h1>
-        <p className="text-sm text-fg-3 mt-1">Produtos disponíveis para envio pelo Algo tick.</p>
+        <p className="text-sm text-fg-3 mt-1">
+          Lista geral do catálogo (inclui incompletos). Enriquecimento pendente aparece na aba{' '}
+          <strong className="text-fg-2">Fila LLM</strong> — use o filtro <em>Ativos</em> para ver também itens em processamento.
+        </p>
       </div>
 
       {/* KPI cards */}
       {statsLoading ? (
-        <div className="flex gap-4">{[...Array(6)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
+        <div className="flex gap-4">{[...Array(8)].map((_, i) => <div key={i} className="h-20 flex-1 bg-surface-2 rounded-xl animate-pulse" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
           {KPI_CARDS.map(k => {
             const inner = (
               <>
@@ -473,6 +496,12 @@ export default function AdminCatalogCanonical() {
               className="accent-accent" />
             Só send_ready
           </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none shrink-0" title="Título preenchido e falta marca (texto), categoria ou brand_id">
+            <input type="checkbox" checked={incompleteEnrichment}
+              onChange={e => { setIncompleteEnrichment(e.target.checked); setPage(0) }}
+              className="accent-accent" />
+            Só incompletos (fila LLM)
+          </label>
 
           <div className="flex items-center gap-1.5 text-sm">
             <label className="text-fg-3 shrink-0">Categoria:</label>
@@ -508,7 +537,7 @@ export default function AdminCatalogCanonical() {
               placeholder="máx" className="w-20 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent" />
           </div>
 
-          <button onClick={() => { setCategoryID(''); setBrandSlug(''); setBrandInput(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setPage(0) }}
+          <button onClick={() => { setCategoryID(''); setBrandSlug(''); setBrandInput(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setIncompleteEnrichment(false); setPage(0) }}
             className="text-xs text-fg-3 hover:text-fg underline">
             Limpar
           </button>
@@ -529,7 +558,9 @@ export default function AdminCatalogCanonical() {
               <th className="w-14 px-3 py-2" />
               <th className="text-left px-3 py-2 font-medium text-fg-2">Título</th>
               <th className="text-left px-3 py-2 font-medium text-fg-2 hidden sm:table-cell">Marca</th>
-              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell">Categoria</th>
+              <th className="text-left px-3 py-2 font-medium text-fg-2 hidden md:table-cell" title="Primeira linha = source_id (ex. amz); segunda = nome da categoria">
+                Fonte / categoria
+              </th>
               <th className="text-right px-3 py-2 font-medium text-fg-2">Preço</th>
               <th className="text-center px-3 py-2 font-medium text-fg-2 hidden lg:table-cell">Score</th>
               <th className="px-3 py-2" />
@@ -578,10 +609,12 @@ export default function AdminCatalogCanonical() {
                       <span className="text-fg-4 text-xs">—</span>
                     )}
                   </td>
-                  {/* Categoria */}
+                  {/* Fonte + categoria (evita confundir source_id com categoria) */}
                   <td className="px-3 py-2 hidden md:table-cell text-xs text-fg-3">
-                    <div className="text-[10px] text-fg-4">{item.source_id}</div>
-                    {item.category_name && <div>{item.category_name}</div>}
+                    <div className="text-[10px] text-fg-4">
+                      <span className="text-fg-3 uppercase tracking-wide">Fonte</span> {item.source_id}
+                    </div>
+                    <div className="text-fg-2 mt-0.5">{item.category_name ?? '—'}</div>
                   </td>
                   {/* Preço */}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
