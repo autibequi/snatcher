@@ -380,6 +380,7 @@ func Build(
 		r.Get("/api/admin/loops/{loop}/actions", adminhnd.LoopActionsHandler(db))
 		r.Post("/api/admin/loops/{loop}/status", adminhnd.SetLoopStatusHandler(db))
 		r.Post("/api/admin/loops/{loop}/reset_strikes", adminhnd.ResetStrikesHandler(db))
+		r.Post("/api/admin/loops/{loop}/run", adminhnd.RunLoopNowHandler(db))
 
 		// Fase 7: L4 suggestions dashboard — aprovar/rejeitar sugestões pendentes dos loops
 		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))

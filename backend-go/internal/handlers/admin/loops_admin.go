@@ -1,12 +1,15 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/services/loops"
 )
 
 // LoopActionsHandler retorna ações recentes de um loop LLM específico.
@@ -76,6 +79,33 @@ func SetLoopStatusHandler(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// RunLoopNowHandler dispara execução imediata de um loop LLM (ignora schedule).
+//
+// POST /api/admin/loops/{loop}/run
+func RunLoopNowHandler(db *sqlx.DB) http.HandlerFunc {
+	registry := map[string]loops.LoopFunc{
+		"taxonomy_grow":    loops.RunTaxonomyGrow,
+		"scraper_fix":      loops.RunScraperFix,
+		"template_ab":      loops.RunTemplateAB,
+		"anomaly_pause":    loops.RunAnomalyPause,
+		"affinity_adjust":  loops.RunAffinityAdjust,
+		"cooldown_suggest": loops.RunCooldownSuggest,
+		"cap_suggest":      loops.RunCapSuggest,
+		"auto_tuning":      loops.RunAutoTuning,
+		"content_optimize": loops.RunContentOptimize,
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		loopName := chi.URLParam(r, "loop")
+		fn, ok := registry[loopName]
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "loop desconhecido: "+loopName)
+			return
+		}
+		go loops.RunLoop(context.Background(), db, loopName, fn)
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "started", "loop": loopName})
 	}
 }
 
