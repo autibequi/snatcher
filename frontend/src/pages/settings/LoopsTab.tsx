@@ -97,6 +97,19 @@ export function LoopsTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jonfrey-config'] }),
   })
 
+  /** POST sem action_type = todas as ações habilitadas em fila (igual ao ciclo agendado). */
+  const reprocessJonfreyMut = useMutation({
+    mutationFn: () => apiClient.post('/api/jonfrey/run', {}).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jonfrey-actions'] })
+      qc.invalidateQueries({ queryKey: ['jonfrey-config'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      alert(msg ?? 'Erro ao enfileirar ciclo Jonfrey')
+    },
+  })
+
   const actionMut = useMutation({
     mutationFn: ({ actionId, enable }: { actionId: string; enable: boolean }) => {
       const current = config?.enabled_actions ?? []
@@ -152,6 +165,27 @@ export function LoopsTab() {
             )}
           </div>
           <Switch checked={!!config?.enabled} disabled={pilotMut.isPending} onChange={v => pilotMut.mutate(v)} />
+        </div>
+        <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            loading={reprocessJonfreyMut.isPending}
+            onClick={() => {
+              if ((config?.enabled_actions ?? []).length === 0) {
+                alert('Nenhuma ação Jonfrey ativa — ative pelo menos uma na tabela abaixo.')
+                return
+              }
+              reprocessJonfreyMut.mutate()
+            }}
+          >
+            Reprocessar ciclo
+          </Button>
+          <p className="text-[11px] text-fg-3 max-w-xl">
+            Enfileira <strong className="text-fg-2 font-medium">todas as ações Jonfrey ativas</strong> na tabela abaixo.
+            Acompanhe em <span className="text-fg-2">Tempo real → Fila de trabalhos</span>; pode demorar vários minutos.
+          </p>
         </div>
       </div>
 
