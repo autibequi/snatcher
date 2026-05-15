@@ -365,15 +365,26 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 			if actionType == "" {
 				continue
 			}
-			sum, ok := lastBy[actionType]
+			canonical := resolveJonfreyActionType(actionType)
+			sum, ok := lastBy[canonical]
+			if !ok && canonical != actionType {
+				sum, ok = lastBy[actionType]
+			}
 			if !ok || sum.Status != "failed" {
 				continue
 			}
 			var errMsg string
-			_ = h.db.GetContext(r.Context(), &errMsg, `
+			if canonical == actionType {
+				_ = h.db.GetContext(r.Context(), &errMsg, `
 				SELECT COALESCE(error_message, '') FROM jonfrey_actions
 				WHERE action_type = $1 AND status = 'failed' AND finished_at IS NOT NULL
 				ORDER BY finished_at DESC LIMIT 1`, actionType)
+			} else {
+				_ = h.db.GetContext(r.Context(), &errMsg, `
+				SELECT COALESCE(error_message, '') FROM jonfrey_actions
+				WHERE action_type IN ($1, $2) AND status = 'failed' AND finished_at IS NOT NULL
+				ORDER BY finished_at DESC LIMIT 1`, canonical, actionType)
+			}
 			sub := strings.TrimSpace(errMsg)
 			if sub == "" {
 				sub = "Última execução falhou — ver detalhes em Jonfrey"
@@ -382,10 +393,10 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 				sub = sub[:217] + "…"
 			}
 			alerts = append(alerts, Alert{
-				ID:       fmt.Sprintf("jonfrey_fail-%s", actionType),
+				ID:       fmt.Sprintf("jonfrey_fail-%s", canonical),
 				Severity: "critico",
 				Category: "jonfrey_fail",
-				Title:    fmt.Sprintf("Jonfrey: %s falhou", titleJonfreyAction(actionType)),
+				Title:    fmt.Sprintf("Jonfrey: %s falhou", titleJonfreyAction(canonical)),
 				Subtitle: sub,
 				CTA:      CTA{Label: "Abrir Jonfrey", Href: "/automations/jonfrey"},
 			})

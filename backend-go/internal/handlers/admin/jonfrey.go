@@ -160,15 +160,7 @@ var actionRegistry = map[string]actionDef{
 	"auto_release_pending": {
 		Type:        "auto_release_pending",
 		Category:    "dispatch",
-		Description: "Quando full_auto_mode estiver ON, libera todos os dispatches em pending_approval para envio. Roda no ciclo regular do auto-pilot",
-		UsesLLM:     false,
-		Run:         actionAutoReleasePending,
-	},
-	// Alias usado pelo front (Automations, Jonfrey, Settings) ao ligar full-auto — antes não existia no registry e era ignorado.
-	"enable_full_auto": {
-		Type:        "enable_full_auto",
-		Category:    "dispatch",
-		Description: "Mesmo efeito que auto_release_pending: com full_auto ON, passa pending_approval → queued para o dispatch worker enviar",
+		Description: "Com full_auto_mode ON, passa pending_approval → queued (dispatch worker envia). Roda no auto-pilot. Sinónimo legado na lista/API: enable_full_auto.",
 		UsesLLM:     false,
 		Run:         actionAutoReleasePending,
 	},
@@ -256,6 +248,40 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionCatalogBrandClassification,
 	},
+}
+
+// jonfreyActionAliases mapeia tipos legados → canónico no actionRegistry (sem duplicar Run na UI).
+var jonfreyActionAliases = map[string]string{
+	"enable_full_auto": "auto_release_pending",
+}
+
+func resolveJonfreyActionType(t string) string {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return ""
+	}
+	if c, ok := jonfreyActionAliases[t]; ok {
+		return c
+	}
+	return t
+}
+
+// normalizeJonfreyEnabledActions resolve aliases e remove duplicados mantendo a primeira ocorrência.
+func normalizeJonfreyEnabledActions(actions []string) []string {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(actions))
+	for _, raw := range actions {
+		c := resolveJonfreyActionType(raw)
+		if c == "" {
+			continue
+		}
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	return out
 }
 
 // ── Ações ──────────────────────────────────────────────────────────────────
@@ -359,15 +385,17 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 
 	order := []string{"cleanup", "curation", "health", "optimization", "dispatch"}
 	enabled := []string(cfg.EnabledActions)
+	enabledCanon := normalizeJonfreyEnabledActions(enabled)
 	var typesToRun []string
 	var skippedUnknown []string
-	for _, t := range enabled {
+	for _, raw := range enabled {
+		t := resolveJonfreyActionType(raw)
 		if _, ok := actionRegistry[t]; !ok {
-			skippedUnknown = append(skippedUnknown, t)
+			skippedUnknown = append(skippedUnknown, raw)
 		}
 	}
 	for _, cat := range order {
-		for _, t := range enabled {
+		for _, t := range enabledCanon {
 			def, ok := actionRegistry[t]
 			if !ok || def.Category != cat {
 				continue
@@ -379,7 +407,7 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 		slog.Info("jonfrey RunCycle sem ações a executar",
 			"enabled_actions", enabled,
 			"skipped_unknown_types", skippedUnknown,
-			"hint", "tipos devem existir no registry e bater categoria cleanup|curation|health|optimization|dispatch; para liberar dispatches inclua auto_release_pending ou enable_full_auto na lista",
+			"hint", "tipos devem existir no registry e bater categoria cleanup|curation|health|optimization|dispatch; para liberar dispatches com full-auto ON use auto_release_pending (sinónimo legado: enable_full_auto)",
 		)
 		return
 	}
@@ -447,10 +475,10 @@ func (h *JonfreyHandler) RunAction(w http.ResponseWriter, r *http.Request) {
 
 	var typesToRun []string
 	if req.ActionType != "" {
-		typesToRun = []string{req.ActionType}
+		typesToRun = []string{resolveJonfreyActionType(req.ActionType)}
 	} else {
 		cfg, _ := h.store.GetJonfreyConfig()
-		typesToRun = []string(cfg.EnabledActions)
+		typesToRun = normalizeJonfreyEnabledActions([]string(cfg.EnabledActions))
 	}
 
 	jm := jobs.Default()
@@ -530,10 +558,11 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 
 	jm.AppendActivity(jobID, fmt.Sprintf("fila: %d ação(ões) · ordem FIFO", total))
 
-	for _, t := range typesToRun {
+	for _, raw := range typesToRun {
+		t := resolveJonfreyActionType(raw)
 		def, ok := actionRegistry[t]
 		if !ok {
-			jm.AppendActivity(jobID, fmt.Sprintf("tipo desconhecido ignorado: %s", t))
+			jm.AppendActivity(jobID, fmt.Sprintf("tipo desconhecido ignorado: %s", raw))
 			jm.Update(jobID, done, total, fmt.Sprintf("ignorado: %s", t))
 			done++
 			continue
@@ -745,7 +774,7 @@ func (h *JonfreyHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		cfg.IntervalMinutes = *req.IntervalMinutes
 	}
 	if req.EnabledActions != nil {
-		cfg.EnabledActions = pq.StringArray(req.EnabledActions)
+		cfg.EnabledActions = pq.StringArray(normalizeJonfreyEnabledActions(req.EnabledActions))
 	}
 	if err := h.store.UpdateJonfreyConfig(cfg); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

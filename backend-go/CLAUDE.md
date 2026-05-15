@@ -225,7 +225,7 @@ Actions ativas (tabelas v2):
 - `inspect_pending_products`, `auto_curate_high_confidence`, `maintain_taxonomy`
 - `refine_subcategories`, `enrich_taxonomy_from_unmatched` (se catalogproduct existir)
 - `tune_thresholds`, `replenish_stagnant_crawlers`, `pause_dead_crawlers`
-- `auto_release_pending`, `enable_full_auto` — no-op gracioso (sem tabela dispatches)
+- `auto_release_pending` — no-op gracioso (sem tabela dispatches); sinónimo legado `enable_full_auto` resolve para o mesmo tipo
 
 Actions com graceful skip (tabelas v1 dropadas):
 - `archive_old_logs` → auto_match_logs

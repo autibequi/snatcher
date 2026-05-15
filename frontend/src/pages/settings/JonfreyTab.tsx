@@ -190,6 +190,23 @@ export function JonfreyTab() {
     },
   })
 
+  /** Reclassifica todo o catálogo com brand_keywords + category_keywords (sem LLM). Pode demorar em bases grandes. */
+  const reprocessHeuristicMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post('/api/admin/catalog-canonical/reprocess-heuristic', undefined, { timeout: 120_000 })
+        .then(r => r.data),
+    onError: (err: unknown) => {
+      const ax = err as { response?: { data?: unknown }; message?: string }
+      const d = ax.response?.data
+      const msg =
+        typeof d === 'string'
+          ? d
+          : (d as { error?: string } | undefined)?.error ?? ax.message ?? 'Erro ao reprocessar eurística'
+      alert(msg)
+    },
+  })
+
   const pilotOn = !!config?.enabled
   const enabledActions = config?.enabled_actions ?? []
   const isLoading = configLoading && !config
@@ -256,6 +273,35 @@ export function JonfreyTab() {
           <p className="text-xs text-fg-3">
             Dispara um ciclo imediato independente do agendamento.
           </p>
+        </div>
+      </div>
+
+      {/* ── Catálogo canónico (eurística) ── */}
+      <div className={sectionCard}>
+        <p className={sectionTitle}>Catálogo canónico — eurística</p>
+        <p className={`${sectionSubtitle} mt-0.5`}>
+          Reclassifica marca e categoria de todo o catálogo usando apenas keywords (sem LLM). Atualiza também a fila LLM.
+          Catálogo e métricas em{' '}
+          <a href="/admin/catalog-canonical" className="text-accent hover:underline">
+            /admin/catalog-canonical
+          </a>
+          .
+        </p>
+        <div className="border-t border-border pt-3 mt-3 flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={reprocessHeuristicMut.isPending}
+            onClick={() => reprocessHeuristicMut.mutate()}
+          >
+            Reprocessar (eurística)
+          </Button>
+          {reprocessHeuristicMut.isSuccess && (
+            <p className="text-xs text-success">Concluído.</p>
+          )}
+          {reprocessHeuristicMut.isError && (
+            <p className="text-xs text-danger">Falhou — ver alerta.</p>
+          )}
         </div>
       </div>
 

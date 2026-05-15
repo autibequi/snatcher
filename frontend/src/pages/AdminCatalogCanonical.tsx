@@ -201,7 +201,6 @@ export default function AdminCatalogCanonical() {
   const [categoryID, setCategoryID] = useState('')
   const [brandSlug, setBrandSlug] = useState('')
   const [brandInput, setBrandInput] = useState('')
-  const [reprocessBusy, setReprocessBusy] = useState(false)
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [page, setPage] = useState(0)
@@ -284,20 +283,6 @@ export default function AdminCatalogCanonical() {
         },
       ]
     : []
-
-  const runReprocessHeuristic = async () => {
-    setReprocessBusy(true)
-    try {
-      const r = await authFetch('/api/admin/catalog-canonical/reprocess-heuristic', { method: 'POST' })
-      if (!r.ok) {
-        window.alert(await r.text())
-        return
-      }
-      await Promise.all([loadStats(), loadItems(), loadLLMQueue()])
-    } finally {
-      setReprocessBusy(false)
-    }
-  }
 
   return (
     <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
@@ -491,15 +476,6 @@ export default function AdminCatalogCanonical() {
           <button onClick={() => { setCategoryID(''); setBrandSlug(''); setBrandInput(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setPage(0) }}
             className="text-xs text-fg-3 hover:text-fg underline">
             Limpar
-          </button>
-          <button
-            type="button"
-            onClick={() => void runReprocessHeuristic()}
-            disabled={reprocessBusy}
-            className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 disabled:opacity-50"
-            title="Reclassificar todo o catálogo só com eurística (brand_keywords + category_keywords). Sem LLM."
-          >
-            {reprocessBusy ? 'Reprocessando…' : 'Reprocessar (eurística)'}
           </button>
           <button
             onClick={() => { void loadItems(); void loadStats() }}
