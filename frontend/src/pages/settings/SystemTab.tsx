@@ -27,6 +27,8 @@ interface GroupOption {
   member_count?: number
   archived?: boolean
   jid?: string | null
+  /** true = pode receber alertas (JID/chat_id cadastrado). Só preenchido na lista de notificações. */
+  jidReady?: boolean
 }
 
 function NotifGroupCombobox({
@@ -45,7 +47,7 @@ function NotifGroupCombobox({
 
   const selected = value != null ? groups.find(g => g.id === value) : null
   const displayName = selected
-    ? `${selected.name}${selected.channel_name ? ` · ${selected.channel_name}` : ''}`
+    ? `${selected.name}${selected.channel_name ? ` · ${selected.channel_name}` : ''}${selected.jidReady === false ? ' (sem JID)' : ''}`
     : ''
 
   const filtered = groups.filter(g =>
@@ -103,22 +105,40 @@ function NotifGroupCombobox({
           {filtered.length === 0 ? (
             <p className="px-3 py-2 text-sm text-fg-3">Nenhum grupo encontrado</p>
           ) : (
-            filtered.map(g => (
+            filtered.map(g => {
+              const blocked = g.jidReady === false
+              return (
               <button
                 key={g.id}
                 tabIndex={0}
-                onMouseDown={() => handleSelect(g)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-2 transition-colors ${g.id === value ? 'bg-accent/10 text-accent font-medium' : 'text-fg'}`}
+                type="button"
+                onMouseDown={e => {
+                  if (blocked) {
+                    e.preventDefault()
+                    window.alert(
+                      'Este grupo ainda não tem JID (identificador WhatsApp) ou chat_id (Telegram) gravado. ' +
+                        'Abra a página Grupos, edite o grupo e preencha o JID (importar da Evolution ou colar o ID). ' +
+                        'Ligar a um canal não substitui o JID para alertas.',
+                    )
+                    return
+                  }
+                  handleSelect(g)
+                }}
+                className={`w-full text-left px-3 py-2 text-sm transition-colors ${blocked ? 'opacity-60 cursor-not-allowed bg-surface-2/50' : 'hover:bg-surface-2'} ${g.id === value ? 'bg-accent/10 text-accent font-medium' : 'text-fg'}`}
               >
                 <span className="font-medium">{g.name}</span>
                 {g.channel_name && (
                   <span className="ml-1.5 text-xs text-fg-3">{g.channel_name}</span>
                 )}
-                {g.member_count != null && g.member_count > 0 && (
+                {blocked && (
+                  <span className="ml-1.5 text-xs text-warning">· sem JID</span>
+                )}
+                {!blocked && g.member_count != null && g.member_count > 0 && (
                   <span className="ml-1.5 text-xs text-fg-3">· {g.member_count} membros</span>
                 )}
               </button>
-            ))
+              )
+            })
           )}
         </div>
       )}
@@ -135,26 +155,37 @@ export function SystemTab() {
     queryFn: () => apiClient.get('/api/config').then(r => r.data).catch(() => ({})),
   })
 
-  // Lista enriquecida de grupos (mesma origem da página /groups e do seletor de canais).
-  // Sem filtro server-side: filtramos client-side pra mostrar só WA ativos com JID.
   const { data: allGroups = [] } = useQuery<GroupOption[]>({
     queryKey: ['groups', 'for-notifications'],
     queryFn: () => apiClient.get('/api/groups').then(r => r.data ?? []),
     staleTime: 60_000,
   })
 
-  const notificationGroupOptions = useMemo<GroupOption[]>(
-    () => allGroups
-      .filter(g =>
+  // Lista enriquecida: WA/TG ativos. Grupos sem JID aparecem na lista (avisados) — antes eram omitidos e "sumiam".
+  const notificationGroupOptions = useMemo<GroupOption[]>(() => {
+    const base = allGroups.filter(
+      g =>
         (g.platform === 'whatsapp' || g.platform === 'telegram')
         && !g.archived
-        && (g.status ?? 'active') !== 'banned'
-        && g.jid != null
-        && String(g.jid).trim() !== '',
-      )
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
-    [allGroups],
-  )
+        && (g.status ?? 'active') !== 'banned',
+    )
+    const jidReady = (g: GroupOption) => !!(g.jid != null && String(g.jid).trim() !== '')
+    const withFlag: GroupOption[] = base.map(g => ({ ...g, jidReady: jidReady(g) }))
+
+    const selId = config?.notifications_group_id
+    if (selId != null && !withFlag.some(g => g.id === selId)) {
+      const extra = allGroups.find(g => g.id === selId)
+      if (
+        extra
+        && (extra.platform === 'whatsapp' || extra.platform === 'telegram')
+        && !extra.archived
+        && (extra.status ?? 'active') !== 'banned'
+      ) {
+        withFlag.push({ ...extra, jidReady: jidReady(extra) })
+      }
+    }
+    return withFlag.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+  }, [allGroups, config?.notifications_group_id])
 
   const saveMut = useMutation({
     mutationFn: (data: Partial<AppConfig>) => apiClient.put('/api/config', data).then(r => r.data),
@@ -249,8 +280,10 @@ export function SystemTab() {
             onChange={id => upd('notifications_group_id', id)}
           />
           <p className={formHint}>
-            Grupos WhatsApp ou Telegram já com JID/chat_id na página{' '}
-            <strong>Grupos</strong>. Telegram: confira se o bot foi adicionado ao grupo.
+            Listam-se grupos WhatsApp ou Telegram ativos. Para <strong className="text-fg-2">receber alertas</strong> é
+            obrigatório o <strong className="text-fg-2">JID</strong> (WA) ou <strong className="text-fg-2">chat_id</strong>{' '}
+            (TG) na página <strong>Grupos</strong> — ter ou não canal vinculado não substitui isso. Grupos sem JID aparecem
+            como &quot;sem JID&quot;; clique para ver como corrigir.
           </p>
         </div>
       </div>
