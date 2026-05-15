@@ -526,31 +526,9 @@ export default function Composer() {
     [composePricing, realProductName, realPrice, realSource],
   )
 
-  /** Catálogo / shortlink podem chegar depois do texto (IA, rascunho): reaplica variáveis e corrige "R$ --". */
-  React.useEffect(() => {
-    setText((prev) => {
-      if (!prev.trim()) return prev
-      const hasVars = /\{produto\}|\{de\}|\{por\}|\{desconto\}|\{link\}/.test(prev)
-      const hasStalePrice = /R\$\s*--/.test(prev)
-      const preferredLink = affiliateUrl || ''
-      const needsLinkFix =
-        !!preferredLink && /👉/.test(prev) && !prev.includes(preferredLink)
-      const needsNameFix = !!(realProductName && /\*Produto\*/.test(prev))
-      const needsDiscountFix =
-        realPrice > 0 && /🏷️/.test(prev) && !/-\d+%/.test(prev) && composePricing.descontoPct > 0
-      if (!hasVars && !hasStalePrice && !needsLinkFix && !needsNameFix && !needsDiscountFix)
-        return prev
-      const next = applyComposeVariables(prev, preferredLink)
-      return next !== prev ? next : prev
-    })
-  }, [
-    realPrice,
-    urlForShortLink,
-    affiliateUrl,
-    applyComposeVariables,
-    realProductName,
-    composePricing.descontoPct,
-  ])
+  // Nota: NÃO substituir variáveis no textarea aqui.
+  // O textarea mantém as tags {produto},{de},{por},{desconto},{link} visíveis para edição.
+  // A substituição acontece apenas: (1) no preview via previewText e (2) no send via applyComposeVariables.
 
   const dispatch = useMutation<DispatchResponse, Error, DispatchTarget[]>({
     mutationFn: async (targets) => {
