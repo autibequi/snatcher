@@ -81,7 +81,6 @@ const GroupDetail = lazy(() => import('./pages/GroupDetail'))
 const Affiliates = lazy(() => import('./pages/Affiliates'))
 
 const Analytics = lazy(() => import('./pages/Analytics'))
-const Clusters = lazy(() => import('./pages/Clusters'))
 
 const Settings = lazy(() => import('./pages/Settings'))
 const Taxonomy = lazy(() => import('./pages/Taxonomy'))
@@ -155,7 +154,7 @@ export default function App() {
 
               {/* ANÁLISE */}
               <Route path="analytics" element={<Analytics />} />
-              <Route path="clusters" element={<Clusters />} />
+              <Route path="clusters" element={<Navigate to="/admin/metrics?tab=clusters" replace />} />
 
               {/* SISTEMA */}
               <Route path="settings/*" element={<Settings />} />

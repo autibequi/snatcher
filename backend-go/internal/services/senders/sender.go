@@ -25,6 +25,83 @@ import (
 	"snatcher/backendv2/internal/services/llm"
 )
 
+// rowGetter abstrai *sqlx.DB e *sqlx.Tx para resolver domínio de redirect na fila.
+type rowGetter interface {
+	GetContext(ctx context.Context, dest any, query string, args ...any) error
+}
+
+// pickRedirectDomainID escolhe redirect_domains.id: afinidade modem + pool comum,
+// depois qualquer ativo fora de quarentena (evita fila presa quando só existem domínios ligados a outro modem).
+func pickRedirectDomainID(ctx context.Context, q rowGetter, modemID int64) (*int64, error) {
+	var id int64
+	err := q.GetContext(ctx, &id, `
+		SELECT id FROM redirect_domains
+		WHERE enabled=true
+		  AND (modem_id=$1 OR modem_id IS NULL)
+		  AND (quarantine_until IS NULL OR quarantine_until < now())
+		ORDER BY (modem_id IS NOT NULL) DESC, id
+		LIMIT 1`, modemID)
+	if err == nil {
+		return &id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	err = q.GetContext(ctx, &id, `
+		SELECT id FROM redirect_domains
+		WHERE enabled=true
+		  AND (quarantine_until IS NULL OR quarantine_until < now())
+		ORDER BY id
+		LIMIT 1`)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &id, nil
+}
+
+// resolveWorkingRedirectHost garante host + id de um domínio redirect utilizável.
+// Se domainID da fila está desativado, em quarentena ou foi apagado, repesca outro.
+func resolveWorkingRedirectHost(ctx context.Context, db *sqlx.DB, modemID int64, domainID *int64) (host string, outID int64, err error) {
+	tryHost := func(id int64) (string, error) {
+		var h sql.NullString
+		e := db.GetContext(ctx, &h, `
+			SELECT host FROM redirect_domains
+			WHERE id=$1 AND enabled=true
+			  AND (quarantine_until IS NULL OR quarantine_until < now())`, id)
+		if e != nil {
+			return "", e
+		}
+		if !h.Valid || strings.TrimSpace(h.String) == "" {
+			return "", fmt.Errorf("host vazio ou nulo")
+		}
+		return strings.TrimSpace(h.String), nil
+	}
+
+	if domainID != nil {
+		if h, e := tryHost(*domainID); e == nil {
+			return h, *domainID, nil
+		}
+		slog.Warn("sender.redirect_domain_stale", "modem", modemID, "domain_id", *domainID,
+			"hint", "repescando — domínio desativado, em quarentena ou removido")
+	}
+
+	picked, e := pickRedirectDomainID(ctx, db, modemID)
+	if e != nil {
+		return "", 0, e
+	}
+	if picked == nil {
+		return "", 0, fmt.Errorf("nenhum domínio redirect ativo (enabled=true, fora de quarentena). Confira /admin/domains — linhas com enabled=false não entram no envio")
+	}
+	h, e := tryHost(*picked)
+	if e != nil {
+		return "", 0, fmt.Errorf("redirect_domains id=%d válido para escolha mas host não resolveu: %w", *picked, e)
+	}
+	return h, *picked, nil
+}
+
 // RunSender é a goroutine principal do sender de 1 modem.
 // Drena send_queue WHERE modem_id=X com FOR UPDATE SKIP LOCKED.
 func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
@@ -159,17 +236,13 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 		}
 	}
 
-	// resolve domínio se vazio: afinidade modem→domínio com fallback pool
+	// resolve domínio se vazio — afinidade modem + pool + fallback global (ver pickRedirectDomainID)
 	if domainID == nil {
-		var d int64
-		if err := tx.GetContext(ctx, &d, `
-			SELECT id FROM redirect_domains
-			WHERE enabled=true AND (modem_id=$1 OR modem_id IS NULL)
-			  AND (quarantine_until IS NULL OR quarantine_until < now())
-			ORDER BY (modem_id IS NOT NULL) DESC, random() LIMIT 1
-		`, modemID); err == nil {
-			domainID = &d
+		picked, derr := pickRedirectDomainID(ctx, tx, modemID)
+		if derr != nil {
+			return false, fmt.Errorf("redirect_domains: %w", derr)
 		}
+		domainID = picked
 	}
 
 	// commit lock + sending status — fora da transação fazemos o envio real
@@ -182,7 +255,11 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 	if messageOverride.Valid && messageOverride.String != "" {
 		err = sendRawText(ctx, db, modemID, groupID, *accountID, messageOverride.String, imageURLOverride.String)
 	} else if catalogID != nil {
-		err = sendViaEvolution(ctx, db, modemID, groupID, *catalogID, *accountID, templateID, domainID)
+		var resolved *int64
+		resolved, err = sendViaEvolution(ctx, db, modemID, groupID, *catalogID, *accountID, templateID, domainID)
+		if resolved != nil {
+			domainID = resolved
+		}
 	} else {
 		err = fmt.Errorf("send_queue id=%d: sem catalog_id nem message_override", qid)
 	}
@@ -196,7 +273,7 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 	return true, nil
 }
 
-func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalogID, accountID int64, templateID, domainID *int64) error {
+func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalogID, accountID int64, templateID, domainID *int64) (*int64, error) {
 	// 1. busca dados do produto
 	var cat struct {
 		Title           string          `db:"title"`
@@ -213,14 +290,14 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		       short_id, image_url, cached_image_path
 		FROM catalog WHERE id=$1
 	`, catalogID); err != nil {
-		return fmt.Errorf("fetch catalog %d: %w", catalogID, err)
+		return nil, fmt.Errorf("fetch catalog %d: %w", catalogID, err)
 	}
 
 	// 2. busca JID do grupo
 	var jid sql.NullString
 	_ = db.GetContext(ctx, &jid, `SELECT whatsapp_jid FROM groups WHERE id=$1`, groupID)
 	if !jid.Valid || jid.String == "" {
-		return fmt.Errorf("grupo %d sem whatsapp_jid", groupID)
+		return nil, fmt.Errorf("grupo %d sem whatsapp_jid", groupID)
 	}
 
 	// 3. busca corpo do template
@@ -236,12 +313,9 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	//    atribuição determinística de cliques (vs catalog.short_id que era
 	//    global e causava attribution errada quando vários grupos enviavam
 	//    o mesmo produto).
-	// Se domainID não veio na send_queue, busca o primeiro domínio ativo.
-	if domainID == nil {
-		var id int64
-		if err := db.GetContext(ctx, &id, `SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1`); err == nil {
-			domainID = &id
-		}
+	domainHost, useDomainID, err := resolveWorkingRedirectHost(ctx, db, modemID, domainID)
+	if err != nil {
+		return nil, fmt.Errorf("shortlink domínio: %w", err)
 	}
 
 	// 4a. Injetar código de afiliado — OBRIGATÓRIO. Sem afiliado = falha no envio.
@@ -250,32 +324,27 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	marketplace := affiliates.InferMarketplaceFromProductURL(cat.CanonicalURL)
 	affiliateURL, _, affiliateErr := affiliates.BuildLinkStrict(cat.CanonicalURL, marketplace, affiliatePrograms)
 	if affiliateErr != nil {
-		return fmt.Errorf("sem programa de afiliado para %s — link sem código não pode ser enviado: %w", marketplace, affiliateErr)
+		return nil, fmt.Errorf("sem programa de afiliado para %s — link sem código não pode ser enviado: %w", marketplace, affiliateErr)
 	}
 
 	// 4b. Gera shortlink com a URL de afiliado (não a URL limpa).
-	link := affiliateURL // fallback: URL de afiliado direta (sem shortener)
-	if domainID != nil {
-		var groupShort sql.NullString
-		_ = db.GetContext(ctx, &groupShort,
-			`SELECT ensure_group_shortlink($1, $2)`, catalogID, groupID)
-		if groupShort.Valid && groupShort.String != "" {
-			// Armazena URL de afiliado no short_links para que o redirect use ela
-			_, _ = db.ExecContext(ctx, `
+	var groupShort string
+	if err := db.GetContext(ctx, &groupShort, `SELECT ensure_group_shortlink($1, $2)`, catalogID, groupID); err != nil {
+		return nil, fmt.Errorf("ensure_group_shortlink(catalog=%d, group=%d): %w — verifique migration group_shortlinks e extensão pgcrypto", catalogID, groupID, err)
+	}
+	groupShort = strings.TrimSpace(groupShort)
+	if groupShort == "" {
+		return nil, fmt.Errorf("ensure_group_shortlink retornou vazio (catalog=%d, group=%d)", catalogID, groupID)
+	}
+
+	if _, err := db.ExecContext(ctx, `
 				INSERT INTO short_links (short_id, dest_url, source)
 				VALUES ($1, $2, $3)
 				ON CONFLICT (short_id) DO UPDATE SET dest_url = EXCLUDED.dest_url
-			`, groupShort.String, affiliateURL, marketplace)
-			var domain sql.NullString
-			if err := db.GetContext(ctx, &domain, `SELECT host FROM redirect_domains WHERE id=$1`, *domainID); err == nil && domain.Valid {
-				link = "https://" + domain.String + "/v/" + groupShort.String
-			}
-		}
+			`, groupShort, affiliateURL, marketplace); err != nil {
+		return nil, fmt.Errorf("short_links gravar dest_url: %w — possível colisão UNIQUE(dest_url) com outro short_id", err)
 	}
-	if link == affiliateURL {
-		// Não conseguiu shortlink — obrigatório ter shortlink para rastreamento
-		return fmt.Errorf("shortlink não pôde ser gerado (sem domínio configurado) — envio cancelado para preservar rastreamento")
-	}
+	link := "https://" + domainHost + "/v/" + groupShort
 
 	// 5. interpola variáveis no template
 	msg := renderTemplateBody(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
@@ -311,21 +380,25 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		instance = "default"
 	}
 	slog.Info("sender.send", "modem", modemID, "group", groupID, "catalog", catalogID, "template", templateID, "jid", jid.String)
+	resolvedID := useDomainID
 	if imagePath != "" {
-		return SendTextWithMedia(ctx, SendMediaArgs{
+		err := SendTextWithMedia(ctx, SendMediaArgs{
 			Instance:  instance,
 			JID:       jid.String,
 			Caption:   msg,
 			ImagePath: imagePath,
 		})
+		return &resolvedID, err
 	}
 	if imageURL != "" {
 		// Usa o mesmo adapter que funciona no dispatch manual
 		evo := adapters.NewEvolution(os.Getenv("EVOLUTION_URL"), os.Getenv("EVOLUTION_API_KEY"), instance)
-		return evo.SendImage(ctx, jid.String, imageURL, msg)
+		err := evo.SendImage(ctx, jid.String, imageURL, msg)
+		return &resolvedID, err
 	}
 	// sem imagem — envia só texto
-	return SendTextWithMedia(ctx, SendMediaArgs{Instance: instance, JID: jid.String, Caption: msg})
+	err = SendTextWithMedia(ctx, SendMediaArgs{Instance: instance, JID: jid.String, Caption: msg})
+	return &resolvedID, err
 }
 
 // sendImageViaURL envia imagem via URL remota usando Evolution /message/sendMedia.

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
+import { ClustersTab } from './Clusters'
 import { DataTable } from '../components/ui'
 import type { ColumnDef } from '@tanstack/react-table'
 
@@ -93,7 +95,9 @@ function Badge({ status }: { status: string }) {
 
 // ---------- tab state ----------
 
-type Tab = 'weights' | 'daily' | 'abtests' | 'virality'
+type Tab = 'weights' | 'daily' | 'abtests' | 'virality' | 'clusters'
+
+const VALID_TABS = new Set<Tab>(['weights', 'daily', 'abtests', 'virality', 'clusters'])
 
 interface ViralityRow {
   group_id: number
@@ -530,29 +534,46 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'daily',    label: 'Daily Metrics' },
   { id: 'abtests',  label: 'A/B Tests' },
   { id: 'virality', label: 'Virality' },
+  { id: 'clusters', label: 'Clusters' },
 ]
 
 export default function AdminMetrics() {
-  const [tab, setTab] = useState<Tab>('weights')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const tab: Tab =
+    tabParam && VALID_TABS.has(tabParam as Tab) ? (tabParam as Tab) : 'weights'
+
+  const setTab = (t: Tab) => {
+    setSearchParams(
+      prev => {
+        const p = new URLSearchParams(prev)
+        if (t === 'weights') p.delete('tab')
+        else p.set('tab', t)
+        return p
+      },
+      { replace: true },
+    )
+  }
 
   return (
     <div className="p-4 md:mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-fg">Analytics — Metrics Dashboard</h1>
+        <h1 className="text-xl font-semibold text-fg">Métricas</h1>
         <p className="text-sm text-fg-3 mt-0.5">
-          Pesos aprendidos, metricas diarias e testes A/B
+          Pesos aprendidos, métricas diárias, A/B, viralização e clusters de canais
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
             className={[
-              'px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors',
+              'px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors shrink-0',
               tab === t.id
                 ? 'border-accent text-accent'
                 : 'border-transparent text-fg-3 hover:text-fg',
@@ -568,6 +589,7 @@ export default function AdminMetrics() {
       {tab === 'daily'    && <DailyMetricsTab />}
       {tab === 'abtests'  && <ABTestsTab />}
       {tab === 'virality' && <ViralityTab />}
+      {tab === 'clusters' && <ClustersTab />}
     </div>
   )
 }

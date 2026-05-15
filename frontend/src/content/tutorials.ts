@@ -170,7 +170,7 @@ export const MANUAL_TUTORIALS: ManualTutorialDef[] = [
     title: 'Clusters',
     description: 'Agrupar canais por comportamento de audiência.',
     icon: '🧩',
-    path: '/clusters',
+    path: '/admin/metrics?tab=clusters',
   },
 
   // ── Algoritmo ──
@@ -273,7 +273,6 @@ export function resolveTutorialSlugFromPath(pathname: string): string {
     ['/groups',                  'groups'],
     ['/affiliates',              'affiliates'],
     ['/links',                   'links'],
-    ['/clusters',                'clusters'],
     ['/taxonomy',                'taxonomy'],
     ['/compose',                 'compose'],
     ['/activity',                'activity'],

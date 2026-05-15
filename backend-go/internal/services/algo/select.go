@@ -166,7 +166,19 @@ func enqueueSend(ctx context.Context, db *sqlx.DB, groupID int64, item catalogIt
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO send_queue (modem_id, group_id, catalog_id, account_id, score, enqueued_at, status, domain_id, template_id)
 		SELECT a.modem_id, $1, $2, a.id, $3, now(), 'pending',
-		       (SELECT id FROM redirect_domains WHERE enabled=true ORDER BY id LIMIT 1),
+		       COALESCE(
+		         (SELECT rd.id FROM redirect_domains rd
+		          WHERE rd.enabled=true
+		            AND (rd.modem_id = a.modem_id OR rd.modem_id IS NULL)
+		            AND (rd.quarantine_until IS NULL OR rd.quarantine_until < now())
+		          ORDER BY (rd.modem_id IS NOT NULL) DESC, rd.id
+		          LIMIT 1),
+		         (SELECT rd.id FROM redirect_domains rd
+		          WHERE rd.enabled=true
+		            AND (rd.quarantine_until IS NULL OR rd.quarantine_until < now())
+		          ORDER BY rd.id
+		          LIMIT 1)
+		       ),
 		       -- Seleciona template da categoria do produto, ponderado por peso e hora (A/B rotation)
 		       (SELECT id FROM templates
 		        WHERE category_id = $4 AND enabled = true

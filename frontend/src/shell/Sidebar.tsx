@@ -17,6 +17,7 @@ const NAV: NavGroup[] = [
       { to: '/',               label: 'Dashboard',     icon: '🏠' },
       { to: '/compose',        label: 'Compor disparo', icon: '✍️' },
       { to: '/activity',       label: 'Atividade',      icon: '📋' },
+      { to: '/admin/metrics',  label: 'Métricas',       icon: '📈' },
     ],
   },
   {
@@ -42,13 +43,6 @@ const NAV: NavGroup[] = [
       { to: '/affiliates',      label: 'Afiliados',      icon: '💰' },
       { to: '/admin/senders',   label: 'Modems',         icon: '📡' },
       { to: '/admin/domains',   label: 'Domínios',       icon: '🌐' },
-    ],
-  },
-  {
-    label: 'Análise',
-    items: [
-      { to: '/admin/metrics', label: 'Métricas', icon: '📈' },
-      { to: '/clusters',      label: 'Clusters', icon: '🧩' },
     ],
   },
   {

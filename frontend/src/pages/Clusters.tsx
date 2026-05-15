@@ -10,8 +10,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts'
-import { Badge, Button, EmptyState, PageHeader, Skeleton } from '../components/ui'
-import { pageContainer, sectionCard, filterBar, responsiveGrid } from '../lib/uiTokens'
+import { Badge, Button, EmptyState, Skeleton } from '../components/ui'
+import { sectionCard, filterBar, responsiveGrid } from '../lib/uiTokens'
 import { apiClient } from '../lib/apiClient'
 import { useWSEvent } from '../lib/useWS'
 
@@ -146,9 +146,9 @@ function ClusterCard({ cluster, colorIdx }: { cluster: Cluster; colorIdx: number
   )
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
+// ── Main (conteúdo da aba em /admin/metrics) ─────────────────────────────────
 
-export default function Clusters() {
+export function ClustersTab() {
   const qc = useQueryClient()
   const [period, setPeriod] = React.useState<Period>('30d')
   const [search, setSearch] = React.useState('')
@@ -231,30 +231,29 @@ export default function Clusters() {
     : 'Agrupamentos de comportamento similar'
 
   return (
-    <div className={pageContainer}>
-      <PageHeader
-        title="Clusters"
-        subtitle={subtitle}
-        className="mb-4"
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={exportCSV} disabled={!clusters.length}>
-              Exportar
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={recompute.isPending}
-              onClick={() => recompute.mutate()}
-            >
-              Recomputar
-            </Button>
-          </>
-        }
-      />
+    <div className="space-y-4 w-full">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-fg">Clusters de canais</h2>
+          <p className="text-sm text-fg-3 mt-0.5">{subtitle}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="ghost" size="sm" onClick={exportCSV} disabled={!clusters.length}>
+            Exportar
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={recompute.isPending}
+            onClick={() => recompute.mutate()}
+          >
+            Recomputar
+          </Button>
+        </div>
+      </div>
 
       {/* Filter bar */}
-      <div className={`${filterBar} mb-4 -mx-3 sm:-mx-4`}>
+      <div className={`${filterBar} -mx-1`}>
         {/* Search */}
         <input
           type="search"
