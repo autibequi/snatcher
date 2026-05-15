@@ -52,6 +52,25 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			args = append(args, categoryID)
 			i++
 		}
+		if brand := r.URL.Query().Get("brand"); brand != "" {
+			where = append(where, "LOWER(COALESCE(c.brand,'')) ILIKE $"+strconv.Itoa(i))
+			args = append(args, "%"+strings.ToLower(brand)+"%")
+			i++
+		}
+		if pMin := r.URL.Query().Get("price_min"); pMin != "" {
+			if v, err := strconv.ParseFloat(pMin, 64); err == nil {
+				where = append(where, "c.price_current >= $"+strconv.Itoa(i))
+				args = append(args, v)
+				i++
+			}
+		}
+		if pMax := r.URL.Query().Get("price_max"); pMax != "" {
+			if v, err := strconv.ParseFloat(pMax, 64); err == nil {
+				where = append(where, "c.price_current <= $"+strconv.Itoa(i))
+				args = append(args, v)
+				i++
+			}
+		}
 		args = append(args, limit, offset)
 		q := `
 			SELECT c.id, c.short_id, c.dedup_key, c.source_id, c.category_id,

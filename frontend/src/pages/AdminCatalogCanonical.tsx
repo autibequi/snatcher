@@ -97,6 +97,9 @@ export default function AdminCatalogCanonical() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [readyOnly, setReadyOnly] = useState(false)
   const [categoryID, setCategoryID] = useState('')
+  const [brandFilter, setBrandFilter] = useState('')
+  const [priceMin, setPriceMin] = useState('')
+  const [priceMax, setPriceMax] = useState('')
   const [page, setPage] = useState(0)
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null)
   const LIMIT = 50
@@ -120,6 +123,9 @@ export default function AdminCatalogCanonical() {
       })
       if (readyOnly) params.set('ready_only', '1')
       if (categoryID) params.set('category_id', categoryID)
+      if (brandFilter.trim()) params.set('brand', brandFilter.trim())
+      if (priceMin.trim()) params.set('price_min', priceMin.trim())
+      if (priceMax.trim()) params.set('price_max', priceMax.trim())
       const r = await authFetch(`/api/admin/catalog-canonical?${params}`)
       if (r.ok) setItems(await r.json())
     } finally {
@@ -127,8 +133,12 @@ export default function AdminCatalogCanonical() {
     }
   }
 
-  useEffect(() => { loadStats() }, [])
-  useEffect(() => { loadItems() }, [readyOnly, categoryID, page]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [categories, setCategories] = useState<{id: number; slug: string; name: string}[]>([])
+  useEffect(() => {
+    loadStats()
+    authFetch('/api/admin/templates/categories').then(r => r.json()).then(d => setCategories(Array.isArray(d) ? d : []))
+  }, [])
+  useEffect(() => { loadItems() }, [readyOnly, categoryID, brandFilter, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const KPI_CARDS = stats
     ? [
@@ -186,34 +196,57 @@ export default function AdminCatalogCanonical() {
       )}
 
       {/* Filtros */}
-      <div className="flex flex-wrap gap-4 items-center">
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={readyOnly}
-            onChange={e => { setReadyOnly(e.target.checked); setPage(0) }}
-            className="accent-indigo-600"
-          />
-          Só send_ready
-        </label>
-        <div className="flex items-center gap-2 text-sm">
-          <label htmlFor="catid" className="text-fg-2">Category ID:</label>
-          <input
-            id="catid"
-            type="number"
-            min={0}
-            value={categoryID}
-            onChange={e => { setCategoryID(e.target.value); setPage(0) }}
-            placeholder="qualquer"
-            className="w-28 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-          />
+      <div className="rounded-lg border border-border bg-surface p-3 space-y-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none shrink-0">
+            <input type="checkbox" checked={readyOnly}
+              onChange={e => { setReadyOnly(e.target.checked); setPage(0) }}
+              className="accent-accent" />
+            Só send_ready
+          </label>
+
+          <div className="flex items-center gap-1.5 text-sm">
+            <label className="text-fg-3 shrink-0">Categoria:</label>
+            <select
+              value={categoryID}
+              onChange={e => { setCategoryID(e.target.value); setPage(0) }}
+              className="text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent"
+            >
+              <option value="">Todas</option>
+              {categories.map(c => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-sm">
+            <label className="text-fg-3 shrink-0">Marca:</label>
+            <input
+              value={brandFilter}
+              onChange={e => { setBrandFilter(e.target.value); setPage(0) }}
+              placeholder="ex: nike"
+              className="w-28 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 text-sm">
+            <label className="text-fg-3 shrink-0">Preço:</label>
+            <input type="number" value={priceMin} onChange={e => { setPriceMin(e.target.value); setPage(0) }}
+              placeholder="mín" className="w-20 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent" />
+            <span className="text-fg-4">–</span>
+            <input type="number" value={priceMax} onChange={e => { setPriceMax(e.target.value); setPage(0) }}
+              placeholder="máx" className="w-20 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent" />
+          </div>
+
+          <button onClick={() => { setCategoryID(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setPage(0) }}
+            className="text-xs text-fg-3 hover:text-fg underline">
+            Limpar
+          </button>
+          <button onClick={() => { loadItems(); loadStats() }}
+            className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 ml-auto">
+            Atualizar
+          </button>
         </div>
-        <button
-          onClick={() => { loadItems(); loadStats() }}
-          className="px-3 py-1 text-sm border rounded hover:bg-surface-2"
-        >
-          Atualizar
-        </button>
       </div>
 
       {/* Tabela */}
