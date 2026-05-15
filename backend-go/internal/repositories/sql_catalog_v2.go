@@ -42,6 +42,7 @@ type CatalogV2UpsertParams struct {
 	PriceOriginal float64 // 0 = sem preço original (sem desconto calculável)
 	CanonicalURL  string
 	ImageURL      string
+	Brand         string // marca do produto (opcional)
 }
 
 // computeQualityScore calcula um score básico 0–1 baseado nos atributos do produto.
@@ -97,11 +98,12 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 		INSERT INTO catalog (
 			dedup_key, short_id, source_id, title,
 			price_current, price_original, canonical_url, image_url,
-			content_hash, quality_score, send_ready
+			content_hash, quality_score, send_ready, brand
 		)
 		SELECT $1, $2,
 			COALESCE((SELECT id FROM sources WHERE id = $3), 'unknown'),
-			$4, $5, $6, $7, $8, $9, $10, $11
+			$4, $5, $6, $7, $8, $9, $10, $11,
+			COALESCE(NULLIF($12,''), classify_catalog_brand($4))
 		ON CONFLICT (dedup_key) DO UPDATE SET
 			price_current = EXCLUDED.price_current,
 			price_original = EXCLUDED.price_original,
@@ -109,8 +111,9 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 			image_url     = EXCLUDED.image_url,
 			quality_score = EXCLUDED.quality_score,
 			send_ready    = EXCLUDED.send_ready,
-			send_ready_at = CASE WHEN EXCLUDED.send_ready AND NOT catalog.send_ready THEN now() ELSE catalog.send_ready_at END
-	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.PriceOriginal, p.CanonicalURL, p.ImageURL, contentHash, qualityScore, sendReady)
+			send_ready_at = CASE WHEN EXCLUDED.send_ready AND NOT catalog.send_ready THEN now() ELSE catalog.send_ready_at END,
+			brand         = COALESCE(EXCLUDED.brand, catalog.brand)
+	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.PriceOriginal, p.CanonicalURL, p.ImageURL, contentHash, qualityScore, sendReady, p.Brand)
 	if err != nil {
 		return "", err
 	}

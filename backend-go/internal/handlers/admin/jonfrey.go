@@ -249,6 +249,13 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionChannelCategorySync,
 	},
+	"catalog_brand_classification": {
+		Type:        "catalog_brand_classification",
+		Category:    "curation",
+		Description: "Classifica brand de produtos sem marca usando brand_keywords do banco. Zero LLM, zero custo.",
+		UsesLLM:     false,
+		Run:         actionCatalogBrandClassification,
+	},
 }
 
 // ── Ações ──────────────────────────────────────────────────────────────────
@@ -2059,6 +2066,22 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 	}
 	reasoning := fmt.Sprintf("sync canal→categoria: %d categorias criadas, %d produtos re-classificados, %d pesos atualizados",
 		created, reclassified, weightUpdated)
+	return before, after, reasoning, nil
+}
+
+func actionCatalogBrandClassification(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	res, err := h.db.ExecContext(ctx, `
+		UPDATE catalog SET brand = classify_catalog_brand(title)
+		WHERE (brand IS NULL OR brand = '') AND title IS NOT NULL AND title != ''
+	`)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	n, _ := res.RowsAffected()
+	before := map[string]any{"classified": 0}
+	after := map[string]any{"classified": n}
+	reasoning := fmt.Sprintf("classificados %d produtos com brand via brand_keywords", n)
+	_ = loops.AuditAction(ctx, h.db, "catalog_brand_classification", "applied", "catalog", 0, before, after, reasoning, 1.0)
 	return before, after, reasoning, nil
 }
 

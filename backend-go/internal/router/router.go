@@ -238,6 +238,9 @@ func Build(
 		r.Get("/api/channels/{id}/weights", chV2.GetWeights)
 		r.Get("/api/channels/{id}/candidates", adminhnd.ChannelCandidatesHandler(db))
 		r.Put("/api/channels/{id}/weights", chV2.SetWeights)
+		r.Get("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersListHandler(db))
+		r.Post("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersAddHandler(db))
+		r.Delete("/api/channels/{id}/brand-filters/{filterId}", adminhnd.ChannelBrandFiltersDeleteHandler(db))
 
 		// ReDesign: Groups
 		r.Get("/api/groups", groups.List)

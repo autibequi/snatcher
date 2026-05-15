@@ -661,6 +661,7 @@ function ChannelModal({
                     ))}
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Editar configurações</Button>
+                  <BrandFiltersSection channelId={channel.id} />
                 </div>
           )}
           {tab === 'categorias' && <TabCategorias channelId={channel.id} categories={categories} />}
@@ -670,6 +671,97 @@ function ChannelModal({
           {tab === 'links'     && <TabLinks channelId={channel.id} channelName={channel.name} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Brand Filters Section ─────────────────────────────────────────────────────
+
+interface BrandFilter { id: number; brand_slug: string; brand_display: string; mode: string }
+
+function BrandFiltersSection({ channelId }: { channelId: number }) {
+  const qc = useQueryClient()
+  const [input, setInput] = useState('')
+  const [mode, setMode] = useState<'include' | 'exclude'>('include')
+
+  const { data: filters = [] } = useQuery<BrandFilter[]>({
+    queryKey: ['channel-brand-filters', channelId],
+    queryFn: () => apiClient.get(`/api/channels/${channelId}/brand-filters`).then(r => r.data ?? []).catch(() => []),
+    staleTime: 30_000,
+  })
+
+  const addMut = useMutation({
+    mutationFn: (brand: string) => apiClient.post(`/api/channels/${channelId}/brand-filters`, {
+      brand_slug: brand.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+      brand_display: brand,
+      mode,
+    }),
+    onSuccess: () => { setInput(''); void qc.invalidateQueries({ queryKey: ['channel-brand-filters', channelId] }) },
+  })
+
+  const removeMut = useMutation({
+    mutationFn: (id: number) => apiClient.delete(`/api/channels/${channelId}/brand-filters/${id}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['channel-brand-filters', channelId] }),
+  })
+
+  const includes = filters.filter(f => f.mode === 'include')
+  const excludes = filters.filter(f => f.mode === 'exclude')
+
+  return (
+    <div className="space-y-2 pt-3 border-t border-border">
+      <p className="text-xs font-medium text-fg-3 uppercase tracking-wide">Filtros de Marca</p>
+
+      {/* Chips de include */}
+      {includes.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {includes.map(f => (
+            <span key={f.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/15 text-success border border-success/30">
+              {f.brand_display}
+              <button onClick={() => removeMut.mutate(f.id)} className="hover:opacity-70">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Chips de exclude */}
+      {excludes.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <span className="text-[10px] text-fg-3 self-center">excluir:</span>
+          {excludes.map(f => (
+            <span key={f.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-danger/15 text-danger border border-danger/30">
+              {f.brand_display}
+              <button onClick={() => removeMut.mutate(f.id)} className="hover:opacity-70">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Input de nova marca */}
+      <div className="flex items-center gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && input.trim()) addMut.mutate(input.trim()) }}
+          placeholder="Ex: Nike, Adidas..."
+          className="flex-1 min-w-0 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent"
+        />
+        <select
+          value={mode}
+          onChange={e => setMode(e.target.value as 'include' | 'exclude')}
+          className="text-xs border border-border rounded px-1 py-1 bg-surface-2"
+        >
+          <option value="include">incluir</option>
+          <option value="exclude">excluir</option>
+        </select>
+        <button
+          onClick={() => { if (input.trim()) addMut.mutate(input.trim()) }}
+          disabled={!input.trim() || addMut.isPending}
+          className="text-xs px-2 py-1 rounded bg-accent text-white disabled:opacity-50 shrink-0"
+        >+</button>
+      </div>
+      {(includes.length === 0 && excludes.length === 0) && (
+        <p className="text-xs text-fg-3">Sem filtros — aceita produtos de qualquer marca.</p>
+      )}
     </div>
   )
 }
