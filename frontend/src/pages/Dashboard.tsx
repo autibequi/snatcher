@@ -62,6 +62,60 @@ function renderDynamicSubtitle(inboxCount: number, nextDispatchEta?: string) {
   return <>Tudo em ordem</>
 }
 
+// ── Sugestões dos Loops LLM ──────────────────────────────────────────────────
+
+interface Suggestion {
+  id: number; loop_name: string; target_type: string; target_id: number
+  suggestion: string; reasoning?: string; proposed_change: unknown
+  confidence?: number; created_at: string
+}
+
+function SuggestionsWidget() {
+  const qc = useQueryClient()
+  const { data: items = [], isLoading } = useQuery<Suggestion[]>({
+    queryKey: ['dashboard', 'suggestions'],
+    queryFn: () => apiClient.get('/api/admin/suggestions?status=pending').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
+    refetchInterval: 60_000,
+  })
+  const approveMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/admin/suggestions/${id}/approve`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard', 'suggestions'] }),
+  })
+  const dismissMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/api/admin/suggestions/${id}/dismiss`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard', 'suggestions'] }),
+  })
+
+  if (isLoading || items.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wider text-fg-3">
+        💡 Sugestões dos Loops LLM ({items.length})
+      </p>
+      <div className="space-y-2">
+        {items.map(s => (
+          <div key={s.id} className="rounded-lg border border-border bg-surface px-4 py-3 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">{s.loop_name}</span>
+                <span className="text-xs text-fg-3">{s.target_type} #{s.target_id}</span>
+                {s.confidence != null && <span className="text-xs text-fg-3">{(s.confidence * 100).toFixed(0)}%</span>}
+              </div>
+              <p className="text-sm font-medium">{s.suggestion}</p>
+              {s.reasoning && <p className="text-xs text-fg-3 mt-0.5">{s.reasoning}</p>}
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => approveMut.mutate(s.id)} className="text-xs px-2 py-1 rounded bg-success/15 text-success hover:bg-success/25">Aplicar</button>
+              <button onClick={() => dismissMut.mutate(s.id)} className="text-xs px-2 py-1 rounded bg-surface-2 text-fg-3 hover:text-fg">Ignorar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 // ── Score Engine Status Widget ──────────────────────────────────────────────
@@ -457,6 +511,9 @@ export default function Dashboard() {
         <OperationInbox />
         <RecommendationCard />
       </div>
+
+      {/* ── 4b. Sugestões dos Loops LLM ──────────────────────────────────────── */}
+      <SuggestionsWidget />
 
       {/*
         Antes vinha aqui um <JonfreyDispatchReviewCard />. A lista mudou

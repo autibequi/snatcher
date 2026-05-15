@@ -17,7 +17,6 @@ const NAV: NavGroup[] = [
       { to: '/',               label: 'Dashboard',     icon: '🏠' },
       { to: '/compose',        label: 'Compor disparo', icon: '✍️' },
       { to: '/activity',       label: 'Atividade',      icon: '📋' },
-      { to: '/suggestions-l4', label: 'Insights',       icon: '💡' },
     ],
   },
   {
