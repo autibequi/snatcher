@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -52,7 +53,11 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			args = append(args, categoryID)
 			i++
 		}
-		if brand := r.URL.Query().Get("brand"); brand != "" {
+		if bslug := r.URL.Query().Get("brand_slug"); bslug != "" {
+			where = append(where, "c.brand = $"+strconv.Itoa(i))
+			args = append(args, bslug)
+			i++
+		} else if brand := r.URL.Query().Get("brand"); brand != "" {
 			where = append(where, "LOWER(COALESCE(c.brand,'')) ILIKE $"+strconv.Itoa(i))
 			args = append(args, "%"+strings.ToLower(brand)+"%")
 			i++
@@ -75,11 +80,14 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 		q := `
 			SELECT c.id, c.short_id, c.dedup_key, c.source_id, c.category_id,
 			       ct.display_name AS category_name,
+			       c.brand AS brand_slug,
+			       COALESCE(NULLIF(pb.display_name, ''), c.brand) AS brand,
 			       c.title, c.image_url, c.price_original, c.price_current, c.discount_pct,
 			       c.quality_score, c.send_ready, c.canonical_url_alive, c.canonical_url,
 			       c.created_at::text AS created_at, c.send_ready_at::text AS send_ready_at
 			FROM catalog c
 			LEFT JOIN categories ct ON ct.id = c.category_id
+			LEFT JOIN product_brands pb ON pb.id = c.brand_id
 			WHERE ` + joinAnd(where) + `
 			ORDER BY c.quality_score DESC NULLS LAST, c.created_at DESC
 			LIMIT $` + strconv.Itoa(i) + ` OFFSET $` + strconv.Itoa(i+1)
@@ -91,6 +99,8 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			SourceID          string   `db:"source_id" json:"source_id"`
 			CategoryID        *int64   `db:"category_id" json:"category_id,omitempty"`
 			CategoryName      *string  `db:"category_name" json:"category_name,omitempty"`
+			BrandSlug         *string  `db:"brand_slug" json:"brand_slug,omitempty"`
+			Brand             *string  `db:"brand" json:"brand,omitempty"`
 			Title             string   `db:"title" json:"title"`
 			ImageURL          *string  `db:"image_url" json:"image_url,omitempty"`
 			PriceOriginal     *float64 `db:"price_original" json:"price_original,omitempty"`
@@ -112,7 +122,6 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			rows = []row{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
 		json.NewEncoder(w).Encode(rows) //nolint:errcheck
 	}
 }
@@ -132,6 +141,8 @@ func CatalogCanonicalStatsHandler(db *sqlx.DB) http.HandlerFunc {
 		out["unscored"] = n
 		_ = db.GetContext(r.Context(), &n, "SELECT COUNT(*) FROM catalog WHERE cached_image_path IS NOT NULL")
 		out["images_cached"] = n
+		_ = db.GetContext(r.Context(), &n, "SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'pending'")
+		out["llm_queue_pending"] = n
 
 		type srcCount struct {
 			SourceID string `db:"source_id" json:"source_id"`
@@ -149,6 +160,46 @@ func CatalogCanonicalStatsHandler(db *sqlx.DB) http.HandlerFunc {
 	}
 }
 
+// GET /api/admin/catalog/{id}/price-history?limit=60
+func CatalogPriceHistoryHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+		limit := 60
+		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
+			limit = v
+		}
+		type row struct {
+			Price  float64 `db:"price" json:"price"`
+			SeenAt string  `db:"seen_at" json:"seen_at"`
+		}
+		var rows []row
+		if err := db.SelectContext(r.Context(), &rows, `
+			SELECT price::float8 AS price, seen_at::text AS seen_at
+			FROM price_history
+			WHERE catalog_id = $1
+			ORDER BY seen_at DESC
+			LIMIT $2
+		`, id, limit); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if rows == nil {
+			rows = []row{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(rows) //nolint:errcheck
+	}
+}
+
 // joinAnd concatena partes com " AND " — helper local para este handler.
 func joinAnd(parts []string) string {
 	out := ""
@@ -159,4 +210,174 @@ func joinAnd(parts []string) string {
 		out += p
 	}
 	return out
+}
+
+// GET /api/admin/product-brands?q=&limit=30
+func ListProductBrandsHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		q := strings.TrimSpace(r.URL.Query().Get("q"))
+		limit := 30
+		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+		type brow struct {
+			ID          int64  `db:"id" json:"id"`
+			Slug        string `db:"slug" json:"slug"`
+			DisplayName string `db:"display_name" json:"display_name"`
+		}
+		var rows []brow
+		var err error
+		like := "%" + q + "%"
+		if q == "" {
+			err = db.SelectContext(r.Context(), &rows,
+				`SELECT id, slug, display_name FROM product_brands ORDER BY display_name ASC LIMIT $1`, limit)
+		} else {
+			err = db.SelectContext(r.Context(), &rows,
+				`SELECT id, slug, display_name FROM product_brands
+				 WHERE slug ILIKE $1 OR display_name ILIKE $1
+				 ORDER BY display_name ASC LIMIT $2`,
+				like, limit)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if rows == nil {
+			rows = []brow{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(rows) //nolint:errcheck
+	}
+}
+
+// POST /api/admin/catalog-canonical/reprocess-heuristic — só eurística (sem LLM); atualiza fila LLM.
+func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ctx := r.Context()
+		tx, err := db.BeginTxx(ctx, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO product_brands (slug, display_name)
+			SELECT brand_slug, MAX(brand_display) FROM brand_keywords GROUP BY brand_slug
+			ON CONFLICT (slug) DO UPDATE SET display_name = EXCLUDED.display_name
+		`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		res, err := tx.ExecContext(ctx, `
+			WITH x AS (
+				SELECT
+					c.id,
+					b.bslug,
+					CASE WHEN b.bslug IS NOT NULL
+						THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
+						ELSE NULL END AS cid
+				FROM catalog c
+				CROSS JOIN LATERAL (SELECT classify_catalog_brand(c.title) AS bslug) b
+				WHERE c.title IS NOT NULL AND btrim(c.title) <> ''
+			)
+			UPDATE catalog c SET
+				brand = x.bslug,
+				brand_id = pb.id,
+				category_id = x.cid,
+				updated_at = now()
+			FROM x
+			LEFT JOIN product_brands pb ON pb.slug = x.bslug
+			WHERE c.id = x.id
+		`)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		nUpd, _ := res.RowsAffected()
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO product_brands (slug, display_name)
+			SELECT DISTINCT brand, brand FROM catalog WHERE brand IS NOT NULL AND btrim(brand) <> ''
+			ON CONFLICT (slug) DO NOTHING
+		`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE catalog c SET brand_id = pb.id
+			FROM product_brands pb
+			WHERE c.brand = pb.slug AND (c.brand_id IS NULL OR c.brand_id <> pb.id)
+		`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM catalog_llm_queue q
+			USING catalog c
+			WHERE q.catalog_id = c.id AND c.brand IS NOT NULL AND btrim(c.brand) <> ''
+		`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO catalog_llm_queue (catalog_id, status, reason)
+			SELECT id, 'pending', 'no_brand_keyword_match'
+			FROM catalog
+			WHERE title IS NOT NULL AND btrim(title) <> ''
+			  AND (brand IS NULL OR btrim(brand) = '')
+			ON CONFLICT (catalog_id) DO UPDATE SET
+				status = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.status ELSE 'pending' END,
+				reason = EXCLUDED.reason,
+				enqueued_at = CASE WHEN catalog_llm_queue.status = 'processing' THEN catalog_llm_queue.enqueued_at ELSE now() END,
+				processed_at = NULL,
+				last_error = NULL
+		`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var qPending int
+		_ = tx.GetContext(ctx, &qPending, `SELECT COUNT(*) FROM catalog_llm_queue WHERE status = 'pending'`)
+
+		if err := tx.Commit(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"updated_rows":      nUpd,
+			"llm_queue_pending": qPending,
+		})
+	}
+}
+
+// POST /api/admin/catalog-llm-queue/process-next — enriquecimento via LLM (worker; ainda não implementado).
+func ProcessCatalogLLMQueueNextHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_ = db
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "LLM queue: implementar extração (marca, categoria, …) e upsert em catalog / product_brands",
+			"hint":  "Itens pendentes em catalog_llm_queue; use heurística primeiro (POST /api/admin/catalog-canonical/reprocess-heuristic)",
+		})
+	}
 }

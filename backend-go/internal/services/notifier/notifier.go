@@ -1,15 +1,16 @@
-// Package notifier envia resumos operacionais (relatórios Jonfrey, entregas
-// de dispatch, erros relevantes) para um grupo WhatsApp configurado em
-// Settings → Notificações (appconfig.notifications_group_id).
+// Package notifier envia alertas operacionais (Jonfrey, sugestões LLM, falhas
+// de loop, conta em quarentena) para um grupo WhatsApp (Evolution) ou Telegram
+// (TG_BOT_TOKEN + chat_id em groups.jid), conforme Settings → Notificações.
 //
 // Princípios:
 //   - Best-effort. Falha de notificação NUNCA quebra o fluxo principal — só
 //     emite slog.Warn. Os hooks chamam Notify async (goroutine) para não
 //     atrasar o caminho-crítico (worker, request HTTP).
 //   - Dedup por chave (kind+hash) com TTL curto pra evitar spam quando o
-//     mesmo evento dispara em rajada (ex.: 50 dispatches completados em 30s
-//     virariam 50 mensagens — vira 1 resumo por janela).
+//     mesmo evento dispara em rajada.
 //   - Sem grupo configurado → no-op silencioso (não polui logs).
+//   - Disparos de fila (send_queue) não geram notificação aqui — só estado
+//     de conta/loops/sugestões/Jonfrey.
 package notifier
 
 import (
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/services/adapters"
 	store "snatcher/backendv2/internal/repositories"
 )
 
@@ -38,6 +40,8 @@ const (
 	KindDispatchCompleted  Kind = "dispatch-completed"
 	KindDispatchFailed     Kind = "dispatch-failed"
 	KindAccountIssue       Kind = "account-issue"
+	KindLLMSuggestion      Kind = "llm-suggestion"
+	KindLoopFailure        Kind = "loop-failure"
 	KindGenericInfo        Kind = "info"
 )
 
@@ -117,35 +121,42 @@ func (n *Notifier) send(kind Kind, text string) {
 		return
 	}
 	if !group.JID.Valid || strings.TrimSpace(group.JID.String) == "" {
-		slog.Warn("notifier: grupo sem JID — pulando", "kind", kind, "group_id", group.ID, "name", group.Name)
-		return
-	}
-	if group.Platform != "whatsapp" {
-		// Telegram pode entrar depois — por ora só WA.
-		slog.Debug("notifier: grupo não é WA, pulando", "kind", kind, "platform", group.Platform)
+		slog.Warn("notifier: grupo sem JID/chat_id — pulando", "kind", kind, "group_id", group.ID, "name", group.Name)
 		return
 	}
 
-	// Resolve credenciais Evolution: account preferida do grupo, senão
-	// config global. Usa o mesmo padrão do dispatch_worker mas em forma
-	// reduzida — não precisamos de round-robin para notificações.
-	baseURL, apiKey, instance := resolveCreds(n.st, cfg, group)
-	if baseURL == "" || instance == "" {
-		slog.Warn("notifier: Evolution sem URL/instance", "kind", kind)
-		return
-	}
-
-	// Prefixo curto pra distinguir notificação de produto real no grupo.
-	body := fmt.Sprintf("🤖 *%s*\n%s", labelFor(kind), text)
-
+	jid := strings.TrimSpace(group.JID.String)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	if err := postEvolutionText(ctx, baseURL, apiKey, instance, group.JID.String, body); err != nil {
-		slog.Warn("notifier: envio falhou", "kind", kind, "group_jid", group.JID.String, "err", err)
-		return
+	switch group.Platform {
+	case "telegram":
+		tg := adapters.NewTelegramAdapter()
+		if !tg.Configured() {
+			slog.Warn("notifier: grupo Telegram mas TG_BOT_TOKEN não configurado no ambiente", "kind", kind, "group", group.Name)
+			return
+		}
+		body := fmt.Sprintf("🤖 %s\n%s", labelFor(kind), text)
+		if err := tg.SendPlainText(ctx, jid, body); err != nil {
+			slog.Warn("notifier: envio Telegram falhou", "kind", kind, "chat_id", jid, "err", err)
+			return
+		}
+		slog.Info("notifier: enviado", "kind", kind, "group", group.Name, "platform", "telegram")
+	case "whatsapp":
+		baseURL, apiKey, instance := resolveCreds(n.st, cfg, group)
+		if baseURL == "" || instance == "" {
+			slog.Warn("notifier: Evolution sem URL/instance", "kind", kind)
+			return
+		}
+		body := fmt.Sprintf("🤖 *%s*\n%s", labelFor(kind), text)
+		if err := postEvolutionText(ctx, baseURL, apiKey, instance, jid, body); err != nil {
+			slog.Warn("notifier: envio WA falhou", "kind", kind, "group_jid", jid, "err", err)
+			return
+		}
+		slog.Info("notifier: enviado", "kind", kind, "group", group.Name, "platform", "whatsapp")
+	default:
+		slog.Warn("notifier: plataforma de grupo não suportada para alertas", "kind", kind, "platform", group.Platform)
 	}
-	slog.Info("notifier: enviado", "kind", kind, "group", group.Name)
 }
 
 // resolveCreds retorna credenciais Evolution do appconfig global.
@@ -171,6 +182,10 @@ func labelFor(k Kind) string {
 		return "Dispatch falhou"
 	case KindAccountIssue:
 		return "Conta WA"
+	case KindLLMSuggestion:
+		return "Sugestão LLM"
+	case KindLoopFailure:
+		return "Loop LLM"
 	default:
 		return "Snatcher"
 	}

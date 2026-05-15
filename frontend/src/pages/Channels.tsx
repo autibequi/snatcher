@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, PageHeader, Skeleton, Switch } from '../components/ui'
+import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAutocomplete'
 import { authFetch, authFetchJSON } from '../lib/authFetch'
 import { apiClient } from '../lib/apiClient'
 import {
@@ -681,7 +682,8 @@ interface BrandFilter { id: number; brand_slug: string; brand_display: string; m
 
 function BrandFiltersSection({ channelId }: { channelId: number }) {
   const qc = useQueryClient()
-  const [input, setInput] = useState('')
+  const [brandDraft, setBrandDraft] = useState('')
+  const [pendingBrand, setPendingBrand] = useState<ProductBrandRow | null>(null)
   const [mode, setMode] = useState<'include' | 'exclude'>('include')
 
   const { data: filters = [] } = useQuery<BrandFilter[]>({
@@ -691,12 +693,13 @@ function BrandFiltersSection({ channelId }: { channelId: number }) {
   })
 
   const addMut = useMutation({
-    mutationFn: (brand: string) => apiClient.post(`/api/channels/${channelId}/brand-filters`, {
-      brand_slug: brand.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-      brand_display: brand,
-      mode,
-    }),
-    onSuccess: () => { setInput(''); void qc.invalidateQueries({ queryKey: ['channel-brand-filters', channelId] }) },
+    mutationFn: (payload: { brand_slug: string; brand_display: string }) =>
+      apiClient.post(`/api/channels/${channelId}/brand-filters`, { ...payload, mode }),
+    onSuccess: () => {
+      setBrandDraft('')
+      setPendingBrand(null)
+      void qc.invalidateQueries({ queryKey: ['channel-brand-filters', channelId] })
+    },
   })
 
   const removeMut = useMutation({
@@ -736,28 +739,41 @@ function BrandFiltersSection({ channelId }: { channelId: number }) {
         </div>
       )}
 
-      {/* Input de nova marca */}
       <div className="flex items-center gap-2">
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && input.trim()) addMut.mutate(input.trim()) }}
-          placeholder="Ex: Nike, Adidas..."
-          className="flex-1 min-w-0 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent"
-        />
+        <div className="flex-1 min-w-0">
+          <BrandAutocomplete
+            inputValue={brandDraft}
+            onInputChange={v => {
+              setBrandDraft(v)
+              setPendingBrand(null)
+            }}
+            onSelect={b => {
+              setPendingBrand(b)
+              setBrandDraft(b.display_name)
+            }}
+            placeholder="Buscar marca (lista canónica)…"
+            limit={40}
+          />
+        </div>
         <select
           value={mode}
           onChange={e => setMode(e.target.value as 'include' | 'exclude')}
-          className="text-xs border border-border rounded px-1 py-1 bg-surface-2"
+          className="text-xs border border-border rounded px-1 py-1 bg-surface-2 shrink-0"
         >
           <option value="include">incluir</option>
           <option value="exclude">excluir</option>
         </select>
         <button
-          onClick={() => { if (input.trim()) addMut.mutate(input.trim()) }}
-          disabled={!input.trim() || addMut.isPending}
+          type="button"
+          onClick={() => {
+            if (pendingBrand)
+              addMut.mutate({ brand_slug: pendingBrand.slug, brand_display: pendingBrand.display_name })
+          }}
+          disabled={!pendingBrand || addMut.isPending}
           className="text-xs px-2 py-1 rounded bg-accent text-white disabled:opacity-50 shrink-0"
-        >+</button>
+        >
+          +
+        </button>
       </div>
       {(includes.length === 0 && excludes.length === 0) && (
         <p className="text-xs text-fg-3">Sem filtros — aceita produtos de qualquer marca.</p>

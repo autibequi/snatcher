@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAutocomplete'
 import { authFetch } from '../lib/authFetch'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -13,6 +14,7 @@ interface CatalogItem {
   category_name?: string
   title: string
   brand?: string
+  brand_slug?: string
   image_url?: string
   price_original?: number
   price_current: number
@@ -31,6 +33,7 @@ interface Stats {
   dead_urls: number
   unscored: number
   images_cached: number
+  llm_queue_pending?: number
   by_source: { source_id: string; n: number }[]
 }
 
@@ -39,14 +42,43 @@ interface DetailModalProps {
   onClose: () => void
 }
 
+interface PriceHistoryPoint {
+  price: number
+  seen_at: string
+}
+
 function DetailModal({ item, onClose }: DetailModalProps) {
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setPriceHistory(null)
+    void (async () => {
+      try {
+        const r = await authFetch(`/api/admin/catalog/${item.id}/price-history?limit=80`)
+        if (!r.ok) {
+          if (!cancelled) setPriceHistory([])
+          return
+        }
+        const d = (await r.json()) as PriceHistoryPoint[]
+        if (!cancelled) setPriceHistory(Array.isArray(d) ? d : [])
+      } catch {
+        if (!cancelled) setPriceHistory([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [item.id])
+
+  const historyLoading = priceHistory === null
+  const historyRows = priceHistory ?? []
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={onClose}
     >
       <div
-        className="bg-surface dark:bg-bg rounded-xl shadow-2xl max-w-lg w-full mx-4 px-3 py-4 sm:px-4 sm:py-6 space-y-3"
+        className="bg-surface dark:bg-bg rounded-xl shadow-2xl max-w-2xl w-full mx-4 px-3 py-4 sm:px-4 sm:py-6 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
@@ -56,7 +88,15 @@ function DetailModal({ item, onClose }: DetailModalProps) {
           </button>
         </div>
         <dl className="text-sm space-y-1.5">
-          {item.brand && <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Marca</dt><dd className="font-semibold">{item.brand}</dd></div>}
+          {item.brand && (
+            <div className="flex gap-2">
+              <dt className="text-fg-3 w-36 flex-shrink-0">Marca</dt>
+              <dd className="font-semibold">
+                {item.brand}
+                {item.brand_slug ? <span className="text-fg-4 text-xs font-normal ml-1">({item.brand_slug})</span> : null}
+              </dd>
+            </div>
+          )}
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Categoria</dt><dd>{item.category_name ?? item.category_id ?? '—'}</dd></div>
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Source</dt><dd>{item.source_id}</dd></div>
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Preço atual</dt><dd className="font-medium">{brl.format(item.price_current)}</dd></div>
@@ -66,6 +106,38 @@ function DetailModal({ item, onClose }: DetailModalProps) {
           {item.discount_pct != null && item.discount_pct > 0 && (
             <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Desconto</dt><dd className="text-success">{item.discount_pct.toFixed(1)}%</dd></div>
           )}
+          <div className="border-t border-border pt-3 mt-2">
+            <h3 className="text-xs font-semibold text-fg-3 uppercase tracking-wide mb-2">Histórico de preço</h3>
+            {historyLoading && <p className="text-xs text-fg-4">Carregando…</p>}
+            {!historyLoading && historyRows.length === 0 && (
+              <p className="text-xs text-fg-4">
+                Nenhum ponto no histórico. Após aplicar a migration recente, novos produtos e alterações de{' '}
+                <code className="text-[10px]">price_current</code> passam a ser registrados automaticamente.
+              </p>
+            )}
+            {!historyLoading && historyRows.length > 0 && (
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-surface-2 sticky top-0 z-10">
+                    <tr>
+                      <th className="text-left font-medium text-fg-2 px-2 py-1.5">Quando</th>
+                      <th className="text-right font-medium text-fg-2 px-2 py-1.5">Preço</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {historyRows.map((h, idx) => (
+                      <tr key={`${h.seen_at}-${idx}`} className="hover:bg-surface-2/80">
+                        <td className="px-2 py-1.5 text-fg-3 whitespace-nowrap tabular-nums">
+                          {new Date(h.seen_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-medium tabular-nums">{brl.format(h.price)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">Quality score</dt><dd>{item.quality_score?.toFixed(3) ?? '—'}</dd></div>
           <div className="flex gap-2"><dt className="text-fg-3 w-36 flex-shrink-0">send_ready</dt><dd>{item.send_ready ? '✓' : '✗'}</dd></div>
           {item.canonical_url && (
@@ -97,7 +169,9 @@ export default function AdminCatalogCanonical() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [readyOnly, setReadyOnly] = useState(false)
   const [categoryID, setCategoryID] = useState('')
-  const [brandFilter, setBrandFilter] = useState('')
+  const [brandSlug, setBrandSlug] = useState('')
+  const [brandInput, setBrandInput] = useState('')
+  const [reprocessBusy, setReprocessBusy] = useState(false)
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [page, setPage] = useState(0)
@@ -123,7 +197,7 @@ export default function AdminCatalogCanonical() {
       })
       if (readyOnly) params.set('ready_only', '1')
       if (categoryID) params.set('category_id', categoryID)
-      if (brandFilter.trim()) params.set('brand', brandFilter.trim())
+      if (brandSlug) params.set('brand_slug', brandSlug)
       if (priceMin.trim()) params.set('price_min', priceMin.trim())
       if (priceMax.trim()) params.set('price_max', priceMax.trim())
       const r = await authFetch(`/api/admin/catalog-canonical?${params}`)
@@ -138,7 +212,7 @@ export default function AdminCatalogCanonical() {
     loadStats()
     authFetch('/api/admin/templates/categories').then(r => r.json()).then(d => setCategories(Array.isArray(d) ? d : []))
   }, [])
-  useEffect(() => { loadItems() }, [readyOnly, categoryID, brandFilter, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadItems() }, [readyOnly, categoryID, brandSlug, priceMin, priceMax, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const KPI_CARDS = stats
     ? [
@@ -147,8 +221,25 @@ export default function AdminCatalogCanonical() {
         { label: 'URLs mortas',    value: stats.dead_urls,      color: 'text-danger' },
         { label: 'Sem score',      value: stats.unscored,       color: 'text-warning' },
         { label: 'Imagens cached', value: stats.images_cached,  color: 'text-fg-2' },
+        ...(typeof stats.llm_queue_pending === 'number' && stats.llm_queue_pending > 0
+          ? [{ label: 'Fila LLM (marca)', value: stats.llm_queue_pending, color: 'text-warning' as const }]
+          : []),
       ]
     : []
+
+  const runReprocessHeuristic = async () => {
+    setReprocessBusy(true)
+    try {
+      const r = await authFetch('/api/admin/catalog-canonical/reprocess-heuristic', { method: 'POST' })
+      if (!r.ok) {
+        window.alert(await r.text())
+        return
+      }
+      await Promise.all([loadStats(), loadItems()])
+    } finally {
+      setReprocessBusy(false)
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
@@ -197,13 +288,14 @@ export default function AdminCatalogCanonical() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 text-sm">
+          <div className="flex items-center gap-1.5 text-sm min-w-[12rem]">
             <label className="text-fg-3 shrink-0">Marca:</label>
-            <input
-              value={brandFilter}
-              onChange={e => { setBrandFilter(e.target.value); setPage(0) }}
-              placeholder="ex: nike"
-              className="w-28 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent"
+            <BrandAutocomplete
+              inputValue={brandInput}
+              onInputChange={v => { setBrandInput(v); setBrandSlug(''); setPage(0) }}
+              onSelect={(b: ProductBrandRow) => { setBrandSlug(b.slug); setBrandInput(b.display_name); setPage(0) }}
+              placeholder="Buscar…"
+              className="flex-1 min-w-[8rem]"
             />
           </div>
 
@@ -216,11 +308,20 @@ export default function AdminCatalogCanonical() {
               placeholder="máx" className="w-20 text-sm border border-border rounded px-2 py-1 bg-surface-2 focus:outline-none focus:border-accent" />
           </div>
 
-          <button onClick={() => { setCategoryID(''); setBrandFilter(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setPage(0) }}
+          <button onClick={() => { setCategoryID(''); setBrandSlug(''); setBrandInput(''); setPriceMin(''); setPriceMax(''); setReadyOnly(false); setPage(0) }}
             className="text-xs text-fg-3 hover:text-fg underline">
             Limpar
           </button>
-          <button onClick={() => { loadItems(); loadStats() }}
+          <button
+            type="button"
+            onClick={() => void runReprocessHeuristic()}
+            disabled={reprocessBusy}
+            className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 disabled:opacity-50"
+            title="Reclassificar todo o catálogo só com eurística (brand_keywords + category_keywords). Sem LLM."
+          >
+            {reprocessBusy ? 'Reprocessando…' : 'Reprocessar (eurística)'}
+          </button>
+          <button onClick={() => { void loadItems(); void loadStats() }}
             className="px-3 py-1 text-sm border border-border rounded hover:bg-surface-2 ml-auto">
             Atualizar
           </button>

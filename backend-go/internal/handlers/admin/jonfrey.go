@@ -2093,17 +2093,68 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 }
 
 func actionCatalogBrandClassification(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
-	res, err := h.db.ExecContext(ctx, `
-		UPDATE catalog SET brand = classify_catalog_brand(title)
-		WHERE (brand IS NULL OR brand = '') AND title IS NOT NULL AND title != ''
+	tx, err := h.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO product_brands (slug, display_name)
+		SELECT brand_slug, MAX(brand_display) FROM brand_keywords GROUP BY brand_slug
+		ON CONFLICT (slug) DO UPDATE SET display_name = EXCLUDED.display_name
+	`); err != nil {
+		return nil, nil, "", err
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		WITH x AS (
+			SELECT c.id,
+				b.bslug,
+				CASE WHEN b.bslug IS NOT NULL
+					THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
+					ELSE NULL END AS cid
+			FROM catalog c
+			CROSS JOIN LATERAL (SELECT classify_catalog_brand(c.title) AS bslug) b
+			WHERE (c.brand IS NULL OR c.brand = '') AND c.title IS NOT NULL AND c.title <> ''
+		)
+		UPDATE catalog c SET
+			brand = x.bslug,
+			brand_id = pb.id,
+			category_id = x.cid,
+			updated_at = now()
+		FROM x
+		LEFT JOIN product_brands pb ON pb.slug = x.bslug
+		WHERE c.id = x.id
 	`)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	n, _ := res.RowsAffected()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO product_brands (slug, display_name)
+		SELECT DISTINCT brand, brand FROM catalog WHERE brand IS NOT NULL AND btrim(brand) <> ''
+		ON CONFLICT (slug) DO NOTHING
+	`); err != nil {
+		return nil, nil, "", err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE catalog c SET brand_id = pb.id
+		FROM product_brands pb
+		WHERE c.brand = pb.slug AND (c.brand_id IS NULL OR c.brand_id <> pb.id)
+	`); err != nil {
+		return nil, nil, "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, "", err
+	}
+
 	before := map[string]any{"classified": 0}
 	after := map[string]any{"classified": n}
-	reasoning := fmt.Sprintf("classificados %d produtos com brand via brand_keywords", n)
+	reasoning := fmt.Sprintf("classificados %d produtos com brand (heurística) + brand_id", n)
 	_ = loops.AuditAction(ctx, h.db, "catalog_brand_classification", "applied", "catalog", 0, before, after, reasoning, 1.0)
 	return before, after, reasoning, nil
 }

@@ -145,7 +145,8 @@ type AppConfig struct {
 	RotateAccounts             bool `db:"rotate_accounts" json:"rotate_accounts"`
 
 	// Grupo de notificação das automatizações — migration 0135.
-	// Quando setado, o notifier posta resumos (Jonfrey, dispatches, erros) nesse grupo via Evolution.
+	// Quando setado, o notifier posta alertas (Jonfrey, sugestões LLM, loops, quarentena de conta)
+	// nesse grupo via Evolution (WA) ou Telegram Bot (TG_BOT_TOKEN + groups.jid).
 	// FK SET NULL: se o grupo for deletado/arquivado, o campo silencia automaticamente.
 	NotificationsGroupID NullInt64 `db:"notifications_group_id" json:"notifications_group_id,omitempty"`
 

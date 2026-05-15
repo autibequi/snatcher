@@ -26,6 +26,7 @@ interface GroupOption {
   status?: string
   member_count?: number
   archived?: boolean
+  jid?: string | null
 }
 
 function NotifGroupCombobox({
@@ -144,7 +145,13 @@ export function SystemTab() {
 
   const notificationGroupOptions = useMemo<GroupOption[]>(
     () => allGroups
-      .filter(g => g.platform === 'whatsapp' && !g.archived && (g.status ?? 'active') !== 'banned')
+      .filter(g =>
+        (g.platform === 'whatsapp' || g.platform === 'telegram')
+        && !g.archived
+        && (g.status ?? 'active') !== 'banned'
+        && g.jid != null
+        && String(g.jid).trim() !== '',
+      )
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
     [allGroups],
   )
@@ -226,9 +233,13 @@ export function SystemTab() {
       <div className={sectionCard}>
         <p className={`${sectionTitle} mb-1`}>Notificações</p>
         <p className={`${formHint} mb-3`}>
-          Grupo WhatsApp que recebe os resumos automáticos do sistema: relatórios do
-          Jonfrey (revisão e recomendação), entregas de dispatch (com lista de grupos
-          e produto), resumos do auto-match e falhas relevantes.
+          Grupo de destino para alertas operacionais: recomendações do Jonfrey,
+          novas sugestões dos loops LLM, falha de execução de loop e conta WhatsApp
+          indo para quarentena por falhas consecutivas no envio.
+          WhatsApp usa Evolution (URL/instance no appconfig); Telegram exige{' '}
+          <code className="text-xs">TG_BOT_TOKEN</code> no ambiente e o{' '}
+          <code className="text-xs">jid</code> do grupo como chat_id.
+          Disparos da fila em si não geram notificação aqui.
         </p>
         <div className={formGroup}>
           <label className={formLabel}>Grupo de destino</label>
@@ -238,8 +249,8 @@ export function SystemTab() {
             onChange={id => upd('notifications_group_id', id)}
           />
           <p className={formHint}>
-            Apenas grupos WhatsApp já cadastrados na página <strong>Grupos</strong> aparecem aqui.
-            Se a lista estiver vazia, importe um grupo lá primeiro.
+            Grupos WhatsApp ou Telegram já com JID/chat_id na página{' '}
+            <strong>Grupos</strong>. Telegram: confira se o bot foi adicionado ao grupo.
           </p>
         </div>
       </div>

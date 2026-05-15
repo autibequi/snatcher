@@ -57,6 +57,36 @@ func (a *TelegramAdapter) SendText(ctx context.Context, chatID, text string) err
 	return nil
 }
 
+// SendPlainText envia texto sem parse_mode (evita quebra com <, & nos erros).
+func (a *TelegramAdapter) SendPlainText(ctx context.Context, chatID, text string) error {
+	if a.token == "" {
+		return fmt.Errorf("TG_BOT_TOKEN não configurado")
+	}
+	body, _ := json.Marshal(map[string]any{
+		"chat_id": chatID,
+		"text":    text,
+	})
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", a.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Description string `json:"description"`
+		}
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("telegram API %d: %s", resp.StatusCode, errResp.Description)
+	}
+	return nil
+}
+
 // SendPhoto envia imagem com legenda para um chat Telegram.
 func (a *TelegramAdapter) SendPhoto(ctx context.Context, chatID, photoURL, caption string) error {
 	if a.token == "" {

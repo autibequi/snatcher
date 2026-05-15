@@ -16,10 +16,12 @@ import (
 	webhookshnd "snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/middleware"
+	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/redirect"
 	"snatcher/backendv2/internal/services/scheduler"
+	"snatcher/backendv2/internal/services/senders"
 	store "snatcher/backendv2/internal/repositories"
 	wsmod "snatcher/backendv2/internal/ws"
 
@@ -80,6 +82,8 @@ func Build(
 	notif := notifier.New(st)
 	jonfrey.SetNotifier(notif)
 	dash.SetNotifier(notif)
+	loops.SetNotifier(notif)
+	senders.SetNotifier(notif)
 	if sched != nil {
 		sched.SetNotifier(notif)
 	}
@@ -364,6 +368,10 @@ func Build(
 		// Catalog Canônico v2
 		r.Get("/api/admin/catalog-canonical/stats", adminhnd.CatalogCanonicalStatsHandler(db))
 		r.Get("/api/admin/catalog-canonical", adminhnd.ListCatalogCanonicalHandler(db))
+		r.Post("/api/admin/catalog-canonical/reprocess-heuristic", adminhnd.ReprocessCatalogHeuristicHandler(db))
+		r.Get("/api/admin/product-brands", adminhnd.ListProductBrandsHandler(db))
+		r.Get("/api/admin/catalog/{id}/price-history", adminhnd.CatalogPriceHistoryHandler(db))
+		r.Post("/api/admin/catalog-llm-queue/process-next", adminhnd.ProcessCatalogLLMQueueNextHandler(db))
 
 		// Fase 4: Senders — status dos modems e filas de envio
 		r.Get("/api/admin/senders/status", adminhnd.SendersStatusHandler(db))

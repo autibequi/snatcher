@@ -36,7 +36,8 @@ func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context)) {
 	sc.jonfreyTick = fn
 }
 
-// SetNotifier registra o notifier de eventos operacionais (relatórios, dispatches).
+// SetNotifier registra o notifier para extensões futuras (o scheduler não
+// envia alertas de dispatch por aqui).
 // Pode ser chamado depois do New(); workers checam nil internamente.
 func (sc *Scheduler) SetNotifier(n *notifier.Notifier) {
 	sc.notif = n

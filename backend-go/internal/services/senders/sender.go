@@ -23,7 +23,13 @@ import (
 	"snatcher/backendv2/internal/services/algo"
 	"snatcher/backendv2/internal/services/compose"
 	"snatcher/backendv2/internal/services/llm"
+	"snatcher/backendv2/internal/services/notifier"
 )
+
+var accountNotifier *notifier.Notifier
+
+// SetNotifier registra o notifier para alertas de conta (quarentena por falhas).
+func SetNotifier(n *notifier.Notifier) { accountNotifier = n }
 
 // rowGetter abstrai *sqlx.DB e *sqlx.Tx para resolver domínio de redirect na fila.
 type rowGetter interface {
@@ -553,7 +559,8 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	if quarantineThreshold <= 0 {
 		quarantineThreshold = 5
 	}
-	if float64(failures) >= quarantineThreshold {
+	wentQuarantine := float64(failures) >= quarantineThreshold
+	if wentQuarantine {
 		_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine' WHERE id=$1", accountID)
 		_, _ = tx.ExecContext(ctx, `
 			INSERT INTO ban_events (account_id, modem_id, reason, raw_response)
@@ -568,6 +575,22 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 		SELECT $1, group_id, $2, catalog_id, template_id, domain_id, 'failed', $3, now()
 		FROM send_queue WHERE id=$1
 	`, qid, accountID, sendErr.Error())
+
+	if wentQuarantine && accountNotifier != nil {
+		var label string
+		_ = db.GetContext(ctx, &label, `
+			SELECT COALESCE(NULLIF(nickname,''), NULLIF(phone,''), '#' || id::text) FROM accounts WHERE id=$1
+		`, accountID)
+		errStr := sendErr.Error()
+		if len(errStr) > 280 {
+			errStr = errStr[:280] + "…"
+		}
+		body := fmt.Sprintf(
+			"Conta %s (id %d) foi para quarentena após %d falhas seguidas (limite %.0f).\nÚltimo erro: %s",
+			label, accountID, failures, quarantineThreshold, errStr,
+		)
+		accountNotifier.Notify(notifier.KindAccountIssue, body, fmt.Sprintf("quarantine:%d", accountID), 6*time.Hour)
+	}
 
 	// se 3+ bans/24h no mesmo modem → pausa modem (era 2, aumentado para menos agressividade)
 	var bans24h int
