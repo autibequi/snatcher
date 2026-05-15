@@ -320,7 +320,9 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 		})
 	}
 	if imageURL != "" {
-		return sendImageViaURL(ctx, instance, jid.String, imageURL, msg)
+		// Usa o mesmo adapter que funciona no dispatch manual
+		evo := adapters.NewEvolution(os.Getenv("EVOLUTION_URL"), os.Getenv("EVOLUTION_API_KEY"), instance)
+		return evo.SendImage(ctx, jid.String, imageURL, msg)
 	}
 	// sem imagem — envia só texto
 	return SendTextWithMedia(ctx, SendMediaArgs{Instance: instance, JID: jid.String, Caption: msg})

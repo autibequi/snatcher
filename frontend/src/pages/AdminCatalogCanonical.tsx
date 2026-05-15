@@ -172,28 +172,6 @@ export default function AdminCatalogCanonical() {
         </div>
       )}
 
-      {/* Por source */}
-      {stats && stats.by_source.length > 0 && (
-        <div className="bg-surface dark:bg-bg border rounded-xl p-4 shadow-sm">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-3 mb-3">Por source</h2>
-          <table className="text-sm w-full max-w-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-1 pr-4 text-fg-2 font-medium">source_id</th>
-                <th className="text-right py-1 text-fg-2 font-medium">count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.by_source.map(s => (
-                <tr key={s.source_id} className="border-b last:border-0">
-                  <td className="py-1 pr-4 font-mono text-xs">{s.source_id}</td>
-                  <td className="py-1 text-right">{s.n.toLocaleString('pt-BR')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {/* Filtros */}
       <div className="rounded-lg border border-border bg-surface p-3 space-y-3">
