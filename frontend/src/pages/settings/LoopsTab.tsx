@@ -184,7 +184,8 @@ export function LoopsTab() {
           </Button>
           <p className="text-[11px] text-fg-3 max-w-xl">
             Enfileira <strong className="text-fg-2 font-medium">todas as ações Jonfrey ativas</strong> na tabela abaixo.
-            Acompanhe em <span className="text-fg-2">Tempo real → Fila de trabalhos</span>; pode demorar vários minutos.
+            A execução é <strong className="text-fg-2">assíncrona</strong>; acompanhe em <span className="text-fg-2">Tempo real → Fila de trabalhos</span>.
+            Com grupo de notificações em <strong className="text-fg-2">Configurações → Notificações</strong>, chega um alerta com o <strong className="text-fg-2">id do job</strong> ao enfileirar.
           </p>
         </div>
       </div>

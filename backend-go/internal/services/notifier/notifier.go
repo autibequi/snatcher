@@ -41,7 +41,7 @@ const (
 	KindDispatchFailed     Kind = "dispatch-failed"
 	KindAccountIssue       Kind = "account-issue"
 	KindLLMSuggestion      Kind = "llm-suggestion"
-	KindLoopFailure        Kind = "loop-failure"
+	KindJonfreyJobQueued   Kind = "jonfrey-job-queued"
 	KindGenericInfo        Kind = "info"
 )
 
@@ -186,6 +186,8 @@ func labelFor(k Kind) string {
 		return "Sugestão LLM"
 	case KindLoopFailure:
 		return "Loop LLM"
+	case KindJonfreyJobQueued:
+		return "Jonfrey · Fila"
 	default:
 		return "Snatcher"
 	}

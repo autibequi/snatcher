@@ -514,6 +514,20 @@ func (h *JonfreyHandler) runJonfreyBatch(parentCtx context.Context, jobID, trigg
 		"types", typesToRun,
 	)
 
+	// Notificação imediata: batch manual é async — operador vê o job_id no grupo configurado.
+	if h.notif != nil && total > 0 && triggeredBy == "manual" {
+		origem := "painel / API"
+		if strings.TrimSpace(target) != "" {
+			origem = fmt.Sprintf("manual · target=%s", strings.TrimSpace(target))
+		}
+		list := strings.Join(typesToRun, ", ")
+		if len(list) > 700 {
+			list = list[:700] + "…"
+		}
+		body := fmt.Sprintf("Job na fila universal\nid: %s\n%d ação(ões)\n%s\n\n%s", jobID, total, origem, list)
+		h.notif.Notify(notifier.KindJonfreyJobQueued, body, "", 0)
+	}
+
 	jm.AppendActivity(jobID, fmt.Sprintf("fila: %d ação(ões) · ordem FIFO", total))
 
 	for _, t := range typesToRun {
