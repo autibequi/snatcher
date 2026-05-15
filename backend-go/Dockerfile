@@ -10,10 +10,10 @@ RUN go mod download
 ARG CACHEBUST=20260512_1740
 COPY . .
 
-# -v: imprime pacotes compilados — essencial quando o log do deploy só mostra "exit code 1" sem o erro do go tool.
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o backendv2 ./cmd/server
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o seed ./cmd/seed
-RUN go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o public ./cmd/public
+# Redireciona saída para ficheiro e faz cat no fail: sem BuildKit o painel do Coolify costuma omitir stderr do go build.
+RUN sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o backendv2 ./cmd/server > /tmp/build-server.log 2>&1 || { echo "=== go build ./cmd/server ==="; cat /tmp/build-server.log; exit 1; }'
+RUN sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o seed ./cmd/seed > /tmp/build-seed.log 2>&1 || { echo "=== go build ./cmd/seed ==="; cat /tmp/build-seed.log; exit 1; }'
+RUN sh -c 'go build -tags=nosqlite -buildvcs=false -trimpath -p 1 -ldflags="-s -w" -v -o public ./cmd/public > /tmp/build-public.log 2>&1 || { echo "=== go build ./cmd/public ==="; cat /tmp/build-public.log; exit 1; }'
 
 FROM alpine:3.19 AS server
 RUN apk add --no-cache ca-certificates tzdata wget
