@@ -270,6 +270,12 @@ func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
 		err = fmt.Errorf("send_queue id=%d: sem catalog_id nem message_override", qid)
 	}
 	if err != nil {
+		// Desconto inválido não é falha de infra — marca como invalid e não penaliza conta.
+		if errors.Is(err, ErrNoValidDiscount) || errors.Is(err, ErrDiscountZero) {
+			slog.Warn("sender.skip.invalid_discount", "queue_id", qid, "modem", modemID, "group", groupID, "err", err.Error())
+			markInvalid(ctx, db, qid, err)
+			return true, nil
+		}
 		slog.Error("sender.send_failed", "queue_id", qid, "modem", modemID, "group", groupID, "err", err)
 		markFailed(ctx, db, qid, *accountID, modemID, err)
 		return true, nil
@@ -353,7 +359,8 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	link := "https://" + domainHost + "/v/" + groupShort
 
 	// 5. interpola variáveis no template — usa V2 que rejeita desconto inválido.
-	msg, err := renderTemplateBodyV2(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
+	var msg string
+	msg, err = renderTemplateBodyV2(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
 	if err != nil {
 		return nil, err
 	}
