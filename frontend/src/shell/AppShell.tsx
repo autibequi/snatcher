@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
 import { ManualModal } from '../components/ManualModal'
+import { StatusBar } from '../components/StatusBar'
 import { PageTitleProvider } from '../contexts/PageTitleContext'
 
 export function AppShell() {
@@ -44,6 +45,7 @@ export function AppShell() {
       </div>
       <ApiErrorToast />
       <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
+      <StatusBar />
     </div>
   )
 }

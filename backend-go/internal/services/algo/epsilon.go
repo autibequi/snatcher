@@ -48,18 +48,12 @@ func computeEpsilon(ctx context.Context, db *sqlx.DB) float64 {
 // upstream) e, com probabilidade epsilon, devolve um candidato uniformemente
 // amostrado entre eles. Caso contrário, mantém o argmax (índice 0).
 //
-// Gate: respeita o flag use_epsilon_explore — se desligado, retorna candidates[0].
+// W2.B substituirá esta função por UCB1 por canal; mantida aqui até então.
 func pickWithEpsilon(ctx context.Context, db *sqlx.DB, candidates []catalogItem) catalogItem {
 	if len(candidates) == 0 {
 		return catalogItem{}
 	}
 	if len(candidates) == 1 {
-		return candidates[0]
-	}
-
-	var on float64
-	if err := db.GetContext(ctx, &on,
-		`SELECT COALESCE(get_param('use_epsilon_explore','global',NULL), 0)`); err != nil || on == 0 {
 		return candidates[0]
 	}
 

@@ -45,6 +45,23 @@ func main() {
 	// Register all Prometheus metrics with the default registry.
 	observability.MustRegisterAll()
 
+	// Initialise OpenTelemetry SDK.
+	// When OTEL_EXPORTER_OTLP_ENDPOINT is set, metrics are exported via gRPC;
+	// otherwise the stdout exporter is used (dev/CI).
+	otelCtx := context.Background()
+	otelShutdown, err := observability.InitOTel(otelCtx)
+	if err != nil {
+		slog.Error("otel init failed", "err", err)
+		os.Exit(1)
+	}
+	defer otelShutdown(otelCtx) //nolint:errcheck
+
+	// Register high-cardinality OTel instruments (channel_id, op, etc.).
+	if err := observability.InitOTelMetrics(); err != nil {
+		slog.Error("otel metrics init failed", "err", err)
+		os.Exit(1)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config validation failed", "err", err)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
-import { sectionCard, pageContainer } from '../lib/uiTokens'
+import { BaselineTab } from './admin/BaselineTab'
 
 interface TunableParam {
   id: number
@@ -15,15 +15,7 @@ interface TunableParam {
   last_change_by?: string
 }
 
-const STRANGLER_FLAGS = ['use_algo_tick', 'use_epsilon_explore', 'use_thompson_sampling']
-
 const PARAM_META: Record<string, { label: string; description: string }> = {
-  // Flags strangler
-  use_algo_tick:          { label: 'Score Engine',             description: 'Ativa o Score Engine — seleciona produtos via fórmula composta (qualidade, afinidade, peso do canal, CTR, EPC, frescor, saturação) + MMR para diversidade.' },
-  use_epsilon_explore:    { label: 'Exploração ε-greedy (Fase 2)', description: 'Com probabilidade ε = epsilon_base * exp(-epsilon_decay_rate * dias), escolhe um candidato aleatório entre os top-10 pós-MMR. Ajuda a descobrir produtos novos sem histórico.' },
-  use_thompson_sampling:  { label: 'Thompson Sampling (Fase 3)', description: 'Amostra Beta(α,β) por (grupo×categoria) e escolhe a categoria do tick via bandit Bernoulli. Warm-start via learned_weights. Recomendado só após 30d de dados.' },
-  use_send_queue:         { label: 'Fila de envio',           description: 'Usa a fila particionada por modem em vez do dispatcher legado.' },
-  catalog_source:         { label: 'Catálogo v2',             description: 'Lê produtos do catálogo novo (0 = legado, 1 = v2 cimentado).' },
   // Qualidade e seleção
   quality_threshold:      { label: 'Score mínimo de qualidade', description: 'Produtos com score abaixo desse valor não entram na fila. Aumentar = mais seletivo.' },
   baseline_min:           { label: 'Mínimo diário por grupo',   description: 'Garante ao menos N envios por dia mesmo em grupos com score baixo.' },
@@ -65,10 +57,6 @@ function paramLabel(name: string): string {
 }
 function paramDescription(name: string): string {
   return PARAM_META[name]?.description ?? ''
-}
-
-function isStranglerFlag(name: string): boolean {
-  return STRANGLER_FLAGS.includes(name)
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
@@ -174,9 +162,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
     }
   }
 
-  const stranglerParams = params.filter(p => isStranglerFlag(p.param_name))
-  const regularParams = params.filter(p => !isStranglerFlag(p.param_name))
-  const grouped = groupBy(regularParams, p => p.scope_type)
+  const grouped = groupBy(params, p => p.scope_type)
   const scopeOrder = ['global', 'modem', 'group', 'category']
   const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(s => grouped[s])
 
@@ -186,64 +172,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
 
       {loading && <p className="text-fg-3">Carregando...</p>}
 
-      {/* Flags strangler — destaque no topo */}
-      {!loading && stranglerParams.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-            Flags Strangler
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stranglerParams.map(p => {
-              const isOn = p.current_value !== 0
-              const isBusy = saving[p.id]
-              return (
-                <div
-                  key={p.id}
-                  className="border rounded-lg p-4 bg-surface shadow-sm flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-fg">{paramLabel(p.param_name)}</p>
-                      <p className="text-[10px] text-fg-3 font-mono mt-0.5">{p.param_name}</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggle(p)}
-                      disabled={isBusy}
-                      className={[
-                        'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none',
-                        isOn ? 'bg-success' : 'bg-border',
-                        isBusy ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
-                      ].join(' ')}
-                      aria-label={isOn ? 'Desativar' : 'Ativar'}
-                    >
-                      <span
-                        className={[
-                          'inline-block h-4 w-4 transform rounded-full bg-surface shadow transition-transform',
-                          isOn ? 'translate-x-6' : 'translate-x-1',
-                        ].join(' ')}
-                      />
-                    </button>
-                  </div>
-                  {paramDescription(p.param_name) && (
-                    <p className="text-xs text-fg-3 leading-snug">{paramDescription(p.param_name)}</p>
-                  )}
-                  <span className={['text-xs font-medium', isOn ? 'text-success' : 'text-fg-4'].join(' ')}>
-                    {isOn ? 'ON' : 'OFF'}
-                  </span>
-                  {p.last_changed && (
-                    <p className="text-xs text-fg-4">
-                      Alterado: {p.last_changed}
-                      {p.last_change_by ? ` por ${p.last_change_by}` : ''}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Params regulares agrupados por scope_type */}
+      {/* Params agrupados por scope_type */}
       {!loading && sortedScopes.map(scope => (
         <section key={scope}>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
@@ -330,6 +259,11 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
       {!loading && params.length === 0 && (
         <p className="text-fg-3">Nenhum parâmetro encontrado.</p>
       )}
+
+      {/* Seção Baseline — readonly, W-1. W4 vai reorganizar em tabs reais */}
+      <section>
+        <BaselineTab />
+      </section>
     </div>
   )
 }

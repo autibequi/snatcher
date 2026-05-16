@@ -126,5 +126,49 @@ func MustRegisterAll() {
 		LLMRequests,
 		LLMTokensUsed,
 		LLMCostUSD,
+		DispatchSendDurationSeconds,
+		CircuitBreakerState,
+		LLMCostUSDToday,
 	)
 }
+
+// Dispatch metrics (low-cardinality: status only).
+var (
+	// DispatchSendDurationSeconds tracks how long each dispatch send attempt takes.
+	// Label "status" carries values like "ok", "error", "timeout" — never channel_id (use OTel for that).
+	DispatchSendDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "snatcher_dispatch_send_duration_seconds",
+			Help:    "Duration of dispatch send attempts (low-cardinality: status only).",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"status"},
+	)
+)
+
+// Circuit-breaker metrics (low-cardinality: upstream + state).
+var (
+	// CircuitBreakerState tracks the current state of each upstream circuit breaker.
+	// Label "upstream" identifies the external service (e.g. "whatsapp", "telegram").
+	// Label "state" carries "open", "half-open", "closed".
+	CircuitBreakerState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "snatcher_circuit_breaker_state",
+			Help: "Current state of circuit breakers per upstream (0=closed, 1=half-open, 2=open).",
+		},
+		[]string{"upstream", "state"},
+	)
+)
+
+// Cost metrics snapshot (low-cardinality: provider only).
+var (
+	// LLMCostUSDToday tracks the accumulated LLM spend for the current calendar day per provider.
+	// Resets at midnight (managed externally by the daily metrics job).
+	LLMCostUSDToday = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "snatcher_llm_cost_usd_today",
+			Help: "Estimated LLM cost in USD accumulated today per provider (resets at midnight).",
+		},
+		[]string{"provider"},
+	)
+)

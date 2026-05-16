@@ -9,15 +9,8 @@ import (
 )
 
 // RunTick executa 1 ciclo do Algo cimentado (5 camadas). Cron 5min.
-// Gated por tunable_parameter 'use_algo_tick' = 1.
 func RunTick(ctx context.Context, db *sqlx.DB) error {
 	started := time.Now()
-
-	// 0. Gate: flag use_algo_tick
-	var flag float64
-	if err := db.GetContext(ctx, &flag, "SELECT get_param('use_algo_tick','global',NULL)"); err != nil || flag == 0 {
-		return nil // tick desligado — não registra em algo_status (status é derivado da flag)
-	}
 
 	// 1. Janela de envio configurada nas settings (send_start_hour / send_end_hour)
 	if !InSendWindow(ctx, db) {

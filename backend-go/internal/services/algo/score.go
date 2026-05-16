@@ -16,6 +16,7 @@ type ScoreInputs struct {
 	LastPriceDropAt    *time.Time
 	SourceTrust        float64
 	GroupCategoryMatch float64
+	ChannelID          int64
 }
 
 // Params contém os parâmetros tunáveis lidos de tunable_parameters via get_param.
@@ -49,6 +50,37 @@ func ComputeScore(in ScoreInputs, params Params) float64 {
 		priceDrop = 1.5
 	}
 	return discountF * in.GroupCategoryMatch * freshness * priceDrop * in.SourceTrust
+}
+
+// ComputeScoreV2 aplica a fórmula v2 com multiplicadores por canal via ChannelWeights.
+// Se weights for nil, utiliza as constantes globais equivalentes ao ComputeScore original.
+func ComputeScoreV2(in ScoreInputs, params Params, weights *ChannelWeights) float64 {
+	discountW := 1.0
+	freshnessW := 1.0
+	sourceTrustW := 1.0
+	if weights != nil {
+		discountW = weights.Discount
+		freshnessW = weights.Freshness
+		sourceTrustW = weights.SourceTrust
+	}
+
+	discountF := math.Min(in.DiscountPct/30.0, 2.0) * discountW
+	if discountF <= 0 {
+		return 0
+	}
+	if in.GroupCategoryMatch == 0 {
+		return 0
+	}
+
+	halfLife := params.HalfLifeFreshness
+	hoursOld := time.Since(in.FirstSeenAt).Hours()
+	freshness := math.Exp(-hoursOld/(halfLife*24)) * freshnessW
+
+	priceDrop := 1.0
+	if in.LastPriceDropAt != nil && time.Since(*in.LastPriceDropAt) < 24*time.Hour {
+		priceDrop = 1.5
+	}
+	return discountF * in.GroupCategoryMatch * freshness * priceDrop * (in.SourceTrust * sourceTrustW)
 }
 
 // LoadParams busca todos os tunable_parameters relevantes via get_param.

@@ -6,15 +6,18 @@ import (
 	store "snatcher/backendv2/internal/repositories"
 )
 
-type ChannelsV2Handler struct {
+// ChannelsHandler expõe operações CRUD de canais (agrupadores com config de produto).
+type ChannelsHandler struct {
 	store store.Store
 }
 
-func NewChannelsV2Handler(st store.Store) *ChannelsV2Handler {
-	return &ChannelsV2Handler{store: st}
+// NewChannelsHandler cria um ChannelsHandler com o store fornecido.
+func NewChannelsHandler(st store.Store) *ChannelsHandler {
+	return &ChannelsHandler{store: st}
 }
 
-func (h *ChannelsV2Handler) List(w http.ResponseWriter, r *http.Request) {
+// List retorna todos os canais.
+func (h *ChannelsHandler) List(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.store.ListChannelsV2()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar canais")
@@ -23,7 +26,8 @@ func (h *ChannelsV2Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, channels)
 }
 
-func (h *ChannelsV2Handler) Get(w http.ResponseWriter, r *http.Request) {
+// Get retorna um canal pelo id com seus grupos vinculados.
+func (h *ChannelsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "id inválido")
@@ -38,7 +42,8 @@ func (h *ChannelsV2Handler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"channel": c, "groups": groups})
 }
 
-func (h *ChannelsV2Handler) Create(w http.ResponseWriter, r *http.Request) {
+// Create cria um novo canal.
+func (h *ChannelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name             string   `json:"name"`
 		CategoryID       *int64   `json:"category_id"`
@@ -64,7 +69,8 @@ func (h *ChannelsV2Handler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
-func (h *ChannelsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
+// Update atualiza os campos editáveis de um canal.
+func (h *ChannelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "id inválido")
@@ -117,7 +123,8 @@ func (h *ChannelsV2Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (h *ChannelsV2Handler) Delete(w http.ResponseWriter, r *http.Request) {
+// Delete remove um canal pelo id.
+func (h *ChannelsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "id inválido")
@@ -131,7 +138,7 @@ func (h *ChannelsV2Handler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // LinkGroup vincula um grupo a um canal: POST /api/channels/{id}/groups/{groupId}
-func (h *ChannelsV2Handler) LinkGroup(w http.ResponseWriter, r *http.Request) {
+func (h *ChannelsHandler) LinkGroup(w http.ResponseWriter, r *http.Request) {
 	channelID, ok1 := pathInt(r, "id")
 	groupID, ok2 := pathInt(r, "groupId")
 	if !ok1 || !ok2 {
@@ -146,7 +153,7 @@ func (h *ChannelsV2Handler) LinkGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnlinkGroup desvincula um grupo do canal: DELETE /api/channels/{id}/groups/{groupId}
-func (h *ChannelsV2Handler) UnlinkGroup(w http.ResponseWriter, r *http.Request) {
+func (h *ChannelsHandler) UnlinkGroup(w http.ResponseWriter, r *http.Request) {
 	_, ok1 := pathInt(r, "id")
 	groupID, ok2 := pathInt(r, "groupId")
 	if !ok1 || !ok2 {
@@ -161,7 +168,7 @@ func (h *ChannelsV2Handler) UnlinkGroup(w http.ResponseWriter, r *http.Request) 
 }
 
 // GetWeights retorna os pesos de categoria do canal.
-func (h *ChannelsV2Handler) GetWeights(w http.ResponseWriter, r *http.Request) {
+func (h *ChannelsHandler) GetWeights(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "id inválido")
@@ -179,7 +186,7 @@ func (h *ChannelsV2Handler) GetWeights(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetWeights salva os pesos de categoria do canal (substitui todos).
-func (h *ChannelsV2Handler) SetWeights(w http.ResponseWriter, r *http.Request) {
+func (h *ChannelsHandler) SetWeights(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "id inválido")
@@ -190,8 +197,8 @@ func (h *ChannelsV2Handler) SetWeights(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "json inválido")
 		return
 	}
-	for i := range req {
-		req[i].ChannelID = id
+	for index := range req {
+		req[index].ChannelID = id
 	}
 	if err := h.store.SetChannelCategoryWeights(id, req); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao salvar pesos")

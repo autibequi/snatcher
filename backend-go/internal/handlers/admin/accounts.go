@@ -8,46 +8,191 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
-	"snatcher/backendv2/internal/models"
-	store "snatcher/backendv2/internal/repositories"
 	"time"
+
+	"snatcher/backendv2/internal/services/adapters"
+	store "snatcher/backendv2/internal/repositories"
 )
 
-// AccountsHandler expõe operações de contas de envio.
-// Os handlers de CRUD waaccount (ListWA, CreateWA, UpdateWA, DeleteWA,
-// WAStatus, WAStartSession, WAQR, WAHealth, WAGroups, WACreateGroup) foram
-// removidos em F08. Use /api/admin/senders/* para accounts v2.
+// AccountsHandler expõe operações de contas WA v2 (CRUD + WA connect via Evolution API).
 type AccountsHandler struct {
 	store store.Store
 }
 
-func NewAccounts(st store.Store) *AccountsHandler {
+// NewAccountsHandler cria um AccountsHandler com o store fornecido.
+func NewAccountsHandler(st store.Store) *AccountsHandler {
 	return &AccountsHandler{store: st}
 }
 
-func (h *AccountsHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.store.ListRedesignGroups(0, "", "")
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+// POST /api/admin/modems/{id}/accounts
+func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
+	modemID, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "modem id inválido")
 		return
 	}
-	if groups == nil {
-		groups = []models.RedesignGroup{}
+	var req struct {
+		Phone    string `json:"phone"`
+		Nickname string `json:"nickname"`
+		Quota    int    `json:"daily_send_quota"`
 	}
-	writeJSON(w, http.StatusOK, groups)
+	if err := decodeBody(r, &req); err != nil || req.Phone == "" {
+		writeErr(w, http.StatusBadRequest, "phone obrigatório")
+		return
+	}
+	id, err := h.store.CreateAccountV2(req.Phone, req.Nickname, modemID, req.Quota)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao criar conta: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
+}
+
+// DELETE /api/admin/accounts/{id}
+func (h *AccountsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := h.store.DeleteAccountV2(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao deletar conta")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// PATCH /api/admin/accounts/{id}
+func (h *AccountsHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt(r, "id")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+		Quota  int    `json:"daily_send_quota"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "json inválido")
+		return
+	}
+	existing, err := h.store.GetAccountV2(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "conta não encontrada")
+		return
+	}
+	status := existing.Status
+	if req.Status != "" {
+		status = req.Status
+	}
+	quota := existing.DailySendQuota
+	if req.Quota > 0 {
+		quota = req.Quota
+	}
+	if err := h.store.UpdateAccountV2(id, status, quota); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao atualizar conta")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// WAQRCode retorna o QR code base64 para conectar uma conta WhatsApp via Evolution API.
+// GET /api/admin/modems/{id}/qrcode
+func (h *AccountsHandler) WAQRCode(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	// Garante que a instância existe antes de pedir o QR
+	if err := evo.EnsureInstance(context.Background()); err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao criar instância: "+err.Error())
+		return
+	}
+	qr, err := evo.GetQRCode(context.Background())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao obter QR code: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"qr_base64": qr, "instance": instance})
+}
+
+// WAConnectionStatus retorna o estado de conexão da instância Evolution.
+// GET /api/admin/modems/{id}/connection-status
+func (h *AccountsHandler) WAConnectionStatus(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+	status, err := evo.GetStatus(context.Background())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "erro ao obter status: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+}
+
+// EvolutionHealth verifica se a Evolution API está acessível e retorna status + instância.
+// GET /api/admin/evolution/health — sem expor credenciais ao frontend.
+func (h *AccountsHandler) EvolutionHealth(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("EVOLUTION_URL")
+	apiKey := os.Getenv("EVOLUTION_API_KEY")
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	if baseURL == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"configured": false,
+			"status":     "not_configured",
+			"instance":   "",
+		})
+		return
+	}
+	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
+
+	// Verifica se a API Evolution está respondendo
+	apiOnline := evo.Ping(context.Background()) == nil
+
+	// Verifica se a conta WA está conectada
+	waStatus, _ := evo.GetStatus(context.Background())
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"configured": true,
+		"api_online": apiOnline,
+		"wa_status":  waStatus, // "connected" | "disconnected"
+		"instance":   instance,
+	})
 }
 
 // ---------------------------------------------------------------------------
-// Mini Evolution client para status (usado por groups.go no mesmo pacote)
+// Mini Evolution client para operações de grupo (usado por groups.go no mesmo pacote)
 // ---------------------------------------------------------------------------
 
 type evoClient struct{ baseURL, apiKey, instance string }
 
+// newEvolutionClient cria um cliente leve para a Evolution API sem dependência do adapter completo.
 func newEvolutionClient(baseURL, apiKey, instance string) *evoClient {
 	return &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 }
 
+// getStatus retorna o estado de conexão da instância ("connected" | "disconnected" | ...).
 func (e *evoClient) getStatus(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		e.baseURL+"/instance/connectionState/"+e.instance, nil)
@@ -79,6 +224,7 @@ func (e *evoClient) getStatus(ctx context.Context) (string, error) {
 	}
 }
 
+// getGroups retorna todos os grupos da instância com seus participantes.
 func (e *evoClient) getGroups(ctx context.Context) ([]map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		e.baseURL+"/group/fetchAllGroups/"+e.instance+"?getParticipants=true", nil)
@@ -149,6 +295,7 @@ func (e *evoClient) findGroupParticipants(ctx context.Context, groupJID string) 
 	return out, nil
 }
 
+// getOwnNumber retorna o número do dono da instância (sem sufixo @).
 func (e *evoClient) getOwnNumber(ctx context.Context) string {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		e.baseURL+"/instance/fetchInstances?instanceName="+e.instance, nil)
@@ -176,6 +323,7 @@ func (e *evoClient) getOwnNumber(ctx context.Context) string {
 	return ""
 }
 
+// createGroup cria um novo grupo WhatsApp via Evolution, usando o próprio número como participante inicial.
 func (e *evoClient) createGroup(ctx context.Context, name string) (map[string]any, error) {
 	// Evolution exige pelo menos 1 participante — usa o próprio número
 	participants := []string{}
@@ -291,4 +439,3 @@ func (e *evoClient) updateParticipant(ctx context.Context, groupJID, action stri
 	}
 	return nil
 }
-

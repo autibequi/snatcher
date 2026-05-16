@@ -291,7 +291,7 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Fase 3: Algo tick — a cada 5min se use_algo_tick=1
+	// Fase 3: Algo tick — a cada 5min (incondicional)
 	if sc.db != nil {
 		_, err = sc.s.NewJob(
 			gocron.CronJob("*/5 * * * *", false),

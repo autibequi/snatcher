@@ -95,7 +95,6 @@ const AdminLoops = lazy(() => import('./pages/AdminLoops'))
 const AdminCatalogCanonical = lazy(() => import('./pages/AdminCatalogCanonical'))
 const AdminSenders = lazy(() => import('./pages/AdminSenders'))
 const AdminAudit = lazy(() => import('./pages/AdminAudit'))
-const AdminAlerts = lazy(() => import('./pages/AdminAlerts'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
@@ -179,9 +178,8 @@ export default function App() {
               {/* Fase 4: Admin Snatcher v2 — Modems & Senders */}
               <Route path="admin/senders" element={<AdminSenders />} />
 
-              {/* Fase 10: Admin Snatcher v2 — Audit / Alerts / Metrics / Scrapers */}
+              {/* Fase 10: Admin Snatcher v2 — Audit / Metrics / Scrapers (Alerts removido W4) */}
               <Route path="admin/audit" element={<AdminAudit />} />
-              <Route path="admin/alerts" element={<AdminAlerts />} />
               <Route path="admin/metrics" element={<AdminMetrics />} />
               <Route path="admin/scrapers" element={<AdminScrapers />} />
               <Route path="admin/templates" element={<AdminTemplates />} />

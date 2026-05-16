@@ -81,9 +81,25 @@ func DedupKeyV2(source, externalID string) string {
 	return fmt.Sprintf("%s:%s", source, externalID)
 }
 
+// catalogStatusFromSendReady deriva o catalog_status_t a partir de send_ready + quality_score.
+// Mapeamento dual-write (window 7d até DROP COLUMN send_ready):
+//   - send_ready=true  AND quality_score >= 0.5 → 'ready'
+//   - send_ready=true  AND quality_score < 0.5  → 'enriching'
+//   - send_ready=false                           → 'pending'
+func catalogStatusFromSendReady(sendReady bool, qualityScore float64) string {
+	if !sendReady {
+		return "pending"
+	}
+	if qualityScore >= 0.5 {
+		return "ready"
+	}
+	return "enriching"
+}
+
 // UpsertCatalogItem insere ou atualiza um item em catalog v2.
 // Retorna o short_id do item (novo ou existente).
 // Idempotente via ON CONFLICT (dedup_key) DO UPDATE.
+// Durante o dual-write window (W2.A), escreve em send_ready E catalog_status simultaneamente.
 func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 	shortID := p.ShortID
 	if shortID == "" {
@@ -93,27 +109,33 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 	qualityScore := computeQualityScore(p)
 	sendReady := qualityScore >= 0.40
 
+	// Dual-write: catalog_status é derivado de send_ready + quality_score.
+	catalogStatus := catalogStatusFromSendReady(sendReady, qualityScore)
+
 	// Garante que source_id existe; usa 'unknown' como fallback seguro.
 	_, err := s.db.Exec(`
 		INSERT INTO catalog (
 			dedup_key, short_id, source_id, title,
 			price_current, price_original, canonical_url, image_url,
-			content_hash, quality_score, send_ready, brand
+			content_hash, quality_score, send_ready, brand,
+			catalog_status
 		)
 		SELECT $1, $2,
 			COALESCE((SELECT id FROM sources WHERE id = $3), 'unknown'),
 			$4, $5, $6, $7, $8, $9, $10, $11,
-			COALESCE(NULLIF($12,''), classify_catalog_brand($4))
+			COALESCE(NULLIF($12,''), classify_catalog_brand($4)),
+			$13::catalog_status_t
 		ON CONFLICT (dedup_key) DO UPDATE SET
-			price_current = EXCLUDED.price_current,
+			price_current  = EXCLUDED.price_current,
 			price_original = EXCLUDED.price_original,
-			content_hash  = EXCLUDED.content_hash,
-			image_url     = EXCLUDED.image_url,
-			quality_score = EXCLUDED.quality_score,
-			send_ready    = EXCLUDED.send_ready,
-			send_ready_at = CASE WHEN EXCLUDED.send_ready AND NOT catalog.send_ready THEN now() ELSE catalog.send_ready_at END,
-			brand         = COALESCE(EXCLUDED.brand, catalog.brand)
-	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.PriceOriginal, p.CanonicalURL, p.ImageURL, contentHash, qualityScore, sendReady, p.Brand)
+			content_hash   = EXCLUDED.content_hash,
+			image_url      = EXCLUDED.image_url,
+			quality_score  = EXCLUDED.quality_score,
+			send_ready     = EXCLUDED.send_ready,
+			send_ready_at  = CASE WHEN EXCLUDED.send_ready AND NOT catalog.send_ready THEN now() ELSE catalog.send_ready_at END,
+			brand          = COALESCE(EXCLUDED.brand, catalog.brand),
+			catalog_status = EXCLUDED.catalog_status
+	`, p.DedupKey, shortID, p.SourceID, p.Title, p.PriceCurrent, p.PriceOriginal, p.CanonicalURL, p.ImageURL, contentHash, qualityScore, sendReady, p.Brand, catalogStatus)
 	if err != nil {
 		return "", err
 	}

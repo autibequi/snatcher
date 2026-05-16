@@ -131,16 +131,6 @@ func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
 		default:
 		}
 
-		// gate global: flag use_send_queue
-		var flag float64
-		if err := db.GetContext(ctx, &flag, "SELECT get_param('use_send_queue','global',NULL)"); err != nil || flag == 0 {
-			gateLog("queue_flag", slog.LevelWarn,
-				"modem", modemID, "flag", flag,
-				"fix", "habilite use_send_queue via tunable_params ou app_config")
-			time.Sleep(30 * time.Second)
-			continue
-		}
-
 		// gate: modem status
 		var status string
 		if err := db.GetContext(ctx, &status, "SELECT status FROM modems WHERE id=$1", modemID); err == nil && status != "active" {
@@ -644,6 +634,16 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	if bans24h >= 3 {
 		_, _ = db.ExecContext(ctx, `UPDATE modems SET status='paused', paused_until=now()+INTERVAL '1 hour', paused_reason='3+ bans/24h' WHERE id=$1`, modemID)
 	}
+}
+
+// markInvalid marca um item da send_queue como 'invalid' — usado quando o produto
+// não tem desconto real (price_original NULL ou <= price_current). Não penaliza a conta
+// pois não é falha de infra.
+func markInvalid(ctx context.Context, db *sqlx.DB, qid int64, reason error) {
+	_, _ = db.ExecContext(ctx,
+		`UPDATE send_queue SET status='invalid', last_error=$1 WHERE id=$2`,
+		reason.Error(), qid,
+	)
 }
 
 func getCooldownSeconds(ctx context.Context, db *sqlx.DB, modemID int64) float64 {

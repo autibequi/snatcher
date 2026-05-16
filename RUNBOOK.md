@@ -419,6 +419,162 @@ psql "$DATABASE_URL" -c "UPDATE catalog SET cached_image_path = NULL, cached_ima
 
 ---
 
+## Baseline Capture — Wave -1
+
+Durante Wave -1 (Baselining), é necessário coletar 7 dias contínuos de snapshots de baseline antes de avançar para Wave 0.
+
+### Script automático
+
+Script: `scripts/capture-baseline.sh`
+
+O script chama `POST /api/admin/baseline/capture` uma vez e:
+1. Valida token via env var `SNATCHER_ADMIN_TOKEN` (obrigatório)
+2. Captura HTTP 201 + JSON response
+3. Extrai `snapshot_id` via jq
+4. Loga entry em `docs/baseline-captures.log`
+5. Salva JSON completo em `docs/baseline-snapshots/YYYY-MM-DD.json`
+
+Variáveis de env:
+- `SNATCHER_API_URL` — URL da API (default: `http://localhost:8080`)
+- `SNATCHER_ADMIN_TOKEN` — Bearer token obrigatório (exit 1 se vazio)
+- `BASELINE_LOG` — Path do log (default: `docs/baseline-captures.log`)
+
+Render HTTP status:
+- `201` — sucesso, continue
+- `4xx`/`5xx` — erro, log + exit 1
+
+### Rodar manualmente (teste local)
+
+```bash
+# Pré-requisito: backend running + SNATCHER_ADMIN_TOKEN setado
+export SNATCHER_API_URL=http://localhost:8080
+export SNATCHER_ADMIN_TOKEN="<seu-token-aqui>"
+export BASELINE_LOG="/workspace/.cache/snatcher/docs/baseline-captures.log"
+
+/workspace/.cache/snatcher/scripts/capture-baseline.sh
+
+# Verificar que logou OK
+tail -5 /workspace/.cache/snatcher/docs/baseline-captures.log
+
+# Verificar JSON salvo
+ls -lh /workspace/.cache/snatcher/docs/baseline-snapshots/
+```
+
+### Cron entry (7 dias a 03:00 UTC)
+
+Adicionar em `/etc/crontab` ou via `crontab -e` do usuário que roda o snatcher:
+
+```cron
+# Daily baseline capture at 03:00 UTC during W-1 (7 days total)
+0 3 * * * /workspace/.cache/snatcher/scripts/capture-baseline.sh
+```
+
+Variáveis de env para cron:
+```cron
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SNATCHER_API_URL=http://localhost:8080
+SNATCHER_ADMIN_TOKEN=<seu-token-aqui>
+BASELINE_LOG=/workspace/.cache/snatcher/docs/baseline-captures.log
+
+0 3 * * * /workspace/.cache/snatcher/scripts/capture-baseline.sh
+```
+
+### Alternativa: job interno (scheduler.go)
+
+Se preferir auto-capture sem dependência de cron externo, adicionar em `internal/services/scheduler/scheduler.go`:
+
+```go
+sc.s.NewJob(
+    gocron.CronJob("0 3 * * *", false),
+    gocron.NewTask(func() {
+        captureBaselineInternal(context.Background(), sc.db)
+    }),
+)
+```
+
+**Preferência**: cron externo durante W-1 (é mais seguro e não auto-executa após W-1 terminar).
+
+### Validação de sucesso
+
+Após 7 dias:
+
+```bash
+# 1. Verificar 7+ entradas no log
+wc -l /workspace/.cache/snatcher/docs/baseline-captures.log
+
+# 2. Verificar 7+ snapshots salvos
+ls /workspace/.cache/snatcher/docs/baseline-snapshots/ | wc -l
+
+# 3. Checar que todos têm snapshot_id
+grep "snapshot_id" /workspace/.cache/snatcher/docs/baseline-captures.log | wc -l
+
+# 4. Congelar em docs/baseline-2026-06.json (último snapshot)
+cp /workspace/.cache/snatcher/docs/baseline-snapshots/$(date -d "7 days ago" +%Y-%m-%d).json \
+   /workspace/.cache/snatcher/docs/baseline-2026-06.json
+
+# Commit
+git add docs/baseline-captures.log docs/baseline-snapshots/ docs/baseline-2026-06.json
+git commit -m "Wave -1: baseline T-0 coletado (7 dias)"
+```
+
+---
+
+## Sandbox Shadow — W6 (gate manual Pedro)
+
+O sandbox shadow é a validação final do refactor V3: roda W1+W2+W5 com
+dados de produção em shadow-copy por 7 dias e compara CTR e ban rate vs
+baseline T-0 coletado em W-1.
+
+**Por que é gate manual:** requer 7 dias de dados reais; não pode ser
+automatizado numa sessão de execução de card.
+
+### Procedimento
+
+**Pré-requisito:** `docs/baseline-2026-06.json` deve existir (gerado em W-1).
+
+```bash
+# 1. Garantir que o ambiente sandbox está rodando com dados shadow-copy
+docker compose -f docker-compose.snatcher.yml up -d
+
+# 2. Aguardar 7 dias de coleta (dispatch_engine=1, bandit ativo, Jonfrey ativo)
+
+# 3. Executar comparação vs baseline T-0
+./scripts/sandbox-shadow-compare.sh \
+  --baseline docs/baseline-2026-06.json \
+  --window 7d
+
+# 4. Critério de aprovação:
+#    - ctr_per_channel_7d: delta_pct >= -5% (tolerância)
+#    - ban_rate_per_channel: delta_pct <= +10% (tolerância)
+#    - dispatch_latency_p95_ms: delta_pct <= +20% (tolerância)
+#
+# Resultado esperado na saída do script:
+#    SANDBOX_SHADOW_PASS=true
+```
+
+### Em caso de falha
+
+Se alguma métrica regredir além da tolerância:
+
+1. Identificar o componente responsável via diff de métricas por canal.
+2. Ajustar `tunable_parameters` via admin panel (não exige redeploy).
+3. Aguardar 24h e reexecutar o script com `--window 1d` para validação rápida.
+4. Se regressão persistir em ban rate: acionar `DecisionFreezeChannel` via Jonfrey.
+
+### Após aprovação
+
+Executar fase 3 do ADR-012 (drop das colunas legadas):
+
+```bash
+# Aplicar migration de drop (fase contract do expand-contract)
+# Migration a criar: 20261001000000_catalog_status_drop_legacy.up.sql
+# Conteúdo:
+#   ALTER TABLE catalog DROP COLUMN IF EXISTS send_ready;
+#   ALTER TABLE catalog DROP COLUMN IF EXISTS is_quarantined;
+```
+
+---
+
 ## Checklist de validação mensal
 
 - [ ] Rodar backup manual e verificar tamanho (deve crescer)

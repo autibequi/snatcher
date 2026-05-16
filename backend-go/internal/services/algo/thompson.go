@@ -8,14 +8,10 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// thompsonEnabled lê a flag use_thompson_sampling do banco.
-func thompsonEnabled(ctx context.Context, db *sqlx.DB) bool {
-	var v float64
-	if err := db.GetContext(ctx, &v,
-		`SELECT COALESCE(get_param('use_thompson_sampling','global',NULL), 0)`); err != nil {
-		return false
-	}
-	return v != 0
+// thompsonEnabled retorna sempre true: toggle use_thompson_sampling foi queimado em W0.
+// W2.B substituirá Thompson por UCB1 por canal.
+func thompsonEnabled(_ context.Context, _ *sqlx.DB) bool {
+	return true
 }
 
 // sampleGamma amostra de Gamma(shape, 1) usando Marsaglia & Tsang (2000).

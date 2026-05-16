@@ -234,18 +234,18 @@ func Build(
 
 		// Coverage (multi-WA)
 
-		// Channels v2 — agrupadores com config de produto
-		chV2 := adminhnd.NewChannelsV2Handler(st)
-		r.Get("/api/channels", chV2.List)
-		r.Post("/api/channels", chV2.Create)
-		r.Get("/api/channels/{id}", chV2.Get)
-		r.Patch("/api/channels/{id}", chV2.Update)
-		r.Delete("/api/channels/{id}", chV2.Delete)
-		r.Post("/api/channels/{id}/groups/{groupId}", chV2.LinkGroup)
-		r.Delete("/api/channels/{id}/groups/{groupId}", chV2.UnlinkGroup)
-		r.Get("/api/channels/{id}/weights", chV2.GetWeights)
+		// Channels — agrupadores com config de produto
+		channels := adminhnd.NewChannelsHandler(st)
+		r.Get("/api/channels", channels.List)
+		r.Post("/api/channels", channels.Create)
+		r.Get("/api/channels/{id}", channels.Get)
+		r.Patch("/api/channels/{id}", channels.Update)
+		r.Delete("/api/channels/{id}", channels.Delete)
+		r.Post("/api/channels/{id}/groups/{groupId}", channels.LinkGroup)
+		r.Delete("/api/channels/{id}/groups/{groupId}", channels.UnlinkGroup)
+		r.Get("/api/channels/{id}/weights", channels.GetWeights)
 		r.Get("/api/channels/{id}/candidates", adminhnd.ChannelCandidatesHandler(db))
-		r.Put("/api/channels/{id}/weights", chV2.SetWeights)
+		r.Put("/api/channels/{id}/weights", channels.SetWeights)
 		r.Get("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersListHandler(db))
 		r.Post("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersAddHandler(db))
 		r.Delete("/api/channels/{id}/brand-filters/{filterId}", adminhnd.ChannelBrandFiltersDeleteHandler(db))
@@ -390,14 +390,14 @@ func Build(
 		r.Patch("/api/admin/redirect-domains/{id}/toggle", adminhnd.ToggleRedirectDomainHandler(db))
 		r.Delete("/api/admin/redirect-domains/{id}", adminhnd.DeleteRedirectDomainHandler(db))
 
-		// Accounts v2 CRUD + WA connect
-		accsV2 := adminhnd.NewAccountsV2Handler(st)
-		r.Post("/api/admin/modems/{id}/accounts", accsV2.Create)
-		r.Delete("/api/admin/accounts/{id}", accsV2.Delete)
-		r.Patch("/api/admin/accounts/{id}", accsV2.Update)
-		r.Get("/api/admin/modems/{id}/qrcode", accsV2.WAQRCode)
-		r.Get("/api/admin/modems/{id}/connection-status", accsV2.WAConnectionStatus)
-		r.Get("/api/admin/evolution/health", accsV2.EvolutionHealth)
+		// Accounts CRUD + WA connect
+		accs := adminhnd.NewAccountsHandler(st)
+		r.Post("/api/admin/modems/{id}/accounts", accs.Create)
+		r.Delete("/api/admin/accounts/{id}", accs.Delete)
+		r.Patch("/api/admin/accounts/{id}", accs.Update)
+		r.Get("/api/admin/modems/{id}/qrcode", accs.WAQRCode)
+		r.Get("/api/admin/modems/{id}/connection-status", accs.WAConnectionStatus)
+		r.Get("/api/admin/evolution/health", accs.EvolutionHealth)
 
 		// Fase 5: Loops LLM — status de autonomia e auditoria
 		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
@@ -417,6 +417,11 @@ func Build(
 		r.Put("/api/admin/parameters/{id}", adminhnd.UpdateParamHandler(db))
 		r.Post("/api/admin/parameters/{id}/reset", adminhnd.ResetParamHandler(db))
 
+		// W5: Automations CRUD + disparo manual
+		r.Get("/api/admin/automations", adminhnd.ListAutomationsHandler(db))
+		r.Patch("/api/admin/automations/{id}", adminhnd.UpdateAutomationHandler(db))
+		r.Post("/api/admin/automations/{id}/run-now", adminhnd.RunAutomationNowHandler(db))
+
 		// Fase 10: Audit timeline -- eventos operacionais consolidados
 		r.Get("/api/admin/audit/timeline", adminhnd.AuditTimelineHandler(db))
 		r.Get("/api/admin/audit/stats", adminhnd.AuditStatsHandler(db))
@@ -432,9 +437,7 @@ func Build(
 		r.Get("/api/admin/send-queue", adminhnd.SendQueueHandler(db))
 		r.Get("/api/admin/send-log", adminhnd.SendLogHandler(db))
 
-		// Score Engine status — widget do dashboard
-		r.Get("/api/admin/algo/status", adminhnd.AlgoStatusHandler(db))
-		r.Post("/api/admin/algo/toggle", adminhnd.AlgoToggleHandler(db))
+		// Score Engine dry-run
 		r.Get("/api/admin/algo/dry-run", adminhnd.AlgoDryRunHandler(db))
 
 		// Metrics dashboard — learned weights, daily metrics, A/B tests, virality
@@ -452,15 +455,18 @@ func Build(
 		r.Patch("/api/admin/templates/{id}/toggle", tmpl.Toggle)
 		r.Delete("/api/admin/templates/{id}", tmpl.Delete)
 
-		// Alert Rules CRUD + test (curador: dispara quando query retorna linhas)
-		r.Get("/api/admin/alert-rules", adminhnd.ListAlertRulesHandler(db))
-		r.Post("/api/admin/alert-rules/test", adminhnd.TestAlertRuleHandler(db))
-		r.Post("/api/admin/alert-rules", adminhnd.CreateAlertRuleHandler(db))
-		r.Put("/api/admin/alert-rules/{id}", adminhnd.UpdateAlertRuleHandler(db))
-		r.Delete("/api/admin/alert-rules/{id}", adminhnd.DeleteAlertRuleHandler(db))
+		// System health agregado (dispatcher, circuit breakers, LLM cost, catalog)
+		r.Get("/api/admin/health", adminhnd.SystemHealthHandler(db))
 
 		danger := adminhnd.NewDangerHandler(db, st)
 		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
+
+		// Baseline (Wave -1 baselining)
+		r.Route("/api/admin/baseline", func(r chi.Router) {
+			r.Post("/capture", adminhnd.CaptureBaselineHandler(db))
+			r.Get("/", adminhnd.ListBaselineHandler(db))
+			r.Get("/compare", adminhnd.CompareBaselineHandler(db))
+		})
 
 		// Dispatch manual (Composer)
 		manualDispatch := adminhnd.NewManualDispatchHandler(st, db)
