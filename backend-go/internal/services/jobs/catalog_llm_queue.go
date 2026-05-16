@@ -198,7 +198,7 @@ Origem/source (pode ser vazio): %q`,
 
 	raw, err := cli.Complete(llmCtx, prompt, llm.Options{
 		JSONMode:    true,
-		MaxTokens:   220,
+		MaxTokens:   1500, // anterior 220 — insuficiente pra modelos com reasoning interno (DeepSeek-R1, QwQ, etc.)
 		Temperature: 0.15,
 		Operation:   "catalog_llm_queue",
 	})

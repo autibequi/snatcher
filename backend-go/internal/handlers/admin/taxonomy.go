@@ -257,7 +257,7 @@ Regras:
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   300,
+		MaxTokens:   1200,
 		Temperature: 0.2,
 		Operation:   "suggest_taxonomy",
 		JSONMode:    true,

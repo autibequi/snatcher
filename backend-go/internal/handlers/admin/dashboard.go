@@ -802,7 +802,7 @@ JSON estrito:
 	defer cancel()
 
 	resp, err := cli.Complete(ctx, prompt, llm.Options{
-		MaxTokens:   380,
+		MaxTokens:   1200,
 		Temperature: 0.25,
 		Operation:   "dashboard_recommendation",
 		JSONMode:    true,

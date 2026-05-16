@@ -1596,7 +1596,7 @@ JSON apenas:
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:   450,
+			MaxTokens:   1500,
 			Temperature: 0.25,
 			Operation:   "jonfrey_enrich_taxonomy",
 			JSONMode:    true,
@@ -1771,7 +1771,7 @@ JSON:
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:   320,
+			MaxTokens:   1200,
 			Temperature: 0.15,
 			Operation:   "jonfrey_prune_fp",
 			JSONMode:    true,
@@ -1910,7 +1910,7 @@ JSON:
 
 		ctxLLM, cancel := context.WithTimeout(ctx, 90*time.Second)
 		resp, err := cli.Complete(ctxLLM, prompt, llm.Options{
-			MaxTokens:   520,
+			MaxTokens:   1500,
 			Temperature: 0.25,
 			Operation:   "jonfrey_refine_subcats",
 			JSONMode:    true,
