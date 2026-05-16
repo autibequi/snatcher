@@ -96,6 +96,7 @@ const AdminCatalogCanonical = lazy(() => import('./pages/AdminCatalogCanonical')
 const AdminSenders = lazy(() => import('./pages/AdminSenders'))
 const AdminAudit = lazy(() => import('./pages/AdminAudit'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
+const AdminObservability = lazy(() => import('./pages/AdminObservability'))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
 const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
@@ -181,6 +182,7 @@ export default function App() {
               {/* Fase 10: Admin Snatcher v2 — Audit / Metrics / Scrapers (Alerts removido W4) */}
               <Route path="admin/audit" element={<AdminAudit />} />
               <Route path="admin/metrics" element={<AdminMetrics />} />
+              <Route path="admin/observability" element={<AdminObservability />} />
               <Route path="admin/scrapers" element={<AdminScrapers />} />
               <Route path="admin/templates" element={<AdminTemplates />} />
               <Route path="admin/domains" element={<RedirectDomains />} />

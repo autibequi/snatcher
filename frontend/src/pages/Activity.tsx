@@ -10,6 +10,9 @@ import { JonfreyTab } from './activity/JonfreyTab'
 import { LLMTab } from './activity/LLMTab'
 import { LoopActionsTab } from './activity/LoopActionsTab'
 import { AuditTab } from './activity/AuditTab'
+import { DispatchRejectionsTab } from './activity/DispatchRejectionsTab'
+import { QuarantineEventsTab } from './activity/QuarantineEventsTab'
+import { OutboxEventsTab } from './activity/OutboxEventsTab'
 
 // ── Fila de envio ─────────────────────────────────────────────────────────────
 
@@ -242,7 +245,7 @@ function SendQueueTab() {
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type ActivityTab = 'queue' | 'dispatches' | 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
+type ActivityTab = 'queue' | 'dispatches' | 'rejections' | 'quarantine' | 'outbox' | 'crawl' | 'jonfrey' | 'loops' | 'llm' | 'audit'
 
 const VALID_TABS = new Set<string>(['queue', 'dispatches', 'crawl', 'jonfrey', 'loops', 'llm', 'audit'])
 
@@ -256,11 +259,14 @@ function resolveTab(raw: string | null): ActivityTab {
 const TAB_LIST = [
   { id: 'dispatches', label: 'Disparos' },
   { id: 'queue',      label: 'Fila' },
+  { id: 'rejections', label: 'Rejeições' },
+  { id: 'quarantine', label: 'Quarentena' },
+  { id: 'outbox',     label: 'Outbox' },
   { id: 'crawl',      label: 'Crawlers' },
-  { id: 'jonfrey', label: 'Jonfrey' },
-  { id: 'loops',   label: 'Loops LLM' },
-  { id: 'llm',     label: 'LLM' },
-  { id: 'audit',   label: 'Auditoria' },
+  { id: 'jonfrey',    label: 'Jonfrey' },
+  { id: 'loops',      label: 'Loops LLM' },
+  { id: 'llm',        label: 'LLM' },
+  { id: 'audit',      label: 'Auditoria' },
 ] as const
 
 // ── Quick stats ───────────────────────────────────────────────────────────────
@@ -469,6 +475,15 @@ export default function Activity() {
         )}
         {tab === 'queue' && (
           <SendQueueTab />
+        )}
+        {tab === 'rejections' && (
+          <DispatchRejectionsTab />
+        )}
+        {tab === 'quarantine' && (
+          <QuarantineEventsTab />
+        )}
+        {tab === 'outbox' && (
+          <OutboxEventsTab />
         )}
         {tab === 'crawl' && (
           <CrawlLogsTab q={q} status={status} />

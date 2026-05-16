@@ -11,11 +11,13 @@ import { DangerTab } from './settings/DangerTab'
 import { LoopsTab } from './settings/LoopsTab'
 import { ParamsTab } from './settings/ParamsTab'
 import { AlertsTab } from './settings/AlertsTab'
+import { AutomationsTab } from './settings/AutomationsTab'
 
 const TABS = [
   { id: 'system',       label: 'Sistema' },
   { id: 'integrations', label: 'Integrações' },
   { id: 'loops',        label: 'Jonfrey' },
+  { id: 'automations',  label: 'Automações' },
   { id: 'params',       label: 'Parâmetros' },
   { id: 'alerts',       label: 'Alertas' },
   { id: 'llm',          label: 'LLM' },
@@ -54,6 +56,7 @@ export default function Settings() {
           {active === 'system'       && <SystemTab />}
           {active === 'integrations' && <IntegrationsTab />}
           {active === 'loops'        && <LoopsTab />}
+          {active === 'automations'  && <AutomationsTab />}
           {active === 'params'       && <ParamsTab />}
           {active === 'alerts'       && <AlertsTab />}
           {active === 'llm'          && <LLMTab />}
