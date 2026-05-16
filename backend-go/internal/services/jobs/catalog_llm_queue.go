@@ -14,6 +14,34 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// isValidTaxonomySlug restringe slugs a [a-z0-9] e hífens (não dobrados, sem borda), 2–48 runes.
+// Evita gravar pontuação vinda do LLM (ex.: ",", ":") em catalog / product_brands.
+func isValidTaxonomySlug(s string) bool {
+	const minLen, maxLen = 2, 48
+	if s == "" {
+		return false
+	}
+	runes := []rune(s)
+	if len(runes) < minLen || len(runes) > maxLen {
+		return false
+	}
+	prevHyphen := false
+	for i, r := range runes {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			prevHyphen = false
+		case r == '-':
+			if i == 0 || i == len(runes)-1 || prevHyphen {
+				return false
+			}
+			prevHyphen = true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // catalogRowCompleteForCatalogEntry exige slug de marca, FK em product_brands e categoria — alinhado ao trigger trg_catalog_llm_queue_sync.
 func catalogRowCompleteForCatalogEntry(brand sql.NullString, brandID sql.NullInt64, catID sql.NullInt64) bool {
 	if !brand.Valid || strings.TrimSpace(brand.String) == "" {
@@ -194,6 +222,16 @@ Origem/source (pode ser vazio): %q`,
 	if bslug == "" || cslug == "" {
 		_ = markQueueLLMError(ctx, db, catalogID, "LLM devolveu brand_slug ou category_slug vazio")
 		out["message"] = "slugs vazios"
+		return out, nil
+	}
+	if !isValidTaxonomySlug(bslug) {
+		_ = markQueueLLMError(ctx, db, catalogID, fmt.Sprintf("LLM devolveu brand_slug inválido (só a-z, 0-9, hífen, 2–48 chars): %q", bslug))
+		out["message"] = "brand_slug inválido"
+		return out, nil
+	}
+	if !isValidTaxonomySlug(cslug) {
+		_ = markQueueLLMError(ctx, db, catalogID, fmt.Sprintf("LLM devolveu category_slug inválido: %q", cslug))
+		out["message"] = "category_slug inválido (formato)"
 		return out, nil
 	}
 
