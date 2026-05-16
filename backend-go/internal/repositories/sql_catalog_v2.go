@@ -107,7 +107,10 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 	}
 	contentHash := ContentHashV2(p.Title, p.PriceCurrent, p.ImageURL)
 	qualityScore := computeQualityScore(p)
-	sendReady := qualityScore >= 0.40
+	// send_ready exige: qualidade mínima E desconto real (price_original > price_current).
+	// Produtos sem preço original nunca têm desconto verificável → não devem ir pra fila de envio.
+	hasRealDiscount := p.PriceOriginal > p.PriceCurrent && p.PriceCurrent > 0
+	sendReady := qualityScore >= 0.40 && hasRealDiscount
 
 	// Dual-write: catalog_status é derivado de send_ready + quality_score.
 	catalogStatus := catalogStatusFromSendReady(sendReady, qualityScore)

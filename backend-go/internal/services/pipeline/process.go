@@ -230,14 +230,23 @@ func processResult(
 		upsertTitle = r.Title
 	}
 
+	// Deserializa metadata ANTES do upsert para passar PriceOriginal e Brand corretamente.
+	// Bug anterior: crawlMeta era desserializado após o upsert → price_original=0 e brand="" sempre.
+	var crawlMeta models.CrawlMetadata
+	if len(r.Metadata) > 0 {
+		_ = json.Unmarshal(r.Metadata, &crawlMeta)
+	}
+
 	// PASSO 4: Upsert em catalog v2
 	catalogID, err := st.UpsertCatalogItem(store.CatalogV2UpsertParams{
-		DedupKey:     dedupKey,
-		SourceID:     r.Source,
-		Title:        upsertTitle,
-		PriceCurrent: r.Price,
-		CanonicalURL: canonURL,
-		ImageURL:     imageURL,
+		DedupKey:      dedupKey,
+		SourceID:      r.Source,
+		Title:         upsertTitle,
+		PriceCurrent:  r.Price,
+		PriceOriginal: crawlMeta.OriginalPrice, // agora popula price_original do scraper
+		Brand:         crawlMeta.Brand,         // agora popula brand do scraper (menos items na fila LLM)
+		CanonicalURL:  canonURL,
+		ImageURL:      imageURL,
 	})
 	if err != nil {
 		return err
@@ -245,10 +254,6 @@ func processResult(
 
 	// Enriquece via patterns (taxonomia — best-effort, tolerante a erro)
 	_ = patternCache.Refresh(st)
-	var crawlMeta models.CrawlMetadata
-	if len(r.Metadata) > 0 {
-		_ = json.Unmarshal(r.Metadata, &crawlMeta)
-	}
 	metaBits := strings.TrimSpace(strings.Join([]string{
 		crawlMeta.Brand, crawlMeta.SpecsSummary, crawlMeta.Description,
 	}, " "))

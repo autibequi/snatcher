@@ -1,0 +1,75 @@
+name: Deploy to Coolify
+
+# Dispara quando o workflow CI termina com sucesso na main.
+# Não precisa modificar ci.yml.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# Cancela deploy anterior se novo commit chegar antes de terminar.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy (Coolify)
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Só roda se CI passou — não deploya commit quebrado.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Trigger Coolify deploy
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          # UUID do resource no Coolify (visível na URL do app ou nos logs de deploy).
+          # Salvo também como variable em Settings > Environments > production.
+          COOLIFY_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+        run: |
+          COOLIFY_URL="${COOLIFY_URL:-https://coolify.autibequi.com}"
+
+          echo "Triggering deploy: $COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID"
+
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID&force=false")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n -1)
+
+          echo "HTTP $http_code — $body"
+
+          if [ "$http_code" != "200" ] && [ "$http_code" != "201" ]; then
+            echo "::error::Deploy trigger falhou — HTTP $http_code: $body"
+            exit 1
+          fi
+
+          echo "Deploy enfileirado com sucesso."
+
+      - name: Wait and health check
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          APP_URL="${APP_URL:-https://snatcher.autibequi.com}"
+          echo "Aguardando 120s para build + boot..."
+          sleep 120
+
+          for i in 1 2 3 4 5; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
+            if [ "$status" = "200" ]; then
+              echo "✅ Deploy OK — app respondendo em $APP_URL"
+              exit 0
+            fi
+            echo "Tentativa $i/5 — HTTP $status. Aguardando 30s..."
+            sleep 30
+          done
+
+          echo "::error::Health check falhou após 5 tentativas. Verificar logs no Coolify."
+          exit 1
