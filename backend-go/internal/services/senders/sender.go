@@ -352,8 +352,11 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 	}
 	link := "https://" + domainHost + "/v/" + groupShort
 
-	// 5. interpola variáveis no template
-	msg := renderTemplateBody(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
+	// 5. interpola variáveis no template — usa V2 que rejeita desconto inválido.
+	msg, err := renderTemplateBodyV2(body, cat.Title, cat.PriceOriginal, cat.PriceCurrent, cat.DiscountPct, link)
+	if err != nil {
+		return nil, err
+	}
 
 	// 5b. personalização via LLM (opcional — só se use_llm_personalization = true)
 	{
