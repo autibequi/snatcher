@@ -439,7 +439,17 @@ func sendImageViaURL(ctx context.Context, instance, jid, imageURL, caption strin
 	return nil
 }
 
+var (
+	// ErrNoValidDiscount indica que price_original é NULL ou não é maior que price_current.
+	// Previne disparo com mensagem "caiu de 190 para 190 (0% OFF)".
+	ErrNoValidDiscount = errors.New("no valid discount: price_original is NULL or <= price_current")
+
+	// ErrDiscountZero indica que o percentual de desconto é zero ou negativo.
+	ErrDiscountZero = errors.New("discount is zero or negative")
+)
+
 // renderTemplateBody substitui as variáveis {xxx} pelo dados reais do produto.
+// Mantido para compatibilidade com callers legados — não valida desconto.
 func renderTemplateBody(body, titulo string, precoDeNull sql.NullFloat64, precoPor, descontoPct float64, link string) string {
 	precoDe := precoPor
 	if precoDeNull.Valid && precoDeNull.Float64 > precoPor {
@@ -455,6 +465,32 @@ func renderTemplateBody(body, titulo string, precoDeNull sql.NullFloat64, precoP
 		"{emoji}",     pickEmoji(descontoPct),
 	)
 	return r.Replace(body)
+}
+
+// renderTemplateBodyV2 substitui as variáveis {xxx} e valida que o desconto é real.
+// Retorna ErrNoValidDiscount se price_original for NULL ou <= price_current.
+// Retorna ErrDiscountZero se descontoPct for zero ou negativo.
+// Use este em lugar de renderTemplateBody para todos os novos callers.
+func renderTemplateBodyV2(body, titulo string, precoDeNull sql.NullFloat64, precoPor, descontoPct float64, link string) (string, error) {
+	if !precoDeNull.Valid || precoDeNull.Float64 <= precoPor {
+		return "", ErrNoValidDiscount
+	}
+
+	if descontoPct <= 0 {
+		return "", ErrDiscountZero
+	}
+
+	precoDe := precoDeNull.Float64
+
+	r := strings.NewReplacer(
+		"{titulo}",    titulo,
+		"{preco_de}",  formatMoney(precoDe),
+		"{preco_por}", formatMoney(precoPor),
+		"{desconto}",  fmt.Sprintf("%.0f", descontoPct),
+		"{link}",      link,
+		"{emoji}",     pickEmoji(descontoPct),
+	)
+	return r.Replace(body), nil
 }
 
 // sendRawText envia texto pré-montado (disparo manual) sem buscar produto no catálogo.
