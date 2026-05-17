@@ -1,7 +1,7 @@
 CREATE TABLE channel_score_weights (
     channel_id    BIGINT PRIMARY KEY,
     weights       JSONB NOT NULL DEFAULT '{}'::jsonb,
-    ucb1_state    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ucb1_state    JSONB NOT NULL DEFAULT '[]'::jsonb,
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by    TEXT NOT NULL DEFAULT 'init'
 );

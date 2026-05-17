@@ -240,22 +240,22 @@ func (s *SQLStore) GetHistoricalCTRForGroup(groupID int64, category string, minD
 	return &ctr, nil
 }
 
-// ListAccountsV2 retorna todas as contas WA v2 (tabela accounts) ordenadas por id.
-func (s *SQLStore) ListAccountsV2() ([]models.AccountV2, error) {
+// ListAccounts retorna todas as contas WA (tabela accounts) ordenadas por id.
+func (s *SQLStore) ListAccounts() ([]models.AccountV2, error) {
 	var out []models.AccountV2
 	err := s.db.Select(&out, `SELECT id, phone, modem_id, status, daily_send_quota, last_sent_at, consecutive_failures FROM accounts ORDER BY id`)
 	return out, err
 }
 
-// GetAccountV2 retorna uma conta WA v2 pelo id (tabela accounts).
-func (s *SQLStore) GetAccountV2(id int64) (models.AccountV2, error) {
+// GetAccount retorna uma conta WA pelo id (tabela accounts).
+func (s *SQLStore) GetAccount(id int64) (models.AccountV2, error) {
 	var a models.AccountV2
 	err := s.db.Get(&a, `SELECT id, phone, modem_id, status, daily_send_quota, last_sent_at, consecutive_failures FROM accounts WHERE id = $1`, id)
 	return a, err
 }
 
-// CreateAccountV2 insere uma nova conta WA na tabela accounts.
-func (s *SQLStore) CreateAccountV2(phone, nickname string, modemID int64, quota int) (int64, error) {
+// CreateAccount insere uma nova conta WA na tabela accounts.
+func (s *SQLStore) CreateAccount(phone, nickname string, modemID int64, quota int) (int64, error) {
 	if quota <= 0 {
 		quota = 20
 	}
@@ -268,15 +268,15 @@ func (s *SQLStore) CreateAccountV2(phone, nickname string, modemID int64, quota 
 	return id, err
 }
 
-// DeleteAccountV2 remove uma conta WA v2 pelo id.
-func (s *SQLStore) DeleteAccountV2(id int64) error {
+// DeleteAccount remove uma conta WA pelo id.
+func (s *SQLStore) DeleteAccount(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM accounts WHERE id = $1`, id)
 	return err
 }
 
-// UpdateAccountV2 atualiza status e quota de uma conta WA v2.
+// UpdateAccount atualiza status e quota de uma conta WA.
 // Ao restaurar para primary/backup, zera consecutive_failures para evitar re-quarentena imediata.
-func (s *SQLStore) UpdateAccountV2(id int64, status string, quota int) error {
+func (s *SQLStore) UpdateAccount(id int64, status string, quota int) error {
 	resetFailures := status == "primary" || status == "backup"
 	_, err := s.db.Exec(`
 		UPDATE accounts

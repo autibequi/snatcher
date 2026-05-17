@@ -40,7 +40,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 		args := []any{}
 		i := 1
 		if readyOnly {
-			where = append(where, "c.send_ready = true AND c.canonical_url_alive = true")
+			where = append(where, "(c.send_ready = true OR c.catalog_status = 'ready') AND c.canonical_url_alive = true")
 		}
 		if incompleteEnrichment {
 			// Mesmo critério da fila LLM: precisa marca (texto), brand_id e categoria para sair do pipeline.
@@ -96,7 +96,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			       c.brand AS brand_slug,
 			       COALESCE(NULLIF(pb.display_name, ''), c.brand) AS brand,
 			       c.title, c.image_url, c.price_original, c.price_current, c.discount_pct,
-			       c.quality_score, c.send_ready, c.canonical_url_alive, c.canonical_url,
+			       c.quality_score, c.send_ready, c.catalog_status, c.canonical_url_alive, c.canonical_url,
 			       c.created_at::text AS created_at, c.send_ready_at::text AS send_ready_at
 			FROM catalog c
 			LEFT JOIN categories ct ON ct.id = c.category_id
@@ -121,6 +121,7 @@ func ListCatalogCanonicalHandler(db *sqlx.DB) http.HandlerFunc {
 			DiscountPct       *float64 `db:"discount_pct" json:"discount_pct,omitempty"`
 			QualityScore      *float64 `db:"quality_score" json:"quality_score,omitempty"`
 			SendReady         bool     `db:"send_ready" json:"send_ready"`
+			CatalogStatus     *string  `db:"catalog_status" json:"catalog_status,omitempty"`
 			CanonicalURLAlive bool     `db:"canonical_url_alive" json:"canonical_url_alive"`
 			CanonicalURL      *string  `db:"canonical_url" json:"canonical_url,omitempty"`
 			CreatedAt         string   `db:"created_at" json:"created_at"`

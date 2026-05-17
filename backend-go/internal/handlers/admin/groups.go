@@ -109,7 +109,7 @@ func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.Redesi
 	enriched.AudienceStatus = "sem_perfil"
 
 	if g.WAAccountID.Valid {
-		if acc, err := h.store.GetAccountV2(g.WAAccountID.Int64); err == nil {
+		if acc, err := h.store.GetAccount(g.WAAccountID.Int64); err == nil {
 			enriched.AccountLabel = acc.Phone
 		}
 	}
@@ -996,7 +996,7 @@ func (h *GroupsHandler) promoteWAAccountAsGroupAdmin(ctx context.Context, g mode
 		return fmt.Errorf("grupo sem JID ou conta WA")
 	}
 	// F08b: validate account exists via accounts v2; Evolution credentials come from global config.
-	if _, err := h.store.GetAccountV2(targetWAAccountID); err != nil {
+	if _, err := h.store.GetAccount(targetWAAccountID); err != nil {
 		return fmt.Errorf("conta WA alvo nao encontrada")
 	}
 	baseURL, apiKey, instance := resolveEvolutionCredentials(cfg)

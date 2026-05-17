@@ -449,12 +449,19 @@ var (
 )
 
 // renderTemplateBody substitui as variáveis {xxx} pelo dados reais do produto.
-// Mantido para compatibilidade com callers legados — não valida desconto.
+// Mantido para compatibilidade com callers legados.
+// Retorna "" quando price_original é NULL, igual ou menor que price_current, ou desconto é zero/negativo —
+// prevenindo a mensagem "caiu de 190 para 190 (0% OFF)" (bug 190→190).
+// Callers devem tratar retorno "" como sinal de desconto inválido e descartar o envio.
 func renderTemplateBody(body, titulo string, precoDeNull sql.NullFloat64, precoPor, descontoPct float64, link string) string {
-	precoDe := precoPor
-	if precoDeNull.Valid && precoDeNull.Float64 > precoPor {
-		precoDe = precoDeNull.Float64
+	if !precoDeNull.Valid || precoDeNull.Float64 <= precoPor {
+		return ""
 	}
+	if descontoPct <= 0 {
+		return ""
+	}
+
+	precoDe := precoDeNull.Float64
 
 	r := strings.NewReplacer(
 		"{titulo}",    titulo,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/canonical"
 	"snatcher/backendv2/internal/services/curator"
 	"snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/services/jobs"
@@ -12,7 +13,10 @@ import (
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/senders"
+	"snatcher/backendv2/internal/observability"
 	store "snatcher/backendv2/internal/repositories"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -342,6 +346,31 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// W2.C: Canonical backfill — popula canonical_product_id em catalog rows sem vínculo, diário 04:15.
+	// batchSize configurável via CANONICAL_BACKFILL_BATCH_SIZE (default 500).
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("15 4 * * *", false),
+			gocron.NewTask(func() {
+				batchSize := 500
+				if raw := os.Getenv("CANONICAL_BACKFILL_BATCH_SIZE"); raw != "" {
+					if parsed, parseErr := strconv.Atoi(raw); parseErr == nil && parsed > 0 {
+						batchSize = parsed
+					}
+				}
+				slog.Info("scheduler: canonical.backfill started", "batch_size", batchSize)
+				if err := canonical.RunBackfill(context.Background(), sc.db, batchSize); err != nil {
+					slog.Error("scheduler: canonical.backfill error", "err", err)
+				}
+			}),
+			gocron.WithName("canonical.backfill"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Fase 3: TaxonomyGrow L5 — movido para Fase 5 com RunLoop wrapper (ver abaixo)
 
 	// Fase 4: Reaper — libera send_queue travados a cada 5min
@@ -639,6 +668,22 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					slog.Error("scheduler: sentiment_analyze error", "err", err)
 				}
 			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// ADR-014 mitigação W-1: atualiza gauge llm_classification_pending_review a cada 5min
+	// enquanto o loop de correção completo (W3+W5) não está disponível.
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("*/5 * * * *", false),
+			gocron.NewTask(func() {
+				observability.UpdateLLMPendingReview(context.Background(), sc.db)
+			}),
+			gocron.WithName("observability.llm_pending_review"),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

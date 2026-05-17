@@ -35,6 +35,7 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			DiscountPct       *float64 `db:"discount_pct"        json:"discount_pct,omitempty"`
 			QualityScore      *float64 `db:"quality_score"       json:"quality_score,omitempty"`
 			SendReady         bool     `db:"send_ready"          json:"send_ready"`
+			CatalogStatus     *string  `db:"catalog_status"      json:"catalog_status,omitempty"`
 			CanonicalURLAlive bool     `db:"canonical_url_alive" json:"canonical_url_alive"`
 			LastPriceDropAt   *string  `db:"last_price_drop_at"  json:"last_price_drop_at,omitempty"`
 			CreatedAt         string   `db:"created_at"          json:"created_at"`
@@ -46,7 +47,7 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			       ct.display_name AS category_name,
 			       c.title, c.image_url, c.canonical_url,
 			       c.price_original, c.price_current, c.lowest_price, c.discount_pct,
-			       c.quality_score, c.send_ready, c.canonical_url_alive,
+			       c.quality_score, c.send_ready, c.catalog_status, c.canonical_url_alive,
 			       c.last_price_drop_at::text AS last_price_drop_at,
 			       c.created_at::text AS created_at
 			FROM catalog c
@@ -145,7 +146,7 @@ func CatalogSearchHandler(db *sqlx.DB) http.HandlerFunc {
 		_ = db.SelectContext(r.Context(), &rows, `
 			SELECT id, title, image_url, price_current, discount_pct, quality_score, source_id
 			FROM catalog
-			WHERE send_ready = true
+			WHERE (send_ready = true OR catalog_status = 'ready')
 			  AND title ILIKE '%' || $1 || '%'
 			ORDER BY quality_score DESC NULLS LAST, price_current DESC
 			LIMIT $2

@@ -9,19 +9,19 @@ const channelV2Select = `
 	       COALESCE((SELECT COUNT(*) FROM groups g WHERE g.channel_id = c.id), 0) AS groups_count
 	FROM channels_v2 c`
 
-func (s *SQLStore) ListChannelsV2() ([]models.ChannelV2, error) {
+func (s *SQLStore) ListChannels() ([]models.ChannelV2, error) {
 	var out []models.ChannelV2
 	err := s.db.Select(&out, channelV2Select+` ORDER BY c.name`)
 	return out, err
 }
 
-func (s *SQLStore) GetChannelV2(id int64) (models.ChannelV2, error) {
+func (s *SQLStore) GetChannel(id int64) (models.ChannelV2, error) {
 	var c models.ChannelV2
 	err := s.db.Get(&c, channelV2Select+` WHERE c.id=$1`, id)
 	return c, err
 }
 
-func (s *SQLStore) CreateChannelV2(c models.ChannelV2) (int64, error) {
+func (s *SQLStore) CreateChannel(c models.ChannelV2) (int64, error) {
 	var id int64
 	err := s.db.QueryRowx(`
 		INSERT INTO channels_v2 (name, quality_threshold, daily_cap, active)
@@ -30,7 +30,7 @@ func (s *SQLStore) CreateChannelV2(c models.ChannelV2) (int64, error) {
 	return id, err
 }
 
-func (s *SQLStore) UpdateChannelV2(c models.ChannelV2) error {
+func (s *SQLStore) UpdateChannel(c models.ChannelV2) error {
 	_, err := s.db.Exec(`
 		UPDATE channels_v2
 		SET name=$1, quality_threshold=$2, daily_cap=$3, active=$4,
@@ -41,7 +41,7 @@ func (s *SQLStore) UpdateChannelV2(c models.ChannelV2) error {
 	return err
 }
 
-func (s *SQLStore) DeleteChannelV2(id int64) error {
+func (s *SQLStore) DeleteChannel(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM channels_v2 WHERE id=$1`, id)
 	return err
 }

@@ -18,7 +18,7 @@ func NewChannelsHandler(st store.Store) *ChannelsHandler {
 
 // List retorna todos os canais.
 func (h *ChannelsHandler) List(w http.ResponseWriter, r *http.Request) {
-	channels, err := h.store.ListChannelsV2()
+	channels, err := h.store.ListChannels()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao listar canais")
 		return
@@ -33,7 +33,7 @@ func (h *ChannelsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	c, err := h.store.GetChannelV2(id)
+	c, err := h.store.GetChannel(id)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "canal não encontrado")
 		return
@@ -61,7 +61,7 @@ func (h *ChannelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.DailyCap != nil {
 		c.DailyCap = *req.DailyCap
 	}
-	id, err := h.store.CreateChannelV2(c)
+	id, err := h.store.CreateChannel(c)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar canal")
 		return
@@ -76,7 +76,7 @@ func (h *ChannelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	existing, err := h.store.GetChannelV2(id)
+	existing, err := h.store.GetChannel(id)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "canal não encontrado")
 		return
@@ -116,7 +116,7 @@ func (h *ChannelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.MinDiscountPct != nil {
 		existing.MinDiscountPct = *req.MinDiscountPct
 	}
-	if err := h.store.UpdateChannelV2(existing); err != nil {
+	if err := h.store.UpdateChannel(existing); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao atualizar")
 		return
 	}
@@ -130,7 +130,7 @@ func (h *ChannelsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	if err := h.store.DeleteChannelV2(id); err != nil {
+	if err := h.store.DeleteChannel(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao deletar")
 		return
 	}

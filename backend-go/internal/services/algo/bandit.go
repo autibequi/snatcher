@@ -50,7 +50,8 @@ func LoadBandit(ctx context.Context, db *sqlx.DB, channelID int64) (*ContextualB
 
 // Pick aplica UCB1: arm_score = avg_reward + exploration * sqrt(2 ln(total_pulls) / arm_pulls).
 // Cold-start: se total_pulls < 100, retorna o braço "safe" (alto source_trust + freshness).
-func (b *ContextualBandit) Pick(exploration float64) ArmID {
+func (b *ContextualBandit) Pick(ctx context.Context, exploration float64) ArmID {
+	_ = ctx // reservado para logging/tracing futuro
 	total := 0
 	for _, a := range b.Arms {
 		total += a.Pulls
@@ -72,6 +73,17 @@ func (b *ContextualBandit) Pick(exploration float64) ArmID {
 		}
 	}
 	return bestID
+}
+
+// ArmByID retorna o braço com o ID informado. Se não encontrado, retorna
+// defaultSafeArm() como fallback seguro (cold-start / braço removido).
+func (b *ContextualBandit) ArmByID(id ArmID) Arm {
+	for _, a := range b.Arms {
+		if a.ID == id {
+			return a
+		}
+	}
+	return defaultSafeArm()
 }
 
 // Update registra o reward observado para o braço identificado por armID.
@@ -116,6 +128,12 @@ func (b *ContextualBandit) Persist(ctx context.Context, db *sqlx.DB, reason stri
 		return err
 	}
 	return tx.Commit()
+}
+
+// SaveBandit é um wrapper de conveniência em torno de Persist.
+// Facilita mocks em testes sem expor o receiver diretamente.
+func SaveBandit(ctx context.Context, db *sqlx.DB, b *ContextualBandit, reason string) error {
+	return b.Persist(ctx, db, reason)
 }
 
 func defaultSafeArms() []Arm {

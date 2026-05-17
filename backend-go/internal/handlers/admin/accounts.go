@@ -42,7 +42,7 @@ func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "phone obrigatório")
 		return
 	}
-	id, err := h.store.CreateAccountV2(req.Phone, req.Nickname, modemID, req.Quota)
+	id, err := h.store.CreateAccount(req.Phone, req.Nickname, modemID, req.Quota)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar conta: "+err.Error())
 		return
@@ -57,7 +57,7 @@ func (h *AccountsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	if err := h.store.DeleteAccountV2(id); err != nil {
+	if err := h.store.DeleteAccount(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao deletar conta")
 		return
 	}
@@ -79,7 +79,7 @@ func (h *AccountsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "json inválido")
 		return
 	}
-	existing, err := h.store.GetAccountV2(id)
+	existing, err := h.store.GetAccount(id)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "conta não encontrada")
 		return
@@ -92,7 +92,7 @@ func (h *AccountsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Quota > 0 {
 		quota = req.Quota
 	}
-	if err := h.store.UpdateAccountV2(id, status, quota); err != nil {
+	if err := h.store.UpdateAccount(id, status, quota); err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao atualizar conta")
 		return
 	}

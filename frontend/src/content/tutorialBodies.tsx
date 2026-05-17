@@ -63,7 +63,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
         <p className="text-fg-2">Você tem dois caminhos a partir daqui:</p>
         <Ul>
           <li><b>Manual</b>: vá em <strong className="text-fg">Compor disparo</strong>, busque produtos, escolha canais/grupos, envie. Bom para testar.</li>
-          <li><b>Automático</b>: em <strong className="text-fg">/admin/params</strong>, ative <code>use_algo_tick</code>. A cada 5min o Score Engine escolhe e envia. Veja o tutorial <strong className="text-fg">Algoritmo de Scoring</strong> antes.</li>
+          <li><b>Automático</b>: o Score Engine roda a cada 5min e escolhe e envia automaticamente. Configure os pesos em <strong className="text-fg">/admin/params</strong>. Veja o tutorial <strong className="text-fg">Algoritmo de Scoring</strong> antes.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -93,7 +93,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li><strong className="text-fg">/activity</strong> — vê se houve disparo recente, status, erros.</li>
           <li><strong className="text-fg">/admin/senders</strong> — confirma sessão WA viva (api_online + wa_status).</li>
           <li><strong className="text-fg">/admin/audit</strong> — logs do backend, exceptions, jobs falhando.</li>
-          <li><strong className="text-fg">/admin/params</strong> — alguém pode ter desligado <code>use_algo_tick</code>.</li>
+          <li><strong className="text-fg">/admin/params</strong> — verifique os tunables de scoring e qualidade.</li>
         </ol>
       </Sec>
     </Shell>
@@ -136,7 +136,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
         </p>
         <p className="text-fg-2 mt-3">Para o caso de uso equivalente hoje:</p>
         <Ul>
-          <li><b>Disparos recorrentes automáticos</b> → ligue o Score Engine (<code>use_algo_tick</code>) e configure os pesos no canal. Veja <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
+          <li><b>Disparos recorrentes automáticos</b> → o Score Engine roda automaticamente — configure os pesos no canal. Veja <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
           <li><b>Conteúdo de terceiros pago</b> → use <strong className="text-fg">Compor disparo</strong> manual com a frequência desejada.</li>
         </Ul>
       </Sec>
@@ -153,7 +153,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       </Sec>
       <Sec title="Onde tudo isso virou">
         <Ul>
-          <li><b>Auto-match</b> → <strong className="text-fg">Score Engine</strong> em /admin/params (flag <code>use_algo_tick</code>). Tutorial: <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
+          <li><b>Auto-match</b> → <strong className="text-fg">Score Engine</strong> em /admin/params. Tutorial: <strong className="text-fg">Algoritmo de Scoring</strong>.</li>
           <li><b>Threshold global</b> → <code>quality_threshold</code> (default 0.40) em /admin/params.</li>
           <li><b>Threshold por canal</b> → <code>quality_threshold</code> próprio em <strong className="text-fg">/channels</strong> (cada canal pode sobrescrever).</li>
           <li><b>Rate limit</b> → <code>cap_max</code> (msgs/dia/grupo) + <code>cooldown_seconds</code> entre envios do mesmo modem.</li>
@@ -425,7 +425,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       <Sec title="Atenção">
         <Ul>
           <li>Alterações em LLM key afetam todos os 9 loops imediatamente.</li>
-          <li>Desativar <code>use_algo_tick</code> em /settings/params para o Score Engine — use com cuidado em produção.</li>
+          <li>O Score Engine roda incondicionalmente — para interromper envios, desabilite os modems em <strong className="text-fg">/admin/senders</strong> ou ajuste a janela de envio.</li>
         </Ul>
       </Sec>
     </Shell>
@@ -677,7 +677,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
       </Sec>
       <Sec title="Estrutura">
         <Ul>
-          <li><b>Flags strangler</b> (topo em destaque) — on/off com toggle: <code>use_algo_tick</code>, <code>use_epsilon_explore</code>, <code>use_thompson_sampling</code>.</li>
+          <li><b>Parâmetros tunáveis</b> — inputs numéricos com min/max. Cada um tem default + possibilidade de reset.</li>
           <li><b>Parâmetros globais</b> — sliders e inputs numéricos com min/max. Cada um tem default + possibilidade de reset.</li>
           <li>Valor fora do range é rejeitado antes de salvar — não precisa validar manualmente.</li>
         </Ul>
@@ -711,10 +711,8 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           e defesas contra spam — e devolve uma escolha por grupo.
         </p>
         <p>
-          Ele é controlado pelo toggle <strong className="text-fg">Score Engine</strong> em{' '}
-          <strong className="text-fg">/admin/params</strong> (flag <code>use_algo_tick</code>).
-          Desligado: nada é enviado pelo motor automático — só envios manuais. Ligado:
-          tick a cada 5min dentro da janela de envio.
+          O motor roda a cada 5min dentro da janela de envio configurada — nenhum toggle
+          de ativação separado. Envios manuais continuam disponíveis via <strong className="text-fg">Compor disparo</strong>.
         </p>
       </Sec>
 
@@ -909,8 +907,8 @@ ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
 # tempo zero: 40% exploração; 1 ano depois: ~34%`}
         </pre>
         <p>
-          Gate: flag <code>use_epsilon_explore</code>. Ligue depois de validar a
-          Fase 1 — sistema bem calibrado precisa de menos exploração.
+          A exploração ε-greedy é parte da pipeline padrão do Score Engine —
+          configure via <code>epsilon_base</code> e <code>epsilon_decay_rate</code> em /admin/params.
         </p>
       </Sec>
 
@@ -941,8 +939,8 @@ ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
           <b>exatamente uma vez</b> — sem double-count.
         </p>
         <p>
-          Gate: <code>use_thompson_sampling</code>. Recomendado ligar só após ~30
-          dias de dados.
+          Thompson Sampling é parte da pipeline padrão — recomendado ter ~30
+          dias de dados antes de confiar nas estimativas Beta.
         </p>
       </Sec>
 
@@ -1029,15 +1027,15 @@ ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
           </li>
           <li>
             Se sentir "mesmice", aumente <code>diversity_bonus_weight</code> ou
-            ligue <code>use_epsilon_explore</code>.
+            <code>epsilon_base</code> para mais exploração.
           </li>
           <li>
             Se quiser "mais agressivo no que funciona", aumente <code>w_c</code> e <code>w_e</code>;
             diminua <code>w_q</code> (qualidade pura).
           </li>
           <li>
-            Após 30d, ligue <code>use_thompson_sampling</code> para auto-otimização
-            por categoria.
+            Após 30d o Thompson Sampling ativo converge automaticamente — confira
+            o EPC por categoria em <strong className="text-fg">/analytics → Learned Weights</strong>.
           </li>
           <li>
             Monitore <strong className="text-fg">/analytics → Virality</strong>: ratio alto num
@@ -1057,9 +1055,6 @@ ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            <tr><td className="px-2 py-1.5 font-mono">use_algo_tick</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga/desliga o Score Engine</td></tr>
-            <tr><td className="px-2 py-1.5 font-mono">use_epsilon_explore</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga exploração ε-greedy (Fase 2)</td></tr>
-            <tr><td className="px-2 py-1.5 font-mono">use_thompson_sampling</td><td className="px-2 py-1.5">0</td><td className="px-2 py-1.5">Liga bandit por categoria (Fase 3)</td></tr>
             <tr><td className="px-2 py-1.5 font-mono">quality_threshold</td><td className="px-2 py-1.5">0.40</td><td className="px-2 py-1.5">Score mínimo pra entrar no funil</td></tr>
             <tr><td className="px-2 py-1.5 font-mono">score_weight_quality</td><td className="px-2 py-1.5">0.30</td><td className="px-2 py-1.5">w_q · quality intrínseco</td></tr>
             <tr><td className="px-2 py-1.5 font-mono">score_weight_affinity</td><td className="px-2 py-1.5">0.20</td><td className="px-2 py-1.5">w_a · afinidade grupo×categoria</td></tr>

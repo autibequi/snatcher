@@ -39,6 +39,7 @@ func ChannelCandidatesHandler(db *sqlx.DB) http.HandlerFunc {
 			CompositeScore float64  `db:"composite_score"  json:"composite_score"`
 			BelowThreshold bool     `db:"below_threshold"  json:"below_threshold"`
 			SendReady      bool     `db:"send_ready"       json:"send_ready"`
+			CatalogStatus  *string  `db:"catalog_status"   json:"catalog_status,omitempty"`
 			URLAlive       bool     `db:"url_alive"        json:"url_alive"`
 		}
 
@@ -82,6 +83,7 @@ func ChannelCandidatesHandler(db *sqlx.DB) http.HandlerFunc {
 			       ) < COALESCE(get_param('quality_threshold','global',NULL), 0.4)
 			         AS below_threshold,
 			       c.send_ready,
+			       c.catalog_status,
 			       c.canonical_url_alive AS url_alive
 			FROM catalog c
 			LEFT JOIN channel_category_weights ccw

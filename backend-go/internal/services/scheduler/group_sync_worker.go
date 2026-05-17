@@ -73,7 +73,7 @@ func RunGroupSyncWorker(ctx context.Context, st store.Store, db *sqlx.DB) {
 	}
 
 	// Contas locais primary/backup indexadas por phone
-	accounts, err := st.ListAccountsV2()
+	accounts, err := st.ListAccounts()
 	if err != nil {
 		slog.Warn("group sync: list accounts failed", "err", err)
 		return

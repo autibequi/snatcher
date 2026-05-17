@@ -14,7 +14,7 @@ CREATE INDEX idx_taxonomy_node_kind ON taxonomy_node(kind);
 CREATE TABLE taxonomy_feedback (
     id             BIGSERIAL PRIMARY KEY,
     node_id        BIGINT NOT NULL REFERENCES taxonomy_node(id) ON DELETE CASCADE,
-    channel_id     BIGINT,
+    channel_id     BIGINT, -- FK fraca intencional: sem CASCADE para evitar cascata em channels ao deletar canal
     feedback_type  TEXT NOT NULL CHECK (feedback_type IN ('approved','rejected','reassigned')),
     reassigned_to  BIGINT REFERENCES taxonomy_node(id),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()

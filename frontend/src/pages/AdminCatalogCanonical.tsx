@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAutocomplete'
-import { Tabs } from '../components/ui'
+import { Tabs, toast } from '../components/ui'
 import { authFetch } from '../lib/authFetch'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -288,11 +288,11 @@ export default function AdminCatalogCanonical() {
         /* plain text error */
       }
       if (!r.ok) {
-        window.alert(text.slice(0, 500))
+        toast(text.slice(0, 500), 'error')
         return
       }
       if (j.message && typeof j.message === 'string' && !j.processed) {
-        window.alert(j.message as string)
+        toast(j.message as string, 'info')
       }
       await Promise.all([loadStats(), loadLLMQueue()])
     } finally {

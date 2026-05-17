@@ -99,7 +99,7 @@ func (h *DashboardHandler) KPIs(w http.ResponseWriter, r *http.Request) {
 	// active = primary|backup|warming; banned = banned; quarantine = quarantine.
 	// Penalidade adicional: grupos ativos com admin_count < 2 reduzem o score (peso pequeno).
 	// Se sem contas → null.
-	accounts, err := h.store.ListAccountsV2()
+	accounts, err := h.store.ListAccounts()
 	var healthScore *int
 	accountsNormalCount := 0
 	if err == nil && len(accounts) > 0 {
@@ -217,7 +217,7 @@ func (h *DashboardHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 	var alerts []Alert
 
 	// Categoria: wa_disconnect — contas WA em quarentena ou banidas (accounts v2)
-	accounts, _ := h.store.ListAccountsV2()
+	accounts, _ := h.store.ListAccounts()
 	for _, a := range accounts {
 		if a.Status == "quarantine" || a.Status == "banned" {
 			severity := "atencao"

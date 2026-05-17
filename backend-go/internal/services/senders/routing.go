@@ -59,6 +59,8 @@ func PickDomain(ctx context.Context, db *sqlx.DB, modemID int64) (*int64, error)
 // seedModemRouting upserta uma linha em modem_routing para o modem informado,
 // usando pickRedirectDomainID para obter o domain_id de afinidade atual.
 // Ignora modems cujo domínio não pode ser resolvido (nenhum domínio ativo).
+// shadow_mode=true indica que a row está no período de seed de 72h — dispatcher
+// ainda usa o fallback legado e registra divergências para o gate de cutover.
 func seedModemRouting(ctx context.Context, db *sqlx.DB, modemID int64) error {
 	domainID, err := pickRedirectDomainID(ctx, db, modemID)
 	if err != nil {
@@ -70,11 +72,24 @@ func seedModemRouting(ctx context.Context, db *sqlx.DB, modemID int64) error {
 	}
 
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO modem_routing (modem_id, domain_id, affinity_score, seeded_at)
-		VALUES ($1, $2, 1.0, now())
+		INSERT INTO modem_routing (modem_id, domain_id, affinity_score, seeded_at, shadow_mode)
+		VALUES ($1, $2, 1.0, now(), TRUE)
 		ON CONFLICT (modem_id, domain_id)
-		DO UPDATE SET seeded_at = now()
+		DO UPDATE SET seeded_at = now(), shadow_mode = TRUE
 	`, modemID, *domainID)
+	return err
+}
+
+// promoteShadowRow marca uma row de modem_routing como shadow_mode=false, indicando
+// que o período de observação terminou e o dispatcher pode usar esta row como live.
+// Chamado pelo job de validação de divergência após o gate de 72h ser aprovado.
+func promoteShadowRow(ctx context.Context, db *sqlx.DB, modemID int64, domainID int64) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE modem_routing
+		SET shadow_mode = FALSE
+		WHERE modem_id = $1
+		  AND domain_id = $2
+	`, modemID, domainID)
 	return err
 }
 

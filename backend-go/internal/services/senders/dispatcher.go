@@ -119,15 +119,19 @@ func jitter(base time.Duration, pct float64) time.Duration {
 }
 
 // sendJob é a representação interna do row reclamado.
+// sendJob representa uma row de send_queue claimada pelo dispatcher.
+// RoutingKey armazena a chave de afinidade de domínio resolvida no momento do claim
+// (gravada em send_queue.routing_key) para auditoria de divergência shadow vs. live.
 type sendJob struct {
-	ID         int64         `db:"id"`
-	CatalogID  sql.NullInt64 `db:"catalog_id"`
-	GroupID    int64         `db:"group_id"`
-	AccountID  sql.NullInt64 `db:"account_id"`
-	ModemID    int64         `db:"modem_id"`
-	TemplateID sql.NullInt64 `db:"template_id"`
-	DomainID   sql.NullInt64 `db:"domain_id"`
-	Score      float64       `db:"score"`
+	ID         int64          `db:"id"`
+	CatalogID  sql.NullInt64  `db:"catalog_id"`
+	GroupID    int64          `db:"group_id"`
+	AccountID  sql.NullInt64  `db:"account_id"`
+	ModemID    int64          `db:"modem_id"`
+	TemplateID sql.NullInt64  `db:"template_id"`
+	DomainID   sql.NullInt64  `db:"domain_id"`
+	Score      float64        `db:"score"`
+	RoutingKey sql.NullString `db:"routing_key"`
 }
 
 // claimNextJob — FOR UPDATE SKIP LOCKED ORDER BY score DESC, scheduled_for ASC.
@@ -142,7 +146,8 @@ func claimNextJob(ctx context.Context, db *sqlx.DB, workerID string, ttl time.Du
 	var job sendJob
 	err = tx.GetContext(ctx, &job, `
 		SELECT id, catalog_id, group_id, account_id, modem_id, template_id, domain_id,
-		       COALESCE(score, 0) AS score
+		       COALESCE(score, 0) AS score,
+		       routing_key
 		FROM send_queue
 		WHERE status = 'pending'
 		  AND (scheduled_for IS NULL OR scheduled_for <= now())

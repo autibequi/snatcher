@@ -47,6 +47,51 @@
 
 ---
 
+### Q3 — Jonfrey escopo
+
+**Status:** FIXADO (2026-05-17)
+**Decisão:** DB-driven via tabela `automations` + `jonfrey_decisions` audit (V3 W5). Jonfrey vira **regulador do bandit** (W2.B): ajusta `exploration_factor` por canal, pode congelar canal. Anti-loop guard: cooldown 1h decisões opostas; 3 oscilações/24h → `escalate_to_human` via alerta no grupo Críticos. Critical automations NUNCA pausadas por Jonfrey (invariante I10).
+**Consequência:** Tabela `jonfrey_actions` antiga não é wiring de L4 — virou audit separado. L4 (cooldown_suggest + cap_suggest) é independente, fica em `llm_suggestions` (entrega em V3 W3 + Dashboard). ADR-011 já cimentou bandit-regulator.
+**Não reabre:** wiring está claro.
+
+---
+
+### Q4 — Channel/ChannelRule/ChannelAutomation deprecation
+
+**Status:** FIXADO (2026-05-17)
+**Decisão:** Auto-quarantine via V3 W3 (`taxonomy_node` + `taxonomy_feedback` + `quarantine_events`) + manual review humano via UI W4 (`ActivityHub` tab Quarantine). Threshold de quarentena em `tunable_parameters.quarantine_threshold` (preserva config existente). Auto-lift via Jonfrey job (W5) quando TTL expira ou correção humana.
+**Consequência:** ChannelRule legado fica vivo até W2.A migrar `send_ready` → `catalog_status` enum. ChannelAutomation absorvida pela tabela `automations` em W5. Sem big-bang delete; expand-contract.
+**Não reabre:** caminho W3 + W5 está cimentado em ADR-011 + ADR-012.
+
+---
+
+### Q8 — LLM provider canônico
+
+**Status:** FIXADO (2026-05-17)
+**Decisão:** OpenRouter como provider canônico. Formaliza ADR-001 existente. Modelo default `gpt-4o-mini`; `claude-3-5-sonnet` apenas em creative template (copy de WhatsApp). Budget $20/mês modo economy via `tunable_parameters.llm_budget_usd_daily`.
+**Consequência:** V3 W2.B (UCB1 bandit), W3 (taxonomy LLM enrich), W5 (Jonfrey regulator) usam OpenRouter. Cache obrigatório com prompt-hash TTL 24h-7d. Kill-switch via `tunable_param`. DeepSeek V4 Flash NÃO é caminho canônico (alternativa rejeitada pelo overhead de mais um SDK).
+**Não reabre:** ADR-001 e ADR-003 já tinham fixado; esta linha consolida formalmente.
+
+---
+
+### Q12 — Coolify como orquestrador no Mac mini
+
+**Status:** FIXADO (2026-05-17)
+**Decisão:** Sim, Coolify orquestrando containers Docker no Mac mini. Imagens em `ghcr.io/autibequi/snatcher-{backend,frontend,redirect}:latest`. Q1 (hardware) já cimentou Mac mini; Q12 só formaliza o orquestrador.
+**Consequência:** Cutover staged do V3 W1 (10% → 50% → 100% modems) usa `tunable_parameters.dispatch_engine` (não Coolify env). Coolify continua sendo o caminho de deploy de imagens novas.
+**Não reabre:** Q1 + Q12 fecham a stack de runtime.
+
+---
+
+### Q15 — Conta WhatsApp Business dedicada para alertas
+
+**Status:** FIXADO (2026-05-17)
+**Decisão:** Sim. Conta WA Business NOVA (não as do snatcher) cadastrada em `accounts` table com `modem_id` correto, status `warming`, `daily_send_quota=20` (incrementar gradualmente). Operacionaliza a Fase 6 (curator + 2 grupos curator).
+**Consequência:** Card a05 da Fase A executa o cadastro. Bloco SQL canônico está no RUNBOOK seção "Antes de subir em prod" itens 3 e 7. V3 W1 + W3 + W5 dependem dos grupos curator existirem para testar Jonfrey alerts.
+**Não reabre:** decisão operacional, sem alternativa razoável.
+
+---
+
 ## Decisões pendentes
 
 > Estas 11 questões precisam de resposta do Pedrinho antes ou durante a Fase correspondente.
@@ -65,27 +110,6 @@
 
 ---
 
-### Q3 — Jonfrey: manter como L4, novo loop, ou desativar?
-
-**Status:** PENDENTE
-**Pergunta:** O Jonfrey (review semi-automático com human-in-the-loop) vira interface de aprovação do L4 (`cooldown_suggest` + `cap_suggest`), continua como 10º loop autônomo não-cimentado, ou é desativado após Fase 5?
-**Contexto:** `jonfrey_actions`, `jonfrey_config`, `jonfrey_review_cache` existem e funcionam. L4 do cimentado é sugestão na dashboard (não despacha diretamente). Jonfrey tem escopo de review de produtos, não de tuning de parâmetros — conceptualmente diferente.
-**Impacto se não respondido:** Fase 5 não sabe se deve wiring Jonfrey → L4 ou criar L4 independente.
-**Data-limite:** antes de Fase 5.
-**Bloqueio:** Fase 5 (loops LLM core).
-
----
-
-### Q4 — Channel/ChannelRule/ChannelAutomation: deprecar após Fase 4?
-
-**Status:** PENDENTE
-**Pergunta:** Posso planejar deprecation completa do `channel`, `channelrule`, `channel_automations`, `channel_target_accounts` após a Fase 4 (quando `groups` cimentado + `templates` estiverem completos)?
-**Contexto:** O modelo Channel é a camada de regras de envio atual. A spec cimentada usa diretamente `groups` + `templates` + `send_queue`. Manter os dois em paralelo é dual-write com risco de inconsistência.
-**Impacto se não respondido:** Fase 4 não sabe se deve criar shim de compatibilidade ou cortar Channel.
-**Data-limite:** antes de Fase 4.
-**Bloqueio:** Fase 4 (senders + dispatch).
-
----
 
 ### Q6 — Ads e Broadcast: ainda são features ativas?
 
@@ -109,16 +133,6 @@
 
 ---
 
-### Q8 — LLM provider: DeepSeek V4 Flash direto ou continuar OpenRouter?
-
-**Status:** PENDENTE
-**Pergunta:** Plumbo DeepSeek V4 Flash direto no `llm_config` (mantendo OpenRouter como rota fallback), ou Pedrinho prefere continuar tudo via OpenRouter por simplicidade de billing?
-**Contexto:** Specs cimentadas mencionam DeepSeek V4 Flash como provider default (cache de prefixo 98%). `internal/llm` usa OpenRouter hoje. Trocar o router principal muda o modelo de billing (fatura DeepSeek direto vs OpenRouter com markup). O `LLM_CACHE` do projeto já reduz custo.
-**Impacto se não respondido:** loops LLM das Fases 5-7 rodam com provider subótimo (sem cache de prefixo).
-**Data-limite:** antes de Fase 5.
-**Bloqueio:** Fase 5 (custo e performance dos loops LLM).
-
----
 
 ### Q10 — Renomear `background_jobs` → `jobs`?
 
@@ -142,16 +156,6 @@
 
 ---
 
-### Q12 — Deploy: Coolify como orquestrador no Mac mini?
-
-**Status:** PENDENTE
-**Pergunta:** Coolify continua sendo o orquestrador de produção no Mac mini (substituindo Watchtower + deploy direto do Raspberry Pi)?
-**Contexto:** Há uma pasta `coolify/` no repo. O `docker-compose.yml` atual usa Watchtower com pull automático de `ghcr.io/autibequi/snatcher-backend:latest`. A pasta `coolify/` sugere que a migração já começou. Confirmar se Coolify está ativo e se Watchtower deve ser removido do compose de produção.
-**Impacto se não respondido:** Fase 4 (senders) pode criar containers que o deploy não sabe orquestrar.
-**Data-limite:** antes de Fase 4.
-**Bloqueio:** Fase 4 (infra de deploy dos 3 senders particionados).
-
----
 
 ### Q13 — Frontend split: antes ou depois da Fase 4?
 
@@ -164,16 +168,6 @@
 
 ---
 
-### Q15 — Conta WhatsApp Business dedicada para alertas (Fase 6)
-
-**Status:** PENDENTE
-**Pergunta:** O número de WhatsApp Business dedicado para os 2 grupos de alertas (Curator, relatório diário) — quem providencia? É responsabilidade do Pedrinho comprar o número e ativar antes da Fase 6 iniciar?
-**Contexto:** Fase 6 cria conta dedicada + 2 grupos WA. Sem número provisionado, a Fase 6 não pode ser concluída. Necessário configurar Evolution API instance para essa conta separada.
-**Impacto se não respondido:** Fase 6 fica bloqueada indefinidamente.
-**Data-limite:** 30 dias antes do início estimado da Fase 6.
-**Bloqueio:** Fase 6 (sistema de alertas).
-
----
 
 ## Log de mudanças
 
@@ -181,3 +175,4 @@
 |---|---|---|
 | 2026-05-12 | Q1, Q-dup, Q5, Q9 | Fixadas com base em GAP_ANALYSIS.md e brief |
 | 2026-05-12 | Q2-Q4, Q6-Q8, Q10-Q13, Q15 | Documentadas como pendentes aguardando Pedrinho |
+| 2026-05-17 | Q3, Q4, Q8, Q12, Q15 | Fixadas conforme plan-2026-05-17 + ADR-013 |

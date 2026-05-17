@@ -3,6 +3,7 @@ package algo
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -42,14 +43,20 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 	}
 
 	lambda := loadMMRLambda(ctx, db)
-	thompsonOn := thompsonEnabled(ctx, db)
-	if thompsonOn {
-		if err := updateBanditArms(ctx, db); err != nil {
-			slog.Warn("algo.tick: updateBanditArms", "err", err)
-		}
-		if err := updateBanditArmsChannel(ctx, db); err != nil {
-			slog.Warn("algo.tick: updateBanditArmsChannel", "err", err)
-		}
+
+	// Carrega parâmetros tunáveis uma vez por tick (shared por todos os grupos).
+	params, err := LoadParams(ctx, db)
+	if err != nil {
+		slog.Warn("algo.tick: LoadParams", "err", err)
+		// Continua com params zero — ComputeScoreV2 degradará gracefully (half-life=0 → exp(0)=1).
+	}
+
+	// Thompson Sampling incondicional — toggle use_thompson_sampling queimado em W0.
+	if err := updateBanditArms(ctx, db); err != nil {
+		slog.Warn("algo.tick: updateBanditArms", "err", err)
+	}
+	if err := updateBanditArmsChannel(ctx, db); err != nil {
+		slog.Warn("algo.tick: updateBanditArmsChannel", "err", err)
 	}
 
 	enqueued := 0
@@ -64,21 +71,45 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 		if !ShouldEnqueueGroup(ctx, db, g.ID, g.DailyMsgCap) {
 			continue
 		}
-		// Categoria efetiva: se Thompson ativo, amostra do bandit;
-		// senão usa a categoria fixa do grupo (g.CategoryID, pode ser nil).
+		// Categoria efetiva: amostra do bandit Thompson (incondicional pós-W0).
+		// g.CategoryID é usado como fallback se não há braços ainda.
 		effectiveCat := g.CategoryID
-		if thompsonOn {
-			if err := ensureBanditArmsForGroup(ctx, db, g.ID, channelID); err != nil {
-				slog.Warn("algo.tick: ensureBanditArmsForGroup", "err", err, "group", g.ID)
-			}
-			if cat := selectCategoryThompson(ctx, db, g.ID, channelID); cat != nil {
-				effectiveCat = cat
-			}
+		if err := ensureBanditArmsForGroup(ctx, db, g.ID, channelID); err != nil {
+			slog.Warn("algo.tick: ensureBanditArmsForGroup", "err", err, "group", g.ID)
+		}
+		if cat := selectCategoryThompson(ctx, db, g.ID, channelID); cat != nil {
+			effectiveCat = cat
 		}
 		candidates, err := selectTopKForGroup(ctx, db, g.ID, channelID, effectiveCat)
 		if err != nil || len(candidates) == 0 {
 			continue
 		}
+
+		// W2.B — Bandit UCB1 por canal: re-pontua candidatos com pesos do braço selecionado.
+		bandit, err := LoadBandit(ctx, db, channelID)
+		if err != nil {
+			slog.Warn("algo.tick: LoadBandit", "err", err, "channel", channelID)
+			bandit = &ContextualBandit{ChannelID: channelID, Arms: defaultSafeArms()}
+		}
+		armID := bandit.Pick(ctx, params.EpsilonBase)
+		arm := bandit.ArmByID(armID)
+		for i := range candidates {
+			c := &candidates[i]
+			in := ScoreInputs{
+				CategoryID:         c.CategoryID,
+				DiscountPct:        c.DiscountPct,
+				FirstSeenAt:        c.FirstSeenAt,
+				LastPriceDropAt:    c.LastPriceDropAt,
+				SourceTrust:        c.QualityScore, // melhor proxy disponível sem JOIN extra
+				GroupCategoryMatch: 1.0,            // itens já passaram pelo filtro de categoria
+				ChannelID:          channelID,
+			}
+			c.FinalScore = ComputeScoreV2(in, params, &arm.Weights)
+		}
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].FinalScore > candidates[j].FinalScore
+		})
+
 		sentToday, err := loadSentTodayCategories(ctx, db, g.ID)
 		if err != nil {
 			slog.Warn("algo.tick: loadSentTodayCategories", "err", err, "group", g.ID)
@@ -93,6 +124,13 @@ func RunTick(ctx context.Context, db *sqlx.DB) error {
 			slog.Warn("algo.tick: enqueue", "err", err, "group", g.ID)
 			continue
 		}
+
+		// Registra o reward (FinalScore já re-pontado por V2) e persiste o bandit.
+		bandit.Update(armID, item.FinalScore)
+		if err := SaveBandit(ctx, db, bandit, "tick"); err != nil {
+			slog.Warn("algo.tick: SaveBandit", "err", err, "channel", channelID)
+		}
+
 		enqueued++
 	}
 	slog.Info("algo.tick: done", "enqueued", enqueued, "groups", len(groups), "lambda", lambda)

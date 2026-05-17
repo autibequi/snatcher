@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
+import { ToastContainer } from '../components/ui'
 import { ManualModal } from '../components/ManualModal'
 import { StatusBar } from '../components/StatusBar'
 import { PageTitleProvider } from '../contexts/PageTitleContext'
@@ -47,6 +48,7 @@ export function AppShell() {
         </PageTitleProvider>
       </div>
       <ApiErrorToast />
+      <ToastContainer />
       <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
       <StatusBar />
     </div>

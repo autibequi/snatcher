@@ -12,9 +12,16 @@ var stopwordsPTBR = map[string]struct{}{
 	"para": {}, "com": {}, "por": {}, "na": {}, "no": {}, "um": {}, "uma": {}, "os": {}, "as": {},
 }
 
+// FingerprintResult é o retorno tipado de Fingerprint.
+type FingerprintResult struct {
+	Hash          [16]byte
+	LowConfidence bool // true quando brandID == nil; evitar agregação cross-marketplace
+}
+
 // Fingerprint produz hash 16-byte determinístico baseado em title + brand + price_band.
-// Para produtos sem brand_id (nil), retorna hash com flag low_confidence implícita no caller.
-func Fingerprint(title string, brandID *int64, priceBand int) [16]byte {
+// LowConfidence é true quando brandID é nil, sinalizando ao caller que a agregação
+// cross-marketplace deve ser evitada.
+func Fingerprint(title string, brandID *int64, priceBand int) FingerprintResult {
 	tokens := tokenize(title)
 	shingles := makeShingles(tokens, 3)
 	minHash := computeMinHash(shingles, 128)
@@ -29,7 +36,7 @@ func Fingerprint(title string, brandID *int64, priceBand int) [16]byte {
 	}
 	_ = binary.Write(h, binary.LittleEndian, int64(priceBand))
 	copy(out[:], h.Sum(nil))
-	return out
+	return FingerprintResult{Hash: out, LowConfidence: brandID == nil}
 }
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9 ]+`)

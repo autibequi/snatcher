@@ -58,12 +58,18 @@ func priceBand(price float64) int {
 // Erros em upsert ou link são logados como warnings — não interrompem o lote.
 func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) {
 	band := priceBand(row.PriceCurrent)
-	fingerprint := algo.Fingerprint(row.Title, row.BrandID, band)
+	fpResult := algo.Fingerprint(row.Title, row.BrandID, band)
+	if fpResult.LowConfidence {
+		slog.Debug("canonical.fingerprint_low_confidence",
+			"catalog_id", row.ID,
+			"title", row.Title,
+		)
+	}
 
 	canonicalID, err := repositories.UpsertCanonical(
 		ctx,
 		db,
-		fingerprint[:],
+		fpResult.Hash[:],
 		row.Title,
 		row.BrandID,
 		&band,

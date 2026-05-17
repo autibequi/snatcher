@@ -50,6 +50,8 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   click_cap_per_member:           { label: 'Cap viral · clicks/membro',       description: 'Limite de clicks que contam pro learning = k × member_count. Clicks acima são considerados viralização externa e ficam só em group_virality (não envenenam CTR/bandit). Default 3.0.' },
   // Segurança de envio
   quarantine_threshold:           { label: 'Quarentena · falhas consecutivas', description: 'Número de falhas de envio consecutivas antes de colocar a conta em quarentena. Aumente para reduzir quarentenas automáticas. 999 = desativado.' },
+  // Taxonomia e loop de correção (W3)
+  min_taxonomy_confidence:        { label: 'Confiança mínima de taxonomia', description: 'W3: confiança mínima (0–1) das funções classify_catalog_brand/category. Itens abaixo desse valor são automaticamente enfileirados em catalog_llm_queue para revisão LLM. Default 0.70 = 70%.' },
 }
 
 function paramLabel(name: string): string {

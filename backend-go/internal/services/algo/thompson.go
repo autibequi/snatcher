@@ -8,12 +8,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// thompsonEnabled retorna sempre true: toggle use_thompson_sampling foi queimado em W0.
-// W2.B substituirá Thompson por UCB1 por canal.
-func thompsonEnabled(_ context.Context, _ *sqlx.DB) bool {
-	return true
-}
-
 // sampleGamma amostra de Gamma(shape, 1) usando Marsaglia & Tsang (2000).
 // Para shape < 1 usa o trick: Gamma(shape) = Gamma(shape+1) * U^(1/shape).
 func sampleGamma(shape float64) float64 {

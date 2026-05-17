@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, KpiCard, Switch, PageHeader } from '../components/ui'
+import { Button, KpiCard, Switch, PageHeader, toast } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
 import { apiClient } from '../lib/apiClient'
@@ -168,7 +168,6 @@ interface AlgoStatus {
   last_error?: string
   tick_duration_ms?: number
   in_send_window: boolean
-  use_algo_tick: boolean
   next_tick_seconds: number
 }
 
@@ -213,7 +212,6 @@ interface DryRunResult {
 }
 
 function AlgoStatusWidget() {
-  const qc = useQueryClient()
   const [showDryRun, setShowDryRun] = useState(false)
 
   const { data: status } = useQuery<AlgoStatus>({
@@ -230,17 +228,8 @@ function AlgoStatusWidget() {
     staleTime: 30_000,
   })
 
-  const toggleMut = useMutation({
-    mutationFn: (enabled: boolean) =>
-      apiClient.post('/api/admin/algo/toggle', { enabled }).then(r => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['algo-status'] })
-    },
-  })
-
   const countdown = useCountdown(status?.next_tick_seconds ?? 0)
   const cfg = status ? STATE_CONFIG[status.state] : STATE_CONFIG.disabled
-  const showToggle = status && (status.state === 'ok' || status.state === 'disabled')
 
   return (
     <div className={`flex items-start gap-3 rounded-lg border ${cfg.border} bg-surface px-4 py-3`}>
@@ -333,17 +322,6 @@ function AlgoStatusWidget() {
         )}
       </div>
 
-      {/* Toggle */}
-      {showToggle && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-fg-3">{status.use_algo_tick ? 'Desligar' : 'Ligar'}</span>
-          <Switch
-            checked={status.use_algo_tick}
-            disabled={toggleMut.isPending}
-            onChange={v => toggleMut.mutate(v)}
-          />
-        </div>
-      )}
     </div>
   )
 }
@@ -387,7 +365,7 @@ export default function Dashboard() {
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { error?: string } } }
-      alert(e?.response?.data?.error ?? 'Erro ao atualizar Auto-pilot')
+      toast(e?.response?.data?.error ?? 'Erro ao atualizar Auto-pilot', 'error')
     },
   })
 

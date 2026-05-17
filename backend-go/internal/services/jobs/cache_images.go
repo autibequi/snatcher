@@ -35,7 +35,7 @@ func RunCacheImages(ctx context.Context, db *sqlx.DB) error {
 	var rows []row
 	if err := db.SelectContext(ctx, &rows, `
 		SELECT id, image_url FROM catalog
-		WHERE image_url IS NOT NULL AND cached_image_path IS NULL AND send_ready = true
+		WHERE image_url IS NOT NULL AND cached_image_path IS NULL AND (send_ready = true OR catalog_status = 'ready')
 		ORDER BY send_ready_at DESC LIMIT 100
 	`); err != nil {
 		return err

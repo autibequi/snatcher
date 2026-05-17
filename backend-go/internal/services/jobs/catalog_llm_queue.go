@@ -14,6 +14,83 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// getTaxonomyThreshold lê min_taxonomy_confidence de tunable_parameters com fallback 0.70.
+// Nunca retorna erro — em caso de falha usa o default seguro.
+func getTaxonomyThreshold(ctx context.Context, db *sqlx.DB) float64 {
+	const defaultThreshold = 0.70
+	var v float64
+	err := db.GetContext(ctx, &v, `SELECT get_param('min_taxonomy_confidence','global',NULL)`)
+	if err != nil || v <= 0 {
+		return defaultThreshold
+	}
+	return v
+}
+
+// enqueueIfLowConfidence verifica a confidence de classificacao para um catalog_id e,
+// se abaixo do threshold, insere em catalog_llm_queue com human_correction=false.
+// Idempotente: ON CONFLICT DO UPDATE preserva status se ja estiver em processing.
+func enqueueIfLowConfidence(ctx context.Context, db *sqlx.DB, catalogID int64, title string, threshold float64) error {
+	type taxonomyMatch struct {
+		Slug       string  `db:"slug"`
+		Confidence float64 `db:"confidence"`
+	}
+
+	// Chama classify_catalog_brand (retorna taxonomy_match composto)
+	var brandMatch taxonomyMatch
+	if err := db.QueryRowxContext(ctx,
+		`SELECT (classify_catalog_brand($1)).slug AS slug, (classify_catalog_brand($1)).confidence AS confidence`,
+		title,
+	).Scan(&brandMatch.Slug, &brandMatch.Confidence); err != nil {
+		return fmt.Errorf("classify_catalog_brand: %w", err)
+	}
+
+	// Chama classify_catalog_category (retorna taxonomy_match composto)
+	var catMatch taxonomyMatch
+	if err := db.QueryRowxContext(ctx,
+		`SELECT (classify_catalog_category($1)).slug AS slug, (classify_catalog_category($1)).confidence AS confidence`,
+		title,
+	).Scan(&catMatch.Slug, &catMatch.Confidence); err != nil {
+		return fmt.Errorf("classify_catalog_category: %w", err)
+	}
+
+	brandLow := brandMatch.Confidence < threshold
+	catLow := catMatch.Confidence < threshold
+
+	if !brandLow && !catLow {
+		// Ambos acima do threshold — nao enfileirar
+		return nil
+	}
+
+	// Monta reason descritivo
+	reason := fmt.Sprintf("low_taxonomy_confidence: brand=%.2f cat=%.2f threshold=%.2f",
+		brandMatch.Confidence, catMatch.Confidence, threshold)
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO catalog_llm_queue (catalog_id, reason, human_correction, status, enqueued_at)
+		VALUES ($1, $2, false, 'pending', now())
+		ON CONFLICT (catalog_id) DO UPDATE SET
+			reason       = EXCLUDED.reason,
+			human_correction = false,
+			enqueued_at  = CASE WHEN catalog_llm_queue.status = 'processing'
+			                    THEN catalog_llm_queue.enqueued_at
+			                    ELSE now() END,
+			status       = CASE WHEN catalog_llm_queue.status = 'processing'
+			                    THEN catalog_llm_queue.status
+			                    ELSE 'pending' END
+	`, catalogID, reason)
+	if err != nil {
+		return fmt.Errorf("enqueue catalog %d: %w", catalogID, err)
+	}
+
+	slog.Info("catalog_llm_queue: enfileirado por baixa confianca",
+		"catalog_id", catalogID,
+		"brand_confidence", brandMatch.Confidence,
+		"cat_confidence", catMatch.Confidence,
+		"threshold", threshold,
+	)
+	return nil
+}
+
 // isValidTaxonomySlug restringe slugs a [a-z0-9] e hífens (não dobrados, sem borda), 2–48 runes.
 // Evita gravar pontuação vinda do LLM (ex.: ",", ":") em catalog / product_brands.
 func isValidTaxonomySlug(s string) bool {
@@ -142,11 +219,28 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 	var brand sql.NullString
 	var brandID sql.NullInt64
 	var catID sql.NullInt64
-	if err := db.QueryRowxContext(ctx, `SELECT brand, brand_id, category_id FROM catalog WHERE id = $1`, catalogID).Scan(&brand, &brandID, &catID); err != nil {
+	var title string
+	var sourceID sql.NullString
+	if err := db.QueryRowxContext(ctx,
+		`SELECT brand, brand_id, category_id, COALESCE(title,''), source_id::text FROM catalog WHERE id = $1`,
+		catalogID,
+	).Scan(&brand, &brandID, &catID, &title, &sourceID); err != nil {
 		_ = markQueueLLMError(ctx, db, catalogID, "ler catalog: "+truncateErr(err.Error()))
 		return out, err
 	}
+	title = strings.TrimSpace(title)
+
 	if catalogRowCompleteForCatalogEntry(brand, brandID, catID) {
+		// Heuristica resolveu marca+categoria. Verificar confidence das funcoes v2:
+		// se abaixo do threshold, re-enfileira para validacao LLM mesmo com match.
+		threshold := getTaxonomyThreshold(ctx, db)
+		if title != "" {
+			if enqErr := enqueueIfLowConfidence(ctx, db, catalogID, title, threshold); enqErr != nil {
+				slog.Warn("catalog_llm_queue: falha ao verificar confidence pos-heuristica",
+					"catalog_id", catalogID, "err", enqErr)
+				// Nao aborta o fluxo — item foi resolvido pela heuristica
+			}
+		}
 		out["processed"] = true
 		out["catalog_id"] = catalogID
 		out["mode"] = "heuristic"
@@ -161,13 +255,6 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 		return out, nil
 	}
 
-	var title string
-	var sourceID sql.NullString
-	if err := db.QueryRowxContext(ctx, `SELECT title, source_id::text FROM catalog WHERE id = $1`, catalogID).Scan(&title, &sourceID); err != nil {
-		_ = markQueueLLMError(ctx, db, catalogID, "ler título: "+truncateErr(err.Error()))
-		return out, err
-	}
-	title = strings.TrimSpace(title)
 	if len(title) > 500 {
 		title = title[:500] + "…"
 	}

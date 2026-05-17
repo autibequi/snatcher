@@ -1,7 +1,7 @@
 import React from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Badge, Button, Spinner, PlatformPill, PageHeader } from '../components/ui'
+import { Badge, Button, Spinner, PlatformPill, PageHeader, toast } from '../components/ui'
 import { apiClient } from '../lib/apiClient'
 import { formGroup, formLabel, formHint, sectionCard, sectionTitle, switchRow, pageContainer } from '../lib/uiTokens'
 import { MessagePreview } from '../components/MessagePreview'
@@ -280,23 +280,26 @@ export default function Composer() {
     [targetsParam]
   )
 
+  const DRAFT_KEY = 'composer_draft'
+
   const [text, setText] = React.useState('')
   const [previewIndex, setPreviewIndex] = React.useState(0)
 
-  // Carregar rascunho se draftId presente
-  useQuery({
-    queryKey: ['draft', draftId],
-    queryFn: () => apiClient.get(`/api/dispatches/${draftId}`).then(r => r.data),
-    enabled: !!draftId,
-    staleTime: Infinity,
-    retry: false,
-    select: (data: any) => {
-      if (data?.dispatch?.message?.text && !text) {
-        setText(data.dispatch.message.text)
+  // Carregar rascunho do localStorage no mount (apenas quando não há draftId na URL e texto ainda vazio)
+  React.useEffect(() => {
+    if (!draftId) {
+      try {
+        const saved = localStorage.getItem(DRAFT_KEY)
+        if (saved) {
+          const parsed = JSON.parse(saved) as { text?: string }
+          if (parsed?.text) setText(parsed.text)
+        }
+      } catch {
+        // localStorage indisponível ou JSON inválido — ignorar silenciosamente
       }
-      return data
-    },
-  })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [scheduledFor, setScheduledFor] = React.useState('')
   const [showConfirm, setShowConfirm] = React.useState(false)
   const [showImageInput, setShowImageInput] = React.useState(false)
@@ -428,17 +431,20 @@ export default function Composer() {
   /** Override opcional via ?affiliateLink= — senão usa shortlink gerado ou URL do produto (API exige affiliate_link não vazio ou HasAffiliate no produto). */
   const affiliateLinkFromQuery = params.get('affiliateLink') ?? ''
 
-  const saveRascunho = useMutation({
-    mutationFn: () =>
-      apiClient
-        .post('/api/dispatches', {
-          product_id: productIds[0] ?? undefined,
-          message: { text },
-          targets: [],
-        })
-        .then((r) => r.data),
-    onSuccess: () => alert('Rascunho salvo! Acesse em Logs > Rascunhos.'),
-  })
+  const [savingDraft, setSavingDraft] = React.useState(false)
+
+  const saveRascunho = React.useCallback(() => {
+    if (!text) return
+    setSavingDraft(true)
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, savedAt: new Date().toISOString() }))
+      toast('Rascunho salvo!', 'ok')
+    } catch {
+      toast('Não foi possível salvar o rascunho.', 'error')
+    } finally {
+      setSavingDraft(false)
+    }
+  }, [text, DRAFT_KEY])
 
   // P7: verifica cobertura de afiliado para o marketplace do produto
   const { data: affCoverage } = useQuery<{ has_affiliate: boolean }>({
@@ -559,9 +565,9 @@ export default function Composer() {
       const status = err?.response?.status
       const detail = err?.response?.data?.error ?? err?.message ?? 'erro desconhecido'
       if (status === 422) {
-        alert(`⚠️ ${detail}\n\nVá em "Afiliados" para configurar o programa do marketplace deste produto.`)
+        toast(`${detail} — Vá em "Afiliados" para configurar o programa do marketplace deste produto.`, 'warn')
       } else {
-        alert(`Erro ao disparar (HTTP ${status ?? '?'}): ${detail}`)
+        toast(`Erro ao disparar (HTTP ${status ?? '?'}): ${detail}`, 'error')
       }
     },
   })
@@ -582,11 +588,18 @@ export default function Composer() {
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.error ?? err?.message ?? 'Erro desconhecido na IA'
-      alert(`❌ IA falhou:\n\n${msg}`)
+      toast(`IA falhou: ${msg}`, 'error')
     },
   })
 
   const handleDispatch = () => {
+    if (scheduledFor) {
+      const scheduled = new Date(scheduledFor)
+      if (scheduled <= new Date()) {
+        toast('Data de agendamento deve ser no futuro.', 'warn')
+        return
+      }
+    }
     const targets: DispatchTarget[] = selectedTargets.map((id) => ({ channel_id: id }))
     dispatch.mutate(targets)
   }
@@ -717,13 +730,13 @@ export default function Composer() {
             <Button
               variant="ghost"
               className="h-9 text-sm"
-              disabled={!text || saveRascunho.isPending}
-              onClick={() => saveRascunho.mutate()}
+              disabled={!text || savingDraft}
+              onClick={saveRascunho}
             >
-              {saveRascunho.isPending ? 'Salvando...' : 'Salvar rascunho'}
+              {savingDraft ? 'Salvando...' : 'Salvar rascunho'}
             </Button>
-            <a href="/logs?status=draft" className="text-xs text-accent hover:underline">
-              Ver rascunhos
+            <a href="/activity" className="text-xs text-accent hover:underline">
+              Ver atividade
             </a>
           </>
         }

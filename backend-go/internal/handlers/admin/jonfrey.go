@@ -1389,11 +1389,11 @@ func actionAutoReleasePending(ctx context.Context, h *JonfreyHandler) (map[strin
 	if err := h.db.GetContext(ctx, &before, `SELECT COUNT(*) FROM dispatches WHERE status = 'pending_approval'`); err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42P01" {
 			// Tabela dispatches removida — sistema migrou para Score Engine (send_queue).
-			// Este loop é no-op nesse schema. O Score Engine controla envios via use_algo_tick.
+			// O algo tick roda incondicionalmente via scheduler (toggle use_algo_tick queimado em W0).
 			slog.Info("jonfrey auto_release_pending: tabela dispatches ausente — sistema usa Score Engine, ignorando")
 			return map[string]any{"dispatches_table": "absent"},
 				map[string]any{"released": 0, "note": "sistema migrou para Score Engine"},
-				"Tabela dispatches não existe — o sistema usa Score Engine (send_queue). Envios automáticos são controlados pelo flag use_algo_tick em /admin/params.",
+				"Tabela dispatches não existe — o sistema usa Score Engine (send_queue). Envios automáticos ocorrem via algo tick incondicional (cron 5min).",
 				nil
 		}
 	}

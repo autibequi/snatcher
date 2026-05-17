@@ -16,7 +16,9 @@ type ScoreInputs struct {
 	LastPriceDropAt    *time.Time
 	SourceTrust        float64
 	GroupCategoryMatch float64
-	ChannelID          int64
+	// ChannelID é int64 — consistente com models.Channel.ID e handlers admin.
+	// Wave-spec original (obsidian 045) sugeria string; decisão W2.B: manter int64.
+	ChannelID int64
 }
 
 // Params contém os parâmetros tunáveis lidos de tunable_parameters via get_param.

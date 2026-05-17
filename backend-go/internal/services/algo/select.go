@@ -2,18 +2,21 @@ package algo
 
 import (
 	"context"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
 
 type catalogItem struct {
-	ID           int64   `db:"id"`
-	ShortID      string  `db:"short_id"`
-	CategoryID   *int64  `db:"category_id"`
-	SourceID     string  `db:"source_id"`
-	QualityScore float64 `db:"quality_score"`
-	DiscountPct  float64 `db:"discount_pct"`
-	FinalScore   float64 `db:"final_score"`
+	ID              int64      `db:"id"`
+	ShortID         string     `db:"short_id"`
+	CategoryID      *int64     `db:"category_id"`
+	SourceID        string     `db:"source_id"`
+	QualityScore    float64    `db:"quality_score"`
+	DiscountPct     float64    `db:"discount_pct"`
+	FinalScore      float64    `db:"final_score"`
+	FirstSeenAt     time.Time  `db:"first_seen_at"`
+	LastPriceDropAt *time.Time `db:"last_price_drop_at"`
 }
 
 const topK = 10
@@ -43,6 +46,8 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		SELECT c.id, c.short_id, c.category_id, c.source_id,
 		       COALESCE(c.quality_score, 0) AS quality_score,
 		       COALESCE(c.discount_pct, 0)  AS discount_pct,
+		       COALESCE(c.first_seen_at, now())    AS first_seen_at,
+		       c.last_price_drop_at,
 		         (get_param('score_weight_quality','global',NULL) * COALESCE(c.quality_score, 0))
 		       + (get_param('score_weight_affinity','global',NULL) * COALESCE(gca.affinity, 0.5))
 		       + (get_param('score_weight_channel','global',NULL)  * COALESCE(ccw.weight, 0) / 100.0)
@@ -96,7 +101,7 @@ func selectTopKForGroup(ctx context.Context, db *sqlx.DB, groupID, channelID int
 		    FROM group_sent_history h
 		    WHERE h.group_id = $1 AND h.dedup_key = c.dedup_key
 		) sent ON true
-		WHERE c.send_ready = true
+		WHERE (c.send_ready = true OR c.catalog_status = 'ready')
 		  AND c.canonical_url_alive = true
 		  AND COALESCE(c.quality_score, 0) >= COALESCE(
 		      get_param('quality_threshold','global',NULL), 0.4)

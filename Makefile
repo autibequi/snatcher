@@ -16,7 +16,8 @@ FRONTEND_URL ?= http://localhost:6060
 .PHONY: help setup start start-tunnel deploy deploy-tunnel update pi-setup snatcher snatcher-down snatcher-logs beta up down dev dev-down dev-logs logs logs-backend logs-frontend \
         shell ps clean test health smoke scan status fix-network build-base \
         backend-test-up backend-test backend-test-down backend-build backend-vet admin \
-        migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto
+        migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto \
+        capture-baseline
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"}{printf "\033[36m%-18s\033[0m %s\n",$$1,$$2}'
@@ -61,6 +62,14 @@ migrate-force: ## Força estado de versão: make migrate-force V=20260512000076
 
 migrate-goto: ## Migra para versão específica: make migrate-goto V=20260512000050
 	GOTOOLCHAIN=local $(MAKE) -C backend-go migrate-goto V=$(V)
+
+# ---------------------------------------------------------------------------
+# Baseline capture (W-1 baselining — roda diariamente por 7 dias)
+# ---------------------------------------------------------------------------
+
+capture-baseline: ## Captura snapshot de baseline via POST /api/admin/baseline/capture (SNATCHER_ADMIN_TOKEN obrigatório)
+	@[ -n "$$SNATCHER_ADMIN_TOKEN" ] || { echo "ERRO: SNATCHER_ADMIN_TOKEN não setado"; exit 1; }
+	scripts/capture-baseline.sh
 
 # ---------------------------------------------------------------------------
 # Stack

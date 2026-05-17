@@ -51,12 +51,12 @@ type Store interface {
 	ApplyGlobalDailyLimitToAccounts(limit int) error
 	// Atualiza só o marcador de ciclo do worker (migration 0123).
 	TouchAutoMatchWorkerRun(at time.Time) error
-	// AccountV2 — contas WA v2 (tabela accounts). Substituem WAAccount após F10.
-	ListAccountsV2() ([]models.AccountV2, error)
-	GetAccountV2(id int64) (models.AccountV2, error)
-	CreateAccountV2(phone, nickname string, modemID int64, quota int) (int64, error)
-	DeleteAccountV2(id int64) error
-	UpdateAccountV2(id int64, status string, quota int) error
+	// Accounts — contas WA (tabela accounts). Substituem WAAccount após F10.
+	ListAccounts() ([]models.AccountV2, error)
+	GetAccount(id int64) (models.AccountV2, error)
+	CreateAccount(phone, nickname string, modemID int64, quota int) (int64, error)
+	DeleteAccount(id int64) error
+	UpdateAccount(id int64, status string, quota int) error
 	DeleteTGAccount(id int64) error
 
 	// Throttle (check and increment daily message limits)
@@ -256,12 +256,12 @@ type Store interface {
 	GetCatalogItemByURL(canonicalURL string) (CatalogV2Item, bool, error)
 	ListCatalogV2ForMatch(limit int) ([]CatalogV2Item, error)
 
-	// ChannelV2
-	ListChannelsV2() ([]models.ChannelV2, error)
-	GetChannelV2(id int64) (models.ChannelV2, error)
-	CreateChannelV2(c models.ChannelV2) (int64, error)
-	UpdateChannelV2(c models.ChannelV2) error
-	DeleteChannelV2(id int64) error
+	// Channels — canais de envio (tabela channels_v2).
+	ListChannels() ([]models.ChannelV2, error)
+	GetChannel(id int64) (models.ChannelV2, error)
+	CreateChannel(c models.ChannelV2) (int64, error)
+	UpdateChannel(c models.ChannelV2) error
+	DeleteChannel(id int64) error
 	// Grupos vinculados
 	ListGroupsByChannel(channelID int64) ([]models.RedesignGroup, error)
 	SetGroupChannel(groupID, channelID int64) error

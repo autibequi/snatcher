@@ -1,6 +1,12 @@
 package observability
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"context"
+	"log/slog"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // HTTP metrics
 var (
@@ -129,6 +135,10 @@ func MustRegisterAll() {
 		DispatchSendDurationSeconds,
 		CircuitBreakerState,
 		LLMCostUSDToday,
+		DispatchTotal,
+		BanTotal,
+		QueueDepth,
+		LLMClassificationPendingReview,
 	)
 }
 
@@ -172,3 +182,88 @@ var (
 		[]string{"provider"},
 	)
 )
+
+// Dispatch totals (low-cardinality: status only — never channel_id).
+var (
+	// DispatchTotal counts dispatch send attempts by final status.
+	// Label "status" carries values like "ok", "error", "timeout".
+	// For per-channel drill-down use the OTel DispatchSendPerChannel counter.
+	DispatchTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "snatcher_dispatch_total",
+			Help: "Total dispatch send attempts (low-cardinality: status only).",
+		},
+		[]string{"status"},
+	)
+)
+
+// Ban metrics (low-cardinality: type only).
+var (
+	// BanTotal counts ban events by type (e.g. "ip", "account", "device").
+	BanTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "snatcher_ban_total",
+			Help: "Total ban events by type.",
+		},
+		[]string{"type"},
+	)
+)
+
+// Queue depth metrics (low-cardinality: queue name).
+var (
+	// QueueDepth tracks the current number of items pending in each named queue.
+	// Label "queue" carries logical queue names (e.g. "send", "classify", "retry").
+	QueueDepth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "snatcher_queue_depth",
+			Help: "Current number of items pending in each queue.",
+		},
+		[]string{"queue"},
+	)
+)
+
+// LLM classification review queue metrics (ADR-014 mitigação W-1).
+var (
+	// LLMClassificationPendingReview reflects how many LLM-classified items are
+	// awaiting human review per classification_type ('brand' | 'category').
+	// Updated by UpdateLLMPendingReview; used as a proxy health signal while the
+	// full correction loop (W3+W5) is not yet available.
+	LLMClassificationPendingReview = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "llm_classification_pending_review",
+			Help: "Number of LLM-classified items awaiting human review, by classification_type.",
+		},
+		[]string{"classification_type"},
+	)
+)
+
+// UpdateLLMPendingReview queries the llm_classification_pending_review table and
+// refreshes the LLMClassificationPendingReview gauge.
+// Intended to be called periodically (e.g. by the scheduler or a cron job).
+func UpdateLLMPendingReview(ctx context.Context, db *sqlx.DB) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT classification_type, count(*)
+		FROM llm_classification_pending_review
+		WHERE status = 'pending'
+		GROUP BY classification_type
+	`)
+	if err != nil {
+		slog.Error("metrics: query llm_classification_pending_review", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var classificationType string
+		var count float64
+		if err := rows.Scan(&classificationType, &count); err != nil {
+			slog.Error("metrics: scan llm_classification_pending_review", "err", err)
+			return
+		}
+		LLMClassificationPendingReview.WithLabelValues(classificationType).Set(count)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("metrics: rows error llm_classification_pending_review", "err", err)
+	}
+}
