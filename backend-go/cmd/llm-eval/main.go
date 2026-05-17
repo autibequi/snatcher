@@ -17,6 +17,7 @@ func main() {
 	clientType := flag.String("client", "mock", "Client type: mock or real")
 	outputFile := flag.String("output", "", "Output HTML file (optional, default: stdout)")
 	textOutput := flag.Bool("text", false, "Output as text instead of HTML")
+	casesDir := flag.String("cases-dir", "", "Diretório com arquivos *.yaml de casos de teste externos (opcional)")
 	flag.Parse()
 
 	// Carregar registry com prompts embutidos
@@ -40,8 +41,19 @@ func main() {
 	// Criar runner
 	runner := eval.NewRunner(reg, client)
 
-	// Usar casos padrão
+	// Carregar casos: externos do diretório (se passado) + padrão como fallback
 	cases := eval.DefaultCases()
+	if *casesDir != "" {
+		external, loadErr := eval.LoadCasesDir(*casesDir)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "error: falha ao carregar casos de %s: %v\n", *casesDir, loadErr)
+			os.Exit(1)
+		}
+		if len(external) > 0 {
+			// Casos externos substituem os padrão quando diretório é passado explicitamente
+			cases = external
+		}
+	}
 
 	// Executar
 	ctx := context.Background()

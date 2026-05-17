@@ -138,24 +138,6 @@ func (s *SQLStore) DeletePublicLink(id int64) error                             
 func (s *SQLStore) IncrementPublicLinkClicks(id int64) error                       { return nil }
 func (s *SQLStore) IncrementRoundRobinIdx(id int64, newIdx int) error { return nil }
 
-// ---- GroupSpies ----
-
-func (s *SQLStore) CreateGroupSpy(g models.GroupSpy) (int64, error)          { return 0, nil }
-func (s *SQLStore) GetGroupSpy(id int64) (models.GroupSpy, error)            { return models.GroupSpy{}, nil }
-func (s *SQLStore) ListGroupSpies(platform string, activeOnly bool) ([]models.GroupSpy, error) { return nil, nil }
-func (s *SQLStore) UpdateGroupSpyReader(id int64, readerWAID, readerTGID models.NullInt64) error { return nil }
-func (s *SQLStore) SoftDeleteGroupSpy(id int64) error                        { return nil }
-func (s *SQLStore) CreateSpyMessage(m models.SpyMessage) error               { return nil }
-func (s *SQLStore) ListSpyMessages(spyID int64, limit int) ([]models.SpyMessage, error) {
-	return nil, nil
-}
-
-// ---- Clusters ----
-
-func (s *SQLStore) GetCluster(id int64) (models.Cluster, error)        { return models.Cluster{}, nil }
-func (s *SQLStore) ListClusters() ([]models.Cluster, error)            { return nil, nil }
-func (s *SQLStore) UpsertClusters(clusters []models.Cluster) error { return nil }
-
 // ---- Dispatch / send queue stubs ----
 
 func (s *SQLStore) CountPendingTargetsByGroup() ([]GroupDeliveryCount, error) { return nil, nil }

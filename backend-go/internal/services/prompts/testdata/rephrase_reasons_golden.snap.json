@@ -1,0 +1,17 @@
+{
+  "operation": "rephrase_reasons",
+  "version": "v1",
+  "input": {
+    "Reasons": [
+      "Desconto de 30% no preço original",
+      "Frete grátis para todo o Brasil",
+      "Produto com ótimas avaliações dos clientes"
+    ],
+    "Language": "pt-BR"
+  },
+  "expected_output_contains": [
+    "pt-BR",
+    "30%"
+  ],
+  "expected_schema_keys": []
+}

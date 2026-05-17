@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
+	"snatcher/backendv2/internal/auth"
 )
 
 type TeamHandler struct {
@@ -61,7 +62,8 @@ func (h *TeamHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		req.Password = "changeme123"
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
+	// Usar BcryptCost centralizado (12) — consistente com setup.go, password.go e spec 016.
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao criar hash")
 		return

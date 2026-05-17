@@ -6,6 +6,7 @@ import (
 
 	"snatcher/backendv2/internal/models"
 	store "snatcher/backendv2/internal/repositories"
+	"snatcher/backendv2/internal/services/jobs"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -62,15 +63,26 @@ func (h *ClustersHandler) List(w http.ResponseWriter, r *http.Request) {
 // Recompute dispara recomputação manual de clusters.
 //
 //	@Summary      Recomputar clusters
-//	@Description  Agenda recomputação manual de clusters. Executado normalmente pelo job semanal.
+//	@Description  Executa imediatamente o job KMeans de clustering de canais.
 //	@Tags         clusters
 //	@Produce      json
 //	@Success      202  {object}  object{status=string,message=string}
+//	@Failure      500  {object}  object{error=string}
 //	@Router       /api/clusters/recompute [post]
 func (h *ClustersHandler) Recompute(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeErr(w, http.StatusServiceUnavailable, "db nao disponivel")
+		return
+	}
+	go func() {
+		if err := jobs.RunComputeClusters(r.Context(), h.db); err != nil {
+			// log apenas — a resposta já foi enviada
+			_ = err
+		}
+	}()
 	writeJSON(w, http.StatusAccepted, map[string]string{
-		"status":  "queued",
-		"message": "Recompute agendado. Pode levar alguns minutos.",
+		"status":  "running",
+		"message": "Recompute de clusters iniciado. Consulte GET /api/clusters em alguns instantes.",
 	})
 }
 

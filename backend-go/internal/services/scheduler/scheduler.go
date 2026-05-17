@@ -3,21 +3,23 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strconv"
+	"time"
+
+	"snatcher/backendv2/internal/handlers/public/webhooks"
+	"snatcher/backendv2/internal/observability"
+	store "snatcher/backendv2/internal/repositories"
 	"snatcher/backendv2/internal/services/algo"
 	"snatcher/backendv2/internal/services/canonical"
 	"snatcher/backendv2/internal/services/curator"
-	"snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/senders"
-	"snatcher/backendv2/internal/observability"
-	store "snatcher/backendv2/internal/repositories"
-	"os"
-	"strconv"
-	"time"
+	"snatcher/backendv2/internal/services/spy"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jmoiron/sqlx"
@@ -278,6 +280,28 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 				slog.Info("scheduler: daily metrics job started")
 				jobs.RunDailyMetricsJob(context.Background(), sc.db)
 			}),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Job diário de reset de budget LLM — zera daily_spent_usd à meia-noite UTC (00:00).
+	// Usa BudgetGuard.ResetAll() que atualiza também last_reset_at.
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("0 0 * * *", false),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: llm.budget.daily_reset started")
+				budgetGuard := llm.NewBudgetGuard(sc.db)
+				if resetErr := budgetGuard.ResetAll(context.Background()); resetErr != nil {
+					slog.Error("scheduler: llm.budget.daily_reset error", "err", resetErr)
+					return
+				}
+				slog.Info("scheduler: llm.budget.daily_reset completed — daily_spent_usd zerado")
+			}),
+			gocron.WithName("llm.budget.daily_reset"),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {
@@ -772,6 +796,48 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 				observability.UpdateLLMPendingReview(context.Background(), sc.db)
 			}),
 			gocron.WithName("observability.llm_pending_review"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// sub6: Spy polling — coleta mensagens de grupos espionados a cada 10min.
+	// Com MESSAGING_MOCK=true usa mock gateway para fechar o pipeline end-to-end.
+	// Gateway real (Baileys/gramjs sidecar) aguarda ADR-009.
+	if sc.storeRef != nil {
+		// Parser sem LLM client — regex path é suficiente para triagem inicial.
+		spyParser := spy.NewParser(nil)
+		spyJob := jobs.NewSpyPollingJob(sc.storeRef, spyParser)
+
+		_, err = sc.s.NewJob(
+			gocron.CronJob("*/10 * * * *", false),
+			gocron.NewTask(func() {
+				slog.Debug("scheduler: spy.polling started")
+				if runErr := spyJob.Run(context.Background()); runErr != nil {
+					slog.Error("scheduler: spy.polling error", "err", runErr)
+				}
+			}),
+			gocron.WithName("spy.polling"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// sub6-c3: Cluster compute — KMeans sobre canais ativos, semanal domingo 02:00.
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("0 2 * * 0", false),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: compute_clusters started")
+				if err := jobs.RunComputeClusters(context.Background(), sc.db); err != nil {
+					slog.Error("scheduler: compute_clusters error", "err", err)
+				}
+			}),
+			gocron.WithName("compute_clusters"),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

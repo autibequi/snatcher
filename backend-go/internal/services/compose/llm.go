@@ -43,13 +43,17 @@ type Service struct {
 }
 
 // NewService cria um Service com o llm.Client injetado.
-// Passar um llm.CachedClient garante TTL 1h via cache Postgres.
+// Para produção, preferir NewCachedService que aplica TTL 1h no cache Postgres.
 func NewService(cli llm.Client) *Service {
 	return &Service{
 		cli:      cli,
 		registry: prompts.NewRegistry(),
 	}
 }
+
+// ComposeTTL é o TTL de cache para respostas de copy do compose (1 hora).
+// Keyed por (model, prompt_hash) — que inclui dados do produto + tom.
+const ComposeTTL = time.Hour
 
 // NewServiceWithRegistry cria um Service com llm.Client e Registry externos (útil em testes).
 func NewServiceWithRegistry(cli llm.Client, reg *prompts.Registry) *Service {

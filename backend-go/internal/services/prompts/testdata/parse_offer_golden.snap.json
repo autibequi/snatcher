@@ -1,0 +1,13 @@
+{
+  "operation": "parse_offer",
+  "version": "v1",
+  "input": {
+    "RawMessage": "*Notebook Dell Inspiron* por R$ 3.199,00 (de R$ 4.500) 🔥 link abaixo",
+    "Links": ["https://amzn.to/abc123"]
+  },
+  "expected_output_contains": [
+    "R$ 3.199,00",
+    "amzn.to"
+  ],
+  "expected_schema_keys": []
+}

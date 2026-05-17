@@ -46,6 +46,9 @@ func RequireAuth(secret string) func(http.Handler) http.Handler {
 
 // JWTMiddleware é o middleware legado — mantido para compatibilidade durante migração.
 // Novos handlers devem usar RequireAuth que injeta user_id via adminhnd.CtxWithUserID.
+//
+// TODO: remover JWTMiddleware após verificar que nenhum handler usa o alias diretamente.
+// Rastrear progresso em: https://github.com/estrategiahq/snatcher/issues (adicionar issue de cleanup)
 func JWTMiddleware(secret string) func(http.Handler) http.Handler {
 	return RequireAuth(secret)
 }

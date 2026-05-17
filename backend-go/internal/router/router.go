@@ -18,6 +18,7 @@ import (
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/services/loops"
+	"snatcher/backendv2/internal/services/messaging"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/redirect"
@@ -41,6 +42,7 @@ func Build(
 	sched *scheduler.Scheduler,
 	scrapers map[string]pipeline.Scraper,
 	adapters pipeline.AdapterRegistry,
+	msgRegistry *messaging.Registry,
 	jwtSecret string,
 ) http.Handler {
 	// Inicializa persistência de métricas de LLM em llm_metrics
@@ -66,8 +68,8 @@ func Build(
 	sources := adminhnd.NewSources(st)
 	config := adminhnd.NewConfigWithDB(st, db)
 	crawlLogs := adminhnd.NewCrawlLogs(st)
-	// ReDesign handlers
-	groups      := adminhnd.NewGroupsHandler(st)
+	// ReDesign handlers — registry injetado para desacoplar do adapter Evolution
+	groups      := adminhnd.NewGroupsHandler(st, msgRegistry)
 	publLinks   := adminhnd.NewPublicLinksHandlerDB(st, db)
 	publLinksResolver := publichnd.NewPublicLinksResolver(st)
 	affPrograms := adminhnd.NewAffiliateProgramsHandlerDB(st, db)
@@ -279,6 +281,7 @@ func Build(
 		r.Delete("/api/groups/{id}/admins/{adminId}", groups.DeleteAdmin)
 
 		// ReDesign: Match
+		r.Post("/api/admin/match/score", adminhnd.MatchScoreHandler(st, db))
 
 		// Taxonomy (categorias e marcas para autocomplete + admin)
 		// Keywords de categoria e marca (tabelas dinâmicas editáveis)
@@ -402,8 +405,8 @@ func Build(
 		r.Patch("/api/admin/redirect-domains/{id}/toggle", adminhnd.ToggleRedirectDomainHandler(db))
 		r.Delete("/api/admin/redirect-domains/{id}", adminhnd.DeleteRedirectDomainHandler(db))
 
-		// Accounts CRUD + WA connect
-		accs := adminhnd.NewAccountsHandler(st)
+		// Accounts CRUD + WA connect — registry injetado para desacoplar do adapter Evolution
+		accs := adminhnd.NewAccountsHandler(st, msgRegistry)
 		r.Post("/api/admin/modems/{id}/accounts", accs.Create)
 		r.Delete("/api/admin/accounts/{id}", accs.Delete)
 		r.Patch("/api/admin/accounts/{id}", accs.Update)
@@ -480,8 +483,8 @@ func Build(
 			r.Get("/compare", adminhnd.CompareBaselineHandler(db))
 		})
 
-		// Dispatch manual (Composer)
-		manualDispatch := adminhnd.NewManualDispatchHandler(st, db)
+		// Dispatch manual (Composer) — registry injetado para desacoplar do adapter Evolution
+		manualDispatch := adminhnd.NewManualDispatchHandler(st, db, msgRegistry)
 		r.Post("/api/dispatch/manual", manualDispatch.Send)
 
 		// FW-4: Canonical groups

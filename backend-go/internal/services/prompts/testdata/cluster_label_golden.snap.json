@@ -1,0 +1,16 @@
+{
+  "operation": "cluster_label",
+  "version": "v1",
+  "input": {
+    "TopCategories": "eletrônicos, informática",
+    "TopBrands": "Samsung, LG, Sony",
+    "CTR": 4.5,
+    "CVR": 2.1,
+    "AvgTicket": 850.0
+  },
+  "expected_output_contains": [
+    "Samsung",
+    "LG"
+  ],
+  "expected_schema_keys": []
+}

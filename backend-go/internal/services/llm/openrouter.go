@@ -108,6 +108,14 @@ func (c *OpenRouterClient) Complete(ctx context.Context, prompt string, opts Opt
 		}
 
 		recordUsage(opts.Operation, model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+
+		// Propaga tokens reais para o contexto, permitindo que o BudgetGuard
+		// use custo real em vez de estimativa fixa.
+		if usage := CallUsageFromContext(ctx); usage != nil {
+			usage.TokensIn = resp.Usage.PromptTokens
+			usage.TokensOut = resp.Usage.CompletionTokens
+		}
+
 		return resp.Choices[0].Message.Content, nil
 	}
 	return "", fmt.Errorf("llm after 3 attempts: %w", lastErr)

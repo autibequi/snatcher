@@ -16,17 +16,28 @@ import (
 
 	"snatcher/backendv2/internal/services/invitelinks"
 	"snatcher/backendv2/internal/services/llm"
+	"snatcher/backendv2/internal/services/messaging"
+	groupssvc "snatcher/backendv2/internal/services/groups"
 	"snatcher/backendv2/internal/models"
 	store "snatcher/backendv2/internal/repositories"
 )
 
 type GroupsHandler struct {
-	store store.Store
-	llmFn func() llm.Client
+	store       store.Store
+	llmFn       func() llm.Client
+	// msgRegistry mantém o registry pluggável WA/TG; Evolution-specific ops usam evoClient internamente.
+	msgRegistry *messaging.Registry
+	// groupsSvc encapsula a lógica de negócio de enriquecimento de grupos.
+	groupsSvc   *groupssvc.Service
 }
 
-func NewGroupsHandler(st store.Store) *GroupsHandler {
-	return &GroupsHandler{store: st}
+// NewGroupsHandler cria um GroupsHandler com store e registry de mensageria.
+func NewGroupsHandler(st store.Store, reg *messaging.Registry) *GroupsHandler {
+	return &GroupsHandler{
+		store:       st,
+		msgRegistry: reg,
+		groupsSvc:   groupssvc.New(st),
+	}
 }
 
 func (h *GroupsHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
@@ -92,45 +103,30 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // enrichRedesignGroup agrega channel_name, account_label, admin_count, verified_admin_count, audience_status.
+// Delega ao groupsSvc (lógica de negócio) e converte para o tipo local groupEnriched.
 // evolutionVerify: quando true (detalhe do grupo), cruza admins com participantes da Evolution; na listagem use false.
 func (h *GroupsHandler) enrichRedesignGroup(ctx context.Context, g models.RedesignGroup, evolutionVerify bool) groupEnriched {
-	adminCount, _ := h.store.CountGroupAdmins(g.ID)
-	enriched := groupEnriched{RedesignGroup: g, AdminCount: adminCount, VerifiedAdminCount: adminCount}
-
-	channelsCount := 0
-	if g.JID.Valid && strings.TrimSpace(g.JID.String) != "" {
-		channelsCount, _ = h.store.CountGroupsWithSameJID(g.Platform, strings.TrimSpace(g.JID.String))
-	} else if g.ChannelID.Valid {
-		channelsCount = 1
+	var verifier groupssvc.EvolutionVerifier = groupssvc.NopEvolutionVerifier{}
+	if evolutionVerify {
+		verifier = &handlerEvolutionVerifier{h: h}
 	}
-	enriched.ChannelsCount = channelsCount
-
-	// TODO: cruzar canal / audiência / taxonomia para "perfil" vs "sem_perfil". Por ora listagem não distingue.
-	enriched.AudienceStatus = "sem_perfil"
-
-	if g.WAAccountID.Valid {
-		if acc, err := h.store.GetAccount(g.WAAccountID.Int64); err == nil {
-			enriched.AccountLabel = acc.Phone
-		}
+	e := h.groupsSvc.EnrichGroup(ctx, g, evolutionVerify, verifier)
+	return groupEnriched{
+		RedesignGroup:      e.RedesignGroup,
+		ChannelName:        e.ChannelName,
+		AccountLabel:       e.AccountLabel,
+		AdminCount:         e.AdminCount,
+		VerifiedAdminCount: e.VerifiedAdminCount,
+		AudienceStatus:     e.AudienceStatus,
+		ChannelsCount:      e.ChannelsCount,
 	}
+}
 
-	if g.Platform == "whatsapp" && g.InviteLink.Valid && g.InviteLink.String != "" {
-		norm := invitelinks.NormalizeWhatsAppInvite(g.InviteLink.String)
-		if norm != g.InviteLink.String {
-			enriched.InviteLink = models.NullString{NullString: sql.NullString{String: norm, Valid: true}}
-		}
-	}
+// handlerEvolutionVerifier adapta countVerifiedWAAdmins do handler para a interface EvolutionVerifier.
+type handlerEvolutionVerifier struct{ h *GroupsHandler }
 
-	if evolutionVerify && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
-		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		if v, err := h.countVerifiedWAAdmins(verifyCtx, g); err == nil {
-			enriched.VerifiedAdminCount = v
-		}
-		// se falhar (timeout, evolution offline, etc.) mantém adminCount do banco
-	}
-
-	return enriched
+func (v *handlerEvolutionVerifier) CountVerifiedAdmins(ctx context.Context, g models.RedesignGroup) (int, error) {
+	return v.h.countVerifiedWAAdmins(ctx, g)
 }
 
 func (h *GroupsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +391,7 @@ func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	evo := newEvolutionClient(baseURL, apiKey, instance)
+	evo := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 	participantMaps, findErr := evo.findGroupParticipants(r.Context(), group.JID.String)
 	if findErr != nil || len(participantMaps) == 0 {
 		groups, ferr := h.fetchAllGroupsWithParticipantsCached(r.Context(), baseURL, apiKey, instance)
@@ -602,7 +598,7 @@ func (h *GroupsHandler) PropagateSubject(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusServiceUnavailable, "Evolution nao configurada")
 		return
 	}
-	evo := newEvolutionClient(baseURL, apiKey, instance)
+	evo := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 	if err := evo.updateGroupSubject(r.Context(), g.JID.String, subject); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
@@ -745,7 +741,7 @@ func (h *GroupsHandler) FetchInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	evo := newEvolutionClient(baseURL, apiKey, instance)
+	evo := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 	link, err := evo.getGroupInviteCode(r.Context(), g.JID.String)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "falha Evolution: "+err.Error())
@@ -791,7 +787,7 @@ func (h *GroupsHandler) fetchAllGroupsWithParticipantsCached(ctx context.Context
 			return c.groups, nil
 		}
 	}
-	evo := newEvolutionClient(baseURL, apiKey, instance)
+	evo := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 	groups, err := evo.getGroups(ctx)
 	if err != nil {
 		return nil, err
@@ -949,7 +945,7 @@ func (h *GroupsHandler) waDigitsForAccount(ctx context.Context, accID int64, cfg
 	if baseURL == "" {
 		return ""
 	}
-	evo := newEvolutionClient(baseURL, apiKey, instance)
+	evo := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 	n := evo.getOwnNumber(ctx)
 	return jidDigits(n)
 }
@@ -1003,7 +999,7 @@ func (h *GroupsHandler) promoteWAAccountAsGroupAdmin(ctx context.Context, g mode
 	if baseURL == "" {
 		return fmt.Errorf("Evolution nao configurada para a conta do grupo")
 	}
-	evoGroup := newEvolutionClient(baseURL, apiKey, instance)
+	evoGroup := &evoClient{baseURL: baseURL, apiKey: apiKey, instance: instance}
 
 	targetDigits := h.waDigitsForAccount(ctx, targetWAAccountID, cfg)
 	if targetDigits == "" {

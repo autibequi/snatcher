@@ -12,18 +12,20 @@ import (
 	"strings"
 	"time"
 
-	"snatcher/backendv2/internal/services/adapters"
+	"snatcher/backendv2/internal/services/messaging"
 	store "snatcher/backendv2/internal/repositories"
 )
 
-// AccountsHandler expõe operações de contas WA v2 (CRUD + WA connect via Evolution API).
+// AccountsHandler expõe operações de contas WA v2 (CRUD + WA connect via messaging.Gateway).
 type AccountsHandler struct {
-	store store.Store
+	store       store.Store
+	// msgRegistry permite obter o Gateway WA/TG sem acoplamento ao adapter Evolution concreto.
+	msgRegistry *messaging.Registry
 }
 
-// NewAccountsHandler cria um AccountsHandler com o store fornecido.
-func NewAccountsHandler(st store.Store) *AccountsHandler {
-	return &AccountsHandler{store: st}
+// NewAccountsHandler cria um AccountsHandler com store e registry de mensageria.
+func NewAccountsHandler(st store.Store, reg *messaging.Registry) *AccountsHandler {
+	return &AccountsHandler{store: st, msgRegistry: reg}
 }
 
 // POST /api/admin/modems/{id}/accounts
@@ -99,65 +101,52 @@ func (h *AccountsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// WAQRCode retorna o QR code base64 para conectar uma conta WhatsApp via Evolution API.
+// WAQRCode retorna o QR code base64 para conectar uma conta WhatsApp via messaging.Gateway.
 // GET /api/admin/modems/{id}/qrcode
 func (h *AccountsHandler) WAQRCode(w http.ResponseWriter, r *http.Request) {
-	baseURL := os.Getenv("EVOLUTION_URL")
-	apiKey := os.Getenv("EVOLUTION_API_KEY")
-	instance := os.Getenv("EVOLUTION_INSTANCE")
-	if instance == "" {
-		instance = "default"
-	}
-	if baseURL == "" {
-		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+	gw, instance, err := h.resolveWAGateway()
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
-	// Garante que a instância existe antes de pedir o QR
-	if err := evo.EnsureInstance(context.Background()); err != nil {
-		writeErr(w, http.StatusBadGateway, "erro ao criar instância: "+err.Error())
-		return
-	}
-	qr, err := evo.GetQRCode(context.Background())
+
+	// Connect retorna a sessão com o QR code quando a instância está em estado qr_pending.
+	session, err := gw.Connect(r.Context(), 0, map[string]string{"instance": instance})
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "erro ao obter QR code: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"qr_base64": qr, "instance": instance})
-}
-
-// WAConnectionStatus retorna o estado de conexão da instância Evolution.
-// GET /api/admin/modems/{id}/connection-status
-func (h *AccountsHandler) WAConnectionStatus(w http.ResponseWriter, r *http.Request) {
-	baseURL := os.Getenv("EVOLUTION_URL")
-	apiKey := os.Getenv("EVOLUTION_API_KEY")
-	instance := os.Getenv("EVOLUTION_INSTANCE")
-	if instance == "" {
-		instance = "default"
-	}
-	if baseURL == "" {
-		writeErr(w, http.StatusServiceUnavailable, "Evolution API não configurada")
+	if session.QRCode == "" {
+		writeErr(w, http.StatusBadGateway, "QR code não disponível — instância pode já estar conectada")
 		return
 	}
-	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
-	status, err := evo.GetStatus(context.Background())
+	writeJSON(w, http.StatusOK, map[string]string{"qr_base64": session.QRCode, "instance": instance})
+}
+
+// WAConnectionStatus retorna o estado de conexão da instância WhatsApp via messaging.Gateway.
+// GET /api/admin/modems/{id}/connection-status
+func (h *AccountsHandler) WAConnectionStatus(w http.ResponseWriter, r *http.Request) {
+	gw, _, err := h.resolveWAGateway()
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
+	// Health retorna o status de conexão da conta.
+	health, err := gw.Health(r.Context(), 0)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "erro ao obter status: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+	writeJSON(w, http.StatusOK, map[string]string{"status": health.Status})
 }
 
-// EvolutionHealth verifica se a Evolution API está acessível e retorna status + instância.
+// EvolutionHealth verifica se o gateway WA está acessível e retorna status + instância.
 // GET /api/admin/evolution/health — sem expor credenciais ao frontend.
 func (h *AccountsHandler) EvolutionHealth(w http.ResponseWriter, r *http.Request) {
-	baseURL := os.Getenv("EVOLUTION_URL")
-	apiKey := os.Getenv("EVOLUTION_API_KEY")
-	instance := os.Getenv("EVOLUTION_INSTANCE")
-	if instance == "" {
-		instance = "default"
-	}
-	if baseURL == "" {
+	gw, instance, err := h.resolveWAGateway()
+	if err != nil {
+		// Registry não configurado (sem EVOLUTION_URL) — retorna configured=false sem erro HTTP.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"configured": false,
 			"status":     "not_configured",
@@ -165,13 +154,15 @@ func (h *AccountsHandler) EvolutionHealth(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	evo := adapters.NewEvolutionWithAccount(0, baseURL, apiKey, instance)
 
-	// Verifica se a API Evolution está respondendo
-	apiOnline := evo.Ping(context.Background()) == nil
+	// Health verifica conectividade e retorna o status da instância.
+	health, healthErr := gw.Health(r.Context(), 0)
 
-	// Verifica se a conta WA está conectada
-	waStatus, _ := evo.GetStatus(context.Background())
+	apiOnline := healthErr == nil
+	waStatus := ""
+	if healthErr == nil {
+		waStatus = health.Status
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"configured": true,
@@ -181,8 +172,27 @@ func (h *AccountsHandler) EvolutionHealth(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// resolveWAGateway retorna o gateway WhatsApp do registry e o nome da instância configurada.
+// O nome da instância é lido da variável de ambiente para compor a resposta ao frontend.
+func (h *AccountsHandler) resolveWAGateway() (messaging.Gateway, string, error) {
+	if h.msgRegistry == nil {
+		return nil, "", fmt.Errorf("Evolution API não configurada")
+	}
+	gw, err := h.msgRegistry.Get(string(messaging.PlatformWhatsApp))
+	if err != nil {
+		return nil, "", fmt.Errorf("Evolution API não configurada")
+	}
+	instance := os.Getenv("EVOLUTION_INSTANCE")
+	if instance == "" {
+		instance = "default"
+	}
+	return gw, instance, nil
+}
+
 // ---------------------------------------------------------------------------
-// Mini Evolution client para operações de grupo (usado por groups.go no mesmo pacote)
+// Mini Evolution client para operações de grupo (usado por groups.go no mesmo pacote).
+// Mantido por encapsular chamadas Evolution-específicas não cobertas pela interface Gateway
+// (participantes, criação de grupo, link de convite, promoção de admin).
 // ---------------------------------------------------------------------------
 
 type evoClient struct{ baseURL, apiKey, instance string }

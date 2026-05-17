@@ -12,7 +12,10 @@ DROP FUNCTION IF EXISTS classify_catalog_brand(TEXT);
 -- classify_catalog_brand(p_title TEXT) RETURNS taxonomy_match
 -- Lê de taxonomy_node WHERE kind='brand'
 -- Match via ILIKE '%slug%' no título, ordena por confidence_pct DESC
--- Retorna ('', 0.0) quando sem match — nunca NULL
+-- Retorna (''::text, 0.0::numeric) quando sem match — nunca NULL.
+-- Casts explícitos são obrigatórios: literais bare ('', 0.0) viram 'unknown' e
+-- estouram "returned record type does not match expected record type" quando o
+-- caller faz `(classify_catalog_brand(x)).slug`.
 CREATE FUNCTION classify_catalog_brand(p_title TEXT)
 RETURNS taxonomy_match AS $$
 DECLARE
@@ -29,7 +32,7 @@ BEGIN
     LIMIT 1;
 
     IF v_slug IS NULL OR btrim(v_slug) = '' THEN
-        RETURN ('', 0.0);
+        RETURN (''::text, 0.0::numeric);
     END IF;
     RETURN (v_slug, v_confidence);
 END;
@@ -57,7 +60,7 @@ BEGIN
     LIMIT 1;
 
     IF v_slug IS NULL OR btrim(v_slug) = '' THEN
-        RETURN ('', 0.0);
+        RETURN (''::text, 0.0::numeric);
     END IF;
     RETURN (v_slug, v_confidence);
 END;

@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"snatcher/backendv2/internal/services/messaging"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/redirect"
 	"snatcher/backendv2/internal/router"
@@ -72,7 +73,10 @@ func NewTestServer(t *testing.T, db *sqlx.DB) *TestServer {
 		t.Fatalf("seed admin user: %v", err)
 	}
 
-	h := router.Build(db, st, rd, runner, sched, scrapersMap, adapters, jwtSecret)
+	// Registry vazio em testes — sem WA/TG real nos testes de integração.
+	msgRegistry := messaging.NewRegistry()
+
+	h := router.Build(db, st, rd, runner, sched, scrapersMap, adapters, msgRegistry, jwtSecret)
 	srv := httptest.NewServer(h)
 
 	t.Cleanup(srv.Close)

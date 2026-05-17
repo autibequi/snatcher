@@ -132,8 +132,7 @@ func main() {
 	}
 
 	// Messaging Gateway Registry — pluggável WA/TG via interface messaging.Gateway.
-	// Evolution (WhatsApp) e Telegram (stub Fase 17) são registrados aqui.
-	// O Registry não está injetado nos handlers ainda (Fase 17 conectará via DI).
+	// Evolution (WhatsApp) e Telegram (stub) são registrados e injetados nos handlers.
 	msgRegistry := messaging.NewRegistry()
 	if appCfg.WABaseURL.Valid && appCfg.WAApiKey.Valid && appCfg.WAInstance.Valid {
 		msgRegistry.Register(string(messaging.PlatformWhatsApp), msgevolution.NewGateway(
@@ -144,7 +143,6 @@ func main() {
 	}
 	tgToken := os.Getenv("TG_BOT_TOKEN")
 	msgRegistry.Register(string(messaging.PlatformTelegram), msgtelegram.NewGateway(tgToken))
-	_ = msgRegistry // injetado em handlers na Fase 17
 
 	// Pipeline runner
 	runner := pipeline.NewRunner(st, scraperMap, adapterMap)
@@ -169,7 +167,7 @@ func main() {
 		h = router.BuildPublic(db, st, rd)
 	} else {
 		// Modo full: API admin completa + shortlinks
-		h = router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, cfg.JWTSecret)
+		h = router.Build(db, st, rd, runner, sched, scraperMap, adapterMap, msgRegistry, cfg.JWTSecret)
 
 		if err := sched.Start(ctx); err != nil {
 			slog.Error("scheduler start", "err", err)

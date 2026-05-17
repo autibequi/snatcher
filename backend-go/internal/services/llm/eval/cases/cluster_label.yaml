@@ -1,0 +1,31 @@
+# Casos de teste para o prompt cluster_label.
+# Cobre clusters com perfis distintos de audiência.
+- name: cluster_label_eletronicos_alto_ctr
+  operation: cluster_label
+  input:
+    categories:
+      - "eletronicos"
+      - "informatica"
+    ctr_avg: 0.08
+    ticket_avg: 1500
+    click_count: 2400
+  expected:
+    contains_keywords:
+      - label
+    matches_schema: true
+    not_empty: true
+
+- name: cluster_label_moda_baixo_ticket
+  operation: cluster_label
+  input:
+    categories:
+      - "moda"
+      - "calcados"
+    ctr_avg: 0.04
+    ticket_avg: 120
+    click_count: 800
+  expected:
+    contains_keywords:
+      - label
+    matches_schema: true
+    not_empty: true

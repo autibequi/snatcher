@@ -1,0 +1,42 @@
+# Casos de teste para o prompt parse_offer.
+# Cobre mensagens WA típicas de grupos de ofertas.
+- name: parse_offer_preco_normal
+  operation: parse_offer
+  input:
+    text: "Notebook Dell Inspiron 15 por R$ 2.899 na Amazon! Link: https://amzn.to/abc123"
+  expected:
+    contains_keywords:
+      - is_offer
+      - true
+    matches_schema: true
+    not_empty: true
+
+- name: parse_offer_de_por
+  operation: parse_offer
+  input:
+    text: "iPhone 14 de R$ 5.999 por R$ 4.299 (28% OFF) no Mercado Livre"
+  expected:
+    contains_keywords:
+      - iphone
+    matches_schema: true
+    not_empty: true
+
+- name: parse_offer_sem_oferta
+  operation: parse_offer
+  input:
+    text: "Bom dia pessoal! Alguém viu oferta de ar condicionado por aí?"
+  expected:
+    contains_keywords:
+      - is_offer
+    matches_schema: true
+    not_empty: true
+
+- name: parse_offer_emoji_negrito
+  operation: parse_offer
+  input:
+    text: "🔥 *OFERTA RELÂMPAGO* 🔥\n*Fone JBL Tune 510BT* apenas R$ 199,90!\nMagalu: https://mgl.to/xyz"
+  expected:
+    contains_keywords:
+      - jbl
+    matches_schema: true
+    not_empty: true

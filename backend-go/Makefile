@@ -1,7 +1,7 @@
 BINARY = backendv2
 CMD    = ./cmd/server
 
-.PHONY: build run tidy migrate migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto test test-up test-down test-logs lint vet swag docs
+.PHONY: build run tidy migrate migrate-up migrate-down migrate-status migrate-create migrate-force migrate-goto test test-up test-down test-logs lint vet swag docs llm-eval llm-eval-mock llm-eval-real
 
 build:
 	go build -buildvcs=false -o $(BINARY) $(CMD)
@@ -90,3 +90,24 @@ swag:
 	swag init -g cmd/server/main.go -o internal/docs --parseDependency --parseInternal
 
 docs: swag
+
+# --- LLM Eval ---
+
+# llm-eval: executa harness com mock client e casos externos (CI de PR).
+# Não exige OPENROUTER_API_KEY. Gera relatório em build/llm-eval-report.html.
+llm-eval: llm-eval-mock
+
+# llm-eval-mock: alias explícito para CI de PR (sem key).
+llm-eval-mock:
+	@mkdir -p build
+	go run -buildvcs=false ./cmd/llm-eval -client=mock -text -output=build/llm-eval-report.html \
+		-cases-dir=internal/services/llm/eval/cases
+
+# llm-eval-real: usa cliente real (OpenRouter). Exige OPENROUTER_API_KEY.
+# Destinado ao CI semanal (cron) para validação com LLM real.
+# Uso: OPENROUTER_API_KEY=sk-... make llm-eval-real
+llm-eval-real:
+	@[ -n "$(OPENROUTER_API_KEY)" ] || { echo "OPENROUTER_API_KEY não definida"; exit 1; }
+	@mkdir -p build
+	go run -buildvcs=false ./cmd/llm-eval -client=real -text -output=build/llm-eval-report.html \
+		-cases-dir=internal/services/llm/eval/cases

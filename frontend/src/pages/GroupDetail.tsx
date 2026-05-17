@@ -31,6 +31,20 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+interface SendLogEntry {
+  id: number
+  group_id: number
+  group_name?: string
+  account_id?: number
+  phone?: string
+  catalog_id?: number
+  product_title?: string
+  status: string
+  error_code?: string
+  sent_at: string
+  source?: string
+}
+
 interface SenderAccount {
   id: number
   phone: string
@@ -611,6 +625,103 @@ function TabConfig({ group, onSaved }: { group: GroupDetail; onSaved: () => void
   )
 }
 
+// ── Tab: Atividade ────────────────────────────────────────────────────────────
+
+function TabActivity({ groupId }: { groupId: string }) {
+  const { data: entries = [], isLoading, isError, refetch } = useQuery<SendLogEntry[]>({
+    queryKey: ['groups', groupId, 'send-log'],
+    // Reutiliza o endpoint global de send-log filtrado por group_id
+    queryFn: () =>
+      apiClient
+        .get<SendLogEntry[]>(`/api/admin/send-log?group_id=${groupId}&limit=20`)
+        .then(r => (Array.isArray(r.data) ? r.data : [])),
+    staleTime: 30_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map(index => (
+          <Skeleton key={index} className="h-10 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="bg-danger/10 border border-danger/30 rounded-md p-4 flex items-center justify-between">
+        <p className="text-sm text-danger">Erro ao carregar histórico de envios.</p>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="text-xs px-3 py-1.5 rounded-md border border-danger/40 text-danger hover:bg-danger/10 transition-colors"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className={sectionCard + ' text-center py-10'}>
+        <p className="text-fg-3 text-sm">Nenhum envio registrado para este grupo.</p>
+        <p className="text-xs text-fg-3 mt-1">Histórico aparece após o primeiro disparo automático ou manual.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className={tableContainer}>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border">
+            {['Data', 'Produto', 'Canal', 'Status', 'Fonte'].map((header, index) => (
+              <th key={index} className={tableHeaderCell}>{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(entry => (
+            <tr key={entry.id} className={tableRow}>
+              <td className={tableCellMuted + ' text-xs'}>{relativeTime(entry.sent_at)}</td>
+              <td className={tableCell}>
+                {entry.product_title ?? (entry.catalog_id ? `Produto #${entry.catalog_id}` : '—')}
+              </td>
+              <td className={tableCellMuted + ' text-xs'}>{entry.phone ?? '—'}</td>
+              <td className={tableCell}>
+                <StatusBadge status={entry.status} errorCode={entry.error_code} />
+              </td>
+              <td className={tableCellMuted + ' text-xs'}>{entry.source ?? 'auto'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// StatusBadge: exibe o status do envio com badge semântico
+function StatusBadge({ status, errorCode }: { status: string; errorCode?: string }) {
+  const label = status.toLowerCase()
+
+  if (label === 'sent' || label === 'delivered') {
+    return <Badge variant="success" size="sm">{status}</Badge>
+  }
+  if (label === 'failed' || label === 'error') {
+    return (
+      <span title={errorCode ?? undefined}>
+        <Badge variant="danger" size="sm">{status}{errorCode ? ` (${errorCode})` : ''}</Badge>
+      </span>
+    )
+  }
+  if (label === 'pending' || label === 'queued') {
+    return <Badge variant="warning" size="sm">{status}</Badge>
+  }
+  return <Badge variant="default" size="sm">{status}</Badge>
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function GroupDetail() {
@@ -621,10 +732,11 @@ export default function GroupDetail() {
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [showConfigModal, setShowConfigModal] = React.useState(false)
 
-  const { data: group, isLoading } = useQuery<GroupDetail>({
+  const { data: group, isLoading, isError: isGroupError, error: groupError, refetch: refetchGroup } = useQuery<GroupDetail>({
     queryKey: ['groups', id],
     queryFn: () => apiClient.get(`/api/groups/${id}`).then(r => r.data),
     enabled: !!id,
+    retry: 1,
   })
 
   const { data: admins = [] } = useQuery<AdminAccount[]>({
@@ -659,6 +771,40 @@ export default function GroupDetail() {
     )
   }
 
+  if (isGroupError) {
+    // Distinguir 404 (grupo inexistente) de erros de rede/servidor
+    const httpStatus = (groupError as any)?.response?.status
+    const is404 = httpStatus === 404
+    return (
+      <div className={pageContainer + ' flex flex-col items-center justify-center py-20 gap-4'}>
+        <p className="text-lg font-medium text-fg">
+          {is404 ? 'Grupo não encontrado' : 'Erro ao carregar grupo'}
+        </p>
+        <p className="text-sm text-fg-3">
+          {is404
+            ? 'O grupo foi removido ou o ID não existe.'
+            : 'Falha de rede ou servidor indisponível. Tente novamente.'}
+        </p>
+        {!is404 && (
+          <button
+            type="button"
+            onClick={() => refetchGroup()}
+            className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors"
+          >
+            Tentar novamente
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => navigate('/groups')}
+          className="text-xs text-fg-3 hover:text-fg underline"
+        >
+          Voltar para Grupos
+        </button>
+      </div>
+    )
+  }
+
   if (!group) return <div className="p-6 text-fg-2">Grupo não encontrado</div>
 
   const isWAPlat = group.platform === 'whatsapp' || group.platform === 'wa'
@@ -668,6 +814,7 @@ export default function GroupDetail() {
   const TABS = [
     { id: 'overview', label: 'Visão geral' },
     { id: 'members', label: `Membros${members.length > 0 ? ` (${members.length})` : ''}` },
+    { id: 'activity', label: 'Atividade' },
     { id: 'config', label: 'Configuração' },
   ]
 
@@ -737,6 +884,7 @@ export default function GroupDetail() {
           />
         )}
         {tab === 'members' && <TabMembers members={members} isLoading={membersLoading} />}
+        {tab === 'activity' && <TabActivity groupId={id!} />}
         {tab === 'config' && <TabConfig group={group} onSaved={refreshGroup} />}
       </div>
 

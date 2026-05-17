@@ -415,23 +415,35 @@ func sweepQueueWithNewKeyword(ctx context.Context, db *sqlx.DB, brandSlug string
 	// 2. Para cada item pendente, re-aplica heurística completa (brand + category + fallback).
 	//    Cobre tanto reason=no_brand_keyword_match quanto no_category_keyword_match,
 	//    já que o novo keyword pode resolver a cadeia inteira.
+	//
+	//    Nota: a forma antiga usava `LEFT JOIN product_brands pb ON pb.slug = ...c.title...`
+	//    diretamente na cláusula FROM do UPDATE, mas o Postgres não expõe a tabela alvo
+	//    `c` para JOINs paralelos no FROM (somente via correlação WHERE) — quebrava com
+	//    "invalid reference to FROM-clause entry for table c". A CTE abaixo pré-computa
+	//    bslug/cslug por linha e bonus: chama classify_catalog_brand 1x ao invés de 3x.
 	res, err := db.ExecContext(ctx, `
+		WITH classified AS (
+			SELECT c.id,
+			       NULLIF((classify_catalog_brand(c.title)).slug, '') AS bslug,
+			       NULLIF((classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))).slug, '') AS cslug
+			FROM   catalog c
+			JOIN   catalog_llm_queue q ON q.catalog_id = c.id
+			WHERE  q.status = 'pending'
+			  AND  (c.brand IS NULL OR c.category_id IS NULL)
+			  AND  c.title IS NOT NULL AND btrim(c.title) <> ''
+		)
 		UPDATE catalog c
-		SET    brand = COALESCE(NULLIF((classify_catalog_brand(c.title)).slug, ''), c.brand),
+		SET    brand = COALESCE(x.bslug, c.brand),
 		       brand_id = COALESCE(pb.id, c.brand_id),
 		       category_id = COALESCE(
-		           (SELECT cat.id FROM categories cat
-		            WHERE cat.slug = NULLIF((classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))).slug, '')
-		            LIMIT 1),
-		           classify_category_from_brand(COALESCE(NULLIF((classify_catalog_brand(c.title)).slug, ''), c.brand)),
+		           (SELECT cat.id FROM categories cat WHERE cat.slug = x.cslug LIMIT 1),
+		           classify_category_from_brand(COALESCE(x.bslug, c.brand)),
 		           c.category_id
 		       ),
 		       updated_at = now()
-		FROM   catalog_llm_queue q
-		LEFT JOIN product_brands pb ON pb.slug = NULLIF((classify_catalog_brand(c.title)).slug, '')
-		WHERE  q.catalog_id = c.id
-		  AND  q.status = 'pending'
-		  AND  (c.brand IS NULL OR c.category_id IS NULL)
+		FROM   classified x
+		LEFT JOIN product_brands pb ON pb.slug = x.bslug
+		WHERE  c.id = x.id
 	`)
 	if err != nil {
 		slog.Warn("sweepQueue: erro no re-sweep de fila", "brand", brandSlug, "err", err)

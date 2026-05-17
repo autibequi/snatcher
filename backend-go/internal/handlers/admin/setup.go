@@ -5,6 +5,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/auth"
 )
 
 type SetupHandler struct {
@@ -49,7 +50,8 @@ func (h *SetupHandler) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	// Usar BcryptCost centralizado (12) — consistente com password.go e spec 016.
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao processar senha")
 		return

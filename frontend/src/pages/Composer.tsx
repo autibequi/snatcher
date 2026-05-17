@@ -553,10 +553,13 @@ export default function Composer() {
       }
       if (groupIds.length === 0) throw new Error('Nenhum grupo vinculado aos canais selecionados')
 
+      // Inclui scheduled_for quando o usuário configurou agendamento.
+      // O backend usa este valor como enqueued_at na send_queue, adiando o disparo.
       await apiClient.post('/api/dispatch/manual', {
         group_ids: groupIds,
         message: finalText,
         image_url: productImage || undefined,
+        ...(scheduledFor ? { scheduled_for: scheduledFor } : {}),
       })
       return { id: Date.now() }
     },

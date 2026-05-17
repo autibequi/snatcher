@@ -1,0 +1,19 @@
+{
+  "operation": "compose",
+  "version": "v1",
+  "input": {
+    "Product": {
+      "Title": "Notebook Lenovo IdeaPad",
+      "Marketplace": "Amazon",
+      "Price": 2499.90,
+      "Drop": 20.0
+    },
+    "Channel": null
+  },
+  "expected_output_contains": [
+    "Notebook Lenovo IdeaPad",
+    "Amazon",
+    "2499"
+  ],
+  "expected_schema_keys": []
+}

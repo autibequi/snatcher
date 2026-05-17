@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/prompts"
 )
@@ -155,6 +157,87 @@ func Report(results []Result) string {
 	}
 	sb.WriteString(fmt.Sprintf("\n%d/%d passed\n", passed, total))
 	return sb.String()
+}
+
+// caseFileYAML é a estrutura intermediária para unmarshal de um arquivo YAML de casos.
+// Suporta `contains_keywords` como lista de strings em cada entrada.
+type caseFileYAML struct {
+	Name      string         `yaml:"name"`
+	Operation string         `yaml:"operation"`
+	Input     map[string]any `yaml:"input"`
+	Expected  expectedYAML   `yaml:"expected"`
+}
+
+type expectedYAML struct {
+	ContainsKeywords []string `yaml:"contains_keywords"`
+	MatchesSchema    bool     `yaml:"matches_schema"`
+	NotEmpty         bool     `yaml:"not_empty"`
+}
+
+// LoadCasesDir lê todos os arquivos *.yaml de um diretório e retorna os casos de teste.
+// Se o diretório não existir ou estiver vazio, retorna slice vazio sem erro.
+// Combinar com DefaultCases() se necessário:
+//
+//	cases := eval.DefaultCases()
+//	extra, _ := eval.LoadCasesDir("internal/services/llm/eval/cases")
+//	cases = append(cases, extra...)
+func LoadCasesDir(dir string) ([]Case, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("eval.LoadCasesDir: read dir %q: %w", dir, err)
+	}
+
+	var allCases []Case
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+
+		path := filepath.Join(dir, name)
+		casesFromFile, parseErr := loadCaseFile(path)
+		if parseErr != nil {
+			return nil, fmt.Errorf("eval.LoadCasesDir: parse %q: %w", path, parseErr)
+		}
+		allCases = append(allCases, casesFromFile...)
+	}
+
+	return allCases, nil
+}
+
+// loadCaseFile lê e faz unmarshal de um arquivo YAML de casos.
+func loadCaseFile(path string) ([]Case, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []caseFileYAML
+	if unmarshalErr := yaml.Unmarshal(data, &raw); unmarshalErr != nil {
+		return nil, unmarshalErr
+	}
+
+	cases := make([]Case, 0, len(raw))
+	for _, r := range raw {
+		cases = append(cases, Case{
+			Name:      r.Name,
+			Operation: r.Operation,
+			Input:     r.Input,
+			Expected: Expected{
+				ContainsKeywords: r.Expected.ContainsKeywords,
+				MatchesSchema:    r.Expected.MatchesSchema,
+				NotEmpty:         r.Expected.NotEmpty,
+			},
+		})
+	}
+	return cases, nil
 }
 
 // DefaultCases retorna casos de teste padrão para todos os prompts.

@@ -1,0 +1,45 @@
+# Casos de teste para o prompt compose.
+# Cada caso representa um produto real enviado ao LLM para gerar mensagem WA.
+- name: compose_eletronico_barato
+  operation: compose
+  input:
+    product: "Smartphone Samsung Galaxy A15 128GB"
+    price: 899
+    discount: 15
+    marketplace: "americanas"
+    channel: "ofertas_tech"
+  expected:
+    contains_keywords:
+      - samsung
+      - r$
+    matches_schema: true
+    not_empty: true
+
+- name: compose_moda_hashtags
+  operation: compose
+  input:
+    product: "Tênis Nike Air Force 1 Branco Feminino"
+    price: 349
+    discount: 20
+    marketplace: "netshoes"
+    channel: "moda_feminina"
+  expected:
+    contains_keywords:
+      - nike
+      - r$
+    matches_schema: true
+    not_empty: true
+
+- name: compose_sem_desconto
+  operation: compose
+  input:
+    product: "Livro Clean Code Robert Martin"
+    price: 79
+    discount: 0
+    marketplace: "amazon"
+    channel: "livros_tech"
+  expected:
+    contains_keywords:
+      - r$
+    matches_schema: true
+    not_empty: true

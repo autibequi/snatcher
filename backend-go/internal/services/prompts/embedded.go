@@ -62,7 +62,32 @@ REGRAS DE SAÍDA (obrigatório):
 
 {"label":"...","description":"..."}`)
 
-	return []*Prompt{compose, parseOffer, clusterLabel}
+	// rephrase_reasons reformula razões de compra para mensagens WhatsApp mais engajantes.
+	// Input: {Reasons []string, Language string} — Language é pt-BR por padrão.
+	// Registrado na tabela llm_op_budgets (migration 20260512000018) com budget 0.50 USD/dia.
+	rephraseReasons := mustParse("rephrase_reasons", "v1", `---
+model: openai/gpt-4o-mini
+max_tokens: 200
+temperature: 0.3
+---
+Você é um copywriter especializado em mensagens de promoção para WhatsApp (Brasil).
+
+Dadas as razões de compra abaixo, reformule-as para serem mais engajantes e concisas.
+Idioma de saída: {{if .Language}}{{.Language}}{{else}}pt-BR{{end}}
+
+Razões originais:
+{{range .Reasons}}- {{.}}
+{{end}}
+
+REGRAS:
+- Responda APENAS um array JSON válido, sem markdown, sem cercas de código.
+- Máximo 3 itens no array.
+- Cada item: string curta, no máximo 20 palavras, tom conversacional WhatsApp.
+- Emojis com moderação; sem CAPS inteiro.
+
+["razão reformulada 1","razão reformulada 2","razão reformulada 3"]`)
+
+	return []*Prompt{compose, parseOffer, clusterLabel, rephraseReasons}
 }
 
 func mustParse(op, version, content string) *Prompt {

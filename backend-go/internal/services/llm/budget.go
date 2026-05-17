@@ -148,22 +148,39 @@ func (c *opClient) Complete(ctx context.Context, prompt string, opts Options) (s
 	if err := c.guard.Check(ctx, c.op); err != nil {
 		return "", err
 	}
-	resp, err := c.inner.Complete(ctx, prompt, opts)
+
+	// Injeta CallUsage no contexto para que o provider preencha os tokens reais.
+	// Se o provider não suportar (ex: NopClient), tokens ficam em zero e usamos estimativa.
+	ctxWithUsage, usage := WithCallUsage(ctx)
+
+	resp, err := c.inner.Complete(ctxWithUsage, prompt, opts)
 	if err == nil && c.op != "" {
-		// Cost estimated from tokens (will be refined by telemetry)
-		_ = c.guard.Charge(ctx, c.op, estimateCost(opts.Model, 0, 100))
+		// Usa tokens reais quando disponíveis; fallback para estimativa com 0/100.
+		tokIn := usage.TokensIn
+		tokOut := usage.TokensOut
+		if tokIn == 0 && tokOut == 0 {
+			tokOut = 100 // estimativa conservadora para providers que não reportam tokens
+		}
+		_ = c.guard.Charge(ctx, c.op, estimateCost(opts.Model, tokIn, tokOut))
 	}
 	return resp, err
 }
 
+// estimateCost calcula o custo estimado em USD com base no modelo e tokens consumidos.
+// Preços por 1M tokens (in/out) de acordo com OpenRouter pricing (referência 2026-05).
 func estimateCost(model string, tokIn, tokOut int) float64 {
+	// Mapa de custo por token (USD por token, não por 1M) para modelos conhecidos.
+	// Fonte: https://openrouter.ai/models (verificado 2026-05-17).
 	costs := map[string][2]float64{
-		"openai/gpt-4o-mini":          {0.00000015, 0.0000006},
-		"anthropic/claude-3.5-sonnet": {0.000003, 0.000015},
+		"openai/gpt-4o-mini":                    {0.00000015, 0.0000006},   // $0.15/$0.60 per 1M
+		"anthropic/claude-3.5-sonnet":            {0.000003, 0.000015},     // $3/$15 per 1M
+		"mistral/mistral-7b-instruct":            {0.00000007, 0.00000007}, // $0.07/$0.07 per 1M
+		"meta-llama/llama-3.1-8b-instruct":       {0.00000005, 0.00000005}, // $0.05/$0.05 per 1M
+		"google/gemini-flash-1.5":                {0.000000075, 0.0000003}, // $0.075/$0.30 per 1M
 	}
 	c := costs[model]
 	if c[0] == 0 {
-		c = costs["openai/gpt-4o-mini"] // fallback
+		c = costs["openai/gpt-4o-mini"] // fallback para modelo barato conhecido
 	}
 	return float64(tokIn)*c[0] + float64(tokOut)*c[1]
 }
