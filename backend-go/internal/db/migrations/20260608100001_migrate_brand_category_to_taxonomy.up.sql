@@ -6,7 +6,7 @@ SELECT DISTINCT
     bk.brand_display                                AS name_pt,
     'brand'                                         AS kind,
     80                                              AS confidence_pct,
-    NULL                                            AS parent_id
+    NULL::bigint                                    AS parent_id
 FROM brand_keywords bk
 WHERE bk.active = true
   AND NOT EXISTS (
@@ -25,7 +25,7 @@ SELECT DISTINCT
     initcap(replace(ck.category_slug, '-', ' '))        AS name_pt,
     'category'                                          AS kind,
     80                                                  AS confidence_pct,
-    NULL                                                AS parent_id
+    NULL::bigint                                        AS parent_id
 FROM category_keywords ck
 WHERE ck.active = true
   AND NOT EXISTS (
