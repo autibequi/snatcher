@@ -134,6 +134,28 @@ export function statusTone(raw: string | null | undefined): StatusTone {
   return STATUS_TONE_MAP[key] ?? 'pending'
 }
 
+// ─── FW-2: Token consolidation — Tokyo Night formal ──────────────────────────
+// Nota: sectionCard, tblDense já existem acima com implementação compatível.
+// Os tokens abaixo completam o vocabulário de botões, inputs e badges para FW-3+.
+
+// Botões
+export const btnPrimary = 'bg-accent hover:bg-accent/90 text-bg px-4 py-2 rounded-md transition-colors font-medium'
+export const btnGhost   = 'hover:bg-surface-2 text-fg px-3 py-1.5 rounded-md transition-colors'
+export const btnDanger  = 'bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded-md transition-colors'
+
+// Inputs
+export const inputBase  = 'bg-bg border border-border rounded px-3 py-2 focus:border-accent outline-none transition-colors'
+export const inputError = 'border-danger focus:border-danger'
+
+// Badges semânticos
+export const badgeOk    = 'bg-success/15 text-success px-2 py-0.5 rounded text-xs font-medium'
+export const badgeWarn  = 'bg-warning/15 text-warning px-2 py-0.5 rounded text-xs font-medium'
+export const badgeError = 'bg-danger/15 text-danger px-2 py-0.5 rounded text-xs font-medium'
+export const badgeInfo  = 'bg-accent/15 text-accent px-2 py-0.5 rounded text-xs font-medium'
+
+// Skeleton base (para uso inline sem componente)
+export const skeletonBase = 'animate-pulse bg-surface-2 rounded'
+
 // Layout helpers
 export const pageContainer = 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6'
 export const responsiveGrid = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'

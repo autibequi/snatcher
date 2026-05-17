@@ -106,12 +106,22 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 	}
 
 	// --- Eurística só neste ID (keywords podem ter mudado desde o enqueue) ---
+	// 1. Tenta classify_catalog_category(title) — heurística por palavras no título.
+	// 2. Fallback: se brand foi resolvida mas categoria não, usa default_category_slug
+	//    da brand_keywords (ex: brand=nike → esporte, brand=samsung → eletronico).
 	if _, err := db.ExecContext(ctx, `
 		WITH x AS (
 			SELECT c.id, b.bslug,
-				CASE WHEN b.bslug IS NOT NULL
-					THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
-					ELSE NULL END AS cid
+				COALESCE(
+					-- Tentativa 1: categoria pelo título
+					CASE WHEN b.bslug IS NOT NULL
+						THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
+						ELSE NULL END,
+					-- Tentativa 2: categoria default da marca (fallback para títulos que são só o nome da marca)
+					CASE WHEN b.bslug IS NOT NULL
+						THEN classify_category_from_brand(b.bslug)
+						ELSE NULL END
+				) AS cid
 			FROM catalog c
 			CROSS JOIN LATERAL (SELECT classify_catalog_brand(c.title) AS bslug) b
 			WHERE c.id = $1 AND c.title IS NOT NULL AND btrim(c.title) <> ''
@@ -284,7 +294,60 @@ Origem/source (pode ser vazio): %q`,
 	out["mode"] = "llm"
 	out["message"] = fmt.Sprintf("brand=%s category=%s", bslug, cslug)
 	slog.Info("catalog_llm_queue: item processado via LLM", "catalog_id", catalogID, "brand", bslug, "category_slug", cslug)
+
+	// Feedback loop: registra brand_slug em brand_keywords e re-roda heurística
+	// nos itens pendentes da fila. Se o novo dado resolve outros itens, eles saem
+	// da fila sem gastar tokens LLM adicionais.
+	go sweepQueueWithNewKeyword(context.Background(), db, bslug, brandRowID)
+
 	return out, nil
+}
+
+// sweepQueueWithNewKeyword insere o brand_slug em brand_keywords (pra heurística aprender)
+// e re-roda a heurística em todos os itens pendentes da fila. Itens que agora ficarem
+// com brand+brand_id+category_id preenchidos saem da fila via trigger automático.
+// Rodado em goroutine pra não bloquear o worker.
+func sweepQueueWithNewKeyword(ctx context.Context, db *sqlx.DB, brandSlug string, brandID int64) {
+	display := strings.Title(strings.ReplaceAll(brandSlug, "-", " "))
+
+	// 1. Registra o novo brand em brand_keywords para que a heurística passe a conhecê-lo.
+	//    ON CONFLICT DO NOTHING garante idempotência — não sobrescreve patterns manuais.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO brand_keywords (brand_slug, brand_display, pattern, source, weight)
+		VALUES ($1, $2, $3, 'llm_learned', 110)
+		ON CONFLICT (brand_slug, pattern) DO NOTHING
+	`, brandSlug, display, "%"+brandSlug+"%"); err != nil {
+		slog.Warn("sweepQueue: falha ao inserir brand_keyword", "brand", brandSlug, "err", err)
+		// Não aborta — sweep ainda pode resolver via brand_id direto
+	}
+
+	// 2. Para cada item pendente, re-aplica heurística completa (brand + category + fallback).
+	//    Cobre tanto reason=no_brand_keyword_match quanto no_category_keyword_match,
+	//    já que o novo keyword pode resolver a cadeia inteira.
+	res, err := db.ExecContext(ctx, `
+		UPDATE catalog c
+		SET    brand      = COALESCE(classify_catalog_brand(c.title), c.brand),
+		       brand_id   = COALESCE(pb.id, c.brand_id),
+		       category_id = COALESCE(
+		                       classify_catalog_category(c.title, COALESCE(c.source_id::text, '')),
+		                       classify_category_from_brand(COALESCE(classify_catalog_brand(c.title), c.brand)),
+		                       c.category_id
+		                     ),
+		       updated_at = now()
+		FROM   catalog_llm_queue q
+		LEFT JOIN product_brands pb ON pb.slug = classify_catalog_brand(c.title)
+		WHERE  q.catalog_id = c.id
+		  AND  q.status = 'pending'
+		  AND  (c.brand IS NULL OR c.category_id IS NULL)
+	`)
+	if err != nil {
+		slog.Warn("sweepQueue: erro no re-sweep de fila", "brand", brandSlug, "err", err)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		slog.Info("sweepQueue: heurística resolveu itens adicionais", "brand", brandSlug, "resolved", n)
+	}
 }
 
 func markQueueLLMError(ctx context.Context, db *sqlx.DB, catalogID int64, msg string) error {

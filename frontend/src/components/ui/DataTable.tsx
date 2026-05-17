@@ -56,7 +56,8 @@ export function DataTable<TData>({
           value={globalFilter}
           onChange={e => setGlobalFilter(e.target.value)}
           placeholder={searchPlaceholder}
-          className="w-full max-w-xs text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent"
+          aria-label={searchPlaceholder}
+          className="w-full max-w-xs text-sm border border-border rounded-md px-2.5 py-1.5 bg-surface text-fg outline-none focus:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
       )}
 

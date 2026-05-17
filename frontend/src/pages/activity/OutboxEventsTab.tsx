@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { authFetch } from '../../lib/authFetch'
-import { DataTable } from '../../components/ui'
+import { DataTable, EmptyState } from '../../components/ui'
 import type { ColumnDef } from '@tanstack/react-table'
+import { mythosEmpty } from '../../lib/copy/mythos'
 
 interface OutboxEvent {
   id: number
@@ -45,13 +46,18 @@ export function OutboxEventsTab() {
     refetchInterval: 15_000,
   })
 
-  if (isLoading) return <div className="text-fg-3 py-8 text-center">Carregando outbox…</div>
-  if (data.length === 0) return (
-    <div className="text-fg-3 py-12 text-center">
-      <p className="text-2xl mb-2">📭</p>
-      <p>Outbox vazio — nenhum evento pendente.</p>
-    </div>
-  )
+  if (isLoading) {
+    return <div className="text-fg-3 py-8 text-center">Carregando outbox…</div>
+  }
+
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        title="Outbox vazio"
+        description={mythosEmpty.outbox}
+      />
+    )
+  }
 
   const pending = data.filter(e => !e.processed_at).length
   return (

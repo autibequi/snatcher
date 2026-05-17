@@ -1,5 +1,31 @@
 import React from 'react'
 
+// ─── Snatcher design tokens — Tokyo Night formal ─────────────────────────────
+// Referência canônica de cores. Os tokens são mapeados em tailwind.config.ts e
+// usados via classes Tailwind (bg-bg, text-fg, border-border, etc.).
+// Não usar os valores hex diretamente — preferir as classes Tailwind.
+export const theme = {
+  colors: {
+    bg:              '#1a1b26',
+    'bg-2':          '#16161e',  // sidebar / topbar
+    surface:         '#1f2335',
+    'surface-2':     '#24283b',  // cards elevados
+    border:          '#414868',
+    fg:              '#c0caf5',
+    'fg-2':          '#a9b1d6',
+    'fg-3':          '#565f89',
+    accent:          '#bb9af7',  // purple primário
+    'accent-blue':   '#7aa2f7',
+    'accent-green':  '#9ece6a',  // success
+    'accent-red':    '#f7768e',  // error
+    'accent-yellow': '#e0af68',  // warning
+    'accent-cyan':   '#7dcfff',  // info
+    'accent-orange': '#ff9e64',
+  },
+} as const
+
+// ─── Theme preference types ───────────────────────────────────────────────────
+
 // 'system' = segue prefers-color-scheme; 'light'/'dark' = explícito
 type ThemePref = 'system' | 'light' | 'dark'
 type Theme = 'light' | 'dark'

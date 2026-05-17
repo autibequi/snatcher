@@ -53,7 +53,9 @@ export function SearchSelect({
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="text-sm border border-border rounded-md px-2.5 py-1 bg-surface text-fg h-8 flex items-center gap-1 hover:border-border-strong focus:outline-none focus:border-accent min-w-[140px] max-w-[200px]"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="text-sm border border-border rounded-md px-2.5 py-1 bg-surface text-fg h-8 flex items-center gap-1 hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 min-w-[140px] max-w-[200px]"
       >
         <span className="flex-1 text-left truncate">
           {selectedLabel ?? placeholder}
@@ -73,8 +75,9 @@ export function SearchSelect({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Buscar…"
+              aria-label="Buscar opção"
               onKeyDown={e => e.key === 'Escape' && (setOpen(false), setSearch(''))}
-              className="w-full text-xs border border-border rounded px-2 py-1 bg-surface-2 text-fg outline-none focus:border-accent"
+              className="w-full text-xs border border-border rounded px-2 py-1 bg-surface-2 text-fg outline-none focus:border-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             />
           </div>
 

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '../../lib/authFetch'
+import { mythosEmpty } from '../../lib/copy/mythos'
 
 // Automation representa o formato retornado pelo backend (GET /api/admin/automations).
 interface Automation {
@@ -92,6 +93,14 @@ export function AutomationsTab() {
       <div>
         <p style={{ color: 'red' }}>{error}</p>
         <button onClick={refresh}>Tentar novamente</button>
+      </div>
+    )
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="text-fg-3 py-12 text-center text-sm">
+        {mythosEmpty.automations}
       </div>
     )
   }

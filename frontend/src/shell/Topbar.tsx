@@ -1,5 +1,8 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { Menu, Bell, User } from 'lucide-react'
+import { useAuth } from '../lib/auth'
+import { pageTitleFromPath } from './pageTitleFromPath'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/apiClient'
 import {
@@ -589,26 +592,105 @@ interface TopbarProps {
   onMenuClick: () => void
 }
 
+// ─── TopbarBreadcrumb ─────────────────────────────────────────────────────────
+
+/** Shows the last meaningful path segment as a short label. */
+function TopbarBreadcrumb() {
+  const location = useLocation()
+  // Derive label from path rules; falls back to last raw segment if no rule matches
+  const label = pageTitleFromPath(location.pathname) || (() => {
+    const parts = location.pathname.replace(/\/+$/, '').split('/')
+    const last = parts[parts.length - 1] ?? ''
+    // Capitalise the first letter for display
+    return last ? last.charAt(0).toUpperCase() + last.slice(1) : 'Dashboard'
+  })()
+
+  return (
+    <span className="hidden sm:block text-sm text-fg-2 truncate max-w-[160px]" title={label}>
+      {label}
+    </span>
+  )
+}
+
+// ─── NotificationsButton ──────────────────────────────────────────────────────
+
+/** Placeholder notification bell with a static badge of 0. No backend connected yet. */
+function NotificationsButton() {
+  return (
+    <button
+      type="button"
+      aria-label="Notificações (0 novas)"
+      title="Notificações — em breve"
+      className="relative rounded-md p-1.5 text-fg-3 hover:text-fg hover:bg-surface-2 transition-colors"
+    >
+      <Bell size={16} aria-hidden />
+      {/* Static badge — visual only */}
+      <span
+        className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-[3px] rounded-full bg-accent/20 text-accent text-[9px] font-semibold leading-none flex items-center justify-center"
+        aria-hidden
+      >
+        0
+      </span>
+    </button>
+  )
+}
+
+// ─── UserMenuButton ───────────────────────────────────────────────────────────
+
+/** Placeholder user menu — shows the authenticated user's email. Click is a stub. */
+function UserMenuButton() {
+  const { user } = useAuth()
+  const displayEmail = user?.email ?? '…'
+
+  function handleClick() {
+    // Stub — user menu will be wired in a future wave
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={`Menu do usuário — ${displayEmail}`}
+      title={displayEmail}
+      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-2 hover:text-fg hover:bg-surface-2 transition-colors max-w-[140px]"
+    >
+      <User size={15} className="flex-shrink-0 opacity-70" aria-hidden />
+      <span className="text-xs truncate hidden md:block">{displayEmail}</span>
+    </button>
+  )
+}
+
+// ─── Topbar ──────────────────────────────────────────────────────────────────
+
 export function Topbar({ onMenuClick }: TopbarProps) {
   return (
     <header className="sticky top-0 z-30 flex items-center min-h-14 h-14 px-3 sm:px-4 bg-bg/95 backdrop-blur border-b border-border flex-shrink-0 gap-2 sm:gap-3">
-      {/* Hamburger — mobile only */}
+      {/* Hamburger — visible only on mobile (lg:hidden) */}
       <button
         type="button"
         onClick={onMenuClick}
         className="lg:hidden text-fg-2 hover:text-fg min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded shrink-0"
         aria-label="Abrir menu"
       >
-        ☰
+        <Menu size={20} aria-hidden />
       </button>
 
-      {/* Search */}
+      {/* Breadcrumb — last segment of the current route */}
+      <TopbarBreadcrumb />
+
+      {/* Search — takes available space */}
       <div className="flex-1 flex items-center gap-2 sm:gap-3 min-w-0">
         <SearchBar />
       </div>
 
       {/* Status zone — separate pills for errors / running / queue / accounts / auto */}
       <StatusZone />
+
+      {/* Notification bell placeholder */}
+      <NotificationsButton />
+
+      {/* User menu placeholder */}
+      <UserMenuButton />
 
       {/* Help manual button */}
       <HelpManualButton />

@@ -29,6 +29,24 @@ export default {
         danger: 'oklch(var(--danger) / <alpha-value>)',
         'danger-soft': 'oklch(var(--danger-soft) / <alpha-value>)',
         whatsapp: 'oklch(var(--whatsapp) / <alpha-value>)',
+        // Tokyo Night static aliases — complementam os tokens OKLCH existentes.
+        // Usar para cores fixas (não mudam com light/dark toggle), ex: bg-tn-bg.
+        // Para tokens adaptativos (light/dark) usar as classes sem prefixo (bg-bg, text-fg, etc.)
+        'tn-bg':            '#1a1b26',
+        'tn-bg-2':          '#16161e',
+        'tn-surface':       '#1f2335',
+        'tn-surface-2':     '#24283b',
+        'tn-border':        '#414868',
+        'tn-fg':            '#c0caf5',
+        'tn-fg-2':          '#a9b1d6',
+        'tn-fg-3':          '#565f89',
+        'tn-accent':        '#bb9af7',
+        'tn-accent-blue':   '#7aa2f7',
+        'tn-accent-green':  '#9ece6a',
+        'tn-accent-red':    '#f7768e',
+        'tn-accent-yellow': '#e0af68',
+        'tn-accent-cyan':   '#7dcfff',
+        'tn-accent-orange': '#ff9e64',
         // Legacy source badges — maintain temporarily for compatibility
         source: {
           0: { bg: '#EEF2FF', fg: '#3730A3' },

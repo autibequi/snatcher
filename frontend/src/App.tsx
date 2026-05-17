@@ -69,7 +69,9 @@ const Fallback = () => (
 const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Composer = lazy(() => import('./pages/Composer'))
-const Activity = lazy(() => import('./pages/Activity'))
+const ActivityHub = lazy(() =>
+  import('./pages/activity/ActivityHub').then(m => ({ default: m.ActivityHub }))
+)
 
 const Crawlers = lazy(() => import('./pages/Crawlers'))
 const CrawlerDetail = lazy(() => import('./pages/CrawlerDetail'))
@@ -97,10 +99,20 @@ const AdminSenders = lazy(() => import('./pages/AdminSenders'))
 const AdminAudit = lazy(() => import('./pages/AdminAudit'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminObservability = lazy(() => import('./pages/AdminObservability'))
+const BaselineTab = lazy(() => import('./pages/admin/BaselineTab').then(m => ({ default: m.BaselineTab })))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
 const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
 const Channels = lazy(() => import('./pages/Channels'))
+
+// W1-W5: Novas telas de schema backend
+const CanonicalGroupsView = lazy(() => import('./pages/admin/CanonicalGroupsView'))
+const TaxonomyTreeEditor = lazy(() => import('./pages/admin/TaxonomyTreeEditor'))
+const DispatchRoutingView = lazy(() => import('./pages/admin/DispatchRoutingView'))
+const RateBucketsView = lazy(() => import('./pages/admin/RateBucketsView'))
+const BanditDebugger = lazy(() => import('./pages/admin/BanditDebugger'))
+const JonfreyDecisionsTimeline = lazy(() => import('./pages/admin/JonfreyDecisionsTimeline'))
+
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
   : null
@@ -138,7 +150,7 @@ export default function App() {
               {/* OPERAÇÃO */}
               <Route index element={<Dashboard />} />
               <Route path="compose" element={<Composer />} />
-              <Route path="activity" element={<Activity />} />
+              <Route path="activity" element={<ActivityHub />} />
 
               {/* FONTES & PRODUTOS */}
               <Route path="crawlers" element={<Crawlers />} />
@@ -183,9 +195,18 @@ export default function App() {
               <Route path="admin/audit" element={<AdminAudit />} />
               <Route path="admin/metrics" element={<AdminMetrics />} />
               <Route path="admin/observability" element={<AdminObservability />} />
+              <Route path="admin/baseline" element={<BaselineTab />} />
               <Route path="admin/scrapers" element={<AdminScrapers />} />
               <Route path="admin/templates" element={<AdminTemplates />} />
               <Route path="admin/domains" element={<RedirectDomains />} />
+
+              {/* W1-W5: Novas telas de schema backend */}
+              <Route path="admin/canonical-groups" element={<CanonicalGroupsView />} />
+              <Route path="admin/taxonomy-tree" element={<TaxonomyTreeEditor />} />
+              <Route path="admin/dispatch/routing" element={<DispatchRoutingView />} />
+              <Route path="admin/dispatch/rate-buckets" element={<RateBucketsView />} />
+              <Route path="admin/bandit" element={<BanditDebugger />} />
+              <Route path="admin/jonfrey-decisions" element={<JonfreyDecisionsTimeline />} />
 
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />

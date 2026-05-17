@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { CrawlLogsTab } from './CrawlLogsTab'
+import { SendEventsTab } from './SendEventsTab'
+import { QuarantineEventsTab } from './QuarantineEventsTab'
+import { OutboxEventsTab } from './OutboxEventsTab'
+import { DispatchRejectionsTab } from './DispatchRejectionsTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Tab identifiers for the ActivityHub */
-type TabID = 'crawl' | 'send' | 'quarantine' | 'llm' | 'outbox'
+type TabID = 'crawl' | 'send' | 'quarantine' | 'outbox' | 'rejections'
 
 /** Common filters shared across all activity tabs */
 export interface CommonFilters {
@@ -12,8 +16,10 @@ export interface CommonFilters {
   from?: string
   /** ISO date string — end of range */
   to?: string
-  /** Channel ID or name to filter by */
+  /** Channel ID to filter by */
   channel?: string
+  /** Severity level filter */
+  severity?: string
   /** Free-text search across the tab's data */
   text?: string
 }
@@ -21,11 +27,20 @@ export interface CommonFilters {
 // ── Tab list ──────────────────────────────────────────────────────────────────
 
 const TAB_LIST: Array<{ id: TabID; label: string }> = [
-  { id: 'crawl',      label: 'Crawl Logs'   },
-  { id: 'send',       label: 'Send Events'  },
-  { id: 'quarantine', label: 'Quarantine'   },
-  { id: 'llm',        label: 'LLM Calls'    },
-  { id: 'outbox',     label: 'Outbox'       },
+  { id: 'crawl',      label: 'Crawl Logs'  },
+  { id: 'send',       label: 'Envios'      },
+  { id: 'quarantine', label: 'Quarentena'  },
+  { id: 'outbox',     label: 'Outbox'      },
+  { id: 'rejections', label: 'Rejeições'   },
+]
+
+// ── Severity options ───────────────────────────────────────────────────────────
+
+const SEVERITY_OPTIONS = [
+  { value: '',        label: 'Todos' },
+  { value: 'info',    label: 'Info'  },
+  { value: 'warning', label: 'Aviso' },
+  { value: 'error',   label: 'Erro'  },
 ]
 
 // ── FilterBar ─────────────────────────────────────────────────────────────────
@@ -35,7 +50,7 @@ interface FilterBarProps {
   onChange: (updated: CommonFilters) => void
 }
 
-/** Shared filter bar with date-range and free-text search inputs */
+/** Shared filter bar with date-range, channel_id, severity and free-text inputs */
 function FilterBar({ value, onChange }: FilterBarProps) {
   function handleFromChange(e: React.ChangeEvent<HTMLInputElement>) {
     onChange({ ...value, from: e.target.value || undefined })
@@ -43,6 +58,14 @@ function FilterBar({ value, onChange }: FilterBarProps) {
 
   function handleToChange(e: React.ChangeEvent<HTMLInputElement>) {
     onChange({ ...value, to: e.target.value || undefined })
+  }
+
+  function handleChannelChange(e: React.ChangeEvent<HTMLInputElement>) {
+    onChange({ ...value, channel: e.target.value || undefined })
+  }
+
+  function handleSeverityChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    onChange({ ...value, severity: e.target.value || undefined })
   }
 
   function handleTextChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -53,10 +76,11 @@ function FilterBar({ value, onChange }: FilterBarProps) {
     onChange({})
   }
 
-  const hasActiveFilters = value.from || value.to || value.text || value.channel
+  const hasActiveFilters = value.from || value.to || value.text || value.channel || value.severity
 
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Date range */}
       <input
         type="date"
         value={value.from ?? ''}
@@ -72,6 +96,32 @@ function FilterBar({ value, onChange }: FilterBarProps) {
         title="Data final"
         className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
       />
+
+      {/* Channel ID */}
+      <input
+        type="text"
+        value={value.channel ?? ''}
+        onChange={handleChannelChange}
+        placeholder="Channel ID..."
+        title="Filtrar por channel_id"
+        className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg w-[120px]"
+      />
+
+      {/* Severity */}
+      <select
+        value={value.severity ?? ''}
+        onChange={handleSeverityChange}
+        title="Severidade"
+        className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg"
+      >
+        {SEVERITY_OPTIONS.map(opt => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {/* Free-text search */}
       <input
         type="text"
         value={value.text ?? ''}
@@ -79,6 +129,8 @@ function FilterBar({ value, onChange }: FilterBarProps) {
         placeholder="Busca livre..."
         className="text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-fg min-w-[160px]"
       />
+
+      {/* Clear all */}
       {hasActiveFilters && (
         <button
           type="button"
@@ -88,54 +140,6 @@ function FilterBar({ value, onChange }: FilterBarProps) {
           Limpar filtros
         </button>
       )}
-    </div>
-  )
-}
-
-// ── Stub tabs ─────────────────────────────────────────────────────────────────
-// Each stub renders a placeholder until the real endpoint exists in future waves.
-
-/** Placeholder for the Send Events tab (endpoint in future wave) */
-function SendEventsTab({ filters }: { filters: CommonFilters }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-      <p className="text-fg-2 font-medium">Send Events</p>
-      <p className="text-fg-3 text-sm">Endpoint disponível em wave futura.</p>
-      {filters.text && (
-        <p className="text-xs text-fg-3 font-mono">
-          filtro ativo: "{filters.text}"
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** Placeholder for the Quarantine tab (endpoint in future wave) */
-function QuarantineTab({ filters: _filters }: { filters: CommonFilters }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-      <p className="text-fg-2 font-medium">Quarantine</p>
-      <p className="text-fg-3 text-sm">Endpoint disponível em wave futura.</p>
-    </div>
-  )
-}
-
-/** Placeholder for the LLM Calls tab (endpoint in future wave) */
-function LLMCallsTab({ filters: _filters }: { filters: CommonFilters }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-      <p className="text-fg-2 font-medium">LLM Calls</p>
-      <p className="text-fg-3 text-sm">Endpoint disponível em wave futura.</p>
-    </div>
-  )
-}
-
-/** Placeholder for the Outbox tab (endpoint in future wave) */
-function OutboxTab({ filters: _filters }: { filters: CommonFilters }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-      <p className="text-fg-2 font-medium">Outbox Events</p>
-      <p className="text-fg-3 text-sm">Endpoint disponível em wave futura.</p>
     </div>
   )
 }
@@ -180,20 +184,20 @@ interface TabContentProps {
 /** Routes to the correct tab component based on active tab ID */
 function TabContent({ tab, filters }: TabContentProps) {
   if (tab === 'crawl') {
-    // Pass text filter as the q prop; date-range not yet consumed by CrawlLogsTab
+    // Pass text filter as the q prop; date-range consumed via filters prop
     return <CrawlLogsTab filters={filters} q={filters.text} />
   }
   if (tab === 'send') {
     return <SendEventsTab filters={filters} />
   }
   if (tab === 'quarantine') {
-    return <QuarantineTab filters={filters} />
-  }
-  if (tab === 'llm') {
-    return <LLMCallsTab filters={filters} />
+    return <QuarantineEventsTab />
   }
   if (tab === 'outbox') {
-    return <OutboxTab filters={filters} />
+    return <OutboxEventsTab />
+  }
+  if (tab === 'rejections') {
+    return <DispatchRejectionsTab />
   }
   return null
 }
@@ -201,8 +205,9 @@ function TabContent({ tab, filters }: TabContentProps) {
 // ── ActivityHub ───────────────────────────────────────────────────────────────
 
 /**
- * Consolidated activity log hub with 5 tabs (Crawl / Send / Quarantine / LLM / Outbox)
- * and a shared FilterBar (date-range + free-text).
+ * Consolidated activity log hub with tabs for crawl logs, send events,
+ * quarantine events, outbox events and dispatch rejections.
+ * A shared FilterBar (date-range, channel_id, severity, free-text) sits above the tabs.
  */
 export function ActivityHub() {
   const [tab, setTab] = useState<TabID>('crawl')
@@ -210,7 +215,7 @@ export function ActivityHub() {
 
   function handleTabSelect(newTab: TabID) {
     setTab(newTab)
-    // Reset filters when switching tabs to avoid stale filter state
+    // Reset filters when switching tabs to avoid carrying stale filter state
     setFilters({})
   }
 

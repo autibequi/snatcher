@@ -13,6 +13,7 @@ import {
   trDense,
   rowSelected,
 } from '../../lib/uiTokens'
+import { mythosEmpty, mythosTooltip } from '../../lib/copy/mythos'
 
 // Métricas onde valores menores são melhores (queda = verde)
 const LOWER_IS_BETTER = new Set([
@@ -156,7 +157,7 @@ function SnapshotsList({
   if (snapshots.length === 0) {
     return (
       <div className={sectionCard}>
-        <p className="text-fg-3 text-sm">Antes de mudar o mundo, mythos guarda o que ele era.</p>
+        <p className="text-fg-3 text-sm">{mythosEmpty.baseline}</p>
       </div>
     )
   }
@@ -370,7 +371,7 @@ export function BaselineTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-1">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-1" title={mythosTooltip.baseline}>
           Baseline T-0 (W-1 readonly)
         </h2>
         <p className="text-xs text-fg-3">

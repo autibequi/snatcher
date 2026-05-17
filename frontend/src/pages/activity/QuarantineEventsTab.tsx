@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { authFetch } from '../../lib/authFetch'
-import { DataTable } from '../../components/ui'
+import { DataTable, EmptyState } from '../../components/ui'
 import type { ColumnDef } from '@tanstack/react-table'
+import { mythosEmpty, mythosTooltip } from '../../lib/copy/mythos'
 
 interface QuarantineEvent {
   id: number
@@ -60,13 +61,25 @@ export function QuarantineEventsTab() {
     refetchInterval: 30_000,
   })
 
-  if (isLoading) return <div className="text-fg-3 py-8 text-center">Carregando quarentenas…</div>
-  if (data.length === 0) return (
-    <div className="text-fg-3 py-12 text-center">
-      <p className="text-2xl mb-2">✅</p>
-      <p>Nenhum evento de quarentena registrado.</p>
+  if (isLoading) {
+    return <div className="text-fg-3 py-8 text-center">Carregando quarentenas…</div>
+  }
+
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        title="Quarentena vazia"
+        description={mythosEmpty.quarantine}
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-fg-3" title={mythosTooltip.quarantine}>
+        {data.length} evento{data.length !== 1 ? 's' : ''} em quarentena
+      </p>
+      <DataTable columns={COLUMNS} data={data} />
     </div>
   )
-
-  return <DataTable columns={COLUMNS} data={data} />
 }

@@ -150,6 +150,13 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionReplenishCrawlers,
 	},
+	"drain_llm_queue": {
+		Type:        "drain_llm_queue",
+		Category:    "curation",
+		Description: "Drena catalog_llm_queue processando até 10 itens por ciclo via LLM (brand+category). Substitui o scheduler cron quando catalogLLMFactory não está registrada.",
+		UsesLLM:     true,
+		Run:         actionDrainLLMQueue,
+	},
 	"maintain_taxonomy": {
 		Type:        "maintain_taxonomy",
 		Category:    "curation",
@@ -285,6 +292,43 @@ func normalizeJonfreyEnabledActions(actions []string) []string {
 }
 
 // ── Ações ──────────────────────────────────────────────────────────────────
+
+// actionDrainLLMQueue drena catalog_llm_queue via LLM — substitui o scheduler cron quando
+// catalogLLMFactory não está registrada. Roda a cada ciclo do Jonfrey (1min).
+func actionDrainLLMQueue(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	if h.llmFn == nil {
+		return nil, nil, "", fmt.Errorf("LLM não configurado (h.llmFn nil)")
+	}
+	factory := h.llmFn
+	if factory() == nil {
+		return nil, nil, "", fmt.Errorf("LLM factory retornou nil — verificar Settings → LLM")
+	}
+
+	const batchSize = 10
+	processed, errors, heuristic := 0, 0, 0
+	for i := 0; i < batchSize; i++ {
+		out, err := jobs.RunCatalogLLMQueueOnce(ctx, h.db, factory)
+		if err != nil {
+			errors++
+			break
+		}
+		if proc, _ := out["processed"].(bool); !proc {
+			// Fila vazia ou item sem progresso — parar cedo
+			break
+		}
+		mode, _ := out["mode"].(string)
+		if mode == "heuristic" {
+			heuristic++
+		} else {
+			processed++
+		}
+	}
+
+	summary := fmt.Sprintf("Processados: %d LLM + %d heurística, %d erros", processed, heuristic, errors)
+	before := map[string]any{"batch_size": batchSize}
+	after := map[string]any{"processed_llm": processed, "processed_heuristic": heuristic, "errors": errors}
+	return before, after, summary, nil
+}
 
 func actionInspectPending(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
 	var pendingCount int

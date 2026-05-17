@@ -6,6 +6,8 @@ import { ApiErrorToast } from '../components/ApiErrorToast'
 import { ManualModal } from '../components/ManualModal'
 import { StatusBar } from '../components/StatusBar'
 import { PageTitleProvider } from '../contexts/PageTitleContext'
+// nota: SystemHealth.tsx é renderizado via rota /admin/observability (AdminObservability),
+// não no shell. Mantido como rota dedicada pra evitar polling duplicado.
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
@@ -13,21 +15,22 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
-      {/* Overlay para mobile */}
+      {/* Overlay para mobile — fecha ao clicar fora da sidebar */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden
         />
       )}
 
       {/* Sidebar desktop fixa / mobile drawer */}
       <aside
         className={`
-          fixed top-0 bottom-0 left-0 z-30 w-60 flex-shrink-0
+          fixed inset-y-0 left-0 z-40 w-64 flex-shrink-0
           bg-surface border-r border-border
-          transform transition-transform duration-200
-          lg:translate-x-0 lg:static lg:z-auto
+          transition-transform duration-200
+          lg:translate-x-0 lg:relative lg:z-auto
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { authFetch } from '../../lib/authFetch'
-import { DataTable } from '../../components/ui'
+import { DataTable, EmptyState } from '../../components/ui'
 import type { ColumnDef } from '@tanstack/react-table'
+import { mythosEmpty } from '../../lib/copy/mythos'
 
 interface Rejection {
   id: number
@@ -51,13 +52,18 @@ export function DispatchRejectionsTab() {
     refetchInterval: 30_000,
   })
 
-  if (isLoading) return <div className="text-fg-3 py-8 text-center">Carregando rejeições…</div>
-  if (data.length === 0) return (
-    <div className="text-fg-3 py-12 text-center">
-      <p className="text-2xl mb-2">✅</p>
-      <p>Nenhuma rejeição recente. O validador aprovou tudo — ou ainda não rodou.</p>
-    </div>
-  )
+  if (isLoading) {
+    return <div className="text-fg-3 py-8 text-center">Carregando rejeições…</div>
+  }
+
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        title="Sem rejeições"
+        description={mythosEmpty.rejections}
+      />
+    )
+  }
 
   return <DataTable columns={COLUMNS} data={data} />
 }
