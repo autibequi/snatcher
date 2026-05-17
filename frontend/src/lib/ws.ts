@@ -21,6 +21,7 @@ export type WSEvent =
   | { type: 'dispatch.target_updated'; data: { dispatchId: number; groupId: number; status: TargetStatus; errorReason?: string } }
   | { type: 'dispatch.completed'; data: { dispatchId: number; summary: DispatchSummary } }
   | { type: 'product.new'; data: { product: Product } }
+  | { type: 'automation_changed'; data: { id: string } }
 
 type EventHandler = (event: WSEvent) => void
 

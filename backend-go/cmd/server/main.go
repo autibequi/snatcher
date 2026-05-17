@@ -33,6 +33,9 @@ import (
 	"snatcher/backendv2/internal/services/scheduler"
 	"snatcher/backendv2/internal/services/scraperbridge"
 	"snatcher/backendv2/internal/services/scrapers"
+	"snatcher/backendv2/internal/services/messaging"
+	msgevolution "snatcher/backendv2/internal/services/messaging/evolution"
+	msgtelegram "snatcher/backendv2/internal/services/messaging/telegram"
 	"snatcher/backendv2/internal/services/senders"
 	store "snatcher/backendv2/internal/repositories"
 )
@@ -127,6 +130,21 @@ func main() {
 		)
 		adapterMap["whatsapp"] = evo
 	}
+
+	// Messaging Gateway Registry — pluggável WA/TG via interface messaging.Gateway.
+	// Evolution (WhatsApp) e Telegram (stub Fase 17) são registrados aqui.
+	// O Registry não está injetado nos handlers ainda (Fase 17 conectará via DI).
+	msgRegistry := messaging.NewRegistry()
+	if appCfg.WABaseURL.Valid && appCfg.WAApiKey.Valid && appCfg.WAInstance.Valid {
+		msgRegistry.Register(string(messaging.PlatformWhatsApp), msgevolution.NewGateway(
+			appCfg.WABaseURL.String,
+			appCfg.WAApiKey.String,
+			appCfg.WAInstance.String,
+		))
+	}
+	tgToken := os.Getenv("TG_BOT_TOKEN")
+	msgRegistry.Register(string(messaging.PlatformTelegram), msgtelegram.NewGateway(tgToken))
+	_ = msgRegistry // injetado em handlers na Fase 17
 
 	// Pipeline runner
 	runner := pipeline.NewRunner(st, scraperMap, adapterMap)

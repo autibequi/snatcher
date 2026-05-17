@@ -264,7 +264,7 @@ export function resolveTutorialSlugFromPath(pathname: string): string {
     ['/admin/params',            'params'],
     ['/admin/loops',             'loops'],
     ['/admin/audit',             'settings'],
-    ['/admin/alerts',            'settings'],
+    ['/admin/health',            'settings'],
     ['/settings/loops',          'loops'],
     ['/settings/params',         'params'],
     ['/settings',                'settings'],

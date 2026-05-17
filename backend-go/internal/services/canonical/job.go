@@ -6,9 +6,19 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	"snatcher/backendv2/internal/observability"
 	"snatcher/backendv2/internal/repositories"
 	"snatcher/backendv2/internal/services/algo"
 )
+
+// BackfillStats agrega contadores de uma execução de RunBackfill.
+type BackfillStats struct {
+	Processed     int     // total de linhas processadas do batch
+	LowConfidence int     // linhas com low_confidence=true (sem brand_id)
+	Reused        int     // linhas que reutilizaram um canonical existente (deduplicadas)
+	Inserted      int     // linhas que geraram um canonical novo
+	DeduRatePct   float64 // Reused/Processed*100 (0 se Processed==0)
+}
 
 // catalogRow representa os campos de catalog necessários para o backfill canonical.
 type catalogRow struct {
@@ -55,10 +65,13 @@ func priceBand(price float64) int {
 }
 
 // processRow computa a fingerprint do item, faz upsert do canonical e vincula ao catalog.
+// Retorna (wasExisting, lowConf) para contabilização no BackfillStats do caller.
 // Erros em upsert ou link são logados como warnings — não interrompem o lote.
-func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) {
+// Em caso de erro no upsert, retorna (false, lowConf) e skip do link.
+func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) (wasExisting bool, lowConf bool) {
 	band := priceBand(row.PriceCurrent)
 	fpResult := algo.Fingerprint(row.Title, row.BrandID, band)
+	lowConf = fpResult.LowConfidence
 	if fpResult.LowConfidence {
 		slog.Debug("canonical.fingerprint_low_confidence",
 			"catalog_id", row.ID,
@@ -66,7 +79,7 @@ func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) {
 		)
 	}
 
-	canonicalID, err := repositories.UpsertCanonical(
+	canonicalID, wasExisting, err := repositories.UpsertCanonical(
 		ctx,
 		db,
 		fpResult.Hash[:],
@@ -79,7 +92,7 @@ func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) {
 			"catalog_id", row.ID,
 			"err", err,
 		)
-		return
+		return false, lowConf
 	}
 
 	if err := repositories.LinkCatalogToCanonical(ctx, db, row.ID, canonicalID); err != nil {
@@ -89,20 +102,46 @@ func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) {
 			"err", err,
 		)
 	}
+	return wasExisting, lowConf
 }
 
 // RunBackfill processa catalog rows sem canonical_product_id em um único batch.
 // Idempotente: linhas já com canonical_product_id são ignoradas pelo WHERE da query.
 // Chamado por cron job ou manualmente pelo operador para popular o canonical cross-marketplace.
-func RunBackfill(ctx context.Context, db *sqlx.DB, batchSize int) error {
+// Retorna BackfillStats com contadores de deduplicação além do erro.
+func RunBackfill(ctx context.Context, db *sqlx.DB, batchSize int) (BackfillStats, error) {
 	batch, err := fetchUnprocessedBatch(ctx, db, batchSize)
 	if err != nil {
-		return err
+		return BackfillStats{}, err
 	}
 
+	var stats BackfillStats
 	for _, row := range batch {
-		processRow(ctx, db, row)
+		wasExisting, lowConf := processRow(ctx, db, row)
+		stats.Processed++
+		if lowConf {
+			stats.LowConfidence++
+		}
+		if wasExisting {
+			stats.Reused++
+		} else {
+			stats.Inserted++
+		}
 	}
 
-	return nil
+	if stats.Processed > 0 {
+		stats.DeduRatePct = float64(stats.Reused) / float64(stats.Processed) * 100
+	}
+
+	slog.Info("canonical.backfill_complete",
+		"processed", stats.Processed,
+		"low_confidence", stats.LowConfidence,
+		"reused", stats.Reused,
+		"inserted", stats.Inserted,
+		"dedup_rate_pct", stats.DeduRatePct,
+	)
+
+	observability.CanonicalDeduplicationRate.Set(stats.DeduRatePct)
+
+	return stats, nil
 }

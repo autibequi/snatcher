@@ -139,6 +139,7 @@ func MustRegisterAll() {
 		BanTotal,
 		QueueDepth,
 		LLMClassificationPendingReview,
+		CanonicalDeduplicationRate,
 	)
 }
 
@@ -219,6 +220,18 @@ var (
 			Help: "Current number of items pending in each queue.",
 		},
 		[]string{"queue"},
+	)
+)
+
+// Canonical dedup metrics (W2.C).
+var (
+	// CanonicalDeduplicationRate tracks the deduplication rate of the last canonical backfill batch.
+	// Value is a percentage (0.0–100.0) representing how many processed rows reused an existing canonical.
+	CanonicalDeduplicationRate = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "canonical_products_dedup_rate",
+			Help: "Deduplication rate of the last canonical backfill batch (percentage of rows that reused an existing canonical).",
+		},
 	)
 )
 

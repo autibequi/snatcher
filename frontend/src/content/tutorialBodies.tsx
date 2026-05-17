@@ -84,7 +84,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li><b>Topbar</b>: indicador de contas — verde = pelo menos 1 primary online; vermelho = nenhuma. Resolva em <strong className="text-fg">/admin/senders</strong>.</li>
           <li><b>Card "fila"</b>: quantas mensagens pending em <code>send_queue</code>. Crescimento sustentado indica modem travado.</li>
           <li><b>Card "tick"</b>: se Score Engine está ON, último horário de run e quantos envios na hora.</li>
-          <li><b>Alertas</b>: regras de <code>alert_rules</code> disparadas (cota próxima, conta caída). Detalhe em <strong className="text-fg">/admin/alerts</strong>.</li>
+          <li><b>Saúde do sistema</b>: dispatcher, circuit breakers e custo LLM. Detalhe em <strong className="text-fg">/admin/health</strong>.</li>
         </Ul>
       </Sec>
       <Sec title="Quando algo está estranho">
@@ -418,7 +418,7 @@ export const tutorialBodyComponents: Record<string, React.FC> = {
           <li><b>/settings/loops</b> — os 9 loops LLM: toggle on/off, modo (suggesting/active), frequência. Ver tutorial <strong className="text-fg">Loops LLM</strong>.</li>
           <li><b>/settings/params</b> — alias de <code>/admin/params</code> — os ~25 tunables do sistema. Ver tutorial <strong className="text-fg">Parâmetros tunáveis</strong>.</li>
           <li><b>/admin/senders</b> — Modems &amp; contas WA. Ver tutorial <strong className="text-fg">Modems &amp; Senders</strong>.</li>
-          <li><b>/admin/alerts</b> — regras de alerta (cota, ban, falha). Dispara notificação no dashboard.</li>
+          <li><b>/admin/health</b> — saúde do sistema (dispatcher, circuit breakers, LLM). Visão detalhada em <strong className="text-fg">/admin/observability</strong>.</li>
           <li><b>/admin/audit</b> — log de ações do sistema, chamadas LLM, erros de jobs.</li>
         </Ul>
       </Sec>

@@ -1,9 +1,11 @@
 // AutomationsTab — aba de gerenciamento de automações do sistema.
 // Consome /api/admin/automations (W5) para listar, habilitar/desabilitar e disparar manualmente.
+// Recebe hot-reload via WS: evento "automation_changed" dispara refresh imediato.
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '../../lib/authFetch'
 import { mythosEmpty } from '../../lib/copy/mythos'
+import { useWSEvent } from '../../lib/useWS'
 
 // Automation representa o formato retornado pelo backend (GET /api/admin/automations).
 interface Automation {
@@ -63,6 +65,9 @@ export function AutomationsTab() {
   useEffect(() => {
     refresh()
   }, [])
+
+  // Hot-reload WS: recarrega lista quando backend notifica mudança em qualquer automação.
+  useWSEvent('automation_changed', () => { void refresh() })
 
   // handleToggle atualiza enabled de uma automação e recarrega a lista.
   const handleToggle = async (id: string, enabled: boolean) => {

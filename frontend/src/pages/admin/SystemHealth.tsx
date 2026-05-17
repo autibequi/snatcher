@@ -14,15 +14,16 @@ interface Health {
   catalog: Record<string, number>
 }
 
-// circuitBreakerColor mapeia estados do circuit breaker para classes CSS de cor.
-function circuitBreakerColor(state: string): string {
+// circuitBreakerBadge retorna classes CSS para o badge do circuit breaker por estado.
+function circuitBreakerBadge(state: string): string {
   if (state === 'closed') {
-    return 'text-green-600'
+    return 'bg-green-100 text-green-700 border border-green-300'
   }
   if (state === 'open') {
-    return 'text-red-600'
+    return 'bg-red-100 text-red-700 border border-red-300'
   }
-  return 'text-yellow-600'
+  // half_open ou qualquer outro estado intermediário
+  return 'bg-yellow-100 text-yellow-700 border border-yellow-300'
 }
 
 // SystemHealth exibe um painel com saúde do sistema, com polling automático a cada 10s.
@@ -85,11 +86,15 @@ export function SystemHealth() {
         {Object.keys(data.circuit_breaker).length === 0 ? (
           <p className="text-fg-4 text-sm">Nenhum upstream monitorado.</p>
         ) : (
-          <ul className="space-y-1 text-sm">
+          <ul className="space-y-2 text-sm">
             {Object.entries(data.circuit_breaker).map(([upstream, state]) => (
-              <li key={upstream} className="flex items-center gap-2">
-                <span className="font-mono text-fg">{upstream}</span>
-                <span className={`font-semibold ${circuitBreakerColor(state)}`}>{state}</span>
+              <li key={upstream} className="flex items-center gap-3">
+                <span className="font-mono text-fg flex-1">{upstream}</span>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${circuitBreakerBadge(state)}`}
+                >
+                  {state}
+                </span>
               </li>
             ))}
           </ul>
@@ -106,21 +111,40 @@ export function SystemHealth() {
       </section>
 
       {/* Catálogo */}
-      <section className="bg-surface border border-border rounded-lg p-4 space-y-2">
+      <section className="bg-surface border border-border rounded-lg p-4 space-y-3">
         <h3 className="font-semibold text-fg-2 text-sm uppercase tracking-wide">
           Catálogo — distribuição de status
         </h3>
         {Object.keys(data.catalog).length === 0 ? (
           <p className="text-fg-4 text-sm">Sem dados de catálogo.</p>
         ) : (
-          <ul className="space-y-1 text-sm">
-            {Object.entries(data.catalog).map(([status, count]) => (
-              <li key={status} className="flex items-center gap-2">
-                <span className="font-mono text-fg">{status}</span>
-                <span className="text-fg-2 font-semibold">{count}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(data.catalog).map(([status, count]) => (
+                <span
+                  key={status}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-2 border border-border text-fg-2"
+                >
+                  <span className="font-mono">{status}</span>
+                  <span className="font-bold text-fg">{count}</span>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-1 mt-1">
+              {Object.entries(data.catalog).map(([status, count]) => {
+                const total = Object.values(data.catalog).reduce((acc, n) => acc + n, 0)
+                const pct = total > 0 ? Math.max(1, Math.round((count / total) * 100)) : 0
+                return (
+                  <div
+                    key={status}
+                    className="h-1.5 rounded-full bg-accent/60 transition-all"
+                    style={{ width: `${pct}%` }}
+                    title={`${status}: ${count} (${pct}%)`}
+                  />
+                )
+              })}
+            </div>
+          </>
         )}
       </section>
     </div>

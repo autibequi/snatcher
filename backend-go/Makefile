@@ -6,6 +6,11 @@ CMD    = ./cmd/server
 build:
 	go build -buildvcs=false -o $(BINARY) $(CMD)
 
+# build-prod: binário de produção idêntico ao Dockerfile — sem driver SQLite embutido.
+# O Dockerfile já usa -tags=nosqlite; este target replica o comportamento localmente.
+build-prod:
+	go build -tags=nosqlite -buildvcs=false -trimpath -ldflags="-s -w" -o $(BINARY) $(CMD)
+
 run:
 	go run -buildvcs=false $(CMD)
 

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +19,16 @@ import (
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
+
+// poolEnvInt lê variável de ambiente como int; retorna fallback em caso de ausência ou parse error.
+func poolEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallback
+}
 
 func Open(dsn string) (*sqlx.DB, error) {
 	driver, connStr, err := parseDSN(dsn)
@@ -38,8 +50,29 @@ func Open(dsn string) (*sqlx.DB, error) {
 		_, _ = db.Exec("PRAGMA temp_store=MEMORY")
 		_, _ = db.Exec("PRAGMA foreign_keys=ON")
 	} else {
-		db.SetMaxOpenConns(20)
-		db.SetMaxIdleConns(5)
+		// Pool configurável via env vars; defaults sensatos para deploys com poucas réplicas.
+		// DB_MAX_OPEN_CONNS   — conexões abertas simultâneas (default: 20)
+		// DB_MAX_IDLE_CONNS   — conexões ociosas mantidas no pool (default: 5)
+		// DB_CONN_MAX_LIFETIME_SECONDS — recicla conexões após N segundos (default: 300 = 5min)
+		//   previne connexões stale após failover RDS ou rotação de credenciais.
+		// DB_CONN_MAX_IDLE_SECONDS — fecha conexões ociosas após N segundos (default: 60)
+		//   reduz conexões ociosas em deploys com muitas réplicas (N replicas × idle conns).
+		maxOpen := poolEnvInt("DB_MAX_OPEN_CONNS", 20)
+		maxIdle := poolEnvInt("DB_MAX_IDLE_CONNS", 5)
+		maxLifetime := time.Duration(poolEnvInt("DB_CONN_MAX_LIFETIME_SECONDS", 300)) * time.Second
+		maxIdleTime := time.Duration(poolEnvInt("DB_CONN_MAX_IDLE_SECONDS", 60)) * time.Second
+
+		db.SetMaxOpenConns(maxOpen)
+		db.SetMaxIdleConns(maxIdle)
+		db.SetConnMaxLifetime(maxLifetime)
+		db.SetConnMaxIdleTime(maxIdleTime)
+
+		slog.Info("db pool configured",
+			"max_open", maxOpen,
+			"max_idle", maxIdle,
+			"max_lifetime", maxLifetime,
+			"max_idle_time", maxIdleTime,
+		)
 	}
 
 	if err := db.Ping(); err != nil {

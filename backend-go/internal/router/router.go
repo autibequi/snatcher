@@ -14,6 +14,7 @@ import (
 	adminhnd "snatcher/backendv2/internal/handlers/admin"
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	webhookshnd "snatcher/backendv2/internal/handlers/public/webhooks"
+	"snatcher/backendv2/internal/services/jonfrey_regulator"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/services/loops"
@@ -87,9 +88,12 @@ func Build(
 	if sched != nil {
 		sched.SetNotifier(notif)
 	}
-	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled
+	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled.
+	// ids: lista DB-driven vinda do scheduler (nil = fallback cfg.EnabledActions).
 	if sched != nil {
-		sched.SetJonfreyTick(jonfrey.RunCycle)
+		sched.SetJonfreyTick(func(ctx context.Context, ids []string) {
+			jonfrey.RunCycle(ctx, ids)
+		})
 	}
 	// PR-1: triage-refactor handlers
 	taxonomyPatterns := handlers.NewTaxonomyPattern(st)
@@ -116,6 +120,14 @@ func Build(
 	hub := wsmod.NewHub()
 	wsHandler := wsmod.NewHandler(hub, jwtSecret)
 	go hub.StartListener(context.Background(), "") // DSN vazio = no-op silencioso
+
+	// Anti-loop guard: broadcast WS quando escalate_to_human é disparado pelo regulator.
+	jonfrey_regulator.SetEscalateFunc(func(_ context.Context, automationID string, reason string) {
+		hub.Broadcast(wsmod.Event{
+			Type: "jonfrey_escalate",
+			Data: map[string]any{"automation_id": automationID, "reason": reason},
+		})
+	})
 
 	// ---------------------------------------------------------------------------
 	// Rota de métricas (pública — antes do grupo JWT)
@@ -417,10 +429,10 @@ func Build(
 		r.Put("/api/admin/parameters/{id}", adminhnd.UpdateParamHandler(db))
 		r.Post("/api/admin/parameters/{id}/reset", adminhnd.ResetParamHandler(db))
 
-		// W5: Automations CRUD + disparo manual
+		// W5: Automations CRUD + disparo manual (hub injeta hot-reload WS)
 		r.Get("/api/admin/automations", adminhnd.ListAutomationsHandler(db))
-		r.Patch("/api/admin/automations/{id}", adminhnd.UpdateAutomationHandler(db))
-		r.Post("/api/admin/automations/{id}/run-now", adminhnd.RunAutomationNowHandler(db))
+		r.Patch("/api/admin/automations/{id}", adminhnd.UpdateAutomationHandler(db, hub))
+		r.Post("/api/admin/automations/{id}/run-now", adminhnd.RunAutomationNowHandler(db, hub))
 
 		// Fase 10: Audit timeline -- eventos operacionais consolidados
 		r.Get("/api/admin/audit/timeline", adminhnd.AuditTimelineHandler(db))

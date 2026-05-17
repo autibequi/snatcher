@@ -100,6 +100,7 @@ const AdminAudit = lazy(() => import('./pages/AdminAudit'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminObservability = lazy(() => import('./pages/AdminObservability'))
 const BaselineTab = lazy(() => import('./pages/admin/BaselineTab').then(m => ({ default: m.BaselineTab })))
+const SystemHealth = lazy(() => import('./pages/admin/SystemHealth').then(m => ({ default: m.SystemHealth })))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
 const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
@@ -208,6 +209,9 @@ export default function App() {
               <Route path="admin/bandit" element={<BanditDebugger />} />
               <Route path="admin/jonfrey-decisions" element={<JonfreyDecisionsTimeline />} />
 
+              {/* W4: SystemHealth — rota direta */}
+              <Route path="admin/health" element={<SystemHealth />} />
+
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />
               <Route path="ads" element={<Navigate to="/activity" replace />} />
@@ -220,7 +224,6 @@ export default function App() {
               {/* Migrados para Settings */}
               <Route path="admin/loops" element={<Navigate to="/settings/loops" replace />} />
               <Route path="admin/params" element={<Navigate to="/settings/params" replace />} />
-              <Route path="admin/alerts" element={<Navigate to="/settings/alerts" replace />} />
               {/* Audit migrado para Activity */}
               <Route path="admin/audit" element={<Navigate to="/activity?tab=audit" replace />} />
               <Route path="channels" element={<Channels />} />

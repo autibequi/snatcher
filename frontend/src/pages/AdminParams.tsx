@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
+import { Tabs } from '../components/ui/Tabs'
 import { BaselineTab } from './admin/BaselineTab'
+import BanditDebugger from './admin/BanditDebugger'
+import JonfreyDecisionsTimeline from './admin/JonfreyDecisionsTimeline'
+import DispatchRoutingView from './admin/DispatchRoutingView'
+import RateBucketsView from './admin/RateBucketsView'
+
+// AdminParamsTab define as 5 abas disponíveis na página de parâmetros tunáveis.
+type AdminParamsTab = 'dispatch' | 'score' | 'catalog' | 'jonfrey' | 'baseline'
 
 interface TunableParam {
   id: number
@@ -54,132 +62,104 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   min_taxonomy_confidence:        { label: 'Confiança mínima de taxonomia', description: 'W3: confiança mínima (0–1) das funções classify_catalog_brand/category. Itens abaixo desse valor são automaticamente enfileirados em catalog_llm_queue para revisão LLM. Default 0.70 = 70%.' },
 }
 
+// TAB_DEFS define as 5 abas e os prefixos de param_name que pertencem a cada uma.
+// A aba 'baseline' captura tudo que não bateu em nenhuma outra (catch-all).
+const TAB_DEFS: Array<{ id: AdminParamsTab; label: string; prefixes: string[] }> = [
+  { id: 'dispatch',  label: 'Dispatch',  prefixes: ['dispatch', 'cooldown', 'quarantine', 'send_window'] },
+  { id: 'score',     label: 'Score',     prefixes: ['score', 'quality_threshold', 'epsilon', 'anti_saturation', 'diversity', 'half_life', 'antirepeat', 'repromo', 'click', 'learned'] },
+  { id: 'catalog',   label: 'Catálogo',  prefixes: ['catalog', 'taxonomy', 'fold', 'min_taxonomy'] },
+  { id: 'jonfrey',   label: 'Jonfrey',   prefixes: ['jonfrey', 'use_algo'] },
+  { id: 'baseline',  label: 'Baseline',  prefixes: [] },
+]
+
+// TAB_LABELS é o array de tabs no formato esperado pelo componente Tabs.
+const TAB_LABELS = TAB_DEFS.map(tab => ({ id: tab.id, label: tab.label }))
+
 function paramLabel(name: string): string {
   return PARAM_META[name]?.label ?? name
 }
+
 function paramDescription(name: string): string {
   return PARAM_META[name]?.description ?? ''
 }
 
+// resolveParamTab retorna qual aba deve exibir um parâmetro baseado no param_name.
+// Tenta cada aba em ordem; se nenhum prefixo bater, cai em 'baseline'.
+function resolveParamTab(paramName: string): AdminParamsTab {
+  for (const tabDef of TAB_DEFS) {
+    if (tabDef.prefixes.length === 0) {
+      continue
+    }
+    const matches = tabDef.prefixes.some(prefix => paramName.startsWith(prefix))
+    if (matches) {
+      return tabDef.id
+    }
+  }
+  return 'baseline'
+}
+
+// filterParamsByTab retorna os parâmetros que pertencem a uma determinada aba.
+function filterParamsByTab(params: TunableParam[], tab: AdminParamsTab): TunableParam[] {
+  if (tab === 'baseline') {
+    // Baseline pega tudo que não pertence a nenhuma outra aba.
+    return params.filter(param => resolveParamTab(param.param_name) === 'baseline')
+  }
+  return params.filter(param => resolveParamTab(param.param_name) === tab)
+}
+
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
   return items.reduce((acc, item) => {
-    const k = key(item)
-    if (!acc[k]) acc[k] = []
-    acc[k].push(item)
+    const keyValue = key(item)
+    if (!acc[keyValue]) {
+      acc[keyValue] = []
+    }
+    acc[keyValue].push(item)
     return acc
   }, {} as Record<string, T[]>)
 }
 
-export default function AdminParams({ embedded = false }: { embedded?: boolean }) {
-  const [params, setParams] = useState<TunableParam[]>([])
-  const [loading, setLoading] = useState(true)
-  const [editValues, setEditValues] = useState<Record<number, string>>({})
-  const [saving, setSaving] = useState<Record<number, boolean>>({})
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const r = await authFetch('/api/admin/parameters')
-      const data: TunableParam[] = await r.json()
-      setParams(data || [])
-      // Inicializa campos de edição com current_value
-      const vals: Record<number, string> = {}
-      for (const p of data || []) {
-        vals[p.id] = String(p.current_value)
-      }
-      setEditValues(vals)
-    } finally {
-      setLoading(false)
-    }
+// ParamsTable renderiza a tabela de parâmetros tunáveis para um conjunto de params.
+// Reutilizada em todas as abas que exibem params diretamente.
+function ParamsTable({
+  params,
+  editValues,
+  saving,
+  onEdit,
+  onSave,
+  onReset,
+}: {
+  params: TunableParam[]
+  editValues: Record<number, string>
+  saving: Record<number, boolean>
+  onEdit: (id: number, value: string) => void
+  onSave: (param: TunableParam) => void
+  onReset: (param: TunableParam) => void
+}) {
+  if (params.length === 0) {
+    return <p className="text-fg-3 text-sm">Nenhum parâmetro nesta aba.</p>
   }
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  const handleSave = async (param: TunableParam) => {
-    const rawVal = editValues[param.id]
-    const numVal = parseFloat(rawVal)
-    if (isNaN(numVal)) {
-      alert('Valor inválido')
-      return
-    }
-    if (numVal < param.min_value || numVal > param.max_value) {
-      alert(`Valor fora dos limites: min=${param.min_value}, max=${param.max_value}`)
-      return
-    }
-    if (!window.confirm(`Salvar ${param.param_name} = ${numVal}?`)) return
-    setSaving(s => ({ ...s, [param.id]: true }))
-    try {
-      const r = await authFetch(`/api/admin/parameters/${param.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: numVal }),
-      })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        alert(`Erro ao salvar: ${err.error || r.statusText}`)
-        return
-      }
-      await load()
-    } finally {
-      setSaving(s => ({ ...s, [param.id]: false }))
-    }
-  }
-
-  const handleReset = async (param: TunableParam) => {
-    if (!window.confirm(`Resetar ${param.param_name} para o valor padrão (${param.default_value})?`)) return
-    setSaving(s => ({ ...s, [param.id]: true }))
-    try {
-      const r = await authFetch(`/api/admin/parameters/${param.id}/reset`, { method: 'POST' })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        alert(`Erro ao resetar: ${err.error || r.statusText}`)
-        return
-      }
-      await load()
-    } finally {
-      setSaving(s => ({ ...s, [param.id]: false }))
-    }
-  }
-
-  const handleToggle = async (param: TunableParam) => {
-    const newVal = param.current_value === 0 ? 1 : 0
-    if (!window.confirm(`${newVal === 1 ? 'Ativar' : 'Desativar'} ${param.param_name}?`)) return
-    setSaving(s => ({ ...s, [param.id]: true }))
-    try {
-      const r = await authFetch(`/api/admin/parameters/${param.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: newVal }),
-      })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }))
-        alert(`Erro: ${err.error || r.statusText}`)
-        return
-      }
-      await load()
-    } finally {
-      setSaving(s => ({ ...s, [param.id]: false }))
-    }
-  }
-
-  const grouped = groupBy(params, p => p.scope_type)
+  const grouped = groupBy(params, param => param.scope_type)
   const scopeOrder = ['global', 'modem', 'group', 'category']
-  const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(s => grouped[s])
+  const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(
+    scope => grouped[scope]
+  )
 
   return (
-    <div className={embedded ? 'space-y-8' : 'px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-8'}>
-      {!embedded && <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>}
-
-      {loading && <p className="text-fg-3">Carregando...</p>}
-
-      {/* Params agrupados por scope_type */}
-      {!loading && sortedScopes.map(scope => (
+    <div className="space-y-6">
+      {sortedScopes.map(scope => (
         <section key={scope}>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-            {scope === 'global' ? 'Globais' : scope === 'modem' ? 'Por modem' : scope === 'group' ? 'Por grupo' : scope === 'category' ? 'Por categoria' : scope}
-          </h2>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+            {scope === 'global'
+              ? 'Globais'
+              : scope === 'modem'
+              ? 'Por modem'
+              : scope === 'group'
+              ? 'Por grupo'
+              : scope === 'category'
+              ? 'Por categoria'
+              : scope}
+          </h3>
           <div className="border rounded-lg bg-surface shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-surface-2 border-b">
@@ -196,52 +176,54 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {grouped[scope].map(p => {
-                  const isBusy = saving[p.id]
+                {grouped[scope].map(param => {
+                  const isBusy = saving[param.id]
                   return (
-                    <tr key={p.id} className="hover:bg-surface-2 transition-colors">
+                    <tr key={param.id} className="hover:bg-surface-2 transition-colors">
                       <td className="px-4 py-3">
                         <span
                           className="font-semibold text-fg cursor-help"
-                          title={paramDescription(p.param_name) ? `${paramDescription(p.param_name)}\n\n(${p.param_name})` : p.param_name}
+                          title={
+                            paramDescription(param.param_name)
+                              ? `${paramDescription(param.param_name)}\n\n(${param.param_name})`
+                              : param.param_name
+                          }
                         >
-                          {paramLabel(p.param_name)}
+                          {paramLabel(param.param_name)}
                         </span>
-                        <p className="text-[10px] text-fg-3 font-mono mt-0.5">{p.param_name}</p>
+                        <p className="text-[10px] text-fg-3 font-mono mt-0.5">{param.param_name}</p>
                       </td>
                       <td className="px-4 py-3">
                         <input
                           type="number"
-                          value={editValues[p.id] ?? String(p.current_value)}
-                          min={p.min_value}
-                          max={p.max_value}
+                          value={editValues[param.id] ?? String(param.current_value)}
+                          min={param.min_value}
+                          max={param.max_value}
                           step="any"
-                          onChange={e =>
-                            setEditValues(v => ({ ...v, [p.id]: e.target.value }))
-                          }
+                          onChange={e => onEdit(param.id, e.target.value)}
                           className="w-28 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                           disabled={isBusy}
                         />
                       </td>
                       <td className="px-4 py-3 text-fg-3 hidden md:table-cell">
-                        {p.default_value} / {p.min_value} / {p.max_value}
+                        {param.default_value} / {param.min_value} / {param.max_value}
                       </td>
                       <td className="px-4 py-3 text-xs text-fg-4 hidden lg:table-cell">
-                        {p.last_changed
-                          ? `${p.last_changed}${p.last_change_by ? ` · ${p.last_change_by}` : ''}`
+                        {param.last_changed
+                          ? `${param.last_changed}${param.last_change_by ? ` · ${param.last_change_by}` : ''}`
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2 justify-end">
                           <button
-                            onClick={() => handleSave(p)}
+                            onClick={() => onSave(param)}
                             disabled={isBusy}
                             className="px-3 py-1 bg-accent text-white rounded hover:bg-accent-hover text-xs font-medium disabled:opacity-50"
                           >
                             Salvar
                           </button>
                           <button
-                            onClick={() => handleReset(p)}
+                            onClick={() => onReset(param)}
                             disabled={isBusy}
                             className="px-3 py-1 bg-surface-3 rounded hover:bg-border text-xs font-medium disabled:opacity-50"
                           >
@@ -257,15 +239,213 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
           </div>
         </section>
       ))}
+    </div>
+  )
+}
+
+export default function AdminParams({ embedded = false }: { embedded?: boolean }) {
+  const [params, setParams] = useState<TunableParam[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editValues, setEditValues] = useState<Record<number, string>>({})
+  const [saving, setSaving] = useState<Record<number, boolean>>({})
+  const [activeTab, setActiveTab] = useState<AdminParamsTab>('dispatch')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const response = await authFetch('/api/admin/parameters')
+      const data: TunableParam[] = await response.json()
+      setParams(data || [])
+      // Inicializa campos de edição com current_value
+      const vals: Record<number, string> = {}
+      for (const param of data || []) {
+        vals[param.id] = String(param.current_value)
+      }
+      setEditValues(vals)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const handleEdit = (id: number, value: string) => {
+    setEditValues(prev => ({ ...prev, [id]: value }))
+  }
+
+  const handleSave = async (param: TunableParam) => {
+    const rawVal = editValues[param.id]
+    const numVal = parseFloat(rawVal)
+    if (isNaN(numVal)) {
+      alert('Valor inválido')
+      return
+    }
+    if (numVal < param.min_value || numVal > param.max_value) {
+      alert(`Valor fora dos limites: min=${param.min_value}, max=${param.max_value}`)
+      return
+    }
+    if (!window.confirm(`Salvar ${param.param_name} = ${numVal}?`)) {
+      return
+    }
+    setSaving(prev => ({ ...prev, [param.id]: true }))
+    try {
+      const response = await authFetch(`/api/admin/parameters/${param.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: numVal }),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: response.statusText }))
+        alert(`Erro ao salvar: ${err.error || response.statusText}`)
+        return
+      }
+      await load()
+    } finally {
+      setSaving(prev => ({ ...prev, [param.id]: false }))
+    }
+  }
+
+  const handleReset = async (param: TunableParam) => {
+    if (!window.confirm(`Resetar ${param.param_name} para o valor padrão (${param.default_value})?`)) {
+      return
+    }
+    setSaving(prev => ({ ...prev, [param.id]: true }))
+    try {
+      const response = await authFetch(`/api/admin/parameters/${param.id}/reset`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: response.statusText }))
+        alert(`Erro ao resetar: ${err.error || response.statusText}`)
+        return
+      }
+      await load()
+    } finally {
+      setSaving(prev => ({ ...prev, [param.id]: false }))
+    }
+  }
+
+  // tabParams filtra os parâmetros para a aba ativa.
+  const tabParams = filterParamsByTab(params, activeTab)
+
+  return (
+    <div className={embedded ? 'space-y-6' : 'px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-6'}>
+      {!embedded && <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>}
+
+      {/* Navegação de abas */}
+      <Tabs
+        tabs={TAB_LABELS}
+        active={activeTab}
+        onChange={id => setActiveTab(id as AdminParamsTab)}
+      />
+
+      {loading && <p className="text-fg-3">Carregando...</p>}
+
+      {/* Conteúdo da aba Dispatch: params de dispatch + DispatchRoutingView + RateBucketsView */}
+      {!loading && activeTab === 'dispatch' && (
+        <div className="space-y-8">
+          <ParamsTable
+            params={tabParams}
+            editValues={editValues}
+            saving={saving}
+            onEdit={handleEdit}
+            onSave={handleSave}
+            onReset={handleReset}
+          />
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+              Roteamento de modems
+            </h2>
+            <DispatchRoutingView />
+          </section>
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+              Rate buckets
+            </h2>
+            <RateBucketsView />
+          </section>
+        </div>
+      )}
+
+      {/* Conteúdo da aba Score: params de score + BanditDebugger */}
+      {!loading && activeTab === 'score' && (
+        <div className="space-y-8">
+          <ParamsTable
+            params={tabParams}
+            editValues={editValues}
+            saving={saving}
+            onEdit={handleEdit}
+            onSave={handleSave}
+            onReset={handleReset}
+          />
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+              Bandit debugger
+            </h2>
+            <BanditDebugger />
+          </section>
+        </div>
+      )}
+
+      {/* Conteúdo da aba Catálogo: params de catalog/taxonomy */}
+      {!loading && activeTab === 'catalog' && (
+        <ParamsTable
+          params={tabParams}
+          editValues={editValues}
+          saving={saving}
+          onEdit={handleEdit}
+          onSave={handleSave}
+          onReset={handleReset}
+        />
+      )}
+
+      {/* Conteúdo da aba Jonfrey: JonfreyDecisionsTimeline + params jonfrey */}
+      {!loading && activeTab === 'jonfrey' && (
+        <div className="space-y-8">
+          <ParamsTable
+            params={tabParams}
+            editValues={editValues}
+            saving={saving}
+            onEdit={handleEdit}
+            onSave={handleSave}
+            onReset={handleReset}
+          />
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+              Decisões Jonfrey
+            </h2>
+            <JonfreyDecisionsTimeline />
+          </section>
+        </div>
+      )}
+
+      {/* Conteúdo da aba Baseline: BaselineTab (já existe e funciona) + params catch-all */}
+      {!loading && activeTab === 'baseline' && (
+        <div className="space-y-8">
+          <BaselineTab />
+          {tabParams.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
+                Outros parâmetros
+              </h2>
+              <ParamsTable
+                params={tabParams}
+                editValues={editValues}
+                saving={saving}
+                onEdit={handleEdit}
+                onSave={handleSave}
+                onReset={handleReset}
+              />
+            </section>
+          )}
+        </div>
+      )}
 
       {!loading && params.length === 0 && (
         <p className="text-fg-3">Nenhum parâmetro encontrado.</p>
       )}
-
-      {/* Seção Baseline — readonly, W-1. W4 vai reorganizar em tabs reais */}
-      <section>
-        <BaselineTab />
-      </section>
     </div>
   )
 }

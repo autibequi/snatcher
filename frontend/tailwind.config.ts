@@ -67,6 +67,8 @@ export default {
         '8': '32px',
         '10': '40px',
         '12': '48px',
+        '14': '56px',
+        '18': '72px',
       },
       borderRadius: {
         xs: '4px',

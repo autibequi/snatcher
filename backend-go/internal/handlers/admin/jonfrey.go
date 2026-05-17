@@ -18,6 +18,7 @@ import (
 	"github.com/lib/pq"
 
 	"snatcher/backendv2/internal/services/jobs"
+	"snatcher/backendv2/internal/services/jonfrey_regulator"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/models"
@@ -255,6 +256,13 @@ var actionRegistry = map[string]actionDef{
 		UsesLLM:     false,
 		Run:         actionCatalogBrandClassification,
 	},
+	"tune_bandit_exploration": {
+		Type:        "tune_bandit_exploration",
+		Category:    "optimization",
+		Description: "Chama o regulator de bandit para cada canal ativo; ajusta exploration_factor se canal está estagnado ou com CTR em queda. Usa jonfrey_regulator.RegulateChannelBandit (W5).",
+		UsesLLM:     false,
+		Run:         actionTuneBanditExploration,
+	},
 }
 
 // jonfreyActionAliases mapeia tipos legados → canónico no actionRegistry (sem duplicar Run na UI).
@@ -412,10 +420,13 @@ func (h *JonfreyHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// RunCycle executa todas as actions habilitadas no JonfreyConfig, ordenadas por categoria.
+// RunCycle executa actions do Jonfrey ordenadas por categoria.
 // Ordem: cleanup → curation → health → optimization → dispatch
-// Despacha em background com um único job na fila universal (mesmo modelo que POST /api/jonfrey/run).
-func (h *JonfreyHandler) RunCycle(ctx context.Context) {
+//
+// dbAutomationIDs: lista de action-IDs vindos do scheduler (DB-driven, com intervalo vencido).
+// Se vazio (fallback), usa cfg.EnabledActions da JonfreyConfig global.
+// Despacha em background com um único job na fila universal.
+func (h *JonfreyHandler) RunCycle(ctx context.Context, dbAutomationIDs []string) {
 	_ = ctx // tick vem do scheduler; o batch usa context.Background + job próprio
 	cfg, err := h.store.GetJonfreyConfig()
 	if err != nil {
@@ -428,11 +439,25 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 	}
 
 	order := []string{"cleanup", "curation", "health", "optimization", "dispatch"}
-	enabled := []string(cfg.EnabledActions)
-	enabledCanon := normalizeJonfreyEnabledActions(enabled)
+
+	// Resolve a lista de actions a executar: DB-driven se não-vazio, senão cfg fallback.
+	var sourceActions []string
+	if len(dbAutomationIDs) > 0 {
+		sourceActions = dbAutomationIDs
+		slog.Info("jonfrey RunCycle usando lista DB-driven",
+			"db_automation_ids", dbAutomationIDs,
+		)
+	} else {
+		sourceActions = []string(cfg.EnabledActions)
+		slog.Info("jonfrey RunCycle usando cfg.EnabledActions (fallback)",
+			"enabled_actions", sourceActions,
+		)
+	}
+
+	enabledCanon := normalizeJonfreyEnabledActions(sourceActions)
 	var typesToRun []string
 	var skippedUnknown []string
-	for _, raw := range enabled {
+	for _, raw := range sourceActions {
 		t := resolveJonfreyActionType(raw)
 		if _, ok := actionRegistry[t]; !ok {
 			skippedUnknown = append(skippedUnknown, raw)
@@ -449,7 +474,7 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 	}
 	if len(typesToRun) == 0 {
 		slog.Info("jonfrey RunCycle sem ações a executar",
-			"enabled_actions", enabled,
+			"source_actions", sourceActions,
 			"skipped_unknown_types", skippedUnknown,
 			"hint", "tipos devem existir no registry e bater categoria cleanup|curation|health|optimization|dispatch; para liberar dispatches com full-auto ON use auto_release_pending (sinónimo legado: enable_full_auto)",
 		)
@@ -489,7 +514,7 @@ func (h *JonfreyHandler) RunCycle(ctx context.Context) {
 				if err := h.store.UpdateJonfreyConfig(cfg2); err != nil {
 					slog.Warn("jonfrey RunCycle post-batch UpdateJonfreyConfig", "err", err)
 				} else {
-					slog.Info("jonfrey RunCycle: LastRunAt atualizado (scheduler compara isto com IntervalMinutes)",
+					slog.Info("jonfrey RunCycle: LastRunAt atualizado",
 						"job_id", job.ID,
 						"last_run_at", now.UTC().Format(time.RFC3339),
 						"interval_minutes", cfg2.IntervalMinutes,
@@ -2241,6 +2266,48 @@ func actionCatalogBrandClassification(ctx context.Context, h *JonfreyHandler) (m
 	after := map[string]any{"classified": n}
 	reasoning := fmt.Sprintf("classificados %d produtos com brand (heurística) + brand_id", n)
 	_ = loops.AuditAction(ctx, h.db, "catalog_brand_classification", "applied", "catalog", 0, before, after, reasoning, 1.0)
+	return before, after, reasoning, nil
+}
+
+// actionTuneBanditExploration chama o regulator de bandit para cada canal ativo.
+// Para cada canal, jonfrey_regulator.RegulateChannelBandit avalia UCB1 state e decide
+// se deve aumentar exploration_factor (estagnação) ou registrar freeze_channel (queda sustentada).
+// Implementa a ação tune_bandit_exploration do seed W5 (invariante I10, loop de correção parte 2).
+func actionTuneBanditExploration(ctx context.Context, h *JonfreyHandler) (map[string]any, map[string]any, string, error) {
+	// Busca todos os canais ativos para rodar o ciclo do regulator.
+	type channel struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+	}
+
+	var channels []channel
+	if err := h.db.SelectContext(ctx, &channels, `SELECT id, name FROM channels_v2 ORDER BY id`); err != nil {
+		return nil, nil, "", fmt.Errorf("listar canais para tune_bandit: %w", err)
+	}
+
+	before := map[string]any{"channels_count": len(channels)}
+
+	// Itera sobre cada canal e executa um ciclo de regulação do bandit.
+	var regulated int
+	var errs []string
+	for _, ch := range channels {
+		if ctx.Err() != nil {
+			break
+		}
+
+		if err := jonfrey_regulator.RegulateChannelBandit(ctx, h.db, ch.ID); err != nil {
+			errs = append(errs, fmt.Sprintf("channel %d (%s): %v", ch.ID, ch.Name, err))
+			continue
+		}
+		regulated++
+	}
+
+	after := map[string]any{
+		"regulated": regulated,
+		"errors":    errs,
+	}
+	reasoning := fmt.Sprintf("Regulei bandit em %d/%d canais ativos.", regulated, len(channels))
+
 	return before, after, reasoning, nil
 }
 

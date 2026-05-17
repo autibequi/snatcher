@@ -59,6 +59,7 @@ func insertCanonical(
 }
 
 // UpsertCanonical reutiliza um canonical existente (por fingerprint) ou insere um novo.
+// Retorna (id, wasExisting, error) — wasExisting=true indica deduplicação (reuse de canonical existente).
 //
 // Regra de baixa confiança: itens sem brand_id (nil) são marcados como low_confidence=true.
 // O UNIQUE index parcial em canonical_products(fingerprint) WHERE low_confidence=false
@@ -70,7 +71,7 @@ func UpsertCanonical(
 	title string,
 	brandID *int64,
 	priceBand *int,
-) (int64, error) {
+) (int64, bool, error) {
 	lowConfidence := brandID == nil
 
 	// Apenas produtos com brand confirmada participam do índice de dedup cross-marketplace.
@@ -78,17 +79,18 @@ func UpsertCanonical(
 		existingID, err := findCanonicalByFingerprint(ctx, db, fingerprint)
 		if err == nil {
 			// Canonical já existe — reutiliza sem inserir nova linha.
-			return existingID, nil
+			return existingID, true, nil
 		}
 
 		if !errors.Is(err, sql.ErrNoRows) {
 			// Erro inesperado na busca.
-			return 0, err
+			return 0, false, err
 		}
 	}
 
 	// Não encontrado ou low_confidence: insere novo canonical.
-	return insertCanonical(ctx, db, fingerprint, title, brandID, priceBand, lowConfidence)
+	id, err := insertCanonical(ctx, db, fingerprint, title, brandID, priceBand, lowConfidence)
+	return id, false, err
 }
 
 // LinkCatalogToCanonical atualiza catalog.canonical_product_id para o canonical dado.

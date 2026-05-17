@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { CrawlLogsTab } from './CrawlLogsTab'
 import { SendEventsTab } from './SendEventsTab'
 import { QuarantineEventsTab } from './QuarantineEventsTab'
 import { OutboxEventsTab } from './OutboxEventsTab'
-import { DispatchRejectionsTab } from './DispatchRejectionsTab'
+import { LLMTab } from './LLMTab'
+import { useWSEvent } from '../../lib/useWS'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Tab identifiers for the ActivityHub */
-type TabID = 'crawl' | 'send' | 'quarantine' | 'outbox' | 'rejections'
+type TabID = 'crawl' | 'send' | 'quarantine' | 'outbox' | 'llm'
 
 /** Common filters shared across all activity tabs */
 export interface CommonFilters {
@@ -30,8 +32,8 @@ const TAB_LIST: Array<{ id: TabID; label: string }> = [
   { id: 'crawl',      label: 'Crawl Logs'  },
   { id: 'send',       label: 'Envios'      },
   { id: 'quarantine', label: 'Quarentena'  },
+  { id: 'llm',        label: 'LLM Calls'   },
   { id: 'outbox',     label: 'Outbox'      },
-  { id: 'rejections', label: 'Rejeições'   },
 ]
 
 // ── Severity options ───────────────────────────────────────────────────────────
@@ -196,8 +198,10 @@ function TabContent({ tab, filters }: TabContentProps) {
   if (tab === 'outbox') {
     return <OutboxEventsTab />
   }
-  if (tab === 'rejections') {
-    return <DispatchRejectionsTab />
+  if (tab === 'llm') {
+    // LLMTab aceita q opcional; filters.text passado como busca livre.
+    // Restante de CommonFilters (date-range, channel, severity) ignorado por LLMTab nesta wave.
+    return <LLMTab q={filters.text} />
   }
   return null
 }
@@ -206,12 +210,39 @@ function TabContent({ tab, filters }: TabContentProps) {
 
 /**
  * Consolidated activity log hub with tabs for crawl logs, send events,
- * quarantine events, outbox events and dispatch rejections.
+ * quarantine events, outbox events and LLM calls.
  * A shared FilterBar (date-range, channel_id, severity, free-text) sits above the tabs.
+ * WS live invalidation: crawler.run_completed → crawl; dispatch.* → send/outbox.
  */
 export function ActivityHub() {
   const [tab, setTab] = useState<TabID>('crawl')
   const [filters, setFilters] = useState<CommonFilters>({})
+  const queryClient = useQueryClient()
+
+  // Invalidar tab crawl quando o crawler termina uma execução
+  useWSEvent('crawler.run_completed', () => {
+    if (tab === 'crawl') {
+      void queryClient.invalidateQueries({ queryKey: ['crawl-logs'] })
+    }
+  })
+
+  // Invalidar tab send quando um dispatch é concluído ou um alvo atualizado
+  useWSEvent('dispatch.completed', () => {
+    if (tab === 'send') {
+      void queryClient.invalidateQueries({ queryKey: ['send-queue'] })
+      void queryClient.invalidateQueries({ queryKey: ['send-log'] })
+    }
+    if (tab === 'outbox') {
+      void queryClient.invalidateQueries({ queryKey: ['outbox-events'] })
+    }
+  })
+
+  useWSEvent('dispatch.target_updated', () => {
+    if (tab === 'send') {
+      void queryClient.invalidateQueries({ queryKey: ['send-queue'] })
+      void queryClient.invalidateQueries({ queryKey: ['send-log'] })
+    }
+  })
 
   function handleTabSelect(newTab: TabID) {
     setTab(newTab)

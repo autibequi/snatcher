@@ -2,10 +2,12 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
+	ws "snatcher/backendv2/internal/ws"
 )
 
 // Automation representa uma automação configurada no sistema.
@@ -57,6 +59,35 @@ func applyAutomationUpdate(r *http.Request, db *sqlx.DB, id string, enabled *boo
 	return err
 }
 
+// fetchAutomationKind busca o kind de uma automação pelo id.
+// Retorna o kind como string (ex: "critical", "elective") ou erro se não encontrada.
+func fetchAutomationKind(r *http.Request, db *sqlx.DB, id string) (string, error) {
+	var kind string
+	err := db.GetContext(r.Context(), &kind, `SELECT kind FROM automations WHERE id = $1`, id)
+	return kind, err
+}
+
+// validateAutomationUpdate verifica se a atualização respeita as invariantes da automation.
+// Implementa invariante I10: automations críticas (kind='critical') nunca podem ser desabilitadas.
+// Retorna erro descritivo se tentar desabilitar uma automation crítica; nil caso contrário.
+func validateAutomationUpdate(r *http.Request, db *sqlx.DB, id string, enabled *bool) error {
+	// Somente precisamos validar quando enabled está sendo explicitamente definido como false.
+	if enabled == nil || *enabled == true {
+		return nil
+	}
+
+	kind, err := fetchAutomationKind(r, db, id)
+	if err != nil {
+		return err
+	}
+
+	if kind == "critical" {
+		return errors.New("invariante I10: automações críticas não podem ser desabilitadas")
+	}
+
+	return nil
+}
+
 // markAutomationManualTrigger registra last_run_at e last_status para run-now.
 // O scheduler real executará no próximo tick; este handler apenas sinaliza disparo manual.
 func markAutomationManualTrigger(r *http.Request, db *sqlx.DB, id string) error {
@@ -66,6 +97,19 @@ func markAutomationManualTrigger(r *http.Request, db *sqlx.DB, id string) error 
 		WHERE id = $1
 	`, id)
 	return err
+}
+
+// notifyAutomationChanged envia evento WS "automation_changed" para o frontend
+// recarregar a lista de automações imediatamente após uma mudança.
+// hub pode ser nil — neste caso vira no-op silencioso.
+func notifyAutomationChanged(hub *ws.Hub, id string) {
+	if hub == nil {
+		return
+	}
+	hub.Broadcast(ws.Event{
+		Type: "automation_changed",
+		Data: map[string]any{"id": id},
+	})
 }
 
 // ListAutomationsHandler implementa GET /api/admin/automations.
@@ -87,7 +131,8 @@ func ListAutomationsHandler(db *sqlx.DB) http.HandlerFunc {
 
 // UpdateAutomationHandler implementa PATCH /api/admin/automations/{id}.
 // Aceita enabled, interval_minutes e cron_expr como campos opcionais.
-func UpdateAutomationHandler(db *sqlx.DB) http.HandlerFunc {
+// hub (pode ser nil): se não-nil, envia evento "automation_changed" via WS após UPDATE.
+func UpdateAutomationHandler(db *sqlx.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -101,18 +146,28 @@ func UpdateAutomationHandler(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 
+		// I10: automações críticas nunca podem ser desabilitadas.
+		if err := validateAutomationUpdate(r, db, id, req.Enabled); err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
 		if err := applyAutomationUpdate(r, db, id, req.Enabled, req.IntervalMinutes, req.CronExpr); err != nil {
 			writeErr(w, http.StatusInternalServerError, "erro ao atualizar automação")
 			return
 		}
+
+		// Hot-reload WS: notifica frontend para recarregar a lista de automações.
+		notifyAutomationChanged(hub, id)
+
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
 // RunAutomationNowHandler implementa POST /api/admin/automations/{id}/run-now.
 // Marca last_run_at e last_status como 'manual_trigger'; o scheduler executa no próximo tick.
-// W5 follow-up: integrar com scheduler real para force-run síncrono.
-func RunAutomationNowHandler(db *sqlx.DB) http.HandlerFunc {
+// hub (pode ser nil): se não-nil, envia evento "automation_changed" via WS após marcar.
+func RunAutomationNowHandler(db *sqlx.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -120,6 +175,10 @@ func RunAutomationNowHandler(db *sqlx.DB) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "erro ao disparar automação")
 			return
 		}
+
+		// Hot-reload WS: notifica frontend para recarregar a lista de automações.
+		notifyAutomationChanged(hub, id)
+
 		w.WriteHeader(http.StatusAccepted)
 	}
 }

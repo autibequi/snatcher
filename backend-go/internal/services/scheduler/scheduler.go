@@ -29,15 +29,17 @@ type Scheduler struct {
 	interval int
 	llmCli   llm.Client
 	storeRef store.Store
-	db       *sqlx.DB                    // para cron jobs que acessam DB diretamente
-	jonfreyTick func(ctx context.Context) // injetado via SetJonfreyTick — evita ciclo de import
-	catalogLLMFactory func() llm.Client // opcional: drena catalog_llm_queue (SetCatalogLLMProcessor)
+	db       *sqlx.DB                              // para cron jobs que acessam DB diretamente
+	jonfreyTick func(ctx context.Context, ids []string) // injetado via SetJonfreyTick — evita ciclo de import
+	catalogLLMFactory func() llm.Client            // opcional: drena catalog_llm_queue (SetCatalogLLMProcessor)
 	notif    *notifier.Notifier // pode ser nil — todas as chamadas tratam isso
 }
 
-// SetJonfreyTick registra o callback que executa todas as actions habilitadas do Jonfrey.
-// Chamado pelo main.go após o handler do Jonfrey ser construído.
-func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context)) {
+// SetJonfreyTick registra o callback que executa actions do Jonfrey.
+// ids: lista de action-IDs vindos do banco (habilitados e com intervalo vencido).
+// Lista vazia = fallback para cfg.EnabledActions em RunCycle.
+// Chamado pelo router após o handler do Jonfrey ser construído.
+func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context, ids []string)) {
 	sc.jonfreyTick = fn
 }
 
@@ -57,6 +59,28 @@ type Status struct {
 	Running         bool      `json:"running"`
 	IntervalMinutes int       `json:"interval_minutes"`
 	NextRun         time.Time `json:"next_run"`
+}
+
+// scheduledAutomation representa uma automação habilitada no banco com seu intervalo.
+// Usado pelo tick do Jonfrey para decidir quais actions executar por ciclo.
+type scheduledAutomation struct {
+	ID              string  `db:"id"`
+	IntervalMinutes *int    `db:"interval_minutes"`
+	LastRunAt       *string `db:"last_run_at"`
+}
+
+// fetchEnabledAutomations busca as automações habilitadas do banco.
+// Retorna slice de scheduledAutomation para o tick decidir quais rodar.
+// Se a consulta falhar (ex: tabela ainda não existe), retorna slice vazio e log.
+func fetchEnabledAutomations(ctx context.Context, db *sqlx.DB) ([]scheduledAutomation, error) {
+	var rows []scheduledAutomation
+	err := db.SelectContext(ctx, &rows, `
+		SELECT id, interval_minutes, last_run_at::text AS last_run_at
+		FROM automations
+		WHERE enabled = TRUE
+		ORDER BY id
+	`)
+	return rows, err
 }
 
 func New(intervalMinutes int, runner *pipeline.Runner, st store.Store, llmCli llm.Client) (*Scheduler, error) {
@@ -88,8 +112,9 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Job do Jonfrey — executa actions habilitadas a cada 1 min se enabled
-	// Cada action checa internamente o JonfreyConfig.IntervalMinutes via last_run_at.
+	// Job do Jonfrey — executa actions habilitadas a cada 1 min.
+	// Lê a tabela `automations` e verifica por action se seu interval_minutes venceu.
+	// Fallback para cfg.EnabledActions quando a tabela está vazia ou inacessível.
 	if sc.storeRef != nil {
 		_, err = sc.s.NewJob(
 			gocron.DurationJob(1*time.Minute),
@@ -107,7 +132,61 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					slog.Debug("scheduler: jonfrey tick ignorado — Jonfrey desligado na config")
 					return
 				}
-				// Respeita IntervalMinutes do JonfreyConfig
+
+				// Tentativa de leitura DB-driven: busca automations habilitadas com seus intervalos.
+				// fetchEnabledAutomations deve ser chamado ANTES de qualquer mutex.
+				var dueIDs []string
+				if sc.db != nil {
+					dbCtx := context.Background()
+					automations, fetchErr := fetchEnabledAutomations(dbCtx, sc.db)
+					if fetchErr != nil {
+						slog.Warn("scheduler: jonfrey tick — fetchEnabledAutomations falhou, usando cfg fallback",
+							"err", fetchErr)
+					} else if len(automations) > 0 {
+						// Checa por automation qual teve seu interval_minutes vencido.
+						now := time.Now()
+						for _, a := range automations {
+							intervalMin := 60 // default 60min se não configurado
+							if a.IntervalMinutes != nil && *a.IntervalMinutes > 0 {
+								intervalMin = *a.IntervalMinutes
+							}
+							interval := time.Duration(intervalMin) * time.Minute
+							if a.LastRunAt == nil || *a.LastRunAt == "" {
+								// Nunca rodou — é candidata imediata.
+								dueIDs = append(dueIDs, a.ID)
+								continue
+							}
+							// Parseia last_run_at (formato RFC3339 ou timestamp sem timezone).
+							var lastRun time.Time
+							if t, parseErr := time.Parse(time.RFC3339, *a.LastRunAt); parseErr == nil {
+								lastRun = t
+							} else if t, parseErr := time.Parse("2006-01-02T15:04:05", *a.LastRunAt); parseErr == nil {
+								lastRun = t
+							} else {
+								// Formato desconhecido — assume candidata.
+								dueIDs = append(dueIDs, a.ID)
+								continue
+							}
+							if now.Sub(lastRun) >= interval {
+								dueIDs = append(dueIDs, a.ID)
+							}
+						}
+						slog.Info("scheduler: jonfrey tick DB-driven",
+							"automations_enabled", len(automations),
+							"automations_due", len(dueIDs),
+						)
+						if len(dueIDs) == 0 {
+							slog.Debug("scheduler: jonfrey tick — nenhuma automation com intervalo vencido")
+							return
+						}
+						sc.jonfreyTick(ctx, dueIDs)
+						return
+					}
+					// DB retornou vazio — fallback para cfg.
+					slog.Debug("scheduler: jonfrey tick — tabela automations vazia, usando cfg fallback")
+				}
+
+				// Fallback: comportamento original com intervalo global cfg.IntervalMinutes.
 				if cfg.LastRunAt.Valid {
 					interval := time.Duration(cfg.IntervalMinutes) * time.Minute
 					if interval <= 0 {
@@ -116,7 +195,7 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					since := time.Since(cfg.LastRunAt.Time)
 					if since < interval {
 						nextIn := (interval - since).Round(time.Second)
-						slog.Info("scheduler: jonfrey tick aguardando intervalo",
+						slog.Info("scheduler: jonfrey tick aguardando intervalo (cfg fallback)",
 							"interval", interval.String(),
 							"last_run_at", cfg.LastRunAt.Time.UTC().Format(time.RFC3339),
 							"elapsed", since.Round(time.Second).String(),
@@ -125,14 +204,14 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 						return
 					}
 				} else {
-					slog.Info("scheduler: jonfrey tick — LastRunAt vazio, primeira execução ou reset")
+					slog.Info("scheduler: jonfrey tick — LastRunAt vazio, primeira execução ou reset (cfg fallback)")
 				}
-				slog.Info("scheduler: jonfrey tick disparando RunCycle",
+				slog.Info("scheduler: jonfrey tick disparando RunCycle (cfg fallback)",
 					"source", "gocron_1m",
 					"interval_minutes", cfg.IntervalMinutes,
 					"enabled_actions_count", len(cfg.EnabledActions),
 				)
-				sc.jonfreyTick(ctx)
+				sc.jonfreyTick(ctx, nil) // nil = fallback para cfg.EnabledActions em RunCycle
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
@@ -359,8 +438,17 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 					}
 				}
 				slog.Info("scheduler: canonical.backfill started", "batch_size", batchSize)
-				if err := canonical.RunBackfill(context.Background(), sc.db, batchSize); err != nil {
+				stats, err := canonical.RunBackfill(context.Background(), sc.db, batchSize)
+				if err != nil {
 					slog.Error("scheduler: canonical.backfill error", "err", err)
+				} else {
+					slog.Info("scheduler: canonical.backfill done",
+						"processed", stats.Processed,
+						"reused", stats.Reused,
+						"inserted", stats.Inserted,
+						"low_confidence", stats.LowConfidence,
+						"dedup_rate_pct", stats.DeduRatePct,
+					)
 				}
 			}),
 			gocron.WithName("canonical.backfill"),
