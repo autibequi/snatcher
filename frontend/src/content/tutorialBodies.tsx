@@ -950,7 +950,7 @@ ctr_blended = c · ctr_grupo + (1 - c) · ctr_canal`}
           ligado a <code>(catalog_id, group_id)</code>. Quando alguém clica:
         </p>
         <pre className="bg-surface-2 p-3 rounded text-xs leading-snug overflow-x-auto">
-{`SELECT catalog_id, group_id FROM group_shortlinks WHERE short_id = $1
+{/* sql-embed-tutorial */}{`SELECT catalog_id, group_id FROM group_shortlinks WHERE short_id = $1
 # DETERMINÍSTICO — clique sempre conta pro grupo original,
 # não importa onde a pessoa viu`}
         </pre>

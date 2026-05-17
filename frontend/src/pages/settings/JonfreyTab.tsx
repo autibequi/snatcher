@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Skeleton, Switch } from '../../components/ui'
 import { apiClient } from '../../lib/apiClient'
+import { useWSEvent } from '../../lib/useWS'
 import {
   sectionCard,
   sectionTitle,
@@ -29,34 +30,23 @@ interface JonfreyConfig {
   provider?: string | null
 }
 
-// ── Known automations registry ────────────────────────────────────────────────
-
-interface AutomationMeta {
+// Automation representa o formato retornado pelo backend (GET /api/admin/automations).
+interface Automation {
   id: string
-  label: string
-  description: string
+  kind: 'critical' | 'elective'
+  enabled: boolean
+  cron_expr?: string
+  interval_minutes?: number
+  controlled_by_jonfrey: boolean
+  last_run_at?: string
+  last_status?: string
 }
 
-const KNOWN_AUTOMATIONS: AutomationMeta[] = [
-  {
-    id: 'auto_curate_high_confidence',
-    label: 'Auto-triagem de produtos',
-    description:
-      'Classifica produtos pendentes com categoria e marca quando a confianca do modelo e alta. Sem necessidade de aprovacao manual.',
-  },
-  {
-    id: 'auto_match_promotions',
-    label: 'Auto-match de promocoes',
-    description:
-      'Associa automaticamente novos links rastreados a produtos do catalogo com base em similaridade semantica.',
-  },
-  {
-    id: 'auto_tag_clusters',
-    label: 'Auto-tagging de clusters',
-    description:
-      'Atualiza tags de clusters de canais com base nos topicos dominantes das ultimas mensagens analisadas.',
-  },
-]
+// loadAutomationsForJonfrey busca a lista de automações do backend para o JonfreyTab.
+async function loadAutomationsForJonfrey(): Promise<Automation[]> {
+  const response = await apiClient.get<Automation[]>('/api/admin/automations')
+  return response.data
+}
 
 // ── Status chip helper ────────────────────────────────────────────────────────
 
@@ -69,27 +59,33 @@ function StatusChip({ status }: { status: string }) {
 
 // ── AutomationRow ─────────────────────────────────────────────────────────────
 
+// AutomationRow renderiza uma linha de automação DB-driven com toggle de enable/disable.
+// Exibe o ID da automação como label quando nenhum label descritivo está disponível.
 function AutomationRow({
-  meta,
-  enabled,
+  automation,
   lastAction,
   pilotOn,
   onToggle,
   isPending,
 }: {
-  meta: AutomationMeta
-  enabled: boolean
+  automation: Automation
   lastAction?: JonfreyAction
   pilotOn: boolean
   onToggle: (v: boolean) => void
   isPending: boolean
 }) {
+  const isCritical = automation.kind === 'critical'
+
   return (
     <div className={sectionCard}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0 space-y-1">
-          <p className={`${formLabel}`}>{meta.label}</p>
-          <p className={formHint}>{meta.description}</p>
+          <p className={`${formLabel}`}>{automation.id}</p>
+          <p className={formHint}>
+            {isCritical ? 'Automacao critica — nao pode ser desativada.' : `Tipo: ${automation.kind}`}
+            {automation.interval_minutes ? ` · Cadencia: ${automation.interval_minutes} min` : ''}
+            {automation.controlled_by_jonfrey ? ' · Controlada pelo Jonfrey' : ''}
+          </p>
 
           {/* Last run */}
           {lastAction ? (
@@ -113,20 +109,25 @@ function AutomationRow({
             <p className="text-[11px] text-fg-3 pt-1">Nenhuma execucao registrada</p>
           )}
 
-          {!pilotOn && enabled && (
+          {!pilotOn && automation.enabled && (
             <p className="text-[11px] text-warning pt-0.5">
               Auto-pilot desligado — esta automacao nao vai rodar ate ser ativado abaixo.
+            </p>
+          )}
+          {isCritical && (
+            <p className="text-[11px] text-danger pt-0.5">
+              Automacao critica — desativar nao e permitido.
             </p>
           )}
         </div>
 
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           <Switch
-            checked={enabled}
-            disabled={isPending}
+            checked={automation.enabled}
+            disabled={isPending || isCritical}
             onChange={onToggle}
           />
-          <span className="text-[10px] text-fg-3">{enabled ? 'ativa' : 'inativa'}</span>
+          <span className="text-[10px] text-fg-3">{automation.enabled ? 'ativa' : 'inativa'}</span>
         </div>
       </div>
     </div>
@@ -150,6 +151,17 @@ export function JonfreyTab() {
       apiClient.get('/api/jonfrey/actions').then(r => r.data ?? []).catch(() => []),
     refetchInterval: 15_000,
   })
+
+  // automations busca a lista de automacoes do DB via /api/admin/automations.
+  // Substitui o array KNOWN_AUTOMATIONS hardcoded com os 8 registros reais do banco.
+  const { data: automations = [], refetch: refetchAutomations } = useQuery<Automation[]>({
+    queryKey: ['automations'],
+    queryFn: loadAutomationsForJonfrey,
+    refetchInterval: 30_000,
+  })
+
+  // Hot-reload WS: invalida o cache de automacoes quando o backend notifica mudanca.
+  useWSEvent('automation_changed', () => { void refetchAutomations() })
 
   const pilotMut = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -213,7 +225,6 @@ export function JonfreyTab() {
   })
 
   const pilotOn = !!config?.enabled
-  const enabledActions = config?.enabled_actions ?? []
   const isLoading = configLoading && !config
 
   // Last action per automation type
@@ -315,18 +326,17 @@ export function JonfreyTab() {
         </div>
       </div>
 
-      {/* ── Automacoes ── */}
+      {/* ── Automacoes (DB-driven — busca /api/admin/automations) ── */}
       <div>
         <p className={`${sectionTitle} mb-3`}>Automacoes</p>
         <div className="space-y-3">
-          {KNOWN_AUTOMATIONS.map(meta => (
+          {automations.map(automation => (
             <AutomationRow
-              key={meta.id}
-              meta={meta}
-              enabled={enabledActions.includes(meta.id)}
-              lastAction={lastByType(meta.id)}
+              key={automation.id}
+              automation={automation}
+              lastAction={lastByType(automation.id)}
               pilotOn={pilotOn}
-              onToggle={v => actionMut.mutate({ actionId: meta.id, enable: v })}
+              onToggle={v => actionMut.mutate({ actionId: automation.id, enable: v })}
               isPending={actionMut.isPending}
             />
           ))}
