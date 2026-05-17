@@ -1,52 +1,31 @@
-# Template do workflow GitHub Actions pra disparar deploy no Coolify.
-# Origem: criado pelo Claude no container; o `.github/` deste repo é
-# tmpfs read-only dentro do plug, então o arquivo precisa ser movido
-# manualmente pro path final no host:
+# DEPRECATED como destino final — use os workflows na RAIZ do repo:
+#   .github/workflows/ci.yml
+#   .github/workflows/deploy.yml
 #
+# GitHub Actions só lista workflows em <repo>/.github/workflows/ (não em backend-go/).
+#
+# No host (fora do container plug, onde .github não é read-only):
 #   mkdir -p ~/projects/pessoal/snatcher/.github/workflows
-#   mv ~/projects/pessoal/snatcher/coolify/github-workflow-coolify-deploy.yml \
-#      ~/projects/pessoal/snatcher/.github/workflows/coolify-deploy.yml
+#   cp coolify/workflows-root/ci.yml      ~/projects/pessoal/snatcher/.github/workflows/ci.yml
+#   cp coolify/workflows-root/deploy.yml  ~/projects/pessoal/snatcher/.github/workflows/deploy.yml
+#   git add .github/workflows && git commit -m "ci: workflows na raiz do repo" && git push
 #
-# Secrets necessários no repo (Settings → Secrets and variables → Actions):
-#   COOLIFY_WEBHOOK_URL  → URL do webhook da Application no Coolify
-#                          (ex: https://coolify.autibequi.com/api/v1/deploy?uuid=...)
-#   COOLIFY_TOKEN        → API Token (Coolify → User Settings → Keys & Tokens)
+# Secrets (Actions):
+#   COOLIFY_TOKEN          — obrigatório (Bearer)
+#   COOLIFY_WEBHOOK_URL    — opcional (URL completa do deploy webhook Coolify)
+#
+# Variables (Actions):
+#   COOLIFY_RESOURCE_UUID  — se não usar webhook (uuid da Application)
+#   COOLIFY_URL            — default https://coolify.autibequi.com
+#   APP_URL                — default https://snatcher.autibequi.com
 
-name: Coolify Deploy
+name: Coolify Deploy (template legado)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend-go/**'
-      - 'frontend/**'
-      - 'coolify/**'
-      - '.github/workflows/coolify-deploy.yml'
   workflow_dispatch:
-
-concurrency:
-  group: coolify-deploy
-  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - name: Trigger Coolify redeploy
-        env:
-          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
-          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${COOLIFY_WEBHOOK_URL:-}" || -z "${COOLIFY_TOKEN:-}" ]]; then
-            echo "::error::COOLIFY_WEBHOOK_URL ou COOLIFY_TOKEN não estão configurados nos secrets do repo"
-            exit 1
-          fi
-          code=$(curl -fsS -o /tmp/coolify-resp -w "%{http_code}" \
-            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
-            "${COOLIFY_WEBHOOK_URL}")
-          echo "HTTP $code"
-          cat /tmp/coolify-resp || true
-          echo
-          [[ "$code" =~ ^2[0-9][0-9]$ ]]
+      - run: echo "Use .github/workflows/deploy.yml na raiz do repositório"

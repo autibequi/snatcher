@@ -126,7 +126,7 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 		SELECT $1, $2,
 			COALESCE((SELECT id FROM sources WHERE id = $3), 'unknown'),
 			$4, $5, $6, $7, $8, $9, $10, $11,
-			COALESCE(NULLIF($12,''), classify_catalog_brand($4)),
+			COALESCE(NULLIF($12,''), NULLIF((classify_catalog_brand($4)).slug, '')),
 			$13::catalog_status_t
 		ON CONFLICT (dedup_key) DO UPDATE SET
 			price_current  = EXCLUDED.price_current,

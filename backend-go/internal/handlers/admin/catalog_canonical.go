@@ -380,12 +380,19 @@ func ReprocessCatalogHeuristicHandler(db *sqlx.DB) http.HandlerFunc {
 			WITH x AS (
 				SELECT
 					c.id,
-					b.bslug,
-					CASE WHEN b.bslug IS NOT NULL
-						THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
-						ELSE NULL END AS cid
+					NULLIF(bm.slug, '') AS bslug,
+					CASE WHEN NULLIF(bm.slug, '') IS NOT NULL THEN
+						(SELECT cat.id FROM categories cat
+						 WHERE cat.slug = NULLIF(cm.slug, '')
+						 LIMIT 1)
+					END AS cid
 				FROM catalog c
-				CROSS JOIN LATERAL (SELECT classify_catalog_brand(c.title) AS bslug) b
+				CROSS JOIN LATERAL (
+					SELECT (classify_catalog_brand(c.title)).slug AS slug
+				) bm
+				CROSS JOIN LATERAL (
+					SELECT (classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))).slug AS slug
+				) cm
 				WHERE c.title IS NOT NULL AND btrim(c.title) <> ''
 			)
 			UPDATE catalog c SET

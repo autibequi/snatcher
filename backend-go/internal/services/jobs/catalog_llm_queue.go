@@ -188,19 +188,23 @@ func RunCatalogLLMQueueOnce(ctx context.Context, db *sqlx.DB, llmFactory func() 
 	//    da brand_keywords (ex: brand=nike → esporte, brand=samsung → eletronico).
 	if _, err := db.ExecContext(ctx, `
 		WITH x AS (
-			SELECT c.id, b.bslug,
+			SELECT c.id, NULLIF(bm.slug, '') AS bslug,
 				COALESCE(
-					-- Tentativa 1: categoria pelo título
-					CASE WHEN b.bslug IS NOT NULL
-						THEN classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))
-						ELSE NULL END,
-					-- Tentativa 2: categoria default da marca (fallback para títulos que são só o nome da marca)
-					CASE WHEN b.bslug IS NOT NULL
-						THEN classify_category_from_brand(b.bslug)
-						ELSE NULL END
+					CASE WHEN NULLIF(bm.slug, '') IS NOT NULL THEN
+						(SELECT cat.id FROM categories cat
+						 WHERE cat.slug = NULLIF(cm.slug, '') LIMIT 1)
+					END,
+					CASE WHEN NULLIF(bm.slug, '') IS NOT NULL THEN
+						classify_category_from_brand(NULLIF(bm.slug, ''))
+					END
 				) AS cid
 			FROM catalog c
-			CROSS JOIN LATERAL (SELECT classify_catalog_brand(c.title) AS bslug) b
+			CROSS JOIN LATERAL (
+				SELECT (classify_catalog_brand(c.title)).slug AS slug
+			) bm
+			CROSS JOIN LATERAL (
+				SELECT (classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))).slug AS slug
+			) cm
 			WHERE c.id = $1 AND c.title IS NOT NULL AND btrim(c.title) <> ''
 		)
 		UPDATE catalog c SET
@@ -413,16 +417,18 @@ func sweepQueueWithNewKeyword(ctx context.Context, db *sqlx.DB, brandSlug string
 	//    já que o novo keyword pode resolver a cadeia inteira.
 	res, err := db.ExecContext(ctx, `
 		UPDATE catalog c
-		SET    brand      = COALESCE(classify_catalog_brand(c.title), c.brand),
-		       brand_id   = COALESCE(pb.id, c.brand_id),
+		SET    brand = COALESCE(NULLIF((classify_catalog_brand(c.title)).slug, ''), c.brand),
+		       brand_id = COALESCE(pb.id, c.brand_id),
 		       category_id = COALESCE(
-		                       classify_catalog_category(c.title, COALESCE(c.source_id::text, '')),
-		                       classify_category_from_brand(COALESCE(classify_catalog_brand(c.title), c.brand)),
-		                       c.category_id
-		                     ),
+		           (SELECT cat.id FROM categories cat
+		            WHERE cat.slug = NULLIF((classify_catalog_category(c.title, COALESCE(c.source_id::text, ''))).slug, '')
+		            LIMIT 1),
+		           classify_category_from_brand(COALESCE(NULLIF((classify_catalog_brand(c.title)).slug, ''), c.brand)),
+		           c.category_id
+		       ),
 		       updated_at = now()
 		FROM   catalog_llm_queue q
-		LEFT JOIN product_brands pb ON pb.slug = classify_catalog_brand(c.title)
+		LEFT JOIN product_brands pb ON pb.slug = NULLIF((classify_catalog_brand(c.title)).slug, '')
 		WHERE  q.catalog_id = c.id
 		  AND  q.status = 'pending'
 		  AND  (c.brand IS NULL OR c.category_id IS NULL)
