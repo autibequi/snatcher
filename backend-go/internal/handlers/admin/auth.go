@@ -230,6 +230,9 @@ func (h *AuthHandler) createRefresh(ctx context.Context, userID int64) (string, 
 // ctxKeyUserID é a chave de context para o user_id.
 type ctxKeyUserID struct{}
 
+// ctxKeyRole é a chave de context para o role do user (claim "role" do JWT).
+type ctxKeyRole struct{}
+
 // UserIDFromCtx extrai o user_id injetado pelo middleware RequireAuth.
 func UserIDFromCtx(ctx context.Context) int64 {
 	id, _ := ctx.Value(ctxKeyUserID{}).(int64)
@@ -239,6 +242,18 @@ func UserIDFromCtx(ctx context.Context) int64 {
 // CtxWithUserID cria um context com user_id (usado pelo middleware).
 func CtxWithUserID(ctx context.Context, id int64) context.Context {
 	return context.WithValue(ctx, ctxKeyUserID{}, id)
+}
+
+// RoleFromCtx extrai o role injetado pelo middleware RequireAuth.
+// Retorna string vazia se ausente.
+func RoleFromCtx(ctx context.Context) string {
+	r, _ := ctx.Value(ctxKeyRole{}).(string)
+	return r
+}
+
+// CtxWithRole cria um context com o role do user.
+func CtxWithRole(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, ctxKeyRole{}, role)
 }
 
 // sha256Hex retorna o hash SHA-256 de s em hexadecimal.

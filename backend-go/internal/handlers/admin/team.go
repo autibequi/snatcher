@@ -2,43 +2,33 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
 	"snatcher/backendv2/internal/auth"
+	"snatcher/backendv2/internal/repositories"
 )
 
 type TeamHandler struct {
-	db *sqlx.DB
+	repo *repositories.TeamRepo
 }
 
 func NewTeamHandler(db *sqlx.DB) *TeamHandler {
-	return &TeamHandler{db: db}
-}
-
-type teamMember struct {
-	ID          int64  `db:"id" json:"id"`
-	Email       string `db:"email" json:"email"`
-	Name        string `db:"name" json:"name"`
-	Role        string `db:"role" json:"role"`
-	CreatedAt   string `db:"created_at" json:"created_at"`
-	LastLoginAt string `db:"last_login_at" json:"last_login_at"`
+	return &TeamHandler{repo: repositories.NewTeamRepo(db)}
 }
 
 // GET /api/team
 func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
-	var members []teamMember
-	err := h.db.SelectContext(r.Context(), &members,
-		`SELECT id, email, COALESCE(name,'') as name, role,
-		        created_at::text, COALESCE(last_login_at::text,'') as last_login_at
-		 FROM users ORDER BY created_at`)
+	members, err := h.repo.List(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusOK, []teamMember{})
+		// Lista vazia em erro de leitura é a semântica pré-existente — mantida.
+		writeJSON(w, http.StatusOK, []repositories.TeamMember{})
 		return
 	}
 	if members == nil {
-		members = []teamMember{}
+		members = []repositories.TeamMember{}
 	}
 	writeJSON(w, http.StatusOK, members)
 }
@@ -69,13 +59,13 @@ func (h *TeamHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var id int64
-	err = h.db.QueryRowContext(r.Context(),
-		`INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (email) DO NOTHING RETURNING id`,
-		req.Email, string(hash), req.Name, req.Role).Scan(&id)
-	if err != nil || id == 0 {
+	id, err := h.repo.Invite(r.Context(), req.Email, req.Name, req.Role, string(hash))
+	if errors.Is(err, repositories.ErrEmailTaken) {
 		writeErr(w, http.StatusConflict, "email ja cadastrado")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao criar usuario")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "email": req.Email, "role": req.Role})
@@ -92,13 +82,19 @@ func (h *TeamHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "role invalido")
 		return
 	}
-	h.db.ExecContext(r.Context(), `UPDATE users SET role = $1 WHERE id = $2`, req.Role, id)
+	if err := h.repo.UpdateRole(r.Context(), id, req.Role); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao atualizar role")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 // DELETE /api/team/:id
 func (h *TeamHandler) Remove(w http.ResponseWriter, r *http.Request) {
 	id, _ := pathInt(r, "id")
-	h.db.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, id)
+	if err := h.repo.Remove(r.Context(), id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "erro ao remover usuario")
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

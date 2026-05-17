@@ -474,7 +474,11 @@ func Build(
 		r.Get("/api/admin/health", adminhnd.SystemHealthHandler(db))
 
 		danger := adminhnd.NewDangerHandler(db, st)
-		r.Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
+		// /api/admin/danger/* é destrutivo — exige role=admin.
+		// Nenhum user é admin por padrão (default 'operator'). Promover via SQL:
+		//   UPDATE users SET role = 'admin' WHERE email = 'dono@dominio.com';
+		// Depois novo login emite token com claim role=admin (TTL 15min).
+		r.With(middleware.RequireAdmin).Post("/api/admin/danger/soft-wipe", danger.SoftWipe)
 
 		// Baseline (Wave -1 baselining)
 		r.Route("/api/admin/baseline", func(r chi.Router) {

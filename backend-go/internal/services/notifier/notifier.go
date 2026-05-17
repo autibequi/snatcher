@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"snatcher/backendv2/internal/httpx"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/adapters"
 	store "snatcher/backendv2/internal/repositories"
@@ -208,7 +209,7 @@ func postEvolutionText(ctx context.Context, baseURL, apiKey, instance, jid, text
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apiKey", apiKey)
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := httpx.NewClient(20*time.Second, "snatcher-notifier")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("network: %w", err)

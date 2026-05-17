@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/repositories"
 )
 
 // MLPostback representa o payload POST do Mercado Livre.
@@ -23,6 +24,7 @@ type MLPostback struct {
 // HandleMLPostback processa postbacks POST do Mercado Livre.
 // Idempotente via UNIQUE (external_tx_id, source_id). Insere em conversions.
 func HandleMLPostback(db *sqlx.DB) http.HandlerFunc {
+	repo := repositories.NewAffiliateConversionsRepo(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var p MLPostback
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -30,29 +32,29 @@ func HandleMLPostback(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 
-		// resolve source_id
-		var sourceID string
-		if err := db.GetContext(r.Context(), &sourceID, "SELECT id FROM sources WHERE id='ml'"); err != nil {
+		sourceID, err := repo.ResolveSourceID(r.Context(), "ml")
+		if err != nil {
 			slog.Error("mercadolivre.source_lookup", "err", err)
 			http.Error(w, "source not found", http.StatusInternalServerError)
 			return
 		}
 
-		// resolve catalog_id + group_id via clicks
-		var catalogID, groupID *int64
-		_ = db.GetContext(r.Context(), &catalogID,
-			"SELECT catalog_id FROM clicks WHERE short_id=$1 ORDER BY clicked_at DESC LIMIT 1", p.SubID)
-		_ = db.GetContext(r.Context(), &groupID,
-			"SELECT group_id FROM clicks WHERE short_id=$1 ORDER BY clicked_at DESC LIMIT 1", p.SubID)
+		catalogID, groupID := repo.LookupClickContext(r.Context(), p.SubID)
 
-		// idempotent insert
 		raw, _ := json.Marshal(p)
-		_, err := db.ExecContext(r.Context(), `
-			INSERT INTO conversions (short_id, catalog_id, group_id, source_id, external_tx_id, order_value, commission, currency, status, occurred_at, raw_webhook)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11)
-			ON CONFLICT (external_tx_id, source_id) DO NOTHING
-		`, p.SubID, catalogID, groupID, sourceID, p.OrderID, p.AffiliateAmount, p.CommissionValue, p.Currency, p.Status, p.OccurredAt, raw)
-		if err != nil {
+		if err := repo.Insert(r.Context(), repositories.ConversionInsert{
+			ShortID:      p.SubID,
+			CatalogID:    catalogID,
+			GroupID:      groupID,
+			SourceID:     sourceID,
+			ExternalTxID: p.OrderID,
+			OrderValue:   p.AffiliateAmount,
+			Commission:   p.CommissionValue,
+			Currency:     p.Currency,
+			Status:       p.Status,
+			OccurredAt:   p.OccurredAt,
+			RawWebhook:   raw,
+		}); err != nil {
 			slog.Error("mercadolivre.insert", "err", err)
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return

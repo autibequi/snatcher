@@ -28,11 +28,18 @@ func getMetricsDB() *sqlx.DB {
 
 const maxPayloadStoreLen = 8000 // protege contra bloat — trunca prompts/responses muito longos
 
-func truncatePayload(s string) string {
-	if len(s) <= maxPayloadStoreLen {
+// TruncateString trunca s para no máximo max bytes, anexando suffix se cortou.
+// Funções com limites distintos usam este helper canônico (catalog_llm_queue,
+// llm_metrics, error logging). Não faz TrimSpace — caller decide.
+func TruncateString(s string, max int, suffix string) string {
+	if max <= 0 || len(s) <= max {
 		return s
 	}
-	return s[:maxPayloadStoreLen] + "... [truncated]"
+	return s[:max] + suffix
+}
+
+func truncatePayload(s string) string {
+	return TruncateString(s, maxPayloadStoreLen, "... [truncated]")
 }
 
 // RecordHandlerError loga falhas que acontecem no handler após o LLM ter respondido

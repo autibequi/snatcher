@@ -5,27 +5,22 @@ import (
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/repositories"
 )
 
 // GET /api/channels/{id}/brand-filters
 func ChannelBrandFiltersListHandler(db *sqlx.DB) http.HandlerFunc {
+	repo := repositories.NewChannelBrandFiltersRepo(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathInt(r, "id")
 		if !ok {
 			writeErr(w, http.StatusBadRequest, "id inválido")
 			return
 		}
-		type row struct {
-			ID           int64  `db:"id"            json:"id"`
-			BrandSlug    string `db:"brand_slug"    json:"brand_slug"`
-			BrandDisplay string `db:"brand_display" json:"brand_display"`
-			Mode         string `db:"mode"          json:"mode"`
-		}
-		var rows []row
-		if err := db.SelectContext(r.Context(), &rows,
-			`SELECT id, brand_slug, brand_display, mode FROM channel_brand_filters WHERE channel_id=$1 ORDER BY mode, brand_slug`, id,
-		); err != nil {
-			rows = []row{}
+		rows, err := repo.List(r.Context(), id)
+		if err != nil {
+			// Preserva semântica anterior: erro silencioso → lista vazia.
+			rows = []repositories.ChannelBrandFilter{}
 		}
 		writeJSON(w, http.StatusOK, rows)
 	}
@@ -33,6 +28,7 @@ func ChannelBrandFiltersListHandler(db *sqlx.DB) http.HandlerFunc {
 
 // POST /api/channels/{id}/brand-filters
 func ChannelBrandFiltersAddHandler(db *sqlx.DB) http.HandlerFunc {
+	repo := repositories.NewChannelBrandFiltersRepo(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathInt(r, "id")
 		if !ok {
@@ -54,12 +50,7 @@ func ChannelBrandFiltersAddHandler(db *sqlx.DB) http.HandlerFunc {
 		if req.BrandDisplay == "" {
 			req.BrandDisplay = req.BrandSlug
 		}
-		_, err := db.ExecContext(r.Context(), `
-            INSERT INTO channel_brand_filters (channel_id, brand_slug, brand_display, mode)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (channel_id, brand_slug, mode) DO NOTHING
-        `, id, req.BrandSlug, req.BrandDisplay, req.Mode)
-		if err != nil {
+		if err := repo.Add(r.Context(), id, req.BrandSlug, req.BrandDisplay, req.Mode); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -69,6 +60,7 @@ func ChannelBrandFiltersAddHandler(db *sqlx.DB) http.HandlerFunc {
 
 // DELETE /api/channels/{id}/brand-filters/{filterId}
 func ChannelBrandFiltersDeleteHandler(db *sqlx.DB) http.HandlerFunc {
+	repo := repositories.NewChannelBrandFiltersRepo(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		chID, ok1 := pathInt(r, "id")
 		fID, ok2 := pathInt(r, "filterId")
@@ -76,7 +68,10 @@ func ChannelBrandFiltersDeleteHandler(db *sqlx.DB) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "ids inválidos")
 			return
 		}
-		db.ExecContext(r.Context(), `DELETE FROM channel_brand_filters WHERE id=$1 AND channel_id=$2`, fID, chID)
+		if err := repo.Delete(r.Context(), chID, fID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "erro ao remover filtro")
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

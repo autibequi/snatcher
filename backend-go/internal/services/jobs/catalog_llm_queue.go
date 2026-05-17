@@ -389,7 +389,14 @@ Origem/source (pode ser vazio): %q`,
 	// Feedback loop: registra brand_slug em brand_keywords e re-roda heurística
 	// nos itens pendentes da fila. Se o novo dado resolve outros itens, eles saem
 	// da fila sem gastar tokens LLM adicionais.
-	go sweepQueueWithNewKeyword(context.Background(), db, bslug, brandRowID)
+	//
+	// Goroutine com timeout dedicado — context.Background() era usado, mas se
+	// db/ollama lentificassem a goroutine podia acumular indefinidamente.
+	go func(brandSlug string, brandRowID int64) {
+		sweepCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		sweepQueueWithNewKeyword(sweepCtx, db, brandSlug, brandRowID)
+	}(bslug, brandRowID)
 
 	return out, nil
 }
@@ -446,7 +453,11 @@ func sweepQueueWithNewKeyword(ctx context.Context, db *sqlx.DB, brandSlug string
 		WHERE  c.id = x.id
 	`)
 	if err != nil {
-		slog.Warn("sweepQueue: erro no re-sweep de fila", "brand", brandSlug, "err", err)
+		if ctx.Err() != nil {
+			slog.Warn("sweepQueue: ctx cancelado/timeout durante re-sweep", "brand", brandSlug, "ctx_err", ctx.Err(), "exec_err", err)
+		} else {
+			slog.Warn("sweepQueue: erro no re-sweep de fila", "brand", brandSlug, "err", err)
+		}
 		return
 	}
 	n, _ := res.RowsAffected()
@@ -476,12 +487,11 @@ func markQueueLLMRequeuePending(ctx context.Context, db *sqlx.DB, catalogID int6
 	return err
 }
 
+// truncateErr aplica TrimSpace + truncate a 900 chars com "…". Mantido como
+// helper local porque o TrimSpace é semântica desta camada (erros de DB vêm
+// com \n); a truncagem em si delega para llm.TruncateString (canonical).
 func truncateErr(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > 900 {
-		return s[:900] + "…"
-	}
-	return s
+	return llm.TruncateString(strings.TrimSpace(s), 900, "…")
 }
 
 func loadCategorySlugs(ctx context.Context, db *sqlx.DB, limit int) ([]string, error) {

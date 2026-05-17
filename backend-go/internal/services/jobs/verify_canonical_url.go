@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/httpx"
 )
 
 // RunVerifyCanonicalURL faz HEAD em catalog.canonical_url para verificar disponibilidade.
@@ -26,7 +27,7 @@ func RunVerifyCanonicalURL(ctx context.Context, db *sqlx.DB) error {
 		return err
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := httpx.NewClient(5*time.Second, "snatcher-canonical-verify")
 	deadCount := 0
 	for _, it := range items {
 		if ctx.Err() != nil {

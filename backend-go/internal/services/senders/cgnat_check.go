@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/httpx"
 )
 
 // RunCGNATCheck verifica IP público de cada modem ativo. Pausa 1h se IP mudou.
@@ -25,7 +26,7 @@ func RunCGNATCheck(ctx context.Context, db *sqlx.DB) error {
 	if err := db.SelectContext(ctx, &modems, `SELECT id, slug, public_ip::text FROM modems WHERE status='active' AND slug <> 'host'`); err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := httpx.NewClient(8*time.Second, "snatcher-cgnat-check")
 	for _, m := range modems {
 		// NOTA: idealmente bind à interface do modem via proxy/endpoint dedicado;
 		// por ora usa ifconfig.io via interface default (suficiente para dev/staging).

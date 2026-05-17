@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/httpx"
 )
 
 // RunCacheImages baixa image_url de catalog items que ainda não foram cacheados.
@@ -41,7 +42,7 @@ func RunCacheImages(ctx context.Context, db *sqlx.DB) error {
 		return err
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := httpx.NewClient(10*time.Second, "snatcher-cache-images")
 	saved := 0
 	for _, r := range rows {
 		req, err := http.NewRequestWithContext(ctx, "GET", r.URL, nil)

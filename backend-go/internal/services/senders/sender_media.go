@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"snatcher/backendv2/internal/httpx"
 )
 
 // SendMediaArgs encapsula args para envio multimodal.
@@ -30,7 +31,7 @@ func SendTextWithMedia(ctx context.Context, args SendMediaArgs) error {
 		return fmt.Errorf("evolution_url empty")
 	}
 
-	httpCli := &http.Client{Timeout: 30 * time.Second}
+	httpCli := httpx.NewClient(30*time.Second, "snatcher-sender-media")
 
 	if args.ImagePath == "" {
 		body, _ := json.Marshal(map[string]any{"number": args.JID, "text": args.Caption})

@@ -158,11 +158,13 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 								dueIDs = append(dueIDs, a.ID)
 								continue
 							}
-							// Parseia last_run_at (formato RFC3339 ou timestamp sem timezone).
+							// Parseia last_run_at. RFC3339 traz timezone explícito; fallback sem TZ
+							// assume UTC explicitamente (era implicit antes — bug latente em containers
+							// com TZ local ≠ UTC, drift silencioso em now.Sub abaixo).
 							var lastRun time.Time
 							if t, parseErr := time.Parse(time.RFC3339, *a.LastRunAt); parseErr == nil {
 								lastRun = t
-							} else if t, parseErr := time.Parse("2006-01-02T15:04:05", *a.LastRunAt); parseErr == nil {
+							} else if t, parseErr := time.ParseInLocation("2006-01-02T15:04:05", *a.LastRunAt, time.UTC); parseErr == nil {
 								lastRun = t
 							} else {
 								// Formato desconhecido — assume candidata.
