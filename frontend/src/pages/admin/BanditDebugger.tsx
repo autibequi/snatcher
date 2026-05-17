@@ -48,7 +48,8 @@ function avgRewardColor(avg: number): string {
 
 // ArmsTable exibe os arms UCB1 com pulls, rewards e pesos.
 function ArmsTable({ arms }: { arms: BanditArm[] }) {
-  if (arms.length === 0) {
+  const rows = arms ?? []
+  if (rows.length === 0) {
     return (
       <EmptyState
         title="Nenhum arm registrado"
@@ -72,7 +73,7 @@ function ArmsTable({ arms }: { arms: BanditArm[] }) {
           </tr>
         </thead>
         <tbody>
-          {arms.map((arm) => (
+          {rows.map((arm) => (
             <tr key={arm.arm_id} className={trDense}>
               <td className={`${tdDense} font-mono text-xs`}>{arm.arm_id}</td>
               <td className={tdDenseRight}>{arm.weights.discount.toFixed(3)}</td>
@@ -204,7 +205,7 @@ export default function BanditDebugger() {
           </Button>
         </div>
 
-        <ArmsTable arms={state.arms} />
+        <ArmsTable arms={state.arms ?? []} />
       </div>
     )
   }

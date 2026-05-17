@@ -24,8 +24,52 @@ export interface BanditState {
   updated_at?: string
 }
 
+// Formato persistido em channel_score_weights.ucb1_state (algo.Arm).
+interface Ucb1ArmRaw {
+  id: string
+  weights?: Partial<BanditArmWeights>
+  pulls?: number
+  reward?: number
+}
+
+// Payload bruto do GET /api/admin/channels/{id}/bandit.
+interface BanditApiResponse {
+  channel_id: number
+  weights?: unknown
+  ucb1_state?: Ucb1ArmRaw[] | null
+  updated_at?: string | null
+  updated_by?: string | null
+}
+
+function normalizeArm(raw: Ucb1ArmRaw): BanditArm {
+  const pulls = raw.pulls ?? 0
+  const reward = raw.reward ?? 0
+  return {
+    arm_id: String(raw.id ?? ''),
+    weights: {
+      discount: raw.weights?.discount ?? 0,
+      freshness: raw.weights?.freshness ?? 0,
+      source_trust: raw.weights?.source_trust ?? 0,
+    },
+    pulls,
+    rewards: reward,
+    avg_reward: pulls > 0 ? reward / pulls : 0,
+  }
+}
+
+function parseBanditState(raw: BanditApiResponse): BanditState {
+  const armsRaw = Array.isArray(raw.ucb1_state) ? raw.ucb1_state : []
+  const arms = armsRaw.map(normalizeArm)
+  const total_pulls = arms.reduce((sum, arm) => sum + arm.pulls, 0)
+  return {
+    channel_id: raw.channel_id,
+    arms,
+    total_pulls,
+    updated_at: raw.updated_at ?? undefined,
+  }
+}
+
 // fetchBanditState busca o estado UCB1 do bandit de um canal específico.
-// Retorna null se o endpoint retornar 404 (canal sem estado ou feature desabilitada).
 export async function fetchBanditState(channelID: number): Promise<BanditState | null> {
   const r = await authFetch(`/api/admin/channels/${channelID}/bandit`)
   if (r.status === 404) {
@@ -34,7 +78,8 @@ export async function fetchBanditState(channelID: number): Promise<BanditState |
   if (!r.ok) {
     throw new Error(`fetchBanditState ${r.status}`)
   }
-  return r.json()
+  const raw = (await r.json()) as BanditApiResponse
+  return parseBanditState(raw)
 }
 
 // resetBanditState envia POST para resetar o estado UCB1 de um canal.
