@@ -471,6 +471,33 @@ func Build(
 		// Dispatch manual (Composer)
 		manualDispatch := adminhnd.NewManualDispatchHandler(st, db)
 		r.Post("/api/dispatch/manual", manualDispatch.Send)
+
+		// FW-4: Canonical groups
+		r.Get("/api/admin/canonical-groups", adminhnd.ListCanonicalGroupsHandler(db))
+
+		// FW-4: Taxonomy tree + feedback
+		r.Get("/api/admin/taxonomy/tree", adminhnd.GetTaxonomyTreeHandler(db))
+		r.Post("/api/admin/taxonomy/feedback", adminhnd.PostTaxonomyFeedbackHandler(db))
+
+		// FW-4: Dispatch routing
+		r.Get("/api/admin/dispatch/routing", adminhnd.ListDispatchRoutingHandler(db))
+		r.Patch("/api/admin/dispatch/routing/{modem_id}/{domain_id}", adminhnd.PatchDispatchRoutingHandler(db))
+
+		// FW-4: Dispatch rate buckets
+		r.Get("/api/admin/dispatch/rate-buckets", adminhnd.ListRateBucketsHandler(db))
+
+		// FW-4: Dispatch rejections
+		r.Get("/api/admin/dispatch/rejections", adminhnd.ListDispatchRejectionsHandler(db))
+
+		// FW-4: Quarantine events
+		r.Get("/api/admin/quarantine", adminhnd.ListQuarantineHandler(db))
+
+		// FW-4: Jonfrey decisions
+		r.Get("/api/admin/jonfrey/decisions", adminhnd.ListJonfreyDecisionsHandler(db))
+
+		// FW-4: Channel bandit state
+		r.Get("/api/admin/channels/{id}/bandit", adminhnd.GetChannelBanditHandler(db))
+		r.Post("/api/admin/channels/{id}/bandit/reset", adminhnd.ResetChannelBanditHandler(db))
 	})
 
 	return r
