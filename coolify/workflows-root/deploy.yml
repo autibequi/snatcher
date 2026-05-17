@@ -16,6 +16,7 @@ jobs:
     name: Deploy (Coolify)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: production
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -31,7 +32,7 @@ jobs:
           set -euo pipefail
 
           if [[ -z "${COOLIFY_TOKEN:-}" ]]; then
-            echo "::error::Secret COOLIFY_TOKEN não configurado"
+            echo "::error::Secret COOLIFY_TOKEN não configurado (Settings → Secrets → Actions)"
             exit 1
           fi
 
@@ -42,9 +43,11 @@ jobs:
           elif [[ -n "${COOLIFY_UUID:-}" ]]; then
             target="${COOLIFY_URL}/api/v1/deploy?uuid=${COOLIFY_UUID}&force=false"
           else
-            echo "::error::Configure COOLIFY_WEBHOOK_URL (secret) ou COOLIFY_RESOURCE_UUID (variable)"
+            echo "::error::Configure COOLIFY_WEBHOOK_URL (secret) ou COOLIFY_RESOURCE_UUID (variable no environment production)"
             exit 1
           fi
+
+          echo "POST ${target}"
 
           response=$(curl -sS -w "\n%{http_code}" \
             -X POST \
@@ -73,6 +76,7 @@ jobs:
               echo "OK — ${APP_URL}"
               exit 0
             fi
+            echo "Tentativa ${i}/5 — HTTP ${status}"
             sleep 30
           done
           echo "::warning::Health check falhou — ver logs no Coolify"

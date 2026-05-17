@@ -1,0 +1,535 @@
+From a369d52871b4497bf3241c7ff554155fd47dbb00 Mon Sep 17 00:00:00 2001
+From: Cursor <cursor@cursor.sh>
+Date: Sun, 17 May 2026 16:27:05 +0000
+Subject: [PATCH] ci: mover workflows para a raiz e corrigir deploy Coolify
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GitHub Actions só descobre YAML em .github/workflows/ na raiz do repo.
+CI e Deploy estavam em backend-go/ (invisíveis na UI). Remove pipelines
+legados promosnatcher (backend/ inexistente). Deploy aceita webhook ou UUID.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .github/workflows/build-base.yml              |  65 --------
+ .github/workflows/build-images.yml            | 145 ------------------
+ .../.github => .github}/workflows/ci.yml      |  12 +-
+ .github/workflows/deploy.yml                  |  82 ++++++++++
+ backend-go/.github/workflows/deploy.yml       |  75 ---------
+ coolify/github-workflow-coolify-deploy.yml    |  60 ++------
+ 6 files changed, 97 insertions(+), 342 deletions(-)
+ delete mode 100644 .github/workflows/build-base.yml
+ delete mode 100644 .github/workflows/build-images.yml
+ rename {backend-go/.github => .github}/workflows/ci.yml (90%)
+ create mode 100644 .github/workflows/deploy.yml
+ delete mode 100644 backend-go/.github/workflows/deploy.yml
+
+diff --git a/.github/workflows/build-base.yml b/.github/workflows/build-base.yml
+deleted file mode 100644
+index 1e62c0e..0000000
+--- a/.github/workflows/build-base.yml
++++ /dev/null
+@@ -1,65 +0,0 @@
+-name: Build base image → ghcr.io
+-
+-on:
+-  # Rebuild when heavy deps change
+-  push:
+-    branches: [main]
+-    paths:
+-      - 'backend/requirements.txt'
+-      - 'backend/Dockerfile'
+-  # Manual trigger (first time or forced rebuild)
+-  workflow_dispatch:
+-
+-concurrency:
+-  group: build-base-${{ github.ref }}
+-  cancel-in-progress: true
+-
+-env:
+-  REGISTRY: ghcr.io
+-  IMAGE: ghcr.io/autibequi/promosnatcher-base
+-
+-jobs:
+-  build-base:
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-      packages: write
+-
+-    steps:
+-      - uses: actions/checkout@v4
+-
+-      - name: Login ghcr.io
+-        uses: docker/login-action@v3
+-        with:
+-          registry: ${{ env.REGISTRY }}
+-          username: ${{ github.actor }}
+-          password: ${{ secrets.GITHUB_TOKEN }}
+-
+-      # Fallback: se rodar em x86 runner, QEMU permite cross-build ARM64.
+-      # Em runner ARM64 nativo, este step e no-op.
+-      - name: Setup QEMU (fallback para x86 runners)
+-        uses: docker/setup-qemu-action@v3
+-
+-      - name: Setup Buildx
+-        uses: docker/setup-buildx-action@v3
+-
+-      # provenance/sbom desligados: attestations do BuildKit às vezes quebram o index
+-      # multi-arch no GHCR e o pull local acusa "no match for platform in manifest".
+-      - name: Build e push base image
+-        uses: docker/build-push-action@v6
+-        with:
+-          context: ./backend
+-          file: ./backend/Dockerfile
+-          target: base
+-          platforms: linux/amd64,linux/arm64
+-          push: true
+-          provenance: false
+-          sbom: false
+-          tags: |
+-            ${{ env.IMAGE }}:latest
+-            ${{ env.IMAGE }}:${{ github.sha }}
+-          cache-from: type=gha,scope=base
+-          cache-to: type=gha,mode=max,scope=base
+-
+-      - name: Verificar manifest multi-arch
+-        run: docker buildx imagetools inspect ${{ env.IMAGE }}:latest
+diff --git a/.github/workflows/build-images.yml b/.github/workflows/build-images.yml
+deleted file mode 100644
+index f49c0cc..0000000
+--- a/.github/workflows/build-images.yml
++++ /dev/null
+@@ -1,145 +0,0 @@
+-name: Build images (ARM64) → ghcr.io
+-
+-on:
+-  push:
+-    branches: [main]
+-
+-# Push rapido? Cancela build anterior e so roda o ultimo.
+-concurrency:
+-  group: build-${{ github.ref }}
+-  cancel-in-progress: true
+-
+-env:
+-  REGISTRY: ghcr.io
+-  IMAGE_PREFIX: ghcr.io/autibequi/promosnatcher
+-
+-jobs:
+-  # -------------------------------------------------------------------------
+-  # Job 1: detecta quais pastas mudaram (~10s, quase gratis)
+-  # -------------------------------------------------------------------------
+-  changes:
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-    outputs:
+-      backend: ${{ steps.filter.outputs.backend }}
+-      frontend: ${{ steps.filter.outputs.frontend }}
+-      redirect: ${{ steps.filter.outputs.redirect }}
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: dorny/paths-filter@v3
+-        id: filter
+-        with:
+-          filters: |
+-            backend:
+-              - 'backend/**'
+-            frontend:
+-              - 'frontend/**'
+-            redirect:
+-              - 'redirect/**'
+-
+-  # -------------------------------------------------------------------------
+-  # Job 2-4: builda so o que mudou
+-  # -------------------------------------------------------------------------
+-  build-backend:
+-    needs: changes
+-    if: needs.changes.outputs.backend == 'true'
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-      packages: write
+-    steps:
+-      - uses: actions/checkout@v4
+-
+-      - uses: docker/login-action@v3
+-        with:
+-          registry: ${{ env.REGISTRY }}
+-          username: ${{ github.actor }}
+-          password: ${{ secrets.GITHUB_TOKEN }}
+-
+-      - uses: docker/setup-qemu-action@v3
+-      - uses: docker/setup-buildx-action@v3
+-
+-      - name: Build e push backend
+-        uses: docker/build-push-action@v6
+-        with:
+-          context: ./backend
+-          platforms: linux/amd64,linux/arm64
+-          push: true
+-          provenance: false
+-          sbom: false
+-          tags: |
+-            ${{ env.IMAGE_PREFIX }}-backend:latest
+-            ${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+-          cache-from: type=gha,scope=backend
+-          cache-to: type=gha,mode=max,scope=backend
+-
+-  build-frontend:
+-    needs: changes
+-    if: needs.changes.outputs.frontend == 'true'
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-      packages: write
+-    steps:
+-      - uses: actions/checkout@v4
+-
+-      - uses: docker/login-action@v3
+-        with:
+-          registry: ${{ env.REGISTRY }}
+-          username: ${{ github.actor }}
+-          password: ${{ secrets.GITHUB_TOKEN }}
+-
+-      # QEMU so pro stage final (nginx:alpine ARM64).
+-      # Stage de build (npm) roda nativo em x86.
+-      - uses: docker/setup-qemu-action@v3
+-      - uses: docker/setup-buildx-action@v3
+-
+-      - name: Build e push frontend
+-        uses: docker/build-push-action@v6
+-        with:
+-          context: ./frontend
+-          platforms: linux/amd64,linux/arm64
+-          push: true
+-          provenance: false
+-          sbom: false
+-          tags: |
+-            ${{ env.IMAGE_PREFIX }}-frontend:latest
+-            ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+-          cache-from: type=gha,scope=frontend
+-          cache-to: type=gha,mode=max,scope=frontend
+-
+-  build-redirect:
+-    needs: changes
+-    if: needs.changes.outputs.redirect == 'true'
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-      packages: write
+-    steps:
+-      - uses: actions/checkout@v4
+-
+-      - uses: docker/login-action@v3
+-        with:
+-          registry: ${{ env.REGISTRY }}
+-          username: ${{ github.actor }}
+-          password: ${{ secrets.GITHUB_TOKEN }}
+-
+-      # QEMU so pro stage final (alpine ARM64).
+-      # Go cross-compila nativamente via GOOS/GOARCH.
+-      - uses: docker/setup-qemu-action@v3
+-      - uses: docker/setup-buildx-action@v3
+-
+-      - name: Build e push redirect
+-        uses: docker/build-push-action@v6
+-        with:
+-          context: ./redirect
+-          platforms: linux/amd64,linux/arm64
+-          push: true
+-          provenance: false
+-          sbom: false
+-          tags: |
+-            ${{ env.IMAGE_PREFIX }}-redirect:latest
+-            ${{ env.IMAGE_PREFIX }}-redirect:${{ github.sha }}
+-          cache-from: type=gha,scope=redirect
+-          cache-to: type=gha,mode=max,scope=redirect
+diff --git a/backend-go/.github/workflows/ci.yml b/.github/workflows/ci.yml
+similarity index 90%
+rename from backend-go/.github/workflows/ci.yml
+rename to .github/workflows/ci.yml
+index 8767fe6..ccd0bb3 100644
+--- a/backend-go/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -5,6 +5,11 @@ on:
+   push:
+     branches:
+       - main
++  workflow_dispatch:
++
++defaults:
++  run:
++    working-directory: backend-go
+ 
+ jobs:
+   lint:
+@@ -29,9 +34,6 @@ jobs:
+   test:
+     name: Test Status
+     runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        working-directory: backend-go
+     services:
+       postgres:
+         image: postgres:16-alpine
+@@ -68,9 +70,6 @@ jobs:
+   build:
+     name: Build Status
+     runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        working-directory: backend-go
+     steps:
+       - uses: actions/checkout@v4
+ 
+@@ -80,7 +79,6 @@ jobs:
+           cache: true
+           cache-dependency-path: backend-go/go.sum
+ 
+-      # Paridade com Dockerfile (tags=nosqlite, sem CGO, -p 1) — falha aqui = mesmo erro no Coolify.
+       - name: Build packages + binaries (Dockerfile parity)
+         env:
+           CGO_ENABLED: "0"
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+new file mode 100644
+index 0000000..4778bd0
+--- /dev/null
++++ b/.github/workflows/deploy.yml
+@@ -0,0 +1,82 @@
++name: Deploy to Coolify
++
++on:
++  workflow_run:
++    workflows: [CI]
++    types: [completed]
++    branches: [main]
++  workflow_dispatch:
++
++concurrency:
++  group: deploy-production
++  cancel-in-progress: true
++
++jobs:
++  deploy:
++    name: Deploy (Coolify)
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    environment: production
++    if: >
++      github.event_name == 'workflow_dispatch' ||
++      github.event.workflow_run.conclusion == 'success'
++
++    steps:
++      - name: Trigger Coolify deploy
++        env:
++          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
++          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
++          COOLIFY_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
++          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
++        run: |
++          set -euo pipefail
++
++          if [[ -z "${COOLIFY_TOKEN:-}" ]]; then
++            echo "::error::Secret COOLIFY_TOKEN não configurado (Settings → Secrets → Actions)"
++            exit 1
++          fi
++
++          COOLIFY_URL="${COOLIFY_URL:-https://coolify.autibequi.com}"
++
++          if [[ -n "${COOLIFY_WEBHOOK_URL:-}" ]]; then
++            target="${COOLIFY_WEBHOOK_URL}"
++          elif [[ -n "${COOLIFY_UUID:-}" ]]; then
++            target="${COOLIFY_URL}/api/v1/deploy?uuid=${COOLIFY_UUID}&force=false"
++          else
++            echo "::error::Configure COOLIFY_WEBHOOK_URL (secret) ou COOLIFY_RESOURCE_UUID (variable no environment production)"
++            exit 1
++          fi
++
++          echo "POST ${target}"
++
++          response=$(curl -sS -w "\n%{http_code}" \
++            -X POST \
++            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
++            -H "Content-Type: application/json" \
++            "${target}")
++
++          http_code=$(echo "$response" | tail -n1)
++          body=$(echo "$response" | head -n -1)
++          echo "HTTP ${http_code} — ${body}"
++
++          case "${http_code}" in
++            200|201|202|204) echo "Deploy enfileirado." ;;
++            *) echo "::error::Deploy falhou — HTTP ${http_code}"; exit 1 ;;
++          esac
++
++      - name: Health check
++        env:
++          APP_URL: ${{ vars.APP_URL }}
++        run: |
++          APP_URL="${APP_URL:-https://snatcher.autibequi.com}"
++          sleep 120
++          for i in 1 2 3 4 5; do
++            status=$(curl -sS -o /dev/null -w "%{http_code}" "${APP_URL}/api/health" || echo "000")
++            if [ "$status" = "200" ]; then
++              echo "OK — ${APP_URL}"
++              exit 0
++            fi
++            echo "Tentativa ${i}/5 — HTTP ${status}"
++            sleep 30
++          done
++          echo "::warning::Health check falhou — ver logs no Coolify"
+diff --git a/backend-go/.github/workflows/deploy.yml b/backend-go/.github/workflows/deploy.yml
+deleted file mode 100644
+index 4761a5b..0000000
+--- a/backend-go/.github/workflows/deploy.yml
++++ /dev/null
+@@ -1,75 +0,0 @@
+-name: Deploy to Coolify
+-
+-# Dispara quando o workflow CI termina com sucesso na main.
+-# Não precisa modificar ci.yml.
+-on:
+-  workflow_run:
+-    workflows: ["CI"]
+-    types: [completed]
+-    branches: [main]
+-
+-# Cancela deploy anterior se novo commit chegar antes de terminar.
+-concurrency:
+-  group: deploy-production
+-  cancel-in-progress: true
+-
+-jobs:
+-  deploy:
+-    name: Deploy (Coolify)
+-    runs-on: ubuntu-latest
+-    environment: production
+-
+-    # Só roda se CI passou — não deploya commit quebrado.
+-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+-
+-    steps:
+-      - name: Trigger Coolify deploy
+-        env:
+-          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+-          # UUID do resource no Coolify (visível na URL do app ou nos logs de deploy).
+-          # Salvo também como variable em Settings > Environments > production.
+-          COOLIFY_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+-          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+-        run: |
+-          COOLIFY_URL="${COOLIFY_URL:-https://coolify.autibequi.com}"
+-
+-          echo "Triggering deploy: $COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID"
+-
+-          response=$(curl -s -w "\n%{http_code}" \
+-            -X POST \
+-            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+-            -H "Content-Type: application/json" \
+-            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID&force=false")
+-
+-          http_code=$(echo "$response" | tail -n1)
+-          body=$(echo "$response" | head -n -1)
+-
+-          echo "HTTP $http_code — $body"
+-
+-          if [ "$http_code" != "200" ] && [ "$http_code" != "201" ]; then
+-            echo "::error::Deploy trigger falhou — HTTP $http_code: $body"
+-            exit 1
+-          fi
+-
+-          echo "Deploy enfileirado com sucesso."
+-
+-      - name: Wait and health check
+-        env:
+-          APP_URL: ${{ vars.APP_URL }}
+-        run: |
+-          APP_URL="${APP_URL:-https://snatcher.autibequi.com}"
+-          echo "Aguardando 120s para build + boot..."
+-          sleep 120
+-
+-          for i in 1 2 3 4 5; do
+-            status=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
+-            if [ "$status" = "200" ]; then
+-              echo "✅ Deploy OK — app respondendo em $APP_URL"
+-              exit 0
+-            fi
+-            echo "Tentativa $i/5 — HTTP $status. Aguardando 30s..."
+-            sleep 30
+-          done
+-
+-          echo "::error::Health check falhou após 5 tentativas. Verificar logs no Coolify."
+-          exit 1
+diff --git a/coolify/github-workflow-coolify-deploy.yml b/coolify/github-workflow-coolify-deploy.yml
+index f801cf4..547bae7 100644
+--- a/coolify/github-workflow-coolify-deploy.yml
++++ b/coolify/github-workflow-coolify-deploy.yml
+@@ -1,52 +1,12 @@
+-# Template do workflow GitHub Actions pra disparar deploy no Coolify.
+-# Origem: criado pelo Claude no container; o `.github/` deste repo é
+-# tmpfs read-only dentro do plug, então o arquivo precisa ser movido
+-# manualmente pro path final no host:
++# Workflows oficiais ficam na RAIZ do repositório (GitHub só lê .github/workflows/):
++#   .github/workflows/ci.yml      — lint, test, build (backend-go)
++#   .github/workflows/deploy.yml  — Coolify após CI na main + workflow_dispatch
+ #
+-#   mkdir -p ~/projects/pessoal/snatcher/.github/workflows
+-#   mv ~/projects/pessoal/snatcher/coolify/github-workflow-coolify-deploy.yml \
+-#      ~/projects/pessoal/snatcher/.github/workflows/coolify-deploy.yml
++# Secrets (Actions → production ou repo):
++#   COOLIFY_TOKEN          — obrigatório
++#   COOLIFY_WEBHOOK_URL    — opcional (URL completa do deploy webhook Coolify)
+ #
+-# Secrets necessários no repo (Settings → Secrets and variables → Actions):
+-#   COOLIFY_WEBHOOK_URL  → URL do webhook da Application no Coolify
+-#                          (ex: https://coolify.autibequi.com/api/v1/deploy?uuid=...)
+-#   COOLIFY_TOKEN        → API Token (Coolify → User Settings → Keys & Tokens)
+-
+-name: Coolify Deploy
+-
+-on:
+-  push:
+-    branches: [main]
+-    paths:
+-      - 'backend-go/**'
+-      - 'frontend/**'
+-      - 'coolify/**'
+-      - '.github/workflows/coolify-deploy.yml'
+-  workflow_dispatch:
+-
+-concurrency:
+-  group: coolify-deploy
+-  cancel-in-progress: false
+-
+-jobs:
+-  deploy:
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 5
+-    steps:
+-      - name: Trigger Coolify redeploy
+-        env:
+-          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
+-          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+-        run: |
+-          set -euo pipefail
+-          if [[ -z "${COOLIFY_WEBHOOK_URL:-}" || -z "${COOLIFY_TOKEN:-}" ]]; then
+-            echo "::error::COOLIFY_WEBHOOK_URL ou COOLIFY_TOKEN não estão configurados nos secrets do repo"
+-            exit 1
+-          fi
+-          code=$(curl -fsS -o /tmp/coolify-resp -w "%{http_code}" \
+-            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+-            "${COOLIFY_WEBHOOK_URL}")
+-          echo "HTTP $code"
+-          cat /tmp/coolify-resp || true
+-          echo
+-          [[ "$code" =~ ^2[0-9][0-9]$ ]]
++# Variables (environment production recomendado):
++#   COOLIFY_RESOURCE_UUID  — uuid da Application (se não usar webhook)
++#   COOLIFY_URL            — default https://coolify.autibequi.com
++#   APP_URL                — default https://snatcher.autibequi.com
+-- 
+2.39.5
+

@@ -1,31 +1,12 @@
-# DEPRECATED como destino final — use os workflows na RAIZ do repo:
-#   .github/workflows/ci.yml
-#   .github/workflows/deploy.yml
+# Workflows oficiais ficam na RAIZ do repositório (GitHub só lê .github/workflows/):
+#   .github/workflows/ci.yml      — lint, test, build (backend-go)
+#   .github/workflows/deploy.yml  — Coolify após CI na main + workflow_dispatch
 #
-# GitHub Actions só lista workflows em <repo>/.github/workflows/ (não em backend-go/).
-#
-# No host (fora do container plug, onde .github não é read-only):
-#   mkdir -p ~/projects/pessoal/snatcher/.github/workflows
-#   cp coolify/workflows-root/ci.yml      ~/projects/pessoal/snatcher/.github/workflows/ci.yml
-#   cp coolify/workflows-root/deploy.yml  ~/projects/pessoal/snatcher/.github/workflows/deploy.yml
-#   git add .github/workflows && git commit -m "ci: workflows na raiz do repo" && git push
-#
-# Secrets (Actions):
-#   COOLIFY_TOKEN          — obrigatório (Bearer)
+# Secrets (Actions → production ou repo):
+#   COOLIFY_TOKEN          — obrigatório
 #   COOLIFY_WEBHOOK_URL    — opcional (URL completa do deploy webhook Coolify)
 #
-# Variables (Actions):
-#   COOLIFY_RESOURCE_UUID  — se não usar webhook (uuid da Application)
+# Variables (environment production recomendado):
+#   COOLIFY_RESOURCE_UUID  — uuid da Application (se não usar webhook)
 #   COOLIFY_URL            — default https://coolify.autibequi.com
 #   APP_URL                — default https://snatcher.autibequi.com
-
-name: Coolify Deploy (template legado)
-
-on:
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Use .github/workflows/deploy.yml na raiz do repositório"
