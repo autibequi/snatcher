@@ -165,7 +165,7 @@ func claimNextJob(ctx context.Context, db *sqlx.DB, workerID string, ttl time.Du
 		FROM send_queue
 		WHERE status = 'pending'
 		  AND (scheduled_for IS NULL OR scheduled_for <= now())
-		ORDER BY COALESCE(score, 0) DESC, COALESCE(scheduled_for, created_at) ASC
+		ORDER BY COALESCE(score, 0) DESC, COALESCE(scheduled_for, enqueued_at) ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`)
 	if err == sql.ErrNoRows {
