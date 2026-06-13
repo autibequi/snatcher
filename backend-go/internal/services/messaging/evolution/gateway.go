@@ -23,7 +23,7 @@ func (g *Gateway) Platform() messaging.Platform { return messaging.PlatformWhats
 
 func (g *Gateway) Connect(ctx context.Context, accountID int64, opts map[string]string) (messaging.Session, error) {
 	inst := g.instanceName(accountID, opts)
-	state, qr, err := g.client.InstanceStatus(ctx, inst)
+	state, qr, err := g.client.InstanceConnect(ctx, inst)
 	if err != nil {
 		return messaging.Session{}, fmt.Errorf("evolution connect: %w", err)
 	}
