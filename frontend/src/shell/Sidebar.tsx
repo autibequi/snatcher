@@ -61,7 +61,7 @@ const NAV: NavGroup[] = [
       { to: '/admin/catalog-canonical', label: 'Catálogo',   Icon: Package },
       { to: '/taxonomy',                label: 'Taxonomia',  Icon: Tags    },
       // Canônicos — rota criada em FW-4; aponta para rota futura (404 aceitável nesta wave)
-      { to: '/admin/canonical-groups',  label: 'Canônicos',  Icon: Layers  },
+      { to: '/admin/canonical-groups',  label: 'Produtos',   Icon: Layers  },
     ],
   },
   {
@@ -85,6 +85,7 @@ const NAV: NavGroup[] = [
       { to: '/admin/observability',       label: 'Pulso',       Icon: Eye          },
       { to: '/admin/baseline',            label: 'Baseline',    Icon: Activity     },
       { to: '/activity',                  label: 'Atividade',   Icon: Activity     },
+      { to: '/analytics',                 label: 'Analytics',   Icon: BarChart3    },
     ],
   },
   {

@@ -413,6 +413,8 @@ func markSent(ctx context.Context, db *sqlx.DB, qid, groupID int64, catalogID *i
 	}
 	// touch account
 	_, _ = tx.ExecContext(ctx, "UPDATE accounts SET last_sent_at=now(), consecutive_failures=0 WHERE id=$1", accountID)
+	// touch group: rastreia o último envio do grupo (exibido na listagem/UI; antes ficava NULL)
+	_, _ = tx.ExecContext(ctx, "UPDATE groups SET last_message_at=now() WHERE id=$1", groupID)
 	_ = tx.Commit()
 }
 
