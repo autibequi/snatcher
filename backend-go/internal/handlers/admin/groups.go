@@ -163,6 +163,13 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.JID = strings.TrimSpace(req.JID)
+	// WhatsApp exige JID de grupo real (@g.us). Sem JID, a checagem de duplicata não casa
+	// (jid NULL nunca bate em SQL) e abre brecha para grupos fantasma e duplicados via retry
+	// de import. Placeholders/seeds entram só via migration, não por este handler.
+	if req.Platform == "whatsapp" && !strings.HasSuffix(req.JID, "@g.us") {
+		writeErr(w, http.StatusUnprocessableEntity, "grupo WhatsApp exige JID de grupo real (@g.us) — importe via Contas → WhatsApp")
+		return
+	}
 	if req.WAAccountID == nil && req.AccountID != nil && *req.AccountID != 0 && req.Platform == "whatsapp" {
 		req.WAAccountID = req.AccountID
 	}
@@ -192,11 +199,15 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.TGAccountID != nil {
 		g.TGAccountID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.TGAccountID, Valid: true}}
 	}
-	if dup, cerr := h.store.FindConflictingRedesignGroup(g, 0); cerr != nil {
+	dup, cerr := h.store.FindConflictingRedesignGroup(g, 0)
+	if cerr != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao verificar duplicata")
 		return
-	} else if dup != nil {
-		writeErr(w, http.StatusConflict, duplicateGroupMessage(g))
+	}
+	// Import idempotente: o front reenvia o POST em retry de timeout (até 2x). Se o grupo já
+	// existe (mesmo platform+jid), devolve o existente em vez de 409 — assim o retry não duplica.
+	if dup != nil {
+		writeJSON(w, http.StatusOK, dup)
 		return
 	}
 	id, err := h.store.CreateRedesignGroup(g)
@@ -1058,6 +1069,11 @@ func (h *GroupsHandler) ListFromEvolution(w http.ResponseWriter, r *http.Request
 			size = int(sz)
 		}
 		if id == "" {
+			continue
+		}
+		// Só grupos reais entram no modal de importar. Contatos/broadcast (sem @g.us) não são
+		// grupos e viravam registros fantasma quando importados por engano.
+		if !strings.HasSuffix(id, "@g.us") {
 			continue
 		}
 		out = append(out, option{ID: id, Name: name, Size: size})
