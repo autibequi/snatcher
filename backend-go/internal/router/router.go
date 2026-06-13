@@ -17,7 +17,6 @@ import (
 	"snatcher/backendv2/internal/services/jonfrey_regulator"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/middleware"
-	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/services/messaging"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
@@ -85,7 +84,6 @@ func Build(
 	notif := notifier.New(st)
 	jonfrey.SetNotifier(notif)
 	dash.SetNotifier(notif)
-	loops.SetNotifier(notif)
 	senders.SetNotifier(notif)
 	if sched != nil {
 		sched.SetNotifier(notif)
@@ -413,19 +411,6 @@ func Build(
 		r.Get("/api/admin/modems/{id}/qrcode", accs.WAQRCode)
 		r.Get("/api/admin/modems/{id}/connection-status", accs.WAConnectionStatus)
 		r.Get("/api/admin/evolution/health", accs.EvolutionHealth)
-
-		// Fase 5: Loops LLM — status de autonomia e auditoria
-		r.Get("/api/admin/loops/status", adminhnd.LoopsStatusHandler(db))
-		r.Get("/api/admin/loops/{loop}/actions", adminhnd.LoopActionsHandler(db))
-		r.Post("/api/admin/loops/{loop}/status", adminhnd.SetLoopStatusHandler(db))
-		r.Post("/api/admin/loops/{loop}/reset_strikes", adminhnd.ResetStrikesHandler(db))
-		r.Post("/api/admin/loops/{loop}/run", adminhnd.RunLoopNowHandler(db))
-
-		// Fase 7: L4 suggestions dashboard — aprovar/rejeitar sugestões pendentes dos loops
-		r.Get("/api/admin/suggestions", adminhnd.ListSuggestionsHandler(db))
-		r.Post("/api/admin/suggestions/dismiss-all", adminhnd.DismissAllPendingSuggestionsHandler(db))
-		r.Post("/api/admin/suggestions/{id}/approve", adminhnd.ApproveSuggestionHandler(db))
-		r.Post("/api/admin/suggestions/{id}/dismiss", adminhnd.DismissSuggestionHandler(db))
 
 		// Fase 9: Tunable parameters — listar e editar parâmetros tunáveis
 		r.Get("/api/admin/parameters", adminhnd.ListParamsHandler(db))

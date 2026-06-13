@@ -15,11 +15,9 @@ import (
 	"snatcher/backendv2/internal/services/curator"
 	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/services/llm"
-	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
 	"snatcher/backendv2/internal/services/senders"
-	"snatcher/backendv2/internal/services/spy"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jmoiron/sqlx"
@@ -538,158 +536,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Fase 5: Loops LLM — L5 TaxonomyGrow semanal domingo 03:00 (atualiza signature para RunMode)
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 3 * * 0", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: taxonomy_grow (loop) started")
-				loops.RunLoop(context.Background(), sc.db, "taxonomy_grow", loops.RunTaxonomyGrow)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 5: L7 ScraperFix — diário 04:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 4 * * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: scraper_fix started")
-				loops.RunLoop(context.Background(), sc.db, "scraper_fix", loops.RunScraperFix)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 5: L2 TemplateAB — sábado 03:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 3 * * 6", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: template_ab started")
-				loops.RunLoop(context.Background(), sc.db, "template_ab", loops.RunTemplateAB)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 5: L6 AnomalyPause — cron 15min
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("*/15 * * * *", false),
-			gocron.NewTask(func() {
-				slog.Debug("scheduler: anomaly_pause started")
-				loops.RunLoop(context.Background(), sc.db, "anomaly_pause", loops.RunAnomalyPause)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 5: L1 AffinityAdjust — mensal dia 1 04:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 4 1 * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: affinity_adjust started")
-				loops.RunLoop(context.Background(), sc.db, "affinity_adjust", loops.RunAffinityAdjust)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 5: DecayStrikes — diário 01:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 1 * * *", false),
-			gocron.NewTask(func() {
-				slog.Debug("scheduler: decay_strikes started")
-				if err := loops.DecayStrikes(context.Background(), sc.db); err != nil {
-					slog.Error("scheduler: decay_strikes error", "err", err)
-				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 7: L4 CooldownSuggest — mensal dia 5 04:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 4 5 * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: cooldown_suggest started")
-				loops.RunLoop(context.Background(), sc.db, "cooldown_suggest", loops.RunCooldownSuggest)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 7: L4 CapSuggest — mensal dia 5 04:30
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("30 4 5 * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: cap_suggest started")
-				loops.RunLoop(context.Background(), sc.db, "cap_suggest", loops.RunCapSuggest)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 7: L8 AutoTuning — mensal dia 1 05:00
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 5 1 * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: auto_tuning started")
-				loops.RunLoop(context.Background(), sc.db, "auto_tuning", loops.RunAutoTuning)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 7: L9 ContentOptimize — terça 04:00 (executa apenas se gate 60d atingido)
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 4 * * 2", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: content_optimize started")
-				loops.RunLoop(context.Background(), sc.db, "content_optimize", loops.RunContentOptimize)
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
 	// Fase 6: Curator tick — coleta eventos e envia alertas WA a cada 5min
 	if sc.db != nil {
 		_, err = sc.s.NewJob(
@@ -798,30 +644,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 				observability.UpdateLLMPendingReview(context.Background(), sc.db)
 			}),
 			gocron.WithName("observability.llm_pending_review"),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// sub6: Spy polling — coleta mensagens de grupos espionados a cada 10min.
-	// Com MESSAGING_MOCK=true usa mock gateway para fechar o pipeline end-to-end.
-	// Gateway real (Baileys/gramjs sidecar) aguarda ADR-009.
-	if sc.storeRef != nil {
-		// Parser sem LLM client — regex path é suficiente para triagem inicial.
-		spyParser := spy.NewParser(nil)
-		spyJob := jobs.NewSpyPollingJob(sc.storeRef, spyParser)
-
-		_, err = sc.s.NewJob(
-			gocron.CronJob("*/10 * * * *", false),
-			gocron.NewTask(func() {
-				slog.Debug("scheduler: spy.polling started")
-				if runErr := spyJob.Run(context.Background()); runErr != nil {
-					slog.Error("scheduler: spy.polling error", "err", runErr)
-				}
-			}),
-			gocron.WithName("spy.polling"),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)
 		if err != nil {

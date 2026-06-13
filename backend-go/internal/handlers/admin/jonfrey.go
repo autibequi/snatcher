@@ -20,7 +20,6 @@ import (
 	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/services/jonfrey_regulator"
 	"snatcher/backendv2/internal/services/llm"
-	"snatcher/backendv2/internal/services/loops"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/notifier"
 	store "snatcher/backendv2/internal/repositories"
@@ -2155,7 +2154,7 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 			catID = newID
 			catBySlug[slug] = catID
 			created++
-			_ = loops.AuditAction(ctx, h.db, "channel_category_sync", "applied", "categories", catID,
+			_ = jonfreyAuditAction(ctx, h.db, "channel_category_sync", "applied", "categories", catID,
 				nil, map[string]any{"slug": slug, "name": ch.Name, "channel_id": ch.ID},
 				fmt.Sprintf("categoria criada para canal '%s'", ch.Name), 1.0)
 		}
@@ -2169,7 +2168,7 @@ func actionChannelCategorySync(ctx context.Context, h *JonfreyHandler) (map[stri
 			if err == nil {
 				if rows, _ := res.RowsAffected(); rows > 0 {
 					reclassified += int(rows)
-					_ = loops.AuditAction(ctx, h.db, "channel_category_sync", "applied", "catalog", catID,
+					_ = jonfreyAuditAction(ctx, h.db, "channel_category_sync", "applied", "catalog", catID,
 						nil, map[string]any{"category_id": catID},
 						fmt.Sprintf("re-classificados %d produtos (keyword: %s)", rows, kw), 0.95)
 				}
@@ -2272,7 +2271,7 @@ func actionCatalogBrandClassification(ctx context.Context, h *JonfreyHandler) (m
 	before := map[string]any{"classified": 0}
 	after := map[string]any{"classified": n}
 	reasoning := fmt.Sprintf("classificados %d produtos com brand (heurística) + brand_id", n)
-	_ = loops.AuditAction(ctx, h.db, "catalog_brand_classification", "applied", "catalog", 0, before, after, reasoning, 1.0)
+	_ = jonfreyAuditAction(ctx, h.db, "catalog_brand_classification", "applied", "catalog", 0, before, after, reasoning, 1.0)
 	return before, after, reasoning, nil
 }
 
@@ -2316,5 +2315,17 @@ func actionTuneBanditExploration(ctx context.Context, h *JonfreyHandler) (map[st
 	reasoning := fmt.Sprintf("Regulei bandit em %d/%d canais ativos.", regulated, len(channels))
 
 	return before, after, reasoning, nil
+}
+
+// jonfreyAuditAction grava uma ação automatizada em llm_actions com before/after.
+// Inlined de internal/services/loops/audit.go (loops package removido em W0).
+func jonfreyAuditAction(ctx context.Context, db *sqlx.DB, loopName, actionType, targetTable string, targetID int64, before, after any, reasoning string, confidence float64) error {
+	b, _ := json.Marshal(before)
+	a, _ := json.Marshal(after)
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO llm_actions (loop_name, action_type, target_table, target_id, before_value, after_value, reasoning, confidence, evaluation, applied_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', now())
+	`, loopName, actionType, targetTable, targetID, b, a, reasoning, confidence)
+	return err
 }
 
