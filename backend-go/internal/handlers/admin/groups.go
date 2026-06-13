@@ -190,6 +190,11 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Status:     "active",
 		Overrides:  []byte("{}"),
 	}
+	// O disparo (dispatch/sender) lê whatsapp_jid; o import preenche jid. Mantém os dois em
+	// sincronia para o grupo importado receber mensagem. (A unificação dos campos está no plano.)
+	if req.Platform == "whatsapp" && req.JID != "" {
+		g.WhatsappJID = models.NullString{NullString: sql.NullString{String: req.JID, Valid: true}}
+	}
 	if req.Status != "" {
 		g.Status = req.Status
 	}
@@ -1078,6 +1083,10 @@ func (h *GroupsHandler) ListFromEvolution(w http.ResponseWriter, r *http.Request
 		}
 		out = append(out, option{ID: id, Name: name, Size: size})
 	}
+
+	// Maiores grupos primeiro: os de promoção tendem a ter mais membros que os pessoais,
+	// então sobem no modal de importar (a Evolution devolve em ordem arbitrária).
+	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
 
 	writeJSON(w, http.StatusOK, out)
 }

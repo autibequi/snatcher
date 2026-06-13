@@ -17,9 +17,6 @@ import {
   Network,
   Gauge,
   Activity,
-  Shield,
-  AlertTriangle,
-  Brain,
   Eye,
   Settings,
   BookOpen,
@@ -88,10 +85,6 @@ const NAV: NavGroup[] = [
       { to: '/admin/observability',       label: 'Pulso',       Icon: Eye          },
       { to: '/admin/baseline',            label: 'Baseline',    Icon: Activity     },
       { to: '/activity',                  label: 'Atividade',   Icon: Activity     },
-      // Quarentena, Decisões e Bandido — rotas criadas em FW-4 (404 aceitável nesta wave)
-      { to: '/admin/quarantine',          label: 'Quarentena',  Icon: Shield       },
-      { to: '/admin/jonfrey-decisions',   label: 'Decisões',    Icon: AlertTriangle },
-      { to: '/admin/bandit',              label: 'Bandido',     Icon: Brain        },
     ],
   },
   {

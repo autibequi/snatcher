@@ -54,9 +54,16 @@ func (s *SQLStore) GetRedesignGroup(id int64) (models.RedesignGroup, error) {
 
 func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
 	var id int64
+	// O INSERT antigo só gravava name/platform/status e descartava jid, conta e canal —
+	// por isso todo grupo "importado" nascia sem jid (duplicava, virava fantasma e nunca
+	// recebia mensagem). Persiste os mesmos campos que UpdateRedesignGroup.
 	err := s.db.QueryRow(
-		`INSERT INTO groups (name, platform, status) VALUES ($1, $2, $3) RETURNING id`,
+		`INSERT INTO groups (name, platform, status, jid, whatsapp_jid, invite_link, wa_account_id, tg_account_id, channel_id)
+		 VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,0), NULLIF($8,0), NULLIF($9,0))
+		 RETURNING id`,
 		g.Name, g.Platform, g.Status,
+		g.JID.String, g.WhatsappJID.String, g.InviteLink.String,
+		g.WAAccountID.Int64, g.TGAccountID.Int64, g.ChannelID.Int64,
 	).Scan(&id)
 	return id, err
 }

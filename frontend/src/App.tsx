@@ -210,11 +210,10 @@ export default function App() {
               <Route path="match" element={<Navigate to="/settings/params" replace />} />
               {/* Jonfrey config migrado para Settings > Loops LLM */}
               <Route path="settings/jonfrey" element={<Navigate to="/settings/loops" replace />} />
-              {/* Migrados para Settings */}
+              {/* Migrado para Settings */}
               <Route path="admin/loops" element={<Navigate to="/settings/loops" replace />} />
-              <Route path="admin/params" element={<Navigate to="/settings/params" replace />} />
-              {/* Audit migrado para Activity */}
-              <Route path="admin/audit" element={<Navigate to="/activity?tab=audit" replace />} />
+              {/* admin/params e admin/audit têm rota-página própria acima (linhas 178/187);
+                  os redirects daqui eram inalcançáveis (a rota-página casa primeiro) — removidos. */}
               <Route path="channels" element={<Channels />} />
               <Route path="catalog" element={<Navigate to="/admin/catalog-canonical" replace />} />
               <Route path="curation" element={<Navigate to="/admin/catalog-canonical" replace />} />
