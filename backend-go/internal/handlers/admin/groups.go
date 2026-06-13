@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -552,14 +553,6 @@ func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AccountType == "wa" && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
-		cfg, _ := h.store.GetConfig()
-		if errWA := h.promoteWAAccountAsGroupAdmin(r.Context(), g, req.AccountID, cfg); errWA != nil {
-			writeErr(w, http.StatusBadGateway, errWA.Error())
-			return
-		}
-	}
-
 	adminID, err := h.store.AddGroupAdmin(models.GroupAdmin{
 		GroupID:     id,
 		AccountType: req.AccountType,
@@ -568,6 +561,21 @@ func (h *GroupsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "erro ao adicionar admin")
 		return
+	}
+
+	// Promoção a admin no WhatsApp real é best-effort e assíncrona: as chamadas à Evolution
+	// (add + promote participante) demoram e estouravam o timeout do proxy → 502, deixando o
+	// vínculo sem gravar. O registro em group_admins acima é o que o disparo precisa; a promoção
+	// roda em background com seu próprio contexto e, se falhar, apenas loga (pode ser refeita).
+	if req.AccountType == "wa" && g.Platform == "whatsapp" && g.JID.Valid && g.JID.String != "" && g.WAAccountID.Valid {
+		cfg, _ := h.store.GetConfig()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if errWA := h.promoteWAAccountAsGroupAdmin(ctx, g, req.AccountID, cfg); errWA != nil {
+				slog.Warn("promoteWAAccountAsGroupAdmin best-effort falhou", "group_id", id, "account_id", req.AccountID, "err", errWA)
+			}
+		}()
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
