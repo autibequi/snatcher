@@ -107,6 +107,14 @@ services:
       nuvem:
         aliases:
           - snatcher-backend
+      # Rede do proxy do Coolify (Traefik). Sem isto o coolify-proxy não alcança o
+      # serviço e não cria o router → 404 (mesmo com domínio configurado na UI).
+      coolify:
+        aliases:
+          - snatcher-backend-svc
+    labels:
+      # Container em múltiplas redes → fixa qual rede o Traefik usa pra rotear.
+      - traefik.docker.network=coolify
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
       interval: 15s
@@ -129,6 +137,12 @@ services:
       nuvem:
         aliases:
           - snatcher-frontend
+      # Rede do proxy do Coolify (Traefik) — necessária pro roteamento HTTP público.
+      coolify:
+        aliases:
+          - snatcher-frontend-svc
+    labels:
+      - traefik.docker.network=coolify
     restart: unless-stopped
 
 volumes:
@@ -142,3 +156,8 @@ networks:
   nuvem:
     external: true
     name: nuvem_nuvem
+  # Rede externa do proxy do Coolify (Traefik). É a mesma rede em que o coolify-proxy
+  # roda — os serviços expostos publicamente (backend, frontend) precisam estar nela
+  # pro Traefik criar o router a partir do domínio configurado na UI.
+  coolify:
+    external: true
