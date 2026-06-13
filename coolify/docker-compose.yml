@@ -1,6 +1,6 @@
 services:
   evolution:
-    image: evoapicloud/evolution-api:v2.3.1
+    image: evoapicloud/evolution-api:v2.3.7
     environment:
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
       - SERVER_URL=http://evolution:8080
@@ -16,7 +16,9 @@ services:
       - CACHE_REDIS_PREFIX_KEY=evo
       - DEL_INSTANCE=false
       - QRCODE_LIMIT=30
-      - LOG_LEVEL=ERROR,WARN
+      # INFO incluído temporariamente para enxergar o evento de pareamento (scan do QR);
+      # com só ERROR,WARN o resultado do scan fica invisível e só aparecem os keep-alive timeout.
+      - LOG_LEVEL=ERROR,WARN,INFO
       - LOG_BAILEYS=error
       - CONFIG_SESSION_PHONE_CLIENT=Promo Snatcher
       - CONFIG_SESSION_PHONE_NAME=Chrome
@@ -28,7 +30,8 @@ services:
       evo-redis:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      # A imagem da Evolution não tem curl — usar wget (presente) evita o falso "(unhealthy)".
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
