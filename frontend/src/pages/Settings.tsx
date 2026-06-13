@@ -8,7 +8,6 @@ import { LLMTab } from './settings/LLMTab'
 import { TeamTab } from './settings/TeamTab'
 import { AppearanceTab } from './settings/AppearanceTab'
 import { DangerTab } from './settings/DangerTab'
-import { LoopsTab } from './settings/LoopsTab'
 import { ParamsTab } from './settings/ParamsTab'
 import { AlertsTab } from './settings/AlertsTab'
 import { AutomationsTab } from './settings/AutomationsTab'
@@ -16,7 +15,6 @@ import { AutomationsTab } from './settings/AutomationsTab'
 const TABS = [
   { id: 'system',       label: 'Sistema' },
   { id: 'integrations', label: 'Integrações' },
-  { id: 'loops',        label: 'Jonfrey' },
   { id: 'automations',  label: 'Automações' },
   { id: 'params',       label: 'Parâmetros' },
   { id: 'alerts',       label: 'Alertas' },
@@ -55,7 +53,6 @@ export default function Settings() {
         <div className="px-4 py-4 sm:p-6">
           {active === 'system'       && <SystemTab />}
           {active === 'integrations' && <IntegrationsTab />}
-          {active === 'loops'        && <LoopsTab />}
           {active === 'automations'  && <AutomationsTab />}
           {active === 'params'       && <ParamsTab />}
           {active === 'alerts'       && <AlertsTab />}

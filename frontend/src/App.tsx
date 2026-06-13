@@ -109,8 +109,6 @@ const CanonicalGroupsView = lazy(() => import('./pages/admin/CanonicalGroupsView
 const TaxonomyTreeEditor = lazy(() => import('./pages/admin/TaxonomyTreeEditor'))
 const DispatchRoutingView = lazy(() => import('./pages/admin/DispatchRoutingView'))
 const RateBucketsView = lazy(() => import('./pages/admin/RateBucketsView'))
-const BanditDebugger = lazy(() => import('./pages/admin/BanditDebugger'))
-const JonfreyDecisionsTimeline = lazy(() => import('./pages/admin/JonfreyDecisionsTimeline'))
 
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
@@ -199,8 +197,6 @@ export default function App() {
               <Route path="admin/taxonomy-tree" element={<TaxonomyTreeEditor />} />
               <Route path="admin/dispatch/routing" element={<DispatchRoutingView />} />
               <Route path="admin/dispatch/rate-buckets" element={<RateBucketsView />} />
-              <Route path="admin/bandit" element={<BanditDebugger />} />
-              <Route path="admin/jonfrey-decisions" element={<JonfreyDecisionsTimeline />} />
 
               {/* W4: SystemHealth — rota direta */}
               <Route path="admin/health" element={<SystemHealth />} />

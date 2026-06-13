@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { authFetch } from '../lib/authFetch'
 import { Tabs } from '../components/ui/Tabs'
 import { BaselineTab } from './admin/BaselineTab'
-import BanditDebugger from './admin/BanditDebugger'
-import JonfreyDecisionsTimeline from './admin/JonfreyDecisionsTimeline'
 import DispatchRoutingView from './admin/DispatchRoutingView'
 import RateBucketsView from './admin/RateBucketsView'
 
@@ -369,7 +367,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
         </div>
       )}
 
-      {/* Conteúdo da aba Score: params de score + BanditDebugger */}
+      {/* Conteúdo da aba Score: params de score */}
       {!loading && activeTab === 'score' && (
         <div className="space-y-8">
           <ParamsTable
@@ -380,12 +378,6 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
             onSave={handleSave}
             onReset={handleReset}
           />
-          <section>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-              Bandit debugger
-            </h2>
-            <BanditDebugger />
-          </section>
         </div>
       )}
 
@@ -401,7 +393,7 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
         />
       )}
 
-      {/* Conteúdo da aba Jonfrey: JonfreyDecisionsTimeline + params jonfrey */}
+      {/* Conteúdo da aba Jonfrey: params jonfrey */}
       {!loading && activeTab === 'jonfrey' && (
         <div className="space-y-8">
           <ParamsTable
@@ -412,12 +404,6 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
             onSave={handleSave}
             onReset={handleReset}
           />
-          <section>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-              Decisões Jonfrey
-            </h2>
-            <JonfreyDecisionsTimeline />
-          </section>
         </div>
       )}
 
