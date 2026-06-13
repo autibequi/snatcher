@@ -82,6 +82,11 @@ services:
     volumes:
       - snatcher-data:/app/data
     environment:
+      # Coolify: expõe o backend na porta 8000 via Traefik com o domínio configurado na UI.
+      # Sem esta magic var o Coolify usa ports_exposes (3000) e o Traefik roteia pra porta
+      # morta → 404. NB: o backend só serve a API (/api, /metrics); a UI admin é servida pelo
+      # frontend (nginx dual-entry). Em geral o backend não precisa de domínio público próprio.
+      - SERVICE_FQDN_BACKEND_8000
       # Mantém ENV=dev por omissão. Coolify ou outro host pode injectar ENV=production;
       # nesse caso defina ADMIN_PASS (≠ admin) e JWT_SECRET (≠ changeme) nos secrets.
       - ENV=${ENV:-dev}
@@ -120,6 +125,11 @@ services:
       context: ..
       dockerfile: coolify/Dockerfile.frontend
     environment:
+      # Coolify: expõe o frontend (nginx) na porta 80 via Traefik. É o entry point de tudo —
+      # dual-entry por Host: jon.promo→public.html, qualquer outro host→index.html (admin) +
+      # proxy /api→backend:8000 e /r/ /v/...→public:8001. O domínio do ADMIN deve apontar
+      # para ESTE serviço (frontend), não para o backend.
+      - SERVICE_FQDN_FRONTEND_80
       - GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}
     depends_on:
       backend:
