@@ -45,51 +45,6 @@ func ViralityHandler(db *sqlx.DB) http.HandlerFunc {
 	}
 }
 
-// GET /api/admin/metrics/learned-weights?min_samples=50
-func LearnedWeightsHandler(db *sqlx.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		minSamples := 50
-		if v, err := strconv.Atoi(r.URL.Query().Get("min_samples")); err == nil && v >= 0 {
-			minSamples = v
-		}
-		type row struct {
-			GroupID      *int64   `db:"group_id" json:"group_id,omitempty"`
-			GroupName    *string  `db:"group_name" json:"group_name,omitempty"`
-			CategoryID   *int64   `db:"category_id" json:"category_id,omitempty"`
-			CategoryName *string  `db:"category_name" json:"category_name,omitempty"`
-			SourceID     *string  `db:"source_id" json:"source_id,omitempty"`
-			SourceName   *string  `db:"source_name" json:"source_name,omitempty"`
-			CTR30d       *float64 `db:"ctr_30d" json:"ctr_30d,omitempty"`
-			EPC30d       *float64 `db:"epc_30d" json:"epc_30d,omitempty"`
-			Samples30d   int      `db:"samples_30d" json:"samples_30d"`
-			Confidence   *float64 `db:"confidence" json:"confidence,omitempty"`
-			UpdatedAt    string   `db:"updated_at" json:"updated_at"`
-		}
-		var rows []row
-		_ = db.SelectContext(r.Context(), &rows, `
-			SELECT lw.group_id, g.name AS group_name,
-			       lw.category_id, c.display_name AS category_name,
-			       lw.source_id, s.name AS source_name,
-			       lw.ctr_30d, lw.epc_30d,
-			       COALESCE(lw.samples_30d, 0) AS samples_30d,
-			       lw.confidence, lw.updated_at::text
-			FROM learned_weights lw
-			LEFT JOIN groups g ON g.id = lw.group_id
-			LEFT JOIN categories c ON c.id = lw.category_id
-			LEFT JOIN sources s ON s.id = lw.source_id
-			WHERE COALESCE(lw.samples_30d, 0) >= $1
-			ORDER BY lw.epc_30d DESC NULLS LAST, lw.samples_30d DESC
-			LIMIT 500
-		`, minSamples)
-		if rows == nil {
-			rows = []row{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if rows == nil { w.Header().Set("Content-Type", "application/json"); w.Write([]byte("[]")); return }
-		_ = json.NewEncoder(w).Encode(rows)
-	}
-}
-
 // GET /api/admin/metrics/daily?days=30&metric=sent
 func DailyMetricsHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -9,12 +9,10 @@ import (
 
 	_ "snatcher/backendv2/internal/docs" // swagger docs
 	"snatcher/backendv2/internal/services/compose"
-	"snatcher/backendv2/internal/services/curator"
 	"snatcher/backendv2/internal/handlers"
 	adminhnd "snatcher/backendv2/internal/handlers/admin"
 	publichnd "snatcher/backendv2/internal/handlers/public"
 	webhookshnd "snatcher/backendv2/internal/handlers/public/webhooks"
-	"snatcher/backendv2/internal/services/jonfrey_regulator"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/middleware"
 	"snatcher/backendv2/internal/services/messaging"
@@ -78,22 +76,13 @@ func Build(
 	brand       := adminhnd.NewBrandHandler(st)
 	taxonomy      := adminhnd.NewTaxonomyHandler(st)
 	linksH        := adminhnd.NewLinksHandlerWithDB(st, db)
-	jonfrey       := adminhnd.NewJonfreyHandler(st, db)
 	// Notifier compartilhado: handlers + scheduler postam resumos no grupo
 	// configurado em Settings → Notificações. Sem grupo configurado = no-op.
 	notif := notifier.New(st)
-	jonfrey.SetNotifier(notif)
 	dash.SetNotifier(notif)
 	senders.SetNotifier(notif)
 	if sched != nil {
 		sched.SetNotifier(notif)
-	}
-	// Wire tick automático: scheduler chama jonfrey.RunCycle a cada 1min se enabled.
-	// ids: lista DB-driven vinda do scheduler (nil = fallback cfg.EnabledActions).
-	if sched != nil {
-		sched.SetJonfreyTick(func(ctx context.Context, ids []string) {
-			jonfrey.RunCycle(ctx, ids)
-		})
 	}
 	// PR-1: triage-refactor handlers
 	taxonomyPatterns := handlers.NewTaxonomyPattern(st)
@@ -110,7 +99,6 @@ func Build(
 	dash.SetLLMFn(composeH.BuildLLMClient)
 	taxonomy.SetLLMFn(composeH.BuildLLMClient)
 	groups.SetLLMFn(composeH.BuildLLMClient)
-	jonfrey.SetLLMFn(composeH.BuildLLMClient)
 
 	if sched != nil {
 		sched.SetCatalogLLMProcessor(composeH.BuildLLMClient)
@@ -120,14 +108,6 @@ func Build(
 	hub := wsmod.NewHub()
 	wsHandler := wsmod.NewHandler(hub, jwtSecret)
 	go hub.StartListener(context.Background(), "") // DSN vazio = no-op silencioso
-
-	// Anti-loop guard: broadcast WS quando escalate_to_human é disparado pelo regulator.
-	jonfrey_regulator.SetEscalateFunc(func(_ context.Context, automationID string, reason string) {
-		hub.Broadcast(wsmod.Event{
-			Type: "jonfrey_escalate",
-			Data: map[string]any{"automation_id": automationID, "reason": reason},
-		})
-	})
 
 	// ---------------------------------------------------------------------------
 	// Rota de métricas (pública — antes do grupo JWT)
@@ -155,12 +135,6 @@ func Build(
 	// Conversion tracking webhooks (Fase 2)
 	r.Post("/webhooks/awin", webhookshnd.HandleAwinPostback(db))
 	r.Post("/webhooks/mercadolivre", webhookshnd.HandleMLPostback(db))
-
-	// Fase 6: Curator WhatsApp webhook — mensagens dos grupos curador
-	r.Post("/webhooks/curator", publichnd.CuratorWebhookHandler(db, curator.GlobalConfirmer, curator.GlobalSender))
-
-	// Fase 8: Promo Bot webhook — respostas em grupos de promoção (stub)
-	r.Post("/webhooks/promo-bot", publichnd.PromoBotWebhookHandler(db))
 
 	r.Get("/api/health", healthHandler)
 	r.Get("/api/brand", brand.Get) // white-label public config
@@ -221,15 +195,8 @@ func Build(
 		r.Post("/api/search-terms/suggest", terms.Suggest)
 		r.Get("/api/search-terms/{id}/results", terms.ListResults)
 
-		// Jonfrey — orquestrador AI das automações
 		// Upload de imagens
 		r.Post("/api/uploads/image", adminhnd.UploadImage)
-
-		r.Get("/api/jonfrey/actions", jonfrey.ListActions)
-		r.Get("/api/jonfrey/available", jonfrey.ListAvailable)
-		r.Post("/api/jonfrey/run", jonfrey.RunAction)
-		r.Get("/api/jonfrey/config", jonfrey.GetConfig)
-		r.Put("/api/jonfrey/config", jonfrey.UpdateConfig)
 
 		// Config
 		r.Get("/api/config", config.Get)
@@ -253,11 +220,11 @@ func Build(
 		r.Get("/api/channels/{id}", channels.Get)
 		r.Patch("/api/channels/{id}", channels.Update)
 		r.Delete("/api/channels/{id}", channels.Delete)
+		// Target-config determinístico (W3 refactor 2026-06 — substitui os pesos de bandit).
+		r.Get("/api/channels/{id}/target-config", adminhnd.GetChannelTargetConfigHandler(db))
+		r.Put("/api/channels/{id}/target-config", adminhnd.SetChannelTargetConfigHandler(db))
 		r.Post("/api/channels/{id}/groups/{groupId}", channels.LinkGroup)
 		r.Delete("/api/channels/{id}/groups/{groupId}", channels.UnlinkGroup)
-		r.Get("/api/channels/{id}/weights", channels.GetWeights)
-		r.Get("/api/channels/{id}/candidates", adminhnd.ChannelCandidatesHandler(db))
-		r.Put("/api/channels/{id}/weights", channels.SetWeights)
 		r.Get("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersListHandler(db))
 		r.Post("/api/channels/{id}/brand-filters", adminhnd.ChannelBrandFiltersAddHandler(db))
 		r.Delete("/api/channels/{id}/brand-filters/{filterId}", adminhnd.ChannelBrandFiltersDeleteHandler(db))
@@ -440,8 +407,7 @@ func Build(
 		// Score Engine dry-run
 		r.Get("/api/admin/algo/dry-run", adminhnd.AlgoDryRunHandler(db))
 
-		// Metrics dashboard — learned weights, daily metrics, A/B tests, virality
-		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))
+		// Metrics dashboard — daily metrics, A/B tests, virality
 		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
 		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
 		r.Get("/api/admin/metrics/virality", adminhnd.ViralityHandler(db))
@@ -496,12 +462,6 @@ func Build(
 		// FW-4: Quarantine events
 		r.Get("/api/admin/quarantine", adminhnd.ListQuarantineHandler(db))
 
-		// FW-4: Jonfrey decisions
-		r.Get("/api/admin/jonfrey/decisions", adminhnd.ListJonfreyDecisionsHandler(db))
-
-		// FW-4: Channel bandit state
-		r.Get("/api/admin/channels/{id}/bandit", adminhnd.GetChannelBanditHandler(db))
-		r.Post("/api/admin/channels/{id}/bandit/reset", adminhnd.ResetChannelBanditHandler(db))
 	})
 
 	return r

@@ -27,7 +27,7 @@ func (h *JobsHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	writeErr(w, http.StatusNotFound, "job não encontrado ou já finalizado")
 }
 
-// Clear POST /api/jobs/clear — remove linhas terminal em background_jobs (completed/failed/cancelled).
+// Clear POST /api/jobs/clear — remove linhas terminal em jobs (completed/failed/cancelled).
 // Para limpar também auditoria Jonfrey na mesma operação, usar POST /api/work-queue/clear.
 func (h *JobsHandler) Clear(w http.ResponseWriter, r *http.Request) {
 	n := jobs.Default().Clear()

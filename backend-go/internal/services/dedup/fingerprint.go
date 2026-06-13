@@ -1,4 +1,4 @@
-package algo
+package dedup
 
 import (
 	"crypto/md5"

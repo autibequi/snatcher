@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/dedup"
 )
 
 // TestUpsertCanonical_Skip verifica que o teste é pulado quando DATABASE_URL não está configurado.
@@ -34,8 +34,8 @@ func TestUpsertCanonical_HashUniqueness(t *testing.T) {
 	brandB := int64(2)
 	priceBand := 3
 
-	resultA := algo.Fingerprint("iPhone 14 Pro Max 256GB", &brandA, priceBand)
-	resultB := algo.Fingerprint("Samsung Galaxy S23 Ultra 256GB", &brandB, priceBand)
+	resultA := dedup.Fingerprint("iPhone 14 Pro Max 256GB", &brandA, priceBand)
+	resultB := dedup.Fingerprint("Samsung Galaxy S23 Ultra 256GB", &brandB, priceBand)
 
 	if resultA.Hash == resultB.Hash {
 		t.Error("esperado: fingerprints distintas para produtos diferentes; obtido: hashes idênticos")

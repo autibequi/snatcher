@@ -10,13 +10,12 @@ import (
 	"snatcher/backendv2/internal/handlers/public/webhooks"
 	"snatcher/backendv2/internal/observability"
 	store "snatcher/backendv2/internal/repositories"
-	"snatcher/backendv2/internal/services/algo"
 	"snatcher/backendv2/internal/services/canonical"
-	"snatcher/backendv2/internal/services/curator"
 	"snatcher/backendv2/internal/services/jobs"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
+	"snatcher/backendv2/internal/services/selection"
 	"snatcher/backendv2/internal/services/senders"
 
 	"github.com/go-co-op/gocron/v2"
@@ -30,17 +29,8 @@ type Scheduler struct {
 	llmCli   llm.Client
 	storeRef store.Store
 	db       *sqlx.DB                              // para cron jobs que acessam DB diretamente
-	jonfreyTick func(ctx context.Context, ids []string) // injetado via SetJonfreyTick — evita ciclo de import
 	catalogLLMFactory func() llm.Client            // opcional: drena catalog_llm_queue (SetCatalogLLMProcessor)
 	notif    *notifier.Notifier // pode ser nil — todas as chamadas tratam isso
-}
-
-// SetJonfreyTick registra o callback que executa actions do Jonfrey.
-// ids: lista de action-IDs vindos do banco (habilitados e com intervalo vencido).
-// Lista vazia = fallback para cfg.EnabledActions em RunCycle.
-// Chamado pelo router após o handler do Jonfrey ser construído.
-func (sc *Scheduler) SetJonfreyTick(fn func(ctx context.Context, ids []string)) {
-	sc.jonfreyTick = fn
 }
 
 // SetCatalogLLMProcessor registra a factory LLM para o worker da fila catalog_llm_queue (opcional).
@@ -59,28 +49,6 @@ type Status struct {
 	Running         bool      `json:"running"`
 	IntervalMinutes int       `json:"interval_minutes"`
 	NextRun         time.Time `json:"next_run"`
-}
-
-// scheduledAutomation representa uma automação habilitada no banco com seu intervalo.
-// Usado pelo tick do Jonfrey para decidir quais actions executar por ciclo.
-type scheduledAutomation struct {
-	ID              string  `db:"id"`
-	IntervalMinutes *int    `db:"interval_minutes"`
-	LastRunAt       *string `db:"last_run_at"`
-}
-
-// fetchEnabledAutomations busca as automações habilitadas do banco.
-// Retorna slice de scheduledAutomation para o tick decidir quais rodar.
-// Se a consulta falhar (ex: tabela ainda não existe), retorna slice vazio e log.
-func fetchEnabledAutomations(ctx context.Context, db *sqlx.DB) ([]scheduledAutomation, error) {
-	var rows []scheduledAutomation
-	err := db.SelectContext(ctx, &rows, `
-		SELECT id, interval_minutes, last_run_at::text AS last_run_at
-		FROM automations
-		WHERE enabled = TRUE
-		ORDER BY id
-	`)
-	return rows, err
 }
 
 func New(intervalMinutes int, runner *pipeline.Runner, st store.Store, llmCli llm.Client) (*Scheduler, error) {
@@ -110,116 +78,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 	)
 	if err != nil {
 		return err
-	}
-
-	// Job do Jonfrey — executa actions habilitadas a cada 1 min.
-	// Lê a tabela `automations` e verifica por action se seu interval_minutes venceu.
-	// Fallback para cfg.EnabledActions quando a tabela está vazia ou inacessível.
-	if sc.storeRef != nil {
-		_, err = sc.s.NewJob(
-			gocron.DurationJob(1*time.Minute),
-			gocron.NewTask(func() {
-				if sc.jonfreyTick == nil {
-					slog.Warn("scheduler: jonfrey tick ignorado — SetJonfreyTick não registrou callback (handler nil)")
-					return
-				}
-				cfg, err := sc.storeRef.GetJonfreyConfig()
-				if err != nil {
-					slog.Warn("scheduler: jonfrey tick ignorado — GetJonfreyConfig", "err", err)
-					return
-				}
-				if !cfg.Enabled {
-					slog.Debug("scheduler: jonfrey tick ignorado — Jonfrey desligado na config")
-					return
-				}
-
-				// Tentativa de leitura DB-driven: busca automations habilitadas com seus intervalos.
-				// fetchEnabledAutomations deve ser chamado ANTES de qualquer mutex.
-				var dueIDs []string
-				if sc.db != nil {
-					dbCtx := context.Background()
-					automations, fetchErr := fetchEnabledAutomations(dbCtx, sc.db)
-					if fetchErr != nil {
-						slog.Warn("scheduler: jonfrey tick — fetchEnabledAutomations falhou, usando cfg fallback",
-							"err", fetchErr)
-					} else if len(automations) > 0 {
-						// Checa por automation qual teve seu interval_minutes vencido.
-						now := time.Now()
-						for _, a := range automations {
-							intervalMin := 60 // default 60min se não configurado
-							if a.IntervalMinutes != nil && *a.IntervalMinutes > 0 {
-								intervalMin = *a.IntervalMinutes
-							}
-							interval := time.Duration(intervalMin) * time.Minute
-							if a.LastRunAt == nil || *a.LastRunAt == "" {
-								// Nunca rodou — é candidata imediata.
-								dueIDs = append(dueIDs, a.ID)
-								continue
-							}
-							// Parseia last_run_at. RFC3339 traz timezone explícito; fallback sem TZ
-							// assume UTC explicitamente (era implicit antes — bug latente em containers
-							// com TZ local ≠ UTC, drift silencioso em now.Sub abaixo).
-							var lastRun time.Time
-							if t, parseErr := time.Parse(time.RFC3339, *a.LastRunAt); parseErr == nil {
-								lastRun = t
-							} else if t, parseErr := time.ParseInLocation("2006-01-02T15:04:05", *a.LastRunAt, time.UTC); parseErr == nil {
-								lastRun = t
-							} else {
-								// Formato desconhecido — assume candidata.
-								dueIDs = append(dueIDs, a.ID)
-								continue
-							}
-							if now.Sub(lastRun) >= interval {
-								dueIDs = append(dueIDs, a.ID)
-							}
-						}
-						slog.Info("scheduler: jonfrey tick DB-driven",
-							"automations_enabled", len(automations),
-							"automations_due", len(dueIDs),
-						)
-						if len(dueIDs) == 0 {
-							slog.Debug("scheduler: jonfrey tick — nenhuma automation com intervalo vencido")
-							return
-						}
-						sc.jonfreyTick(ctx, dueIDs)
-						return
-					}
-					// DB retornou vazio — fallback para cfg.
-					slog.Debug("scheduler: jonfrey tick — tabela automations vazia, usando cfg fallback")
-				}
-
-				// Fallback: comportamento original com intervalo global cfg.IntervalMinutes.
-				if cfg.LastRunAt.Valid {
-					interval := time.Duration(cfg.IntervalMinutes) * time.Minute
-					if interval <= 0 {
-						interval = 60 * time.Minute
-					}
-					since := time.Since(cfg.LastRunAt.Time)
-					if since < interval {
-						nextIn := (interval - since).Round(time.Second)
-						slog.Info("scheduler: jonfrey tick aguardando intervalo (cfg fallback)",
-							"interval", interval.String(),
-							"last_run_at", cfg.LastRunAt.Time.UTC().Format(time.RFC3339),
-							"elapsed", since.Round(time.Second).String(),
-							"next_tick_in", nextIn.String(),
-						)
-						return
-					}
-				} else {
-					slog.Info("scheduler: jonfrey tick — LastRunAt vazio, primeira execução ou reset (cfg fallback)")
-				}
-				slog.Info("scheduler: jonfrey tick disparando RunCycle (cfg fallback)",
-					"source", "gocron_1m",
-					"interval_minutes", cfg.IntervalMinutes,
-					"enabled_actions_count", len(cfg.EnabledActions),
-				)
-				sc.jonfreyTick(ctx, nil) // nil = fallback para cfg.EnabledActions em RunCycle
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
 	}
 
 	// Worker catalog_llm_queue — até 5 itens a cada 2 min (eurística + LLM se necessário)
@@ -360,25 +218,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Refresh learned_weights — a cada hora (no minuto 7 pra não competir com
-	// outros jobs do topo da hora). Antes era diário às 02h; trazido para horário
-	// pra fechar o loop click → scoring em ~1h de latência em vez de ~24h.
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("7 * * * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: refresh_learned_weights started")
-				if err := jobs.RunRefreshLearnedWeights(context.Background(), sc.db); err != nil {
-					slog.Error("scheduler: refresh_learned_weights error", "err", err)
-				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
 	// GC clicks — TTL 90d, diário 03:30
 	if sc.db != nil {
 		_, err = sc.s.NewJob(
@@ -398,14 +237,15 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// Fase 3: Algo tick — a cada 5min (incondicional)
+	// Seleção determinística — enfileira o melhor produto por grupo a cada 5min.
+	// Substitui o algo.tick (bandit) removido na W1. Advisory lock interno (multi-réplica).
 	if sc.db != nil {
 		_, err = sc.s.NewJob(
 			gocron.CronJob("*/5 * * * *", false),
 			gocron.NewTask(func() {
-				slog.Info("scheduler: algo.tick started")
-				if err := algo.RunTick(context.Background(), sc.db); err != nil {
-					slog.Error("scheduler: algo.tick error", "err", err)
+				slog.Info("scheduler: selection.tick started")
+				if err := selection.RunSelectionTick(context.Background(), sc.db); err != nil {
+					slog.Error("scheduler: selection.tick error", "err", err)
 				}
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -528,54 +368,6 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 				if err := jobs.RefreshMaterializedViews(context.Background(), sc.db); err != nil {
 					slog.Error("scheduler: refresh_mvs error", "err", err)
 				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 6: Curator tick — coleta eventos e envia alertas WA a cada 5min
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("*/5 * * * *", false),
-			gocron.NewTask(func() {
-				slog.Debug("scheduler: curator_tick started")
-				if err := curator.RunCuratorTick(context.Background(), sc.db, curator.GlobalSender); err != nil {
-					slog.Error("scheduler: curator_tick error", "err", err)
-				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 6: Daily report — relatório diário 08h SP (11h UTC)
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("0 11 * * *", false),
-			gocron.NewTask(func() {
-				slog.Info("scheduler: curator daily_report started")
-				if err := curator.RunDailyReport(context.Background(), sc.db, curator.GlobalSender); err != nil {
-					slog.Error("scheduler: curator daily_report error", "err", err)
-				}
-			}),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Fase 6: Confirmer GC — limpa confirmações expiradas a cada minuto
-	if sc.db != nil {
-		_, err = sc.s.NewJob(
-			gocron.CronJob("* * * * *", false),
-			gocron.NewTask(func() {
-				curator.GlobalConfirmer.Gc(context.Background())
 			}),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		)

@@ -10,7 +10,7 @@ import (
 	"snatcher/backendv2/internal/services/jobs"
 )
 
-// JobPersistence implementa jobs.Persistence (fila persistida em background_jobs).
+// JobPersistence implementa jobs.Persistence (fila persistida em jobs).
 type JobPersistence struct {
 	db *sqlx.DB
 }
@@ -75,7 +75,7 @@ func (p *JobPersistence) UpsertRunning(j *jobs.Job) error {
 		completed = *j.CompletedAt
 	}
 	_, err = p.db.Exec(`
-		INSERT INTO background_jobs (id, kind, name, status, started_at, completed_at, progress, total, done, message, error_message, activity_json, updated_at)
+		INSERT INTO jobs (id, kind, name, status, started_at, completed_at, progress, total, done, message, error_message, activity_json, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb, now())`,
 		j.ID, j.Kind, j.Name, string(j.Status), j.StartedAt, completed, j.Progress, j.Total, j.Done,
 		nullIfEmpty(j.Message), nullIfEmpty(j.Error), act,
@@ -97,7 +97,7 @@ func (p *JobPersistence) SyncFromJob(j *jobs.Job) error {
 		return err
 	}
 	_, err = p.db.Exec(`
-		UPDATE background_jobs SET
+		UPDATE jobs SET
 			progress = $1, total = $2, done = $3, message = $4,
 			activity_json = $5::jsonb, updated_at = now()
 		WHERE id = $6`,
@@ -119,7 +119,7 @@ func (p *JobPersistence) SetTerminal(j *jobs.Job) error {
 		return err
 	}
 	_, err = p.db.Exec(`
-		UPDATE background_jobs SET
+		UPDATE jobs SET
 			status = $1,
 			completed_at = $2,
 			message = $3,
@@ -147,7 +147,7 @@ func (p *JobPersistence) ListFIFO(limit int, terminalMaxAgeDays int) ([]*jobs.Jo
 	}
 	q := `
 		SELECT id, kind, name, status, started_at, completed_at, progress, total, done, message, error_message, activity_json
-		FROM background_jobs
+		FROM jobs
 		WHERE status = 'running'
 		   OR (completed_at IS NOT NULL AND completed_at > CURRENT_TIMESTAMP - ($1::bigint * INTERVAL '1 day'))
 		ORDER BY started_at ASC
@@ -170,7 +170,7 @@ func (p *JobPersistence) ListFIFO(limit int, terminalMaxAgeDays int) ([]*jobs.Jo
 // DeleteTerminalJobs remove linhas finalizadas da tabela (limpar UI / histórico curto).
 func (p *JobPersistence) DeleteTerminalJobs() (int, error) {
 	res, err := p.db.Exec(`
-		DELETE FROM background_jobs
+		DELETE FROM jobs
 		WHERE status IN ('completed', 'failed', 'cancelled')`)
 	if err != nil {
 		return 0, err
@@ -187,7 +187,7 @@ func (p *JobPersistence) FailStaleRunning(maxAge time.Duration) (int, error) {
 		sec = 1
 	}
 	res, err := p.db.Exec(`
-		UPDATE background_jobs SET
+		UPDATE jobs SET
 			status = 'failed',
 			completed_at = now(),
 			error_message = $1,
@@ -205,7 +205,7 @@ func (p *JobPersistence) FailStaleRunning(maxAge time.Duration) (int, error) {
 // MarkOrphanRunningAsFailed marca todos os running como failed (ex.: após restart do processo).
 func (p *JobPersistence) MarkOrphanRunningAsFailed(msg string) (int, error) {
 	res, err := p.db.Exec(`
-		UPDATE background_jobs SET
+		UPDATE jobs SET
 			status = 'failed',
 			completed_at = COALESCE(completed_at, now()),
 			error_message = $1,
@@ -223,7 +223,7 @@ func (p *JobPersistence) MarkOrphanRunningAsFailed(msg string) (int, error) {
 // HasRunningName indica se já existe job running com o mesmo name (dedup).
 func (p *JobPersistence) HasRunningName(name string) (bool, error) {
 	var ok bool
-	err := p.db.Get(&ok, `SELECT EXISTS(SELECT 1 FROM background_jobs WHERE name = $1 AND status = 'running')`, name)
+	err := p.db.Get(&ok, `SELECT EXISTS(SELECT 1 FROM jobs WHERE name = $1 AND status = 'running')`, name)
 	if err != nil {
 		return false, err
 	}

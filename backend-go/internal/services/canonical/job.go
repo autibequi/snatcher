@@ -8,7 +8,7 @@ import (
 
 	"snatcher/backendv2/internal/observability"
 	"snatcher/backendv2/internal/repositories"
-	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/dedup"
 )
 
 // BackfillStats agrega contadores de uma execução de RunBackfill.
@@ -70,7 +70,7 @@ func priceBand(price float64) int {
 // Em caso de erro no upsert, retorna (false, lowConf) e skip do link.
 func processRow(ctx context.Context, db *sqlx.DB, row catalogRow) (wasExisting bool, lowConf bool) {
 	band := priceBand(row.PriceCurrent)
-	fpResult := algo.Fingerprint(row.Title, row.BrandID, band)
+	fpResult := dedup.Fingerprint(row.Title, row.BrandID, band)
 	lowConf = fpResult.LowConfidence
 	if fpResult.LowConfidence {
 		slog.Debug("canonical.fingerprint_low_confidence",

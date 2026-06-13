@@ -10,8 +10,9 @@ import (
 )
 
 // GET /api/catalog/:id
-// Retorna produto canônico + variantes legadas (catalogvariant via catalogproduct).
-// Resposta: { product: {...}, variants: [{price, url, source, image_url}] }
+// Retorna o produto do catálogo v2. `variants` é mantido vazio por compat de contrato
+// (o catálogo v1 catalogproduct/catalogvariant foi removido na W2 do refactor 2026-06).
+// Resposta: { product: {...}, variants: [] }
 func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -41,7 +42,7 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			CreatedAt         string   `db:"created_at"          json:"created_at"`
 		}
 		var p product
-		// Tenta catálogo v2 primeiro; se não achar, busca no catalogproduct legado.
+		// Catálogo v2 é o caminho único (v1 catalogproduct/catalogvariant removido na W2).
 		err = db.GetContext(r.Context(), &p, `
 			SELECT c.id, c.short_id, c.source_id, c.category_id,
 			       ct.display_name AS category_name,
@@ -55,65 +56,15 @@ func CatalogGetHandler(db *sqlx.DB) http.HandlerFunc {
 			WHERE c.id = $1
 		`, id)
 		if err != nil {
-			// Fallback: catálogo legado (catalogproduct) — campo compat com interface do Composer.
-			var lp struct {
-				ID           int64   `db:"id"           json:"id"`
-				Title        string  `db:"title"        json:"title"`
-				ImageURL     *string `db:"image_url"    json:"image_url,omitempty"`
-				CanonicalURL string  `db:"canonical_url" json:"canonical_url"`
-				PriceCurrent float64 `db:"price_current" json:"price_current"`
-				DiscountPct  *float64 `db:"discount_pct" json:"discount_pct,omitempty"`
-				CreatedAt    string  `db:"created_at"   json:"created_at"`
-			}
-			legacyErr := db.GetContext(r.Context(), &lp, `
-				SELECT p.id, p.title, p.image_url, p.canonical_url,
-				       COALESCE(v.price, p.lowest_price, 0) AS price_current,
-				       p.discount_pct, p.created_at::text AS created_at
-				FROM catalogproduct p
-				LEFT JOIN LATERAL (
-				    SELECT price FROM catalogvariant WHERE catalog_product_id=p.id ORDER BY price ASC LIMIT 1
-				) v ON true
-				WHERE p.id = $1
-			`, id)
-			if legacyErr != nil {
-				http.NotFound(w, r)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"product":  lp,
-				"variants": []any{},
-			})
+			http.NotFound(w, r)
 			return
 		}
 
-		// Variantes legadas via catalogvariant → catalogproduct, se existirem.
-		type variant struct {
-			Price    *float64 `db:"price"     json:"price,omitempty"`
-			URL      string   `db:"url"       json:"url"`
-			Source   string   `db:"source"    json:"source"`
-			ImageURL *string  `db:"image_url" json:"image_url,omitempty"`
-		}
-		var variants []variant
-		_ = db.SelectContext(r.Context(), &variants, `
-			SELECT cv.price, cv.url, cv.source, cv.image_url
-			FROM catalogvariant cv
-			JOIN catalogproduct cp ON cp.id = cv.catalog_product_id
-			WHERE cp.canonical_url = $1
-			   OR cp.id IN (
-			       SELECT catalog_product_id FROM catalogvariant WHERE url = $2
-			   )
-			ORDER BY cv.price ASC NULLS LAST
-			LIMIT 20
-		`, p.CanonicalURL, p.CanonicalURL)
-		if variants == nil {
-			variants = []variant{}
-		}
-
 		w.Header().Set("Content-Type", "application/json")
+		// variants mantido (vazio) por compat de contrato com o frontend.
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"product":  p,
-			"variants": variants,
+			"variants": []any{},
 		})
 	}
 }

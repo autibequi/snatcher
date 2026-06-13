@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -20,7 +19,6 @@ import (
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/adapters"
 	"snatcher/backendv2/internal/services/affiliates"
-	"snatcher/backendv2/internal/services/algo"
 	"snatcher/backendv2/internal/services/compose"
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/notifier"
@@ -106,173 +104,6 @@ func resolveWorkingRedirectHost(ctx context.Context, db *sqlx.DB, modemID int64,
 		return "", 0, fmt.Errorf("redirect_domains id=%d válido para escolha mas host não resolveu: %w", *picked, e)
 	}
 	return h, *picked, nil
-}
-
-// RunSender é a goroutine principal do sender de 1 modem.
-// Drena send_queue WHERE modem_id=X com FOR UPDATE SKIP LOCKED.
-func RunSender(ctx context.Context, db *sqlx.DB, modemID int64) {
-	slog.Info("sender.start", "modem", modemID)
-
-	// lastGateLog rastreia quando cada gate logou pela última vez para evitar spam.
-	// Cada gate loga na primeira ocorrência e depois a cada 5 minutos.
-	lastGateLog := map[string]time.Time{}
-	gateLog := func(gate string, lvl slog.Level, args ...any) {
-		if time.Since(lastGateLog[gate]) < 5*time.Minute {
-			return
-		}
-		lastGateLog[gate] = time.Now()
-		slog.Log(ctx, lvl, "sender.gate."+gate, args...)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// gate: modem status
-		var status string
-		if err := db.GetContext(ctx, &status, "SELECT status FROM modems WHERE id=$1", modemID); err == nil && status != "active" {
-			gateLog("modem_status", slog.LevelWarn,
-				"modem", modemID, "status", status)
-			time.Sleep(60 * time.Second)
-			continue
-		}
-
-		// gate: janela de envio configurada em Settings (send_start_hour / send_end_hour)
-		if !algo.InSendWindow(ctx, db) {
-			loc, _ := time.LoadLocation("America/Sao_Paulo")
-			gateLog("window", slog.LevelInfo,
-				"modem", modemID, "hour_sp", time.Now().In(loc).Hour())
-			time.Sleep(2 * time.Minute)
-			continue
-		}
-
-		sent, err := drainOne(ctx, db, modemID)
-		if err != nil {
-			slog.Error("sender.drain", "err", err, "modem", modemID)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		if !sent {
-			time.Sleep(15 * time.Second)
-			continue
-		}
-
-		// cooldown 90s ±30s
-		cooldown := getCooldownSeconds(ctx, db, modemID)
-		jitter := time.Duration(rand.Intn(60)-30) * time.Second
-		time.Sleep(time.Duration(cooldown)*time.Second + jitter)
-	}
-}
-
-func drainOne(ctx context.Context, db *sqlx.DB, modemID int64) (bool, error) {
-	// FOR UPDATE SKIP LOCKED — pega 1 pending
-	tx, err := db.BeginTxx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	var qid, groupID int64
-	var catalogID *int64
-	var accountID, templateID, domainID *int64
-	var messageOverride, imageURLOverride sql.NullString
-	err = tx.QueryRowxContext(ctx, `
-		SELECT id, group_id, catalog_id, account_id, template_id, domain_id,
-		       message_override, image_url_override
-		FROM send_queue
-		WHERE modem_id=$1 AND status='pending'
-		ORDER BY enqueued_at ASC
-		FOR UPDATE SKIP LOCKED
-		LIMIT 1
-	`, modemID).Scan(&qid, &groupID, &catalogID, &accountID, &templateID, &domainID,
-		&messageOverride, &imageURLOverride)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-
-	// marca sending
-	if _, err := tx.ExecContext(ctx, "UPDATE send_queue SET status='sending', attempts=attempts+1 WHERE id=$1", qid); err != nil {
-		return false, err
-	}
-
-	// resolve account se vazio: round-robin entre primary/backup do modem que tem permissão no grupo
-	if accountID == nil {
-		var a int64
-		err := tx.GetContext(ctx, &a, `
-			SELECT a.id FROM accounts a
-			JOIN group_admins ga ON ga.account_id=a.id AND ga.account_type='wa'
-			WHERE a.modem_id=$1 AND a.status IN ('primary','backup') AND ga.group_id=$2
-			ORDER BY a.last_sent_at ASC NULLS FIRST
-			LIMIT 1
-		`, modemID, groupID)
-		if err != nil {
-			_, _ = tx.ExecContext(ctx, "UPDATE send_queue SET status='failed' WHERE id=$1", qid)
-			_ = tx.Commit()
-			return true, fmt.Errorf("no account available for group %d", groupID)
-		}
-		accountID = &a
-	}
-
-	// resolve template se vazio: weighted random por categoria do grupo
-	if templateID == nil {
-		var t int64
-		if err := tx.GetContext(ctx, &t, `
-			SELECT t.id FROM templates t
-			JOIN groups g ON g.id=$1
-			WHERE t.category_id = g.category_id AND t.enabled=true
-			ORDER BY random() * t.weight DESC LIMIT 1
-		`, groupID); err == nil {
-			templateID = &t
-		}
-	}
-
-	// resolve domínio se vazio — afinidade modem + pool + fallback global (ver pickRedirectDomainID)
-	if domainID == nil {
-		picked, derr := pickRedirectDomainID(ctx, tx, modemID)
-		if derr != nil {
-			return false, fmt.Errorf("redirect_domains: %w", derr)
-		}
-		domainID = picked
-	}
-
-	// commit lock + sending status — fora da transação fazemos o envio real
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-
-	// envio (fora da TX para não segurar lock)
-	// Disparo manual: message_override presente → texto direto, sem produto.
-	if messageOverride.Valid && messageOverride.String != "" {
-		err = sendRawText(ctx, db, modemID, groupID, *accountID, messageOverride.String, imageURLOverride.String)
-	} else if catalogID != nil {
-		var resolved *int64
-		resolved, err = sendViaEvolution(ctx, db, modemID, groupID, *catalogID, *accountID, templateID, domainID)
-		if resolved != nil {
-			domainID = resolved
-		}
-	} else {
-		err = fmt.Errorf("send_queue id=%d: sem catalog_id nem message_override", qid)
-	}
-	if err != nil {
-		// Desconto inválido não é falha de infra — marca como invalid e não penaliza conta.
-		if errors.Is(err, ErrNoValidDiscount) || errors.Is(err, ErrDiscountZero) {
-			slog.Warn("sender.skip.invalid_discount", "queue_id", qid, "modem", modemID, "group", groupID, "err", err.Error())
-			markInvalid(ctx, db, qid, err)
-			return true, nil
-		}
-		slog.Error("sender.send_failed", "queue_id", qid, "modem", modemID, "group", groupID, "err", err)
-		markFailed(ctx, db, qid, *accountID, modemID, err)
-		return true, nil
-	}
-
-	markSent(ctx, db, qid, groupID, catalogID, *accountID, templateID, domainID)
-	return true, nil
 }
 
 func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalogID, accountID int64, templateID, domainID *int64) (*int64, error) {
@@ -651,15 +482,6 @@ func markInvalid(ctx context.Context, db *sqlx.DB, qid int64, reason error) {
 		`UPDATE send_queue SET status='invalid', last_error=$1 WHERE id=$2`,
 		reason.Error(), qid,
 	)
-}
-
-func getCooldownSeconds(ctx context.Context, db *sqlx.DB, modemID int64) float64 {
-	var v float64
-	_ = db.GetContext(ctx, &v, "SELECT get_param('cooldown_seconds','modem',$1)", modemID)
-	if v == 0 {
-		v = 90
-	}
-	return v
 }
 
 // personalizeMsgWithLLM chama a LLM para reescrever msg de forma mais humanizada.

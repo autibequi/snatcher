@@ -1,12 +1,12 @@
 //go:build property
 
-package algo_test
+package dedup_test
 
 import (
 	"math/rand"
 	"testing"
 
-	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/dedup"
 )
 
 // TestFingerprintDeterminism verifica que Fingerprint é puro:
@@ -42,8 +42,8 @@ func TestFingerprintDeterminism(t *testing.T) {
 			brandID = &v
 		}
 
-		h1 := algo.Fingerprint(title, brandID, priceBand)
-		h2 := algo.Fingerprint(title, brandID, priceBand)
+		h1 := dedup.Fingerprint(title, brandID, priceBand)
+		h2 := dedup.Fingerprint(title, brandID, priceBand)
 
 		if h1.Hash != h2.Hash {
 			t.Errorf("iter %d: determinismo violado: título=%q brandID=%v priceBand=%d → h1=%x h2=%x",
@@ -67,14 +67,14 @@ func TestFingerprintLowConfidenceOnNilBrand(t *testing.T) {
 		priceBand := rng.Intn(10)
 
 		// nil → LowConfidence deve ser true.
-		got := algo.Fingerprint(title, nil, priceBand)
+		got := dedup.Fingerprint(title, nil, priceBand)
 		if !got.LowConfidence {
 			t.Errorf("iter %d: esperava LowConfidence=true com brandID=nil, got false (título=%q)", i, title)
 		}
 
 		// não-nil → LowConfidence deve ser false.
 		v := int64(i + 1)
-		got2 := algo.Fingerprint(title, &v, priceBand)
+		got2 := dedup.Fingerprint(title, &v, priceBand)
 		if got2.LowConfidence {
 			t.Errorf("iter %d: esperava LowConfidence=false com brandID=%d, got true (título=%q)", i, v, title)
 		}
@@ -93,7 +93,7 @@ func TestFingerprintShortInputLowConfidence(t *testing.T) {
 		{" ", 2},
 	}
 	for _, c := range cases {
-		got := algo.Fingerprint(c.title, nil, c.priceBand)
+		got := dedup.Fingerprint(c.title, nil, c.priceBand)
 		if !got.LowConfidence {
 			t.Errorf("título=%q priceBand=%d: esperava LowConfidence=true, got false", c.title, c.priceBand)
 		}

@@ -12,7 +12,7 @@ import (
 	store "snatcher/backendv2/internal/repositories"
 )
 
-// WorkQueueHandler expõe GET /api/work-queue — visão unificada FIFO de jobs (persistidos em background_jobs quando configurado) + auditoria Jonfrey.
+// WorkQueueHandler expõe GET /api/work-queue — visão unificada FIFO de jobs (persistidos em jobs quando configurado) + auditoria Jonfrey.
 type WorkQueueHandler struct {
 	Store store.Store
 }
@@ -105,7 +105,7 @@ func (h *WorkQueueHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Clear POST /api/work-queue/clear
-// Remove jobs terminal em background_jobs (completed/failed/cancelled) + auditoria Jonfrey já finalizada.
+// Remove jobs terminal em jobs (completed/failed/cancelled) + auditoria Jonfrey já finalizada.
 func (h *WorkQueueHandler) Clear(w http.ResponseWriter, r *http.Request) {
 	nJobs := jobs.Default().Clear()
 	var nJF int64

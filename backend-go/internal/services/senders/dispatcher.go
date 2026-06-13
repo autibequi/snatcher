@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/services/sendwindow"
 )
 
 // DispatcherConfig — parâmetros do worker pool central.
@@ -86,6 +88,17 @@ func runWorker(ctx context.Context, db *sqlx.DB, workerID string, cfg Dispatcher
 			slog.Info("dispatcher.worker.stop", "worker", workerID)
 			return
 		default:
+		}
+
+		// gate: janela de envio (send_start_hour/send_end_hour) — paridade com o
+		// sender legacy removido na W2. Fora da janela, não claima jobs.
+		if !sendwindow.InSendWindow(ctx, db) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Minute):
+			}
+			continue
 		}
 
 		job, err := claimNextJob(ctx, db, workerID, cfg.LeaseTTL)

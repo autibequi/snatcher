@@ -1,11 +1,11 @@
 //go:build property
 
-package algo_test
+package dedup_test
 
 import (
 	"testing"
 
-	"snatcher/backendv2/internal/services/algo"
+	"snatcher/backendv2/internal/services/dedup"
 )
 
 // brand helper.
@@ -36,13 +36,13 @@ func TestFingerprintCrossMarketplaceDedup(t *testing.T) {
 	brand := brandID(42)
 	priceBand := 5
 
-	ref := algo.Fingerprint(titles[0].title, brand, priceBand)
+	ref := dedup.Fingerprint(titles[0].title, brand, priceBand)
 	if ref.LowConfidence {
 		t.Fatalf("variante %q com brand definida: esperava LowConfidence=false, got true", titles[0].title)
 	}
 
 	for _, tt := range titles[1:] {
-		got := algo.Fingerprint(tt.title, brand, priceBand)
+		got := dedup.Fingerprint(tt.title, brand, priceBand)
 		if got.Hash != ref.Hash {
 			t.Errorf("dedup falhou para %q:\n  ref  (%q) = %x\n  got  (%q) = %x",
 				tt.name, titles[0].title, ref.Hash, tt.title, got.Hash)
@@ -63,8 +63,8 @@ func TestFingerprintNoCollapseOnDifferentBrands(t *testing.T) {
 	brand1 := brandID(1001) // Samsung
 	brand2 := brandID(1002) // clone
 
-	h1 := algo.Fingerprint(title, brand1, priceBand)
-	h2 := algo.Fingerprint(title, brand2, priceBand)
+	h1 := dedup.Fingerprint(title, brand1, priceBand)
+	h2 := dedup.Fingerprint(title, brand2, priceBand)
 
 	if h1.Hash == h2.Hash {
 		t.Errorf("brands distintas produziram mesmo hash %x — dedup incorreto", h1.Hash)
@@ -84,7 +84,7 @@ func TestFingerprintNoCollapseAcrossPriceBands(t *testing.T) {
 	bands := []int{1, 3, 5, 8} // faixas de preço distintas
 	hashes := make([][16]byte, len(bands))
 	for i, pb := range bands {
-		hashes[i] = algo.Fingerprint(title, brand, pb).Hash
+		hashes[i] = dedup.Fingerprint(title, brand, pb).Hash
 	}
 
 	// Cada par deve ser distinto.
@@ -105,13 +105,13 @@ func TestFingerprintNilBrandLowConfidence(t *testing.T) {
 	title := "produto generico sem marca xpto 123"
 	priceBand := 3
 
-	got := algo.Fingerprint(title, nil, priceBand)
+	got := dedup.Fingerprint(title, nil, priceBand)
 	if !got.LowConfidence {
 		t.Errorf("brandID=nil deve produzir LowConfidence=true, got false (título=%q)", title)
 	}
 
 	// Com brand definida, mesmo título → LowConfidence=false.
-	withBrand := algo.Fingerprint(title, brandID(99), priceBand)
+	withBrand := dedup.Fingerprint(title, brandID(99), priceBand)
 	if withBrand.LowConfidence {
 		t.Errorf("brandID definida deve produzir LowConfidence=false, got true (título=%q)", title)
 	}

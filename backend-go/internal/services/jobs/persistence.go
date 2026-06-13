@@ -2,7 +2,7 @@ package jobs
 
 import "time"
 
-// Persistence opcional: persiste a fila em PostgreSQL (tabela background_jobs) para sobreviver a restart.
+// Persistence opcional: persiste a fila em PostgreSQL (tabela jobs) para sobreviver a restart.
 type Persistence interface {
 	UpsertRunning(j *Job) error
 	SyncFromJob(j *Job) error
