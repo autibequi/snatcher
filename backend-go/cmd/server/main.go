@@ -222,7 +222,11 @@ func bootstrapConfig(st store.Store) {
 	if evoURL == "" {
 		evoURL = "http://evolution:8080"
 	}
-	if !cfg.WABaseURL.Valid || cfg.WABaseURL.String == "" {
+	// Sincroniza SEMPRE (não só quando vazio): a Evolution roda como serviço interno do
+	// compose e a URL vem do ambiente — não há edição pela UI. Isto sobrescreve valores
+	// antigos/públicos que tenham ficado persistidos no volume do banco entre deploys
+	// (que faziam o backend chamar a Evolution via domínio público → Cloudflare 502).
+	if cfg.WABaseURL.String != evoURL {
 		cfg.WABaseURL = models.NullString{NullString: sql.NullString{String: evoURL, Valid: true}}
 		changed = true
 	}
