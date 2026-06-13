@@ -51,6 +51,13 @@ function accountStatusBadge(status: string) {
   return <span className={`${base} bg-surface-2 text-fg-2`}>{status}</span>
 }
 
+// A Evolution v2 reporta a sessão WhatsApp conectada como "open". "connected" é aceito
+// por compatibilidade com estados já normalizados. Sem reconhecer "open", a tela de QR
+// trava em "Aguardando leitura..." mesmo após o pareamento concluir.
+function isWAConnected(status: string) {
+  return status === 'open' || status === 'connected'
+}
+
 // ── Modal de conexão de conta ─────────────────────────────────────────────────
 
 type Platform = 'whatsapp' | 'telegram'
@@ -79,7 +86,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
     try {
       const r = await authFetch(`/api/admin/modems/${modemId}/connection-status`)
       const data: { status: string } = await r.json()
-      if (data.status === 'connected') {
+      if (isWAConnected(data.status)) {
         stopPoll()
         setStatus('connected')
       }
@@ -94,7 +101,7 @@ function ConnectModal({ modem, onClose, onConnected }: ConnectModalProps) {
       // Checa se já está conectado antes de pedir QR
       const statusR = await authFetch(`/api/admin/modems/${modem.id}/connection-status`)
       const statusData: { status: string } = await statusR.json()
-      if (statusData.status === 'connected') {
+      if (isWAConnected(statusData.status)) {
         setStatus('connected')
         return
       }
@@ -419,7 +426,7 @@ export default function AdminSenders() {
             {!evoHealth.configured && ' · não configurada'}
             {evoHealth.configured && evoHealth.api_online && ' · online'}
             {evoHealth.configured && !evoHealth.api_online && ' · inacessível'}
-            {evoHealth.api_online && evoHealth.wa_status === 'connected' && (
+            {evoHealth.api_online && isWAConnected(evoHealth.wa_status) && (
               <span className="text-[10px] opacity-70 ml-0.5">· WA ✓</span>
             )}
             {evoHealth.instance && evoHealth.configured && (
