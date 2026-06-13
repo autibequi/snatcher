@@ -2,15 +2,13 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CrawlLogsTab } from './CrawlLogsTab'
 import { SendEventsTab } from './SendEventsTab'
-import { QuarantineEventsTab } from './QuarantineEventsTab'
-import { OutboxEventsTab } from './OutboxEventsTab'
 import { LLMTab } from './LLMTab'
 import { useWSEvent } from '../../lib/useWS'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Tab identifiers for the ActivityHub */
-type TabID = 'crawl' | 'send' | 'quarantine' | 'outbox' | 'llm'
+type TabID = 'crawl' | 'send' | 'llm'
 
 /** Common filters shared across all activity tabs */
 export interface CommonFilters {
@@ -31,9 +29,7 @@ export interface CommonFilters {
 const TAB_LIST: Array<{ id: TabID; label: string }> = [
   { id: 'crawl',      label: 'Crawl Logs'  },
   { id: 'send',       label: 'Envios'      },
-  { id: 'quarantine', label: 'Quarentena'  },
   { id: 'llm',        label: 'LLM Calls'   },
-  { id: 'outbox',     label: 'Outbox'      },
 ]
 
 // ── Severity options ───────────────────────────────────────────────────────────
@@ -192,12 +188,6 @@ function TabContent({ tab, filters }: TabContentProps) {
   if (tab === 'send') {
     return <SendEventsTab filters={filters} />
   }
-  if (tab === 'quarantine') {
-    return <QuarantineEventsTab />
-  }
-  if (tab === 'outbox') {
-    return <OutboxEventsTab />
-  }
   if (tab === 'llm') {
     // LLMTab aceita q opcional; filters.text passado como busca livre.
     // Restante de CommonFilters (date-range, channel, severity) ignorado por LLMTab nesta wave.
@@ -231,9 +221,6 @@ export function ActivityHub() {
     if (tab === 'send') {
       void queryClient.invalidateQueries({ queryKey: ['send-queue'] })
       void queryClient.invalidateQueries({ queryKey: ['send-log'] })
-    }
-    if (tab === 'outbox') {
-      void queryClient.invalidateQueries({ queryKey: ['outbox-events'] })
     }
   })
 

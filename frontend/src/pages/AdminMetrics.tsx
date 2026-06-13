@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
-import { ClustersTab } from './Clusters'
 import { DataTable } from '../components/ui'
 import type { ColumnDef } from '@tanstack/react-table'
 
@@ -95,9 +94,9 @@ function Badge({ status }: { status: string }) {
 
 // ---------- tab state ----------
 
-type Tab = 'weights' | 'daily' | 'abtests' | 'virality' | 'clusters'
+type Tab = 'daily' | 'abtests' | 'virality'
 
-const VALID_TABS = new Set<Tab>(['weights', 'daily', 'abtests', 'virality', 'clusters'])
+const VALID_TABS = new Set<Tab>(['daily', 'abtests', 'virality'])
 
 interface ViralityRow {
   group_id: number
@@ -530,24 +529,22 @@ function ABTestsTab() {
 // ---------- main ----------
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'weights',  label: 'Learned Weights' },
   { id: 'daily',    label: 'Daily Metrics' },
   { id: 'abtests',  label: 'A/B Tests' },
   { id: 'virality', label: 'Virality' },
-  { id: 'clusters', label: 'Clusters' },
 ]
 
 export default function AdminMetrics() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const tab: Tab =
-    tabParam && VALID_TABS.has(tabParam as Tab) ? (tabParam as Tab) : 'weights'
+    tabParam && VALID_TABS.has(tabParam as Tab) ? (tabParam as Tab) : 'daily'
 
   const setTab = (t: Tab) => {
     setSearchParams(
       prev => {
         const p = new URLSearchParams(prev)
-        if (t === 'weights') p.delete('tab')
+        if (t === 'daily') p.delete('tab')
         else p.set('tab', t)
         return p
       },
@@ -585,11 +582,9 @@ export default function AdminMetrics() {
       </div>
 
       {/* Tab content */}
-      {tab === 'weights'  && <LearnedWeightsTab />}
       {tab === 'daily'    && <DailyMetricsTab />}
       {tab === 'abtests'  && <ABTestsTab />}
       {tab === 'virality' && <ViralityTab />}
-      {tab === 'clusters' && <ClustersTab />}
     </div>
   )
 }
