@@ -50,3 +50,34 @@ func NewSearchTerm(t *testing.T, st store.Store, overrides ...models.SearchTerm)
 	term.ID = id
 	return term
 }
+
+// NewChannel cria um ChannelV2 ativo com defaults razoáveis. Campos passados em
+// overrides[0] (se fornecido) sobrescrevem. Usado pelos testes de integração de channels.
+func NewChannel(t *testing.T, st store.Store, overrides ...models.ChannelV2) models.ChannelV2 {
+	t.Helper()
+	ch := models.ChannelV2{
+		Name:             "canal-" + uniq(),
+		QualityThreshold: 0,
+		DailyCap:         50,
+		Active:           true,
+	}
+	if len(overrides) > 0 {
+		o := overrides[0]
+		if o.Name != "" {
+			ch.Name = o.Name
+		}
+		if o.DailyCap > 0 {
+			ch.DailyCap = o.DailyCap
+		}
+		if o.QualityThreshold > 0 {
+			ch.QualityThreshold = o.QualityThreshold
+		}
+		ch.Active = o.Active || ch.Active
+	}
+	id, err := st.CreateChannel(ch)
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	ch.ID = id
+	return ch
+}
