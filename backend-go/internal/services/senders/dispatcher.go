@@ -143,8 +143,9 @@ type sendJob struct {
 	ModemID    int64          `db:"modem_id"`
 	TemplateID sql.NullInt64  `db:"template_id"`
 	DomainID   sql.NullInt64  `db:"domain_id"`
-	Score      float64        `db:"score"`
-	RoutingKey sql.NullString `db:"routing_key"`
+	Score           float64        `db:"score"`
+	RoutingKey      sql.NullString `db:"routing_key"`
+	MessageOverride sql.NullString `db:"message_override"`
 }
 
 // claimNextJob — FOR UPDATE SKIP LOCKED ORDER BY score DESC, scheduled_for ASC.
@@ -160,7 +161,7 @@ func claimNextJob(ctx context.Context, db *sqlx.DB, workerID string, ttl time.Du
 	err = tx.GetContext(ctx, &job, `
 		SELECT id, catalog_id, group_id, account_id, modem_id, template_id, domain_id,
 		       COALESCE(score, 0) AS score,
-		       routing_key
+		       routing_key, message_override
 		FROM send_queue
 		WHERE status = 'pending'
 		  AND (scheduled_for IS NULL OR scheduled_for <= now())
@@ -228,6 +229,19 @@ func processJob(ctx context.Context, db *sqlx.DB, job *sendJob, workerID string,
 	if job.DomainID.Valid {
 		d := job.DomainID.Int64
 		domainID = &d
+	}
+
+	// Disparo manual (message_override presente, sem catalog_id): envia a mensagem pré-montada
+	// via sendRawText. Sem este caminho o item caía em sendViaEvolution com catalog_id=0, não
+	// achava produto e era marcado 'invalid' — a mensagem nunca chegava ao WhatsApp.
+	if job.MessageOverride.Valid && job.MessageOverride.String != "" {
+		if err := sendRawText(ctx, db, job.ModemID, job.GroupID, accountID, job.MessageOverride.String, ""); err != nil {
+			slog.Warn("dispatcher.manual_send_failed", "qid", job.ID, "worker", workerID, "err", err)
+			markFailed(ctx, db, job.ID, accountID, job.ModemID, err)
+			return
+		}
+		markSent(ctx, db, job.ID, job.GroupID, nil, accountID, templateID, domainID)
+		return
 	}
 
 	_, err := sendViaEvolution(ctx, db, job.ModemID, job.GroupID, catalogID, accountID, templateID, domainID)
