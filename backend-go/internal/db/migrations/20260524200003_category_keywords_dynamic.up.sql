@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS category_keywords (
 );
 CREATE INDEX idx_category_keywords_slug ON category_keywords(category_slug) WHERE active = true;
 
+-- Garante a categoria 'tenis' antes do seed de keywords. Ela faltava no seed de categories
+-- (create_categories só tem 8 slugs), então a FK category_keywords_category_slug_fkey
+-- quebrava o boot num banco fresh ao inserir as keywords de 'tenis'. Idempotente.
+INSERT INTO categories (slug, display_name, weight) VALUES ('tenis', 'Tênis & Esporte', 1.0)
+ON CONFLICT (slug) DO NOTHING;
+
 -- Seed inicial de keywords (pode ser editado via painel ou Jonfrey)
 INSERT INTO category_keywords (category_slug, pattern, source) VALUES
   -- Café
