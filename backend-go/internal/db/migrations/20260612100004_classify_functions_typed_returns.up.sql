@@ -8,8 +8,12 @@
 -- Sintoma observado em prod: 100% dos itens da catalog_llm_queue travavam na
 -- heurística (catalog_llm_queue.go:155), fila parou de drenar.
 --
--- Fix: cast explícito (''::text, 0.0::numeric). CREATE OR REPLACE preserva
--- triggers/grants dependentes — não usa DROP.
+-- Fix: cast explícito (''::text, 0.0::numeric).
+-- DROP antes do CREATE: a 609 deixou esta função como RETURNS TEXT; aqui ela volta a
+-- RETURNS taxonomy_match, e OR REPLACE não pode mudar o tipo de retorno (quebrava o boot
+-- num banco fresh). classify_catalog_brand é chamada dentro de outra função, não é handler
+-- de trigger, então o DROP não derruba dependências.
+DROP FUNCTION IF EXISTS classify_catalog_brand(TEXT);
 CREATE OR REPLACE FUNCTION classify_catalog_brand(p_title TEXT)
 RETURNS taxonomy_match AS $$
 DECLARE

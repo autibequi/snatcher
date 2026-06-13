@@ -14,7 +14,11 @@ UPDATE brand_keywords SET weight = 120 WHERE pattern IN ('%samsung%', '%apple%',
 -- Índice pra ORDER BY weight DESC ser rápido
 CREATE INDEX IF NOT EXISTS idx_brand_keywords_weight ON brand_keywords(weight DESC, id ASC) WHERE active = true;
 
--- Atualiza função para usar weight DESC, id ASC
+-- Atualiza função para usar weight DESC, id ASC.
+-- DROP antes do CREATE: a 608 redefiniu esta função como RETURNS taxonomy_match; aqui ela
+-- volta a RETURNS TEXT, e o Postgres não permite mudar o tipo de retorno via OR REPLACE
+-- (quebrava o boot num banco fresh — "cannot change return type of existing function").
+DROP FUNCTION IF EXISTS classify_catalog_brand(TEXT);
 CREATE OR REPLACE FUNCTION classify_catalog_brand(p_title TEXT)
 RETURNS TEXT AS $$
 DECLARE v_brand TEXT;
