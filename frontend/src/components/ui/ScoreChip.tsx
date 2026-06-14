@@ -1,3 +1,5 @@
+import { cn } from '../../lib/utils'
+
 interface ScoreChipProps {
   value: number
   className?: string
@@ -23,7 +25,7 @@ export function ScoreChip({ value, className = '', showValue = true }: ScoreChip
 
   return (
     <span
-      className={`inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded-md text-[11.5px] font-semibold tabular-nums ${tierClass[tier]} ${className}`}
+      className={cn('inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded-md text-[11.5px] font-semibold tabular-nums', tierClass[tier], className)}
       title={`Score ${v}/100`}
     >
       {showValue ? v : null}

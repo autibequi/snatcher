@@ -1,3 +1,4 @@
+import { cn } from '../../lib/utils'
 import { uiPanel, uiSectionLabel } from './tokens'
 
 /** Tonal override para o delta — por padrão: positivo=success, negativo=danger */
@@ -55,7 +56,7 @@ export function KpiCard({ label, value, delta, subtitle, tooltip, className = ''
   }
 
   return (
-    <div className={`${uiPanel} p-4 ${className}`}>
+    <div className={cn(uiPanel, 'p-4', className)}>
       <div className="flex items-center gap-1">
         <p className={uiSectionLabel}>{label}</p>
         {tooltip && (
@@ -69,7 +70,7 @@ export function KpiCard({ label, value, delta, subtitle, tooltip, className = ''
       </div>
       <p className="text-2xl font-semibold text-fg mt-1">{value}</p>
       {deltaText !== undefined && (
-        <p className={`text-xs mt-1 ${deltaColorClass}`}>{deltaText}</p>
+        <p className={cn('text-xs mt-1', deltaColorClass)}>{deltaText}</p>
       )}
       {subtitle !== undefined && (
         <p className="text-xs mt-1 text-fg-3">{subtitle}</p>

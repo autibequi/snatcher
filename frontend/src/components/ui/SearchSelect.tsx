@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/utils'
 
 export interface SearchSelectOption {
   value: string
@@ -49,7 +50,7 @@ export function SearchSelect({
   const selectedLabel = options.find(o => o.value === value)?.label
 
   return (
-    <div ref={ref} className={`relative ${className}`}>
+    <div ref={ref} className={cn('relative', className)}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -60,7 +61,7 @@ export function SearchSelect({
         <span className="flex-1 text-left truncate">
           {selectedLabel ?? placeholder}
         </span>
-        <svg className={`w-3.5 h-3.5 text-fg-3 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={cn('w-3.5 h-3.5 text-fg-3 flex-shrink-0 transition-transform', open && 'rotate-180')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
@@ -87,7 +88,7 @@ export function SearchSelect({
             <button
               type="button"
               onClick={() => { onChange(''); setOpen(false); setSearch('') }}
-              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors ${value === '' ? 'text-accent font-semibold' : 'text-fg-2'}`}
+              className={cn('w-full text-left px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors', value === '' ? 'text-accent font-semibold' : 'text-fg-2')}
             >
               {placeholder}
             </button>
@@ -100,7 +101,7 @@ export function SearchSelect({
                   key={o.value}
                   type="button"
                   onClick={() => { onChange(o.value); setOpen(false); setSearch('') }}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors truncate ${value === o.value ? 'text-accent font-semibold bg-accent/5' : 'text-fg'}`}
+                  className={cn('w-full text-left px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors truncate', value === o.value ? 'text-accent font-semibold bg-accent/5' : 'text-fg')}
                 >
                   {o.label}
                 </button>

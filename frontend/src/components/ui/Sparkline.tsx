@@ -1,3 +1,5 @@
+import { cn } from '../../lib/utils'
+
 interface SparklineProps {
   values: number[]
   className?: string
@@ -30,7 +32,7 @@ export function Sparkline({
 
   return (
     <div
-      className={`inline-flex items-end gap-[2px] ${className}`}
+      className={cn('inline-flex items-end gap-[2px]', className)}
       style={{ height }}
       aria-hidden="true"
     >
@@ -40,7 +42,7 @@ export function Sparkline({
         return (
           <span
             key={i}
-            className={`inline-block rounded-xs ${colorClass}`}
+            className={cn('inline-block rounded-xs', colorClass)}
             style={{ width: barWidth, height: h }}
           />
         )

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -42,13 +42,27 @@ export function AppShell() {
         <PageTitleProvider>
           <Topbar onMenuClick={() => setSidebarOpen(true)} />
           <main className="flex-1 overflow-y-auto">
-            <Outlet />
+            {/* Suspense interno: ao navegar entre rotas lazy, só a área de conteúdo
+                troca — o shell (sidebar/topbar) permanece montado, sem flicker. */}
+            <Suspense fallback={<ContentFallback />}>
+              <Outlet />
+            </Suspense>
           </main>
         </PageTitleProvider>
       </div>
       <ApiErrorToast />
       <ToastContainer />
       <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
+    </div>
+  )
+}
+
+// ContentFallback — placeholder leve enquanto o chunk da rota carrega. Fica só na
+// área de conteúdo (o shell persiste), evitando o flicker de página inteira.
+function ContentFallback() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-64" aria-busy>
+      <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import { cn } from '../../lib/utils'
+
 // Variante 'line' é alias de 'text'; variante 'table' renderiza múltiplas linhas
 // como SkeletonTable (prop rows controla quantidade).
 interface SkeletonProps {
@@ -15,10 +17,10 @@ export function Skeleton({ className = '', rows = 1, variant = 'text' }: Skeleto
       <div className="space-y-2">
         {Array.from({ length: rows }).map((_, index) => (
           <div key={index} className="flex gap-4 items-center">
-            <div className={`${base} h-4 w-1/3`} />
-            <div className={`${base} h-4 w-1/4`} />
-            <div className={`${base} h-4 w-1/5`} />
-            <div className={`${base} h-4 flex-1`} />
+            <div className={cn(base, 'h-4 w-1/3')} />
+            <div className={cn(base, 'h-4 w-1/4')} />
+            <div className={cn(base, 'h-4 w-1/5')} />
+            <div className={cn(base, 'h-4 flex-1')} />
           </div>
         ))}
       </div>
@@ -32,7 +34,7 @@ export function Skeleton({ className = '', rows = 1, variant = 'text' }: Skeleto
     circle: 'rounded-full w-8 h-8',
   }
 
-  return <div className={`${base} ${variantMap[variant as keyof typeof variantMap] ?? variantMap.text} ${className}`} />
+  return <div className={cn(base, variantMap[variant as keyof typeof variantMap] ?? variantMap.text, className)} />
 }
 
 // Mantém export nomeado para retrocompatibilidade com callers existentes

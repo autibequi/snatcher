@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/utils'
 
 // ─── Toast system — Tokyo Night themed ───────────────────────────────────────
 // Não usa library externa (nenhuma encontrada no package.json).
@@ -70,7 +71,7 @@ export function ToastContainer() {
         return (
           <div
             key={t.id}
-            className={`${variantStyles[variant]} rounded-md shadow-modal px-4 py-3 text-sm flex items-start gap-3`}
+            className={cn(variantStyles[variant], 'rounded-md shadow-modal px-4 py-3 text-sm flex items-start gap-3')}
             role="alert"
           >
             {/* Ícone de variante */}

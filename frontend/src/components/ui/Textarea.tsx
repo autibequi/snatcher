@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/utils'
 
 const controlClass = `
   w-full min-h-[2.25rem] px-2.5 py-1.5 text-sm rounded-lg border
@@ -20,7 +21,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={ref}
           rows={rows}
-          className={`${controlClass} resize-none ${error ? 'border-danger focus:border-danger focus:ring-danger' : ''} ${className}`.trim()}
+          className={cn(controlClass, 'resize-none', error && 'border-danger focus:border-danger focus:ring-danger', className)}
           {...props}
         />
         {error ? <p className="text-xs text-danger">{error}</p> : null}

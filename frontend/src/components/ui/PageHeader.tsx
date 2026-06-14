@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/utils'
 
 export interface PageHeaderProps {
   title: React.ReactNode
@@ -27,7 +28,7 @@ export function PageHeader({
 
   return (
     <div
-      className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${className}`.trim()}
+      className={cn('flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between', className)}
     >
       <div>
         <div className="flex flex-wrap items-center gap-2">

@@ -1,3 +1,5 @@
+import { cn } from '../../lib/utils'
+
 type Platform = 'whatsapp' | 'telegram' | 'wa' | 'tg' | string | null | undefined
 
 interface PlatformPillProps {
@@ -42,7 +44,7 @@ export function PlatformPill({ platform, size = 'sm', className = '' }: Platform
   const s = specFor(platform)
   return (
     <span
-      className={`inline-flex items-center rounded-full font-semibold leading-tight ${s.className} ${sizeClasses[size]} ${className}`}
+      className={cn('inline-flex items-center rounded-full font-semibold leading-tight', s.className, sizeClasses[size], className)}
       title={(platform ?? '').toString()}
     >
       {s.label}

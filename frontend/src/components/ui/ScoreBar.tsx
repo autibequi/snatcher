@@ -1,3 +1,4 @@
+import { cn } from '../../lib/utils'
 
 interface ScoreBarProps {
   value: number  // 0-100
@@ -9,9 +10,9 @@ export function ScoreBar({ value, showLabel = true, className = '' }: ScoreBarPr
   const clamp = Math.max(0, Math.min(100, value))
   const color = clamp >= 70 ? 'bg-success' : clamp >= 40 ? 'bg-warning' : 'bg-danger'
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <div className={cn('flex items-center gap-2', className)}>
       <div className="flex-1 h-1.5 bg-surface-2 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${clamp}%` }} />
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${clamp}%` }} />
       </div>
       {showLabel && <span className="text-xs text-fg-2 w-7 text-right">{clamp}</span>}
     </div>
