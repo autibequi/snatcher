@@ -415,6 +415,7 @@ func Build(
 		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
 		r.Get("/api/admin/metrics/virality", adminhnd.ViralityHandler(db))
 		r.Get("/api/admin/metrics/learned-weights", adminhnd.LearnedWeightsHandler(db))
+		r.Post("/api/admin/metrics/refresh-learned-weights", adminhnd.RefreshLearnedWeightsHandler(db))
 
 		// Analytics — resumo de cliques/desempenho (aba Desempenho da tela Analytics)
 		r.Get("/api/analytics/summary", adminhnd.NewAnalytics(st).Summary)

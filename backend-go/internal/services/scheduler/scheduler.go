@@ -443,6 +443,27 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Aprendizado: refresh_learned_weights — recomputa CTR/EPC por canal×categoria×source
+	// a partir de send_log + clicks (decay 7d), a cada 15min. RELIGADO 2026-06-14: o job
+	// estava órfão (não agendado) + escrevia em tabela dropada → o motor nunca aprendia.
+	// É o loop que faz a seleção EVOLUIR com o resultado real (clique).
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("*/15 * * * *", false),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: refresh_learned_weights started")
+				if err := jobs.RunRefreshLearnedWeights(context.Background(), sc.db); err != nil {
+					slog.Error("scheduler: refresh_learned_weights error", "err", err)
+				}
+			}),
+			gocron.WithName("refresh_learned_weights"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// sub6-c3: Cluster compute — KMeans sobre canais ativos, semanal domingo 02:00.
 	if sc.db != nil {
 		_, err = sc.s.NewJob(

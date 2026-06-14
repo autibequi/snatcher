@@ -7,7 +7,23 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/services/jobs"
 )
+
+// RefreshLearnedWeightsHandler dispara o recompute do aprendizado (CTR/EPC por
+// canal×categoria) sob demanda — útil pra validar o loop sem esperar o cron de 15min.
+// POST /api/admin/metrics/refresh-learned-weights
+func RefreshLearnedWeightsHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := jobs.RunRefreshLearnedWeights(r.Context(), db); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "refreshed"})
+	}
+}
 
 // GET /api/admin/metrics/learned-weights?min_samples=50
 // Pesos aprendidos do learning loop por canal × categoria × source: CTR/EPC 30d,

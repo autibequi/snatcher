@@ -127,15 +127,18 @@ func loadTargetConfig(ctx context.Context, db *sqlx.DB, channelID int64) (target
 	}
 
 	// Fallback de categoria: se o canal não tem target_categories explícito, deriva
-	// das categorias que ele pondera (channel_category_weights com weight > 0). Sem
-	// isso, target.Match só filtrava por preço — e produto de QUALQUER categoria na
-	// faixa de preço entrava (ex.: capinha de celular num canal de Suplementos).
-	// As categorias ponderadas SÃO o público-alvo do canal; viram filtro duro.
+	// da(s) categoria(s) DOMINANTE(S) que ele pondera (channel_category_weights com
+	// weight >= 50). Só o peso dominante (100) vira ALVO DURO — pesos secundários de
+	// cross-sell (ex.: moda 20 no canal Cosméticos, gaming 30 no Tech) são apenas
+	// boost de score, NÃO alvo (senão Havaianas/moda entrava no grupo de Cosméticos).
+	// Sem isso (canal sem weights), target.Match só filtra preço → produto de qualquer
+	// categoria na faixa entra (ex.: perfume R$342 no grupo de Eletrodomésticos).
+	const dominantWeightFloor = 50
 	if len(cfg.Categories) == 0 {
 		var derived []int64
 		if derr := db.SelectContext(ctx, &derived, `
 			SELECT category_id FROM channel_category_weights
-			WHERE channel_id = $1 AND weight > 0`, channelID); derr == nil && len(derived) > 0 {
+			WHERE channel_id = $1 AND weight >= $2`, channelID, dominantWeightFloor); derr == nil && len(derived) > 0 {
 			cfg.Categories = derived
 		}
 	}
