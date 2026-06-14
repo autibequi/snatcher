@@ -50,7 +50,7 @@ func SendQueueHandler(db *sqlx.DB) http.HandlerFunc {
 			       COALESCE(c.title, 'Produto #' || sq.catalog_id) AS product_title,
 			       COALESCE(sq.score, 0) AS score,
 			       sq.modem_id,
-			       m.name AS modem_name,
+			       m.slug AS modem_name,
 			       sq.enqueued_at::text AS enqueued_at
 			FROM send_queue sq
 			LEFT JOIN groups  g ON g.id  = sq.group_id
