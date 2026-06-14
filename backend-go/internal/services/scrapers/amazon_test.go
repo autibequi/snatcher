@@ -16,7 +16,8 @@ func TestParseAmazonSearchResults_CapturaPrecoDe(t *testing.T) {
 	html := `<div data-component-type="s-search-result" data-asin="B0TEST123">
 		<h2><span>Whey Protein Concentrado 1kg</span></h2>
 		<span class="a-price"><span class="a-price-whole">99</span><span class="a-price-fraction">90</span></span>
-		<span class="a-price a-text-price"><span class="a-offscreen">R$ 149,90</span></span>
+		<span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$ 149,90</span></span>
+		<span class="a-text-price"><span class="a-offscreen">R$ 8,32</span></span>
 		<img class="s-image" src="https://x/img.jpg"/>
 	</div>`
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))

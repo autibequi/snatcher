@@ -116,12 +116,13 @@ func parseAmazonSearchResults(doc *goquery.Document, minVal, maxVal float64) []p
 			subtitle = strings.TrimSpace(sel.Find(".a-size-base-plus.a-color-secondary").First().Text())
 		}
 
-		// Preço "de" (lista/riscado): a Amazon coloca o preço original tachado em
-		// .a-text-price, e .a-offscreen guarda o texto formatado completo ("R$ 1.234,56").
-		// Sem isso, OriginalPrice ficava sempre 0 → nenhum produto tinha desconto
-		// detectado → só achadinho barato virava send_ready (a peça que faltava no funil).
+		// Preço "de" (lista/riscado): na Amazon BR é o span com data-a-strike="true"
+		// (.a-offscreen guarda o texto formatado "R$ 1.234,56"). CUIDADO: .a-text-price
+		// SEM o strike é a PARCELA ("12x R$ X") — usar isso dava preço errado. Confirmado
+		// no HTML ao vivo (2026-06-14): 31/60 resultados de whey têm data-a-strike.
+		// Sem isso, OriginalPrice ficava 0 → sem desconto → só achadinho virava send_ready.
 		var origPrice float64
-		if origStr := strings.TrimSpace(sel.Find(".a-text-price .a-offscreen").First().Text()); origStr != "" {
+		if origStr := strings.TrimSpace(sel.Find("[data-a-strike='true'] .a-offscreen").First().Text()); origStr != "" {
 			origStr = strings.ReplaceAll(origStr, "R$", "")
 			origStr = strings.TrimSpace(origStr)
 			origStr = strings.ReplaceAll(origStr, ".", "")
