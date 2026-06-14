@@ -33,6 +33,7 @@ func setupOutboxDB(t *testing.T) *sql.DB {
 			id               INTEGER PRIMARY KEY AUTOINCREMENT,
 			catalog_id       INTEGER NOT NULL,
 			modem_id         INTEGER NOT NULL,
+			account_id       INTEGER,
 			group_id         INTEGER NOT NULL,
 			message_override TEXT,
 			routing_key      TEXT,

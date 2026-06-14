@@ -53,6 +53,10 @@ type OutboxEntry struct {
 	CatalogItemID int64
 	// ModemID é o modem que realizará o envio.
 	ModemID int64
+	// AccountID é a conta WA (accounts.id) que envia. Obrigatório para que send_log
+	// (escrito por markSent/markFailed) referencie uma conta válida — account_id=0
+	// viola a FK accounts(id) e o INSERT do send_log é descartado silenciosamente.
+	AccountID int64
 	// Recipient identifica o destino: JID WhatsApp (ex: "5511@g.us") ou group_id como string.
 	Recipient string
 	// Message é o texto pré-renderizado que será enviado (message_override em send_queue).
@@ -128,13 +132,20 @@ func InsertOutbox(ctx context.Context, tx *sql.Tx, entry OutboxEntry) error {
 
 	// 1. Inserir em send_queue (idempotente via ON CONFLICT DO NOTHING).
 	//    Recipient é tratado como group_id (string numérica); conversão via CAST.
+	// account_id: NULLIF(0) → NULL quando não resolvido (evita FK violation em accounts).
+	var accountID sql.NullInt64
+	if entry.AccountID > 0 {
+		accountID = sql.NullInt64{Int64: entry.AccountID, Valid: true}
+	}
+
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO send_queue (catalog_id, modem_id, group_id, message_override, routing_key, score, status, enqueued_at)
-		VALUES ($1, $2, CAST($3 AS BIGINT), $4, $5, $6, 'pending', $7)
+		INSERT INTO send_queue (catalog_id, modem_id, account_id, group_id, message_override, routing_key, score, status, enqueued_at)
+		VALUES ($1, $2, $3, CAST($4 AS BIGINT), $5, $6, $7, 'pending', $8)
 		ON CONFLICT DO NOTHING
 	`,
 		entry.CatalogItemID,
 		entry.ModemID,
+		accountID,
 		entry.Recipient,
 		msgOverride,
 		routingKey,

@@ -83,10 +83,16 @@ func selectAndEnqueueForGroup(ctx context.Context, db *sqlx.DB, writer *senders.
 		return false, nil
 	}
 
-	// Resolve o modem do grupo (conta primary/backup, rotação por último envio).
-	var modemID int64
-	if err := db.GetContext(ctx, &modemID, `
-		SELECT a.modem_id FROM group_admins ga
+	// Resolve modem + conta do grupo (primary/backup, rotação por último envio).
+	// O account_id é OBRIGATÓRIO no enqueue: sem ele, send_queue.account_id fica NULL
+	// → markSent/markFailed gravam send_log com account_id=0 → viola a FK accounts(id)
+	// → o INSERT é engolido (sucesso e falha do motor ficavam invisíveis no send_log).
+	var sender_ struct {
+		ModemID   int64 `db:"modem_id"`
+		AccountID int64 `db:"account_id"`
+	}
+	if err := db.GetContext(ctx, &sender_, `
+		SELECT a.modem_id, a.id AS account_id FROM group_admins ga
 		JOIN accounts a ON a.id = ga.account_id
 		WHERE ga.group_id = $1 AND a.status IN ('primary', 'backup')
 		ORDER BY a.last_sent_at ASC NULLS FIRST
@@ -103,7 +109,8 @@ func selectAndEnqueueForGroup(ctx context.Context, db *sqlx.DB, writer *senders.
 	}
 	if err := writer.WriteWithTx(ctx, senders.OutboxEntry{
 		CatalogItemID: top.CatalogID,
-		ModemID:       modemID,
+		ModemID:       sender_.ModemID,
+		AccountID:     sender_.AccountID,
 		Recipient:     strconv.FormatInt(groupID, 10),
 		Priority:      priority,
 	}); err != nil {
