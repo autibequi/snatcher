@@ -68,7 +68,12 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 	if err != nil {
 		return nil, err
 	}
+	return parseAmazonSearchResults(doc, minVal, maxVal), nil
+}
 
+// parseAmazonSearchResults extrai os itens de um documento de resultados de busca da
+// Amazon. Separado de Search() para ser testável sem HTTP (recebe o doc já parseado).
+func parseAmazonSearchResults(doc *goquery.Document, minVal, maxVal float64) []pipeline.Item {
 	var items []pipeline.Item
 	doc.Find("[data-component-type='s-search-result']").Each(func(_ int, sel *goquery.Selection) {
 		title := strings.TrimSpace(sel.Find("h2 span").First().Text())
@@ -110,12 +115,30 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 		if subtitle == "" {
 			subtitle = strings.TrimSpace(sel.Find(".a-size-base-plus.a-color-secondary").First().Text())
 		}
+
+		// Preço "de" (lista/riscado): a Amazon coloca o preço original tachado em
+		// .a-text-price, e .a-offscreen guarda o texto formatado completo ("R$ 1.234,56").
+		// Sem isso, OriginalPrice ficava sempre 0 → nenhum produto tinha desconto
+		// detectado → só achadinho barato virava send_ready (a peça que faltava no funil).
+		var origPrice float64
+		if origStr := strings.TrimSpace(sel.Find(".a-text-price .a-offscreen").First().Text()); origStr != "" {
+			origStr = strings.ReplaceAll(origStr, "R$", "")
+			origStr = strings.TrimSpace(origStr)
+			origStr = strings.ReplaceAll(origStr, ".", "")
+			origStr = strings.ReplaceAll(origStr, ",", ".")
+			origPrice, _ = strconv.ParseFloat(origStr, 64)
+		}
+		// Só conta como "de" se for maior que o preço atual (senão é ruído ou igual).
+		if origPrice <= price {
+			origPrice = 0
+		}
+
 		var metaBytes []byte
-		if subtitle != "" {
+		if subtitle != "" || origPrice > 0 {
 			if len(subtitle) > 320 {
 				subtitle = subtitle[:320]
 			}
-			metaBytes = crawlMetaBytes(models.CrawlMetadata{Description: subtitle})
+			metaBytes = crawlMetaBytes(models.CrawlMetadata{Description: subtitle, OriginalPrice: origPrice})
 		}
 		items = append(items, pipeline.Item{
 			Title:       title,
@@ -127,7 +150,7 @@ func (s *AmazonScraper) Search(ctx context.Context, query string, minVal, maxVal
 			Metadata:    metaBytes,
 		})
 	})
-	return items, nil
+	return items
 }
 
 func (s *AmazonScraper) Provider() string { return "amazon" }
