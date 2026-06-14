@@ -48,7 +48,7 @@ func SendLogHandler(db *sqlx.DB) http.HandlerFunc {
 		var rows []row
 		q := `
 			SELECT sl.id, sl.group_id,
-			       COALESCE(g.name, g.whatsapp_jid, sl.group_id::text) AS group_name,
+			       COALESCE(g.name, g.jid, sl.group_id::text) AS group_name,
 			       sl.account_id,
 			       a.phone,
 			       sl.catalog_id,

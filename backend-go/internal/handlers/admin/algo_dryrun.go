@@ -57,7 +57,7 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 		}
 		var groups []groupRow
 		_ = db.SelectContext(ctx, &groups, `
-			SELECT g.id, COALESCE(g.name, g.whatsapp_jid, g.id::text) AS name,
+			SELECT g.id, COALESCE(g.name, g.jid, g.id::text) AS name,
 			       g.channel_id, ch.name AS channel_name,
 			       COALESCE(g.daily_msg_cap, 0) AS daily_msg_cap
 			FROM groups g

@@ -128,9 +128,9 @@ func sendViaEvolution(ctx context.Context, db *sqlx.DB, modemID, groupID, catalo
 
 	// 2. busca JID do grupo
 	var jid sql.NullString
-	_ = db.GetContext(ctx, &jid, `SELECT whatsapp_jid FROM groups WHERE id=$1`, groupID)
+	_ = db.GetContext(ctx, &jid, `SELECT jid FROM groups WHERE id=$1`, groupID)
 	if !jid.Valid || jid.String == "" {
-		return nil, fmt.Errorf("grupo %d sem whatsapp_jid", groupID)
+		return nil, fmt.Errorf("grupo %d sem jid", groupID)
 	}
 
 	// 3. busca corpo do template
@@ -335,9 +335,9 @@ func renderTemplateBodyV2(body, titulo string, precoDeNull sql.NullFloat64, prec
 func sendRawText(ctx context.Context, db *sqlx.DB, modemID, groupID, accountID int64, message, imageURL string) error {
 	// Busca JID do grupo e instância Evolution da conta.
 	var jid sql.NullString
-	_ = db.GetContext(ctx, &jid, `SELECT whatsapp_jid FROM groups WHERE id=$1`, groupID)
+	_ = db.GetContext(ctx, &jid, `SELECT jid FROM groups WHERE id=$1`, groupID)
 	if !jid.Valid || jid.String == "" {
-		return fmt.Errorf("grupo %d sem whatsapp_jid — importe o grupo em /admin/senders", groupID)
+		return fmt.Errorf("grupo %d sem jid — importe o grupo em /admin/senders", groupID)
 	}
 
 	var evoURL, evoKey sql.NullString

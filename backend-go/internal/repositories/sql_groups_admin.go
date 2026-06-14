@@ -58,11 +58,11 @@ func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
 	// por isso todo grupo "importado" nascia sem jid (duplicava, virava fantasma e nunca
 	// recebia mensagem). Persiste os mesmos campos que UpdateRedesignGroup.
 	err := s.db.QueryRow(
-		`INSERT INTO groups (name, platform, status, jid, whatsapp_jid, invite_link, wa_account_id, tg_account_id, channel_id)
-		 VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,0), NULLIF($8,0), NULLIF($9,0))
+		`INSERT INTO groups (name, platform, status, jid, invite_link, wa_account_id, tg_account_id, channel_id)
+		 VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,0), NULLIF($7,0), NULLIF($8,0))
 		 RETURNING id`,
 		g.Name, g.Platform, g.Status,
-		g.JID.String, g.WhatsappJID.String, g.InviteLink.String,
+		g.JID.String, g.InviteLink.String,
 		g.WAAccountID.Int64, g.TGAccountID.Int64, g.ChannelID.Int64,
 	).Scan(&id)
 	return id, err
@@ -72,13 +72,13 @@ func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 	_, err := s.db.Exec(`
 		UPDATE groups SET
 			name=$1, status=$2, platform=$3,
-			jid=NULLIF($4,''), whatsapp_jid=NULLIF($5,''),
-			invite_link=NULLIF($6,''), member_count=$7,
-			wa_account_id=NULLIF($8,0), tg_account_id=NULLIF($9,0),
-			channel_id=NULLIF($10,0), category_id=NULLIF($11,0)
-		WHERE id=$12`,
+			jid=NULLIF($4,''),
+			invite_link=NULLIF($5,''), member_count=$6,
+			wa_account_id=NULLIF($7,0), tg_account_id=NULLIF($8,0),
+			channel_id=NULLIF($9,0), category_id=NULLIF($10,0)
+		WHERE id=$11`,
 		g.Name, g.Status, g.Platform,
-		g.JID.String, g.WhatsappJID.String,
+		g.JID.String,
 		g.InviteLink.String, g.MemberCount,
 		g.WAAccountID.Int64, g.TGAccountID.Int64,
 		g.ChannelID.Int64, g.CategoryID.Int64,

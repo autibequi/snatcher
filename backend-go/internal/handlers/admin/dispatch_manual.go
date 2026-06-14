@@ -138,7 +138,7 @@ func (h *ManualDispatchHandler) sendDirect(ctx context.Context, gid int64, messa
 		ModemID   int64  `db:"modem_id"`
 	}
 	err := h.db.GetContext(ctx, &row, `
-		SELECT a.id AS account_id, COALESCE(g.whatsapp_jid,'') AS jid, a.modem_id
+		SELECT a.id AS account_id, COALESCE(g.jid,'') AS jid, a.modem_id
 		FROM accounts a
 		JOIN group_admins ga ON ga.account_id = a.id
 		JOIN groups g ON g.id = ga.group_id
@@ -149,7 +149,7 @@ func (h *ManualDispatchHandler) sendDirect(ctx context.Context, gid int64, messa
 		return nil, fmt.Errorf("sem conta WA primary/backup vinculada ao grupo — vincule em /admin/senders")
 	}
 	if row.JID == "" {
-		return nil, fmt.Errorf("grupo %d sem whatsapp_jid — importe o grupo em /admin/senders", gid)
+		return nil, fmt.Errorf("grupo %d sem jid — importe o grupo em /admin/senders", gid)
 	}
 
 	// Obtém o gateway WA do registry — desacopla do adapter Evolution concreto.

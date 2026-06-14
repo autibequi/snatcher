@@ -678,7 +678,7 @@ func (h *DashboardHandler) UpcomingDispatches(w http.ResponseWriter, r *http.Req
 	var raws []rawRow
 	err := h.db.SelectContext(r.Context(), &raws, `
 		SELECT sq.id,
-		       COALESCE(g.name, g.whatsapp_jid, sq.group_id::text) AS group_name,
+		       COALESCE(g.name, g.jid, sq.group_id::text) AS group_name,
 		       COALESCE(c.title, 'Produto #' || sq.catalog_id)     AS product_name,
 		       sq.enqueued_at::text AS enqueued_at,
 		       sq.status,

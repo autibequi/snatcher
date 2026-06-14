@@ -45,7 +45,7 @@ func SendQueueHandler(db *sqlx.DB) http.HandlerFunc {
 		var rows []row
 		q := `
 			SELECT sq.id, sq.status, sq.group_id,
-			       COALESCE(g.name, g.whatsapp_jid, sq.group_id::text) AS group_name,
+			       COALESCE(g.name, g.jid, sq.group_id::text) AS group_name,
 			       sq.catalog_id AS product_id,
 			       COALESCE(c.title, 'Produto #' || sq.catalog_id) AS product_title,
 			       COALESCE(sq.score, 0) AS score,
