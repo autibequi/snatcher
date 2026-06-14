@@ -59,7 +59,7 @@ func (s *SQLStore) CreateRedesignGroup(g models.RedesignGroup) (int64, error) {
 	// recebia mensagem). Persiste os mesmos campos que UpdateRedesignGroup.
 	err := s.db.QueryRow(
 		`INSERT INTO groups (name, platform, status, jid, invite_link, wa_account_id, tg_account_id, channel_id, daily_msg_cap)
-		 VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,0), NULLIF($7,0), NULLIF($8,0), NULLIF($9,0))
+		 VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,0), NULLIF($7,0), NULLIF($8,0), $9)
 		 RETURNING id`,
 		g.Name, g.Platform, g.Status,
 		g.JID.String, g.InviteLink.String,
