@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
-import { Tabs } from '../components/ui/Tabs'
+import { Button, Card, toast } from '../components/ui'
+import { ChevronDown, ChevronRight, Search, RotateCcw, ExternalLink } from '../lib/icons'
 import { BaselineTab } from './admin/BaselineTab'
-import DispatchRoutingView from './admin/DispatchRoutingView'
-import RateBucketsView from './admin/RateBucketsView'
-
-// AdminParamsTab define as 5 abas disponíveis na página de parâmetros tunáveis.
-type AdminParamsTab = 'dispatch' | 'score' | 'catalog' | 'jonfrey' | 'baseline'
 
 interface TunableParam {
   id: number
@@ -60,18 +57,54 @@ const PARAM_META: Record<string, { label: string; description: string }> = {
   min_taxonomy_confidence:        { label: 'Confiança mínima de taxonomia', description: 'W3: confiança mínima (0–1) das funções classify_catalog_brand/category. Itens abaixo desse valor são automaticamente enfileirados em catalog_llm_queue para revisão LLM. Default 0.70 = 70%.' },
 }
 
-// TAB_DEFS define as 5 abas e os prefixos de param_name que pertencem a cada uma.
-// A aba 'baseline' captura tudo que não bateu em nenhuma outra (catch-all).
-const TAB_DEFS: Array<{ id: AdminParamsTab; label: string; prefixes: string[] }> = [
-  { id: 'dispatch',  label: 'Dispatch',  prefixes: ['dispatch', 'cooldown', 'quarantine', 'send_window'] },
-  { id: 'score',     label: 'Score',     prefixes: ['score', 'quality_threshold', 'epsilon', 'anti_saturation', 'diversity', 'half_life', 'antirepeat', 'repromo', 'click', 'learned'] },
-  { id: 'catalog',   label: 'Catálogo',  prefixes: ['catalog', 'taxonomy', 'fold', 'min_taxonomy'] },
-  { id: 'jonfrey',   label: 'Jonfrey',   prefixes: ['jonfrey', 'use_algo'] },
-  { id: 'baseline',  label: 'Baseline',  prefixes: [] },
+// SECTIONS agrupa os parâmetros por tema, numa única página rolável (sem sub-abas).
+// Cada seção é retrátil. A última (catch-all) recolhe tudo que não bateu em nenhum prefixo.
+interface SectionDef {
+  id: string
+  label: string
+  hint: string
+  prefixes: string[]
+}
+
+const SECTIONS: SectionDef[] = [
+  {
+    id: 'score',
+    label: 'Seleção & Score',
+    hint: 'O que entra na fila e com que peso',
+    prefixes: ['score', 'quality_threshold', 'baseline_min', 'cap_max', 'epsilon', 'anti_saturation', 'diversity', 'half_life', 'antirepeat', 'repromo', 'click', 'learned'],
+  },
+  {
+    id: 'dispatch',
+    label: 'Cadência & Envio',
+    hint: 'Ritmo e segurança dos disparos',
+    prefixes: ['dispatch', 'cooldown', 'quarantine', 'send_window'],
+  },
+  {
+    id: 'catalog',
+    label: 'Catálogo & Taxonomia',
+    hint: 'Coleta e classificação de produtos',
+    prefixes: ['catalog', 'taxonomy', 'fold', 'min_taxonomy'],
+  },
+  {
+    id: 'jonfrey',
+    label: 'Jonfrey (auto-tuning)',
+    hint: 'Automação do agente de ajuste',
+    prefixes: ['jonfrey', 'use_algo'],
+  },
+  {
+    id: 'outros',
+    label: 'Outros',
+    hint: 'Parâmetros sem categoria definida',
+    prefixes: [], // catch-all
+  },
 ]
 
-// TAB_LABELS é o array de tabs no formato esperado pelo componente Tabs.
-const TAB_LABELS = TAB_DEFS.map(tab => ({ id: tab.id, label: tab.label }))
+const SCOPE_LABELS: Record<string, string> = {
+  global: 'Global',
+  modem: 'Por modem',
+  group: 'Por grupo',
+  category: 'Por categoria',
+}
 
 function paramLabel(name: string): string {
   return PARAM_META[name]?.label ?? name
@@ -81,172 +114,180 @@ function paramDescription(name: string): string {
   return PARAM_META[name]?.description ?? ''
 }
 
-// resolveParamTab retorna qual aba deve exibir um parâmetro baseado no param_name.
-// Tenta cada aba em ordem; se nenhum prefixo bater, cai em 'baseline'.
-function resolveParamTab(paramName: string): AdminParamsTab {
-  for (const tabDef of TAB_DEFS) {
-    if (tabDef.prefixes.length === 0) {
-      continue
-    }
-    const matches = tabDef.prefixes.some(prefix => paramName.startsWith(prefix))
-    if (matches) {
-      return tabDef.id
+// resolveSection retorna o id da seção que deve exibir um parâmetro.
+function resolveSection(paramName: string): string {
+  for (const section of SECTIONS) {
+    if (section.prefixes.length === 0) continue
+    if (section.prefixes.some(prefix => paramName.startsWith(prefix))) {
+      return section.id
     }
   }
-  return 'baseline'
+  return 'outros'
 }
 
-// filterParamsByTab retorna os parâmetros que pertencem a uma determinada aba.
-function filterParamsByTab(params: TunableParam[], tab: AdminParamsTab): TunableParam[] {
-  if (tab === 'baseline') {
-    // Baseline pega tudo que não pertence a nenhuma outra aba.
-    return params.filter(param => resolveParamTab(param.param_name) === 'baseline')
-  }
-  return params.filter(param => resolveParamTab(param.param_name) === tab)
+// matchesQuery testa se um parâmetro casa com a busca (nome técnico, label ou descrição).
+function matchesQuery(param: TunableParam, query: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  return (
+    param.param_name.toLowerCase().includes(q) ||
+    paramLabel(param.param_name).toLowerCase().includes(q) ||
+    paramDescription(param.param_name).toLowerCase().includes(q)
+  )
 }
 
-function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
-  return items.reduce((acc, item) => {
-    const keyValue = key(item)
-    if (!acc[keyValue]) {
-      acc[keyValue] = []
-    }
-    acc[keyValue].push(item)
-    return acc
-  }, {} as Record<string, T[]>)
+// ─── ParamRow ───────────────────────────────────────────────────────────────────
+
+interface ParamRowProps {
+  param: TunableParam
+  value: string
+  busy: boolean
+  onChange: (value: string) => void
+  onSave: () => void
+  onReset: () => void
 }
 
-// ParamsTable renderiza a tabela de parâmetros tunáveis para um conjunto de params.
-// Reutilizada em todas as abas que exibem params diretamente.
-function ParamsTable({
-  params,
-  editValues,
-  saving,
-  onEdit,
-  onSave,
-  onReset,
-}: {
+function ParamRow({ param, value, busy, onChange, onSave, onReset }: ParamRowProps) {
+  const numVal = parseFloat(value)
+  const outOfRange =
+    !Number.isNaN(numVal) && (numVal < param.min_value || numVal > param.max_value)
+  const invalid = value.trim() === '' || Number.isNaN(numVal)
+  const dirty = value !== String(param.current_value)
+  const changedFromDefault = param.current_value !== param.default_value
+
+  return (
+    <div className="px-4 py-3 border-b border-border last:border-0 flex flex-col sm:flex-row sm:items-center gap-3">
+      {/* Identidade + descrição */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-fg">{paramLabel(param.param_name)}</span>
+          {param.scope_type !== 'global' && (
+            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-surface-2 text-fg-3">
+              {SCOPE_LABELS[param.scope_type] ?? param.scope_type}
+              {param.scope_id ? ` #${param.scope_id}` : ''}
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] text-fg-4 font-mono mt-0.5">{param.param_name}</p>
+        {paramDescription(param.param_name) && (
+          <p className="text-xs text-fg-3 mt-1 leading-snug">{paramDescription(param.param_name)}</p>
+        )}
+      </div>
+
+      {/* Controle */}
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-col items-end">
+          <input
+            type="number"
+            value={value}
+            min={param.min_value}
+            max={param.max_value}
+            step="any"
+            onChange={e => onChange(e.target.value)}
+            disabled={busy}
+            className={[
+              'w-28 border rounded-md px-2 py-1 text-sm bg-surface text-fg focus:outline-none focus:ring-2',
+              outOfRange || invalid
+                ? 'border-danger focus:ring-danger/30'
+                : 'border-border focus:ring-accent/30',
+            ].join(' ')}
+          />
+          <span className="text-[10px] text-fg-4 mt-0.5 tabular-nums">
+            padrão {param.default_value} · {param.min_value}–{param.max_value}
+          </span>
+          {outOfRange && (
+            <span className="text-[10px] text-danger mt-0.5">fora do limite</span>
+          )}
+        </div>
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onSave}
+          loading={busy}
+          disabled={busy || !dirty || invalid || outOfRange}
+        >
+          Salvar
+        </Button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={busy || !changedFromDefault}
+          title={changedFromDefault ? `Resetar para o padrão (${param.default_value})` : 'Já está no padrão'}
+          className="p-1.5 rounded-md text-fg-3 hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Resetar para o padrão"
+        >
+          <RotateCcw size={15} aria-hidden />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── ParamSection (retrátil) ──────────────────────────────────────────────────
+
+interface ParamSectionProps {
+  def: SectionDef
   params: TunableParam[]
+  open: boolean
+  onToggle: () => void
   editValues: Record<number, string>
   saving: Record<number, boolean>
   onEdit: (id: number, value: string) => void
   onSave: (param: TunableParam) => void
   onReset: (param: TunableParam) => void
-}) {
-  if (params.length === 0) {
-    return <p className="text-fg-3 text-sm">Nenhum parâmetro nesta aba.</p>
-  }
+}
 
-  const grouped = groupBy(params, param => param.scope_type)
-  const scopeOrder = ['global', 'modem', 'group', 'category']
-  const sortedScopes = [...new Set([...scopeOrder, ...Object.keys(grouped)])].filter(
-    scope => grouped[scope]
-  )
+function ParamSection({ def, params, open, onToggle, editValues, saving, onEdit, onSave, onReset }: ParamSectionProps) {
+  if (params.length === 0) return null
 
   return (
-    <div className="space-y-6">
-      {sortedScopes.map(scope => (
-        <section key={scope}>
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-            {scope === 'global'
-              ? 'Globais'
-              : scope === 'modem'
-              ? 'Por modem'
-              : scope === 'group'
-              ? 'Por grupo'
-              : scope === 'category'
-              ? 'Por categoria'
-              : scope}
-          </h3>
-          <div className="border rounded-lg bg-surface shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-2 border-b">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium text-fg-2">Parâmetro</th>
-                  <th className="text-left px-4 py-2 font-medium text-fg-2">Valor atual</th>
-                  <th className="text-left px-4 py-2 font-medium text-fg-2 hidden md:table-cell">
-                    Padrão / Min / Max
-                  </th>
-                  <th className="text-left px-4 py-2 font-medium text-fg-2 hidden lg:table-cell">
-                    Última alteração
-                  </th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {grouped[scope].map(param => {
-                  const isBusy = saving[param.id]
-                  return (
-                    <tr key={param.id} className="hover:bg-surface-2 transition-colors">
-                      <td className="px-4 py-3">
-                        <span
-                          className="font-semibold text-fg cursor-help"
-                          title={
-                            paramDescription(param.param_name)
-                              ? `${paramDescription(param.param_name)}\n\n(${param.param_name})`
-                              : param.param_name
-                          }
-                        >
-                          {paramLabel(param.param_name)}
-                        </span>
-                        <p className="text-[10px] text-fg-3 font-mono mt-0.5">{param.param_name}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          value={editValues[param.id] ?? String(param.current_value)}
-                          min={param.min_value}
-                          max={param.max_value}
-                          step="any"
-                          onChange={e => onEdit(param.id, e.target.value)}
-                          className="w-28 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                          disabled={isBusy}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-fg-3 hidden md:table-cell">
-                        {param.default_value} / {param.min_value} / {param.max_value}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-fg-4 hidden lg:table-cell">
-                        {param.last_changed
-                          ? `${param.last_changed}${param.last_change_by ? ` · ${param.last_change_by}` : ''}`
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => onSave(param)}
-                            disabled={isBusy}
-                            className="px-3 py-1 bg-accent text-white rounded hover:bg-accent-hover text-xs font-medium disabled:opacity-50"
-                          >
-                            Salvar
-                          </button>
-                          <button
-                            onClick={() => onReset(param)}
-                            disabled={isBusy}
-                            className="px-3 py-1 bg-surface-3 rounded hover:bg-border text-xs font-medium disabled:opacity-50"
-                          >
-                            Reset
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ))}
-    </div>
+    <Card padding={false} className="overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-2 transition-colors"
+        aria-expanded={open}
+      >
+        {open
+          ? <ChevronDown size={16} className="text-fg-3 shrink-0" aria-hidden />
+          : <ChevronRight size={16} className="text-fg-3 shrink-0" aria-hidden />}
+        <span className="text-sm font-semibold text-fg">{def.label}</span>
+        <span className="text-xs text-fg-3">{def.hint}</span>
+        <span className="ml-auto text-xs tabular-nums text-fg-3 bg-surface-2 px-2 py-0.5 rounded-full">
+          {params.length}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          {params.map(param => (
+            <ParamRow
+              key={param.id}
+              param={param}
+              value={editValues[param.id] ?? String(param.current_value)}
+              busy={!!saving[param.id]}
+              onChange={value => onEdit(param.id, value)}
+              onSave={() => onSave(param)}
+              onReset={() => onReset(param)}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
   )
 }
+
+// ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function AdminParams({ embedded = false }: { embedded?: boolean }) {
   const [params, setParams] = useState<TunableParam[]>([])
   const [loading, setLoading] = useState(true)
   const [editValues, setEditValues] = useState<Record<number, string>>({})
   const [saving, setSaving] = useState<Record<number, boolean>>({})
-  const [activeTab, setActiveTab] = useState<AdminParamsTab>('dispatch')
+  const [query, setQuery] = useState('')
+  // Seções abertas: primeira aberta por default; busca abre todas.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ [SECTIONS[0].id]: true })
 
   const load = async () => {
     setLoading(true)
@@ -254,7 +295,6 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
       const response = await authFetch('/api/admin/parameters')
       const data: TunableParam[] = await response.json()
       setParams(data || [])
-      // Inicializa campos de edição com current_value
       const vals: Record<number, string> = {}
       for (const param of data || []) {
         vals[param.id] = String(param.current_value)
@@ -274,17 +314,13 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
   }
 
   const handleSave = async (param: TunableParam) => {
-    const rawVal = editValues[param.id]
-    const numVal = parseFloat(rawVal)
-    if (isNaN(numVal)) {
-      alert('Valor inválido')
+    const numVal = parseFloat(editValues[param.id])
+    if (Number.isNaN(numVal)) {
+      toast('Valor inválido', 'error')
       return
     }
     if (numVal < param.min_value || numVal > param.max_value) {
-      alert(`Valor fora dos limites: min=${param.min_value}, max=${param.max_value}`)
-      return
-    }
-    if (!window.confirm(`Salvar ${param.param_name} = ${numVal}?`)) {
+      toast(`Fora dos limites (${param.min_value}–${param.max_value})`, 'error')
       return
     }
     setSaving(prev => ({ ...prev, [param.id]: true }))
@@ -296,9 +332,10 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
       })
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: response.statusText }))
-        alert(`Erro ao salvar: ${err.error || response.statusText}`)
+        toast(`Erro ao salvar: ${err.error || response.statusText}`, 'error')
         return
       }
+      toast(`${paramLabel(param.param_name)} salvo`, 'ok')
       await load()
     } finally {
       setSaving(prev => ({ ...prev, [param.id]: false }))
@@ -306,9 +343,6 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
   }
 
   const handleReset = async (param: TunableParam) => {
-    if (!window.confirm(`Resetar ${param.param_name} para o valor padrão (${param.default_value})?`)) {
-      return
-    }
     setSaving(prev => ({ ...prev, [param.id]: true }))
     try {
       const response = await authFetch(`/api/admin/parameters/${param.id}/reset`, {
@@ -316,121 +350,115 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
       })
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: response.statusText }))
-        alert(`Erro ao resetar: ${err.error || response.statusText}`)
+        toast(`Erro ao resetar: ${err.error || response.statusText}`, 'error')
         return
       }
+      toast(`${paramLabel(param.param_name)} resetado para o padrão`, 'ok')
       await load()
     } finally {
       setSaving(prev => ({ ...prev, [param.id]: false }))
     }
   }
 
-  // tabParams filtra os parâmetros para a aba ativa.
-  const tabParams = filterParamsByTab(params, activeTab)
+  const searching = query.trim().length > 0
+
+  // Agrupa os parâmetros (filtrados pela busca) por seção.
+  const paramsBySection = useMemo(() => {
+    const visible = params.filter(p => matchesQuery(p, query.trim()))
+    const map: Record<string, TunableParam[]> = {}
+    for (const section of SECTIONS) map[section.id] = []
+    for (const p of visible) map[resolveSection(p.param_name)].push(p)
+    return map
+  }, [params, query])
+
+  const totalVisible = useMemo(
+    () => Object.values(paramsBySection).reduce((acc, list) => acc + list.length, 0),
+    [paramsBySection],
+  )
+
+  const toggleSection = (id: string) =>
+    setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
 
   return (
-    <div className={embedded ? 'space-y-6' : 'px-3 py-4 sm:px-4 sm:py-6 max-w-5xl space-y-6'}>
-      {!embedded && <h1 className="text-2xl font-bold">Parâmetros tunáveis</h1>}
+    <div className={embedded ? 'space-y-5' : 'px-3 py-4 sm:px-4 sm:py-6 max-w-4xl mx-auto space-y-5'}>
+      {!embedded && <h1 className="text-2xl font-bold text-fg">Parâmetros tunáveis</h1>}
 
-      {/* Navegação de abas */}
-      <Tabs
-        tabs={TAB_LABELS}
-        active={activeTab}
-        onChange={id => setActiveTab(id as AdminParamsTab)}
-      />
-
-      {loading && <p className="text-fg-3">Carregando...</p>}
-
-      {/* Conteúdo da aba Dispatch: params de dispatch + DispatchRoutingView + RateBucketsView */}
-      {!loading && activeTab === 'dispatch' && (
-        <div className="space-y-8">
-          <ParamsTable
-            params={tabParams}
-            editValues={editValues}
-            saving={saving}
-            onEdit={handleEdit}
-            onSave={handleSave}
-            onReset={handleReset}
-          />
-          <section>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-              Roteamento de modems
-            </h2>
-            <DispatchRoutingView />
-          </section>
-          <section>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-              Rate buckets
-            </h2>
-            <RateBucketsView />
-          </section>
-        </div>
-      )}
-
-      {/* Conteúdo da aba Score: params de score */}
-      {!loading && activeTab === 'score' && (
-        <div className="space-y-8">
-          <ParamsTable
-            params={tabParams}
-            editValues={editValues}
-            saving={saving}
-            onEdit={handleEdit}
-            onSave={handleSave}
-            onReset={handleReset}
-          />
-        </div>
-      )}
-
-      {/* Conteúdo da aba Catálogo: params de catalog/taxonomy */}
-      {!loading && activeTab === 'catalog' && (
-        <ParamsTable
-          params={tabParams}
-          editValues={editValues}
-          saving={saving}
-          onEdit={handleEdit}
-          onSave={handleSave}
-          onReset={handleReset}
+      {/* Busca */}
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-3 pointer-events-none" aria-hidden />
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Buscar parâmetro por nome ou descrição…"
+          className="w-full h-9 pl-9 pr-3 rounded-md bg-surface-2 border border-border text-sm text-fg placeholder:text-fg-3 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
         />
-      )}
+      </div>
 
-      {/* Conteúdo da aba Jonfrey: params jonfrey */}
-      {!loading && activeTab === 'jonfrey' && (
-        <div className="space-y-8">
-          <ParamsTable
-            params={tabParams}
-            editValues={editValues}
-            saving={saving}
-            onEdit={handleEdit}
-            onSave={handleSave}
-            onReset={handleReset}
-          />
-        </div>
-      )}
+      {/* Aviso: roteamento/rate buckets migraram pra Distribuição */}
+      <Link
+        to="/admin/dispatch/routing"
+        className="flex items-center gap-2 text-xs text-fg-3 hover:text-fg px-3 py-2 rounded-md border border-dashed border-border hover:border-border-strong transition-colors"
+      >
+        <ExternalLink size={13} aria-hidden />
+        Roteamento de modems e Rate Buckets agora ficam em <span className="text-accent font-medium">Distribuição › Roteamento</span>
+      </Link>
 
-      {/* Conteúdo da aba Baseline: BaselineTab (já existe e funciona) + params catch-all */}
-      {!loading && activeTab === 'baseline' && (
-        <div className="space-y-8">
-          <BaselineTab />
-          {tabParams.length > 0 && (
-            <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-3 mb-3">
-                Outros parâmetros
-              </h2>
-              <ParamsTable
-                params={tabParams}
+      {loading && <p className="text-fg-3 text-sm">Carregando…</p>}
+
+      {!loading && (
+        <>
+          {searching && totalVisible === 0 && (
+            <p className="text-sm text-fg-3 text-center py-8">
+              Nenhum parâmetro encontrado para “{query.trim()}”.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            {SECTIONS.map(section => (
+              <ParamSection
+                key={section.id}
+                def={section}
+                params={paramsBySection[section.id] ?? []}
+                // Durante a busca, todas as seções com resultado ficam abertas.
+                open={searching ? true : openSections[section.id] ?? false}
+                onToggle={() => toggleSection(section.id)}
                 editValues={editValues}
                 saving={saving}
                 onEdit={handleEdit}
                 onSave={handleSave}
                 onReset={handleReset}
               />
-            </section>
-          )}
-        </div>
-      )}
+            ))}
+          </div>
 
-      {!loading && params.length === 0 && (
-        <p className="text-fg-3">Nenhum parâmetro encontrado.</p>
+          {/* Baseline / snapshots — ferramenta de medição, mantida ao pé da página */}
+          {!searching && (
+            <Card padding={false} className="overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('baseline')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-2 transition-colors"
+                aria-expanded={!!openSections.baseline}
+              >
+                {openSections.baseline
+                  ? <ChevronDown size={16} className="text-fg-3 shrink-0" aria-hidden />
+                  : <ChevronRight size={16} className="text-fg-3 shrink-0" aria-hidden />}
+                <span className="text-sm font-semibold text-fg">Baseline & Snapshots</span>
+                <span className="text-xs text-fg-3">Capturar/comparar métricas antes e depois de ajustes</span>
+              </button>
+              {openSections.baseline && (
+                <div className="border-t border-border p-4">
+                  <BaselineTab />
+                </div>
+              )}
+            </Card>
+          )}
+
+          {params.length === 0 && (
+            <p className="text-fg-3 text-sm">Nenhum parâmetro encontrado.</p>
+          )}
+        </>
       )}
     </div>
   )

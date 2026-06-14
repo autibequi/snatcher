@@ -49,17 +49,18 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/',                  label: 'Dashboard',   Icon: LayoutDashboard },
       { to: '/compose',           label: 'Composer',    Icon: MessageSquare   },
-      { to: '/admin/templates',   label: 'Templates',   Icon: FileText        },
     ],
   },
   {
     id: 'catalogo',
-    label: 'Catálogo',
+    label: 'Catálogo & Conteúdo',
     items: [
       // Produtos: catálogo principal + aba "Grupos Canônicos" (dedup cross-marketplace)
-      { to: '/admin/catalog-canonical', label: 'Produtos',   Icon: Package },
+      { to: '/admin/catalog-canonical', label: 'Produtos',   Icon: Package  },
       // Taxonomia: CRUD de categorias/marcas/patterns + aba "Árvore" de feedback
-      { to: '/taxonomy',                label: 'Taxonomia',  Icon: Tags    },
+      { to: '/taxonomy',                label: 'Taxonomia',  Icon: Tags     },
+      // Templates de mensagem — material de conteúdo dos disparos
+      { to: '/admin/templates',         label: 'Templates',  Icon: FileText },
     ],
   },
   {
@@ -75,19 +76,13 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    id: 'inteligencia',
-    label: 'Inteligência',
+    id: 'analise',
+    label: 'Análise & Monitoramento',
     items: [
-      { to: '/intelligence', label: 'Hub Inteligência', Icon: Brain },
-    ],
-  },
-  {
-    id: 'observacao',
-    label: 'Observação',
-    items: [
-      { to: '/admin/observability',       label: 'Pulso',       Icon: Eye          },
-      { to: '/activity',                  label: 'Atividade',   Icon: Activity     },
-      { to: '/analytics',                 label: 'Analytics',   Icon: BarChart3    },
+      { to: '/analytics',           label: 'Analytics',        Icon: BarChart3 },
+      { to: '/intelligence',        label: 'Motor de Seleção', Icon: Brain     },
+      { to: '/admin/observability', label: 'Pulso',            Icon: Eye       },
+      { to: '/activity',            label: 'Atividade',        Icon: Activity  },
     ],
   },
   {

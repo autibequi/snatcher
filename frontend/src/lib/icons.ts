@@ -24,6 +24,9 @@ export {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Search,
+  RotateCcw,
+  ExternalLink,
   Menu,
   X,
   // Dashboard health panel

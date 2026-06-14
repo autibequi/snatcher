@@ -304,7 +304,7 @@ export default function Intelligence() {
   return (
     <div className={pageContainer}>
       <PageHeader
-        title="Hub Inteligência"
+        title="Motor de Seleção"
         subtitle="Auditoria do motor de seleção — por grupo, o que seria enviado e por quê."
         className="mb-6"
       />
