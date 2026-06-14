@@ -83,7 +83,6 @@ const NAV: NavGroup[] = [
     label: 'Observação',
     items: [
       { to: '/admin/observability',       label: 'Pulso',       Icon: Eye          },
-      { to: '/admin/baseline',            label: 'Baseline',    Icon: Activity     },
       { to: '/activity',                  label: 'Atividade',   Icon: Activity     },
       { to: '/analytics',                 label: 'Analytics',   Icon: BarChart3    },
     ],
