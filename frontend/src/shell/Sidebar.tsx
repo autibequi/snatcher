@@ -50,7 +50,6 @@ const NAV: NavGroup[] = [
       { to: '/',                  label: 'Dashboard',   Icon: LayoutDashboard },
       { to: '/compose',           label: 'Composer',    Icon: MessageSquare   },
       { to: '/admin/templates',   label: 'Templates',   Icon: FileText        },
-      { to: '/admin/metrics',     label: 'Métricas',    Icon: BarChart3       },
     ],
   },
   {

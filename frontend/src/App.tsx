@@ -95,7 +95,6 @@ const AdminParams = lazy(() => import('./pages/AdminParams'))
 const AdminCatalogCanonical = lazy(() => import('./pages/AdminCatalogCanonical'))
 const AdminSenders = lazy(() => import('./pages/AdminSenders'))
 const AdminAudit = lazy(() => import('./pages/AdminAudit'))
-const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminObservability = lazy(() => import('./pages/AdminObservability'))
 const BaselineTab = lazy(() => import('./pages/admin/BaselineTab').then(m => ({ default: m.BaselineTab })))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
@@ -165,7 +164,7 @@ export default function App() {
 
               {/* ANÁLISE */}
               <Route path="analytics" element={<Analytics />} />
-              <Route path="clusters" element={<Navigate to="/admin/metrics?tab=clusters" replace />} />
+              <Route path="clusters" element={<Navigate to="/analytics" replace />} />
 
               {/* SISTEMA */}
               <Route path="settings/*" element={<Settings />} />
@@ -187,7 +186,7 @@ export default function App() {
 
               {/* Fase 10: Admin Snatcher v2 — Audit / Metrics / Scrapers (Alerts removido W4) */}
               <Route path="admin/audit" element={<AdminAudit />} />
-              <Route path="admin/metrics" element={<AdminMetrics />} />
+              <Route path="admin/metrics" element={<Navigate to="/analytics" replace />} />
               <Route path="admin/observability" element={<AdminObservability />} />
               <Route path="admin/baseline" element={<BaselineTab />} />
               <Route path="admin/scrapers" element={<AdminScrapers />} />

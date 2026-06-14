@@ -1,4 +1,5 @@
 import React from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -6,9 +7,11 @@ import {
 } from 'recharts'
 import { apiClient } from '../lib/apiClient'
 import { pushAnalyticsSummary } from '../lib/gtm'
-import { KpiCard, PageHeader, SegmentedControl, Skeleton } from '../components/ui'
+import { KpiCard, PageHeader, SegmentedControl, Skeleton, Tabs } from '../components/ui'
 import type { SegmentedOption } from '../components/ui'
 import { pageContainer, responsiveKpiGrid, sectionCard } from '../lib/uiTokens'
+// Abas do antigo /admin/metrics — absorvidas aqui para uma única tela de análise.
+import { DailyMetricsTab, ABTestsTab, ViralityTab, LearnedWeightsTab } from './AdminMetrics'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -121,9 +124,9 @@ function ClickRankList({
   )
 }
 
-// ── Pagina principal ──────────────────────────────────────────────────────────
+// ── Aba Desempenho (ex-Analytics) ───────────────────────────────────────────────
 
-export default function Analytics() {
+function DesempenhoTab() {
   const [period, setPeriod] = React.useState<PeriodValue>('30')
   const days = Number(period)
 
@@ -152,18 +155,18 @@ export default function Analytics() {
   }, [isLoading, data, days])
 
   return (
-    <div className={pageContainer + ' space-y-6'}>
-      <PageHeader
-        title="Analytics"
-        subtitle={'Metricas de cliques e desempenho dos ultimos ' + days + ' dias'}
-        actions={
-          <SegmentedControl
-            value={period}
-            onChange={setPeriod}
-            options={PERIOD_OPTIONS}
-          />
-        }
-      />
+    <div className="space-y-6">
+      {/* Seletor de período + resumo */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-fg-3">
+          Cliques e desempenho dos últimos {days} dias
+        </p>
+        <SegmentedControl
+          value={period}
+          onChange={setPeriod}
+          options={PERIOD_OPTIONS}
+        />
+      </div>
 
       {/* KPIs */}
       {isLoading ? (
@@ -326,6 +329,61 @@ export default function Analytics() {
           fmtValue={fmt}
         />
       </div>
+    </div>
+  )
+}
+
+// ── Página principal — Analytics unificado (desempenho + métricas do motor) ─────
+
+type AnalyticsTab = 'desempenho' | 'daily' | 'abtests' | 'virality' | 'weights'
+
+const ANALYTICS_TABS: { id: AnalyticsTab; label: string; title?: string }[] = [
+  { id: 'desempenho', label: 'Desempenho', title: 'Cliques, CTR e ranking — resultado de negócio' },
+  { id: 'daily',      label: 'Diário',     title: 'Métricas diárias agregadas' },
+  { id: 'abtests',    label: 'A/B',        title: 'Experimentos de parâmetros do motor' },
+  { id: 'virality',   label: 'Viralidade', title: 'Coeficiente de viralização dos disparos' },
+  { id: 'weights',    label: 'Pesos',      title: 'Pesos aprendidos pelo algoritmo de seleção' },
+]
+
+const VALID_ANALYTICS_TABS = new Set<AnalyticsTab>(
+  ANALYTICS_TABS.map(t => t.id),
+)
+
+export default function Analytics() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawTab = searchParams.get('tab')
+  const tab: AnalyticsTab =
+    rawTab && VALID_ANALYTICS_TABS.has(rawTab as AnalyticsTab)
+      ? (rawTab as AnalyticsTab)
+      : 'desempenho'
+
+  // setTab atualiza o search param `tab`; 'desempenho' limpa o param para URL limpa.
+  const setTab = (id: string) => {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        if (id === 'desempenho') next.delete('tab')
+        else next.set('tab', id)
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  return (
+    <div className={pageContainer + ' space-y-6'}>
+      <PageHeader
+        title="Analytics"
+        subtitle="Desempenho de negócio e métricas do motor de seleção"
+      />
+
+      <Tabs tabs={ANALYTICS_TABS} active={tab} onChange={setTab} className="mb-2" />
+
+      {tab === 'desempenho' && <DesempenhoTab />}
+      {tab === 'daily'      && <DailyMetricsTab />}
+      {tab === 'abtests'    && <ABTestsTab />}
+      {tab === 'virality'   && <ViralityTab />}
+      {tab === 'weights'    && <LearnedWeightsTab />}
     </div>
   )
 }

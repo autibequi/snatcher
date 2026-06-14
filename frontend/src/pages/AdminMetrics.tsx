@@ -111,7 +111,7 @@ interface ViralityRow {
   virality_ratio: number
 }
 
-function ViralityTab() {
+export function ViralityTab() {
   const [rows, setRows] = useState<ViralityRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -193,7 +193,7 @@ const LEARNED_WEIGHTS_COLUMNS: ColumnDef<LearnedWeight, unknown>[] = [
   { accessorKey: 'updated_at', header: 'Atualizado', cell: ({ getValue }) => <span className="font-mono text-xs text-fg-3">{fmtDate(getValue<string>())}</span> },
 ]
 
-function LearnedWeightsTab() {
+export function LearnedWeightsTab() {
   const [minSamples, setMinSamples] = useState(50)
   const [input, setInput] = useState('50')
   const [rows, setRows] = useState<LearnedWeight[]>([])
@@ -265,7 +265,7 @@ function LearnedWeightsTab() {
 const METRIC_OPTIONS = ['', 'sent', 'clicks', 'conversions', 'bans', 'epc']
 const DAYS_OPTIONS = [7, 30, 90]
 
-function DailyMetricsTab() {
+export function DailyMetricsTab() {
   const [metric, setMetric] = useState('')
   const [days, setDays] = useState(30)
   const [rows, setRows] = useState<DailyMetric[]>([])
@@ -371,7 +371,7 @@ function DailyMetricsTab() {
 
 const STATUS_OPTIONS = ['', 'running', 'promoted', 'rolled_back']
 
-function ABTestsTab() {
+export function ABTestsTab() {
   const [statusFilter, setStatusFilter] = useState('running')
   const [rows, setRows] = useState<ABTest[]>([])
   const [loading, setLoading] = useState(true)
