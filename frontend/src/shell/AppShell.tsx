@@ -5,7 +5,6 @@ import { Topbar } from './Topbar'
 import { ApiErrorToast } from '../components/ApiErrorToast'
 import { ToastContainer } from '../components/ui'
 import { ManualModal } from '../components/ManualModal'
-import { StatusBar } from '../components/StatusBar'
 import { PageTitleProvider } from '../contexts/PageTitleContext'
 // nota: SystemHealth.tsx é renderizado via rota /admin/observability (AdminObservability),
 // não no shell. Mantido como rota dedicada pra evitar polling duplicado.
@@ -50,7 +49,6 @@ export function AppShell() {
       <ApiErrorToast />
       <ToastContainer />
       <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
-      <StatusBar />
     </div>
   )
 }
