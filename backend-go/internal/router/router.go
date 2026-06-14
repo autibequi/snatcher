@@ -453,6 +453,7 @@ func Build(
 
 		// FW-4: Canonical groups
 		r.Get("/api/admin/canonical-groups", adminhnd.ListCanonicalGroupsHandler(db))
+		r.Get("/api/admin/canonical-groups/{id}/children", adminhnd.ListCanonicalChildrenHandler(db))
 
 		// FW-4: Taxonomy tree + feedback
 		r.Get("/api/admin/taxonomy/tree", adminhnd.GetTaxonomyTreeHandler(db))

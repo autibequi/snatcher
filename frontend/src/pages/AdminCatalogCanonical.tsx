@@ -5,7 +5,7 @@ import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAuto
 import { Badge, Button, EmptyState, Input, Skeleton, Switch, Tabs, toast } from '../components/ui'
 import { PageHeader } from '../components/ui/PageHeader'
 import { authFetch } from '../lib/authFetch'
-import { fetchCanonicalGroups, type CanonicalProduct, type CanonicalChild } from '../lib/api/canonical'
+import { fetchCanonicalGroups, fetchCanonicalGroupChildren, type CanonicalProduct, type CanonicalChild } from '../lib/api/canonical'
 import { sectionCard, tblDense, thDense, tdDense, trDense } from '../lib/uiTokens'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -243,12 +243,13 @@ function ChildrenTable({ items }: { items: CanonicalChild[] }) {
 function ProductRow({ product }: { product: CanonicalProduct }) {
   const [expanded, setExpanded] = useState(false)
 
-  // O backend pode devolver `children: null` (slice nil em Go) para produtos sem
-  // filhos vinculados — normaliza para [] antes de qualquer .map/.length.
-  const children = product.children ?? []
-
-  // Coleta marketplaces únicos dos filhos para exibição no badge de cobertura
-  const uniqueMarketplaces = [...new Set(children.map((child) => child.marketplace))]
+  // Filhos buscados sob demanda ao expandir — o backend não os envia na lista
+  // (só children_count). GET /api/admin/canonical-groups/{id}/children.
+  const { data: children = [], isLoading: childrenLoading } = useQuery({
+    queryKey: ['canonical-children', product.id],
+    queryFn: () => fetchCanonicalGroupChildren(product.id),
+    enabled: expanded,
+  })
 
   return (
     <div className={`${sectionCard} transition-all`}>
@@ -260,11 +261,8 @@ function ProductRow({ product }: { product: CanonicalProduct }) {
               <Badge variant="warning">baixa confiança</Badge>
             )}
           </div>
-          {product.brand && (
-            <p className="text-xs text-fg-3 mb-2">{product.brand}</p>
-          )}
           <div className="flex flex-wrap gap-1">
-            {uniqueMarketplaces.map((marketplace) => (
+            {product.marketplaces.map((marketplace) => (
               <Badge key={marketplace} variant={marketplaceBadgeVariant(marketplace)} size="sm">
                 {marketplace}
               </Badge>
@@ -279,10 +277,12 @@ function ProductRow({ product }: { product: CanonicalProduct }) {
           size="sm"
           onClick={() => setExpanded((prev) => !prev)}
         >
-          {expanded ? 'Fechar' : `Ver filhos (${children.length})`}
+          {expanded ? 'Fechar' : `Ver filhos (${product.children_count})`}
         </Button>
       </div>
-      {expanded && <ChildrenTable items={children} />}
+      {expanded && (childrenLoading
+        ? <p className="text-sm text-fg-3 mt-2">Carregando filhos…</p>
+        : <ChildrenTable items={children} />)}
     </div>
   )
 }
