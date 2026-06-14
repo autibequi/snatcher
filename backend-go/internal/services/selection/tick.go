@@ -143,6 +143,7 @@ func loadCandidates(ctx context.Context, db *sqlx.DB, groupID int64, threshold f
 		ID         int64   `db:"id"`
 		CategoryID *int64  `db:"category_id"`
 		Price      float64 `db:"price_current"`
+		PriceOrig  float64 `db:"price_original"`
 		Title      string  `db:"title"`
 		Quality    float64 `db:"quality_score"`
 		Discount   float64 `db:"discount_pct"`
@@ -152,6 +153,7 @@ func loadCandidates(ctx context.Context, db *sqlx.DB, groupID int64, threshold f
 	if err := db.SelectContext(ctx, &rows, `
 		SELECT c.id, c.category_id,
 		       COALESCE(c.price_current, 0) AS price_current,
+		       COALESCE(c.price_original, 0) AS price_original,
 		       COALESCE(c.title, '') AS title,
 		       COALESCE(c.quality_score, 0) AS quality_score,
 		       COALESCE(c.discount_pct, 0) AS discount_pct,
@@ -179,9 +181,10 @@ func loadCandidates(ctx context.Context, db *sqlx.DB, groupID int64, threshold f
 			catID = *r.CategoryID
 		}
 		cands = append(cands, Candidate{
-			CatalogID:    r.ID,
-			CategoryID:   catID,
-			Price:        r.Price,
+			CatalogID:     r.ID,
+			CategoryID:    catID,
+			Price:         r.Price,
+			PriceOriginal: r.PriceOrig,
 			Title:        r.Title,
 			QualityScore: r.Quality,
 			DiscountPct:  r.Discount,

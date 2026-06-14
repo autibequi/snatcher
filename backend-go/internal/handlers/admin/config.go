@@ -77,22 +77,17 @@ func (h *ConfigHandler) ToggleFullAuto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Se ativando: aprova todos os pending_approval para envio imediato
-	var approvedCount int64
-	if newState {
-		res, _ := h.db.ExecContext(r.Context(), `UPDATE dispatches SET status = 'queued' WHERE status = 'pending_approval'`)
-		approvedCount, _ = res.RowsAffected()
-	}
-
-	// Retorna novo estado
+	// No v2 não há fila de pending_approval — a tabela legada 'dispatches' foi removida
+	// (migration drop_v1_dispatch_wa_product). O selection.tick enfileira direto em
+	// send_queue; full_auto_mode é apenas um indicador exibido no dashboard. O UPDATE
+	// antigo em 'dispatches' causava 500 (tabela inexistente).
 	result := map[string]any{
-		"full_auto_mode":      newState,
-		"approved_dispatches": approvedCount,
+		"full_auto_mode": newState,
 	}
 	if newState {
-		result["message"] = fmt.Sprintf("Full auto mode ativado. %d dispatches pendentes foram aprovados e serão enviados.", approvedCount)
+		result["message"] = "Full auto mode ativado."
 	} else {
-		result["message"] = "Full auto mode desativado. Novos dispatches ficarão em pending_approval."
+		result["message"] = "Full auto mode desativado."
 	}
 
 	writeJSON(w, http.StatusOK, result)

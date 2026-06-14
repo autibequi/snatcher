@@ -2,18 +2,23 @@
 // É uma função pura sem I/O — recebe structs e devolve [0,1].
 package match
 
-import "snatcher/backendv2/internal/models"
+import (
+	"math"
+
+	"snatcher/backendv2/internal/models"
+)
 
 // CatalogItem representa os campos do catálogo relevantes para scoring.
 // Preenchido a partir de uma query ao catalog com category_id e quality_score.
 type CatalogItem struct {
-	ID           int64
-	CategoryID   *int64  // nil quando produto sem categoria
-	QualityScore float64 // [0,1] calculado pelo job recompute_quality_scores
-	DiscountPct  float64 // percentual de desconto [0,100]
-	PriceCurrent float64
-	PriceMin     float64 // 0 = sem filtro
-	PriceMax     float64 // 0 = sem filtro
+	ID            int64
+	CategoryID    *int64  // nil quando produto sem categoria
+	QualityScore  float64 // [0,1] calculado pelo job recompute_quality_scores
+	DiscountPct   float64 // percentual de desconto [0,100]
+	PriceCurrent  float64
+	PriceOriginal float64 // preço "de" — usado para economia absoluta em R$ (0 = desconhecido)
+	PriceMin      float64 // 0 = sem filtro
+	PriceMax      float64 // 0 = sem filtro
 }
 
 // ScoreResult agrega o score final e os motivos que contribuíram (para debug/UI).
@@ -69,10 +74,21 @@ func Score(catalog CatalogItem, channel models.ChannelV2) ScoreResult {
 		reasons = append(reasons, "qualidade do produto")
 	}
 
-	// Bônus: desconto relevante (>= 20%)
-	if catalog.DiscountPct >= 20.0 {
-		score = min1(score+0.1)
-		reasons = append(reasons, "desconto acima de 20%")
+	// Deal score: a magnitude da oferta é o gatilho #1 de clique em grupo de promoção.
+	// (a) Desconto progressivo — quanto maior o %, mais sobe (substitui o bônus binário ≥20%).
+	if catalog.DiscountPct > 0 {
+		score = min1(score + (catalog.DiscountPct/100.0)*0.30)
+		reasons = append(reasons, "desconto")
+	}
+	// (b) Economia absoluta em R$ — R$300 OFF chama mais que R$5 OFF mesmo com % igual.
+	//     Escala log: ~R$1000 de economia satura o bônus em +0.20 (log10(1000)=3).
+	if catalog.PriceOriginal > catalog.PriceCurrent && catalog.PriceCurrent > 0 {
+		econBonus := math.Log10(1+catalog.PriceOriginal-catalog.PriceCurrent) / 3.0 * 0.20
+		if econBonus > 0.20 {
+			econBonus = 0.20
+		}
+		score = min1(score + econBonus)
+		reasons = append(reasons, "economia em R$")
 	}
 
 	// Bônus: desconto acima do mínimo do canal (quando definido)

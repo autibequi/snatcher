@@ -107,10 +107,14 @@ func (s *SQLStore) UpsertCatalogItem(p CatalogV2UpsertParams) (string, error) {
 	}
 	contentHash := ContentHashV2(p.Title, p.PriceCurrent, p.ImageURL)
 	qualityScore := computeQualityScore(p)
-	// send_ready exige: qualidade mínima E desconto real (price_original > price_current).
-	// Produtos sem preço original nunca têm desconto verificável → não devem ir pra fila de envio.
+	// send_ready exige qualidade mínima E uma das duas: desconto real (price_original >
+	// price_current) OU "achadinho" — produto barato (preço baixo absoluto) que gera clique
+	// por impulso mesmo sem desconto verificável. Antes só desconto era aceito, o que zerava
+	// a fila quando o catálogo vinha sem price_original.
+	const achadinhoMaxPriceBRL = 80.0
 	hasRealDiscount := p.PriceOriginal > p.PriceCurrent && p.PriceCurrent > 0
-	sendReady := qualityScore >= 0.40 && hasRealDiscount
+	isAchadinho := p.PriceCurrent > 0 && p.PriceCurrent <= achadinhoMaxPriceBRL
+	sendReady := qualityScore >= 0.40 && (hasRealDiscount || isAchadinho)
 
 	// Dual-write: catalog_status é derivado de send_ready + quality_score.
 	catalogStatus := catalogStatusFromSendReady(sendReady, qualityScore)

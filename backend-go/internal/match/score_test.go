@@ -51,9 +51,19 @@ func TestScore_BonusForHighDiscount(t *testing.T) {
 	cat := CatalogItem{QualityScore: 0.6, PriceCurrent: 100.0, DiscountPct: 25.0}
 	ch := models.ChannelV2{}
 	r := Score(cat, ch)
-	// 0.6 + 0.1 bonus = 0.7
-	if r.Score < 0.69 || r.Score > 0.71 {
-		t.Fatalf("expected ~0.7 (with bonus), got %f", r.Score)
+	// deal_score: 0.6 base + 25% * 0.30 = 0.675 (desconto progressivo, não mais binário)
+	if r.Score < 0.67 || r.Score > 0.68 {
+		t.Fatalf("expected ~0.675 (desconto progressivo), got %f", r.Score)
+	}
+}
+
+func TestScore_BonusForAbsoluteSaving(t *testing.T) {
+	ch := models.ChannelV2{}
+	// Mesmo desconto %, mas economia absoluta em R$ muito maior → deve pontuar mais.
+	pequeno := CatalogItem{QualityScore: 0.5, PriceCurrent: 100.0, PriceOriginal: 130.0, DiscountPct: 23.0}
+	grande := CatalogItem{QualityScore: 0.5, PriceCurrent: 1000.0, PriceOriginal: 1300.0, DiscountPct: 23.0}
+	if Score(grande, ch).Score <= Score(pequeno, ch).Score {
+		t.Fatal("economia absoluta maior em R$ deveria pontuar mais que economia pequena")
 	}
 }
 

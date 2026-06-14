@@ -16,14 +16,15 @@ import (
 
 // Candidate é um produto do catálogo elegível para seleção.
 type Candidate struct {
-	CatalogID    int64
-	CategoryID   int64
-	Price        float64
-	Title        string
-	QualityScore float64
-	DiscountPct  float64
-	DedupKey     string
-	Score        float64 // preenchido por Rank (match.Score)
+	CatalogID     int64
+	CategoryID    int64
+	Price         float64
+	PriceOriginal float64
+	Title         string
+	QualityScore  float64
+	DiscountPct   float64
+	DedupKey      string
+	Score         float64 // preenchido por Rank (match.Score)
 }
 
 // Rank filtra os candidatos pelo público-alvo (target.Match) e ordena por score
@@ -36,11 +37,12 @@ func Rank(cands []Candidate, tcfg target.Config, ch models.ChannelV2) []Candidat
 		}
 		catID := c.CategoryID
 		res := match.Score(match.CatalogItem{
-			ID:           c.CatalogID,
-			CategoryID:   &catID,
-			QualityScore: c.QualityScore,
-			DiscountPct:  c.DiscountPct,
-			PriceCurrent: c.Price,
+			ID:            c.CatalogID,
+			CategoryID:    &catID,
+			QualityScore:  c.QualityScore,
+			DiscountPct:   c.DiscountPct,
+			PriceCurrent:  c.Price,
+			PriceOriginal: c.PriceOriginal,
 		}, ch)
 		if res.Score <= 0 {
 			continue
