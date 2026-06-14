@@ -4,9 +4,61 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
+
+// GET /api/admin/metrics/learned-weights?min_samples=50
+// Pesos aprendidos do learning loop por canal × categoria × source: CTR/EPC 30d,
+// nº de amostras e confiança. Lê learned_weights_channel (a tabela singular
+// learned_weights foi consolidada/dropada em 2026-05; o aprendizado é por canal).
+func LearnedWeightsHandler(db *sqlx.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		minSamples := 0
+		if v, err := strconv.Atoi(r.URL.Query().Get("min_samples")); err == nil && v >= 0 {
+			minSamples = v
+		}
+		type row struct {
+			ChannelID    int64     `db:"channel_id"    json:"channel_id"`
+			ChannelName  *string   `db:"channel_name"  json:"channel_name,omitempty"`
+			CategoryID   int64     `db:"category_id"   json:"category_id"`
+			CategoryName *string   `db:"category_name" json:"category_name,omitempty"`
+			SourceID     *string   `db:"source_id"     json:"source_id,omitempty"`
+			SourceName   *string   `db:"source_name"   json:"source_name,omitempty"`
+			CTR30d       *float64  `db:"ctr_30d"       json:"ctr_30d,omitempty"`
+			EPC30d       *float64  `db:"epc_30d"       json:"epc_30d,omitempty"`
+			Samples30d   int       `db:"samples_30d"   json:"samples_30d"`
+			Confidence   *float64  `db:"confidence"    json:"confidence,omitempty"`
+			UpdatedAt    time.Time `db:"updated_at"    json:"updated_at"`
+		}
+		var rows []row
+		_ = db.SelectContext(r.Context(), &rows, `
+			SELECT lwc.channel_id,
+			       c.name           AS channel_name,
+			       lwc.category_id,
+			       cat.display_name AS category_name,
+			       lwc.source_id,
+			       s.name           AS source_name,
+			       lwc.ctr_30d, lwc.epc_30d,
+			       COALESCE(lwc.samples_30d, 0) AS samples_30d,
+			       lwc.confidence,
+			       lwc.updated_at
+			FROM learned_weights_channel lwc
+			JOIN channels_v2 c   ON c.id   = lwc.channel_id
+			JOIN categories cat  ON cat.id = lwc.category_id
+			LEFT JOIN sources s  ON s.id   = lwc.source_id
+			WHERE COALESCE(lwc.samples_30d, 0) >= $1
+			ORDER BY lwc.samples_30d DESC NULLS LAST, lwc.updated_at DESC
+			LIMIT 500
+		`, minSamples)
+		if rows == nil {
+			rows = []row{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rows)
+	}
+}
 
 // GET /api/admin/metrics/virality
 // Retorna por grupo: clicks totais, esperado pelos members, excedente viral

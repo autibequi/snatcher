@@ -40,7 +40,7 @@ export function Sparkline({
         return (
           <span
             key={i}
-            className={`inline-block rounded-[1px] ${colorClass}`}
+            className={`inline-block rounded-xs ${colorClass}`}
             style={{ width: barWidth, height: h }}
           />
         )

@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/utils'
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string
@@ -11,7 +12,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, leftAddon, className = '', ...props }, ref) => {
+  ({ label, error, hint, leftAddon, className, ...props }, ref) => {
     // Resolve se há estado de erro (string ou boolean true)
     const hasError = Boolean(error)
     // Mensagem de erro: só exibida quando error é string não-vazia
@@ -26,15 +27,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
-            className={`
-              w-full h-8 px-2.5 text-sm rounded-lg border
-              bg-surface text-fg placeholder:text-fg-3
-              border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent
-              disabled:opacity-50 disabled:cursor-not-allowed
-              ${hasError ? 'border-danger focus:border-danger focus:ring-danger' : ''}
-              ${leftAddon ? 'pl-8' : ''}
-              ${className}
-            `}
+            className={cn(
+              'w-full h-8 px-2.5 text-sm rounded-lg border bg-surface text-fg placeholder:text-fg-3',
+              'border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+              hasError && 'border-danger focus:border-danger focus:ring-danger',
+              leftAddon && 'pl-8',
+              className,
+            )}
             {...props}
           />
         </div>

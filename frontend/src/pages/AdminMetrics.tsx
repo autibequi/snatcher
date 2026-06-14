@@ -24,6 +24,8 @@ function paramLabel(name: string) { return PARAM_LABEL[name] ?? name }
 // ---------- types ----------
 
 interface LearnedWeight {
+  channel_id?: number
+  channel_name?: string
   group_id?: number
   group_name?: string
   category_id?: number
@@ -183,7 +185,7 @@ export function ViralityTab() {
 // ---------- Aba 1 — Learned Weights ----------
 
 const LEARNED_WEIGHTS_COLUMNS: ColumnDef<LearnedWeight, unknown>[] = [
-  { accessorKey: 'group_name', header: 'Grupo', cell: ({ row }) => row.original.group_name ?? (row.original.group_id != null ? `#${row.original.group_id}` : '—') },
+  { accessorKey: 'channel_name', header: 'Canal', cell: ({ row }) => row.original.channel_name ?? row.original.group_name ?? (row.original.channel_id != null ? `#${row.original.channel_id}` : '—') },
   { accessorKey: 'category_name', header: 'Categoria', cell: ({ row }) => <span className="text-fg-2">{row.original.category_name ?? (row.original.category_id != null ? `#${row.original.category_id}` : '—')}</span> },
   { accessorKey: 'source_name', header: 'Source', cell: ({ row }) => <span className="text-fg-2">{row.original.source_name ?? (row.original.source_id != null ? sourceLabel(row.original.source_id) : '—')}</span> },
   { accessorKey: 'samples_30d', header: 'Samples', cell: ({ getValue }) => <span className="text-right block">{getValue<number>().toLocaleString('pt-BR')}</span> },

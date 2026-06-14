@@ -14,7 +14,7 @@ interface TileProps {
 export function Tile({ children, size = 36, className = '', imageUrl, alt = '' }: TileProps) {
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-[6px] bg-surface-3 text-fg-2 overflow-hidden flex-shrink-0 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg bg-surface-3 text-fg-2 overflow-hidden flex-shrink-0 ${className}`}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
     >
       {imageUrl ? (
