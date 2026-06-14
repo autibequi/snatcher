@@ -312,9 +312,6 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		v = strings.TrimSpace(v)
 		ns := models.NullString{NullString: sql.NullString{String: v, Valid: v != ""}}
 		existing.JID = ns
-		if existing.Platform == "whatsapp" {
-			existing.WhatsappJID = ns
-		}
 	}
 	if v, ok := patch["member_count"].(float64); ok {
 		existing.MemberCount = int64(v)
