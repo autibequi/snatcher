@@ -1,18 +1,30 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
+
+	"snatcher/backendv2/internal/services/selection"
 )
 
 // GET /api/admin/algo/dry-run
 // Simula um tick do Score Engine sem enviar nada.
-// Para cada grupo ativo, inspeciona cada etapa e devolve o motivo do bloqueio.
+// Para cada grupo ativo, usa SelectCandidatesForGroup — a mesma função canônica do
+// tick — e devolve os candidatos rankeados + flags de janela/pacing.
+// Isso garante que would_enqueue reflita exatamente o que o tick faria.
 func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		type candidateInfo struct {
+			CatalogID    int64   `json:"catalog_id"`
+			Title        string  `json:"title"`
+			Score        float64 `json:"score"`
+			QualityScore float64 `json:"quality_score"`
+			DiscountPct  float64 `json:"discount_pct"`
+			Price        float64 `json:"price"`
+		}
 
 		type groupResult struct {
 			GroupID     int64   `json:"group_id"`
@@ -22,32 +34,18 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 			Blocked bool   `json:"blocked"`
 			Reason  string `json:"reason"` // motivo do bloqueio ou "ok — enfileiraria"
 			// Detalhes
-			DailyMsgCap      int     `json:"daily_msg_cap"`
-			SentToday        int     `json:"sent_today"`
-			CandidatesFound  int     `json:"candidates_found"`  // produtos elegíveis (top-K)
-			HasModem         bool    `json:"has_modem"`          // group_admins com conta ativa
-			SendQueueExists  bool    `json:"send_queue_exists"`
-			QualityThreshold float64 `json:"quality_threshold"`
-			CatalogSendReady int     `json:"catalog_send_ready"` // total de produtos send_ready no catálogo
+			DailyMsgCap     int  `json:"daily_msg_cap"`
+			SentToday       int  `json:"sent_today"`
+			CandidatesFound int  `json:"candidates_found"` // após target.Match + match.Score
+			HasModem        bool `json:"has_modem"`
+			// Flags de janela/pacing (não filtram — o dry-run reporta mesmo quando bloqueado)
+			InWindow bool `json:"in_window"`  // janela de envio ativa agora
+			PacingOK bool `json:"pacing_ok"`  // pacing gap respeitado
+			// Top candidato (se houver)
+			TopCandidate *candidateInfo `json:"top_candidate,omitempty"`
 		}
 
-		// 1. Lê quality_threshold global
-		var qThreshold float64
-		_ = db.QueryRowContext(ctx,
-			`SELECT COALESCE(get_param('quality_threshold','global',NULL), 0.4)`).Scan(&qThreshold)
-
-		// 2. Verifica se send_queue existe
-		var sendQueueExists bool
-		_ = db.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='send_queue')`).Scan(&sendQueueExists)
-
-		// 3. Total de produtos send_ready no catálogo
-		var totalSendReady int
-		_ = db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM catalog WHERE send_ready=true AND canonical_url_alive=true AND COALESCE(quality_score,0)>=$1`,
-			qThreshold).Scan(&totalSendReady)
-
-		// 4. Grupos ativos
+		// Grupos ativos
 		type groupRow struct {
 			ID          int64   `db:"id"`
 			Name        string  `db:"name"`
@@ -70,19 +68,15 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 		results := make([]groupResult, 0, len(groups))
 		for _, g := range groups {
 			res := groupResult{
-				GroupID:         g.ID,
-				GroupName:       g.Name,
-				ChannelName:     g.ChannelName,
-				DailyMsgCap:     g.DailyMsgCap,
-				SendQueueExists: sendQueueExists,
-				QualityThreshold: qThreshold,
-				CatalogSendReady: totalSendReady,
+				GroupID:     g.ID,
+				GroupName:   g.Name,
+				ChannelName: g.ChannelName,
+				DailyMsgCap: g.DailyMsgCap,
 			}
 
-			// Verifica cap diário
 			if g.DailyMsgCap <= 0 {
 				res.Blocked = true
-				res.Reason = "daily_msg_cap = 0 — grupo sem cap configurado (grupos com cap=0 são pulados)"
+				res.Reason = "daily_msg_cap = 0 — grupo sem cap configurado"
 				results = append(results, res)
 				continue
 			}
@@ -94,42 +88,25 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 			`, g.ID).Scan(&sentToday)
 			res.SentToday = sentToday
 
-			if sentToday >= g.DailyMsgCap {
-				res.Blocked = true
-				res.Reason = "cap diário atingido (sent_today >= daily_msg_cap)"
-				results = append(results, res)
-				continue
-			}
-
-			// Verifica modem/conta WA
-			var modemCount int
-			_ = db.QueryRowContext(ctx, `
-				SELECT COUNT(*) FROM group_admins ga
-				JOIN accounts a ON a.id = ga.account_id
-				WHERE ga.group_id=$1 AND a.status IN ('primary','backup')
-			`, g.ID).Scan(&modemCount)
-			res.HasModem = modemCount > 0
-
-			if !res.HasModem {
-				res.Blocked = true
-				res.Reason = "sem conta WA primary/backup vinculada ao grupo (group_admins vazio ou status != primary/backup)"
-				results = append(results, res)
-				continue
-			}
-
-			// send_queue precisa existir para enqueueSend funcionar
-			if !sendQueueExists {
-				res.Blocked = true
-				res.Reason = "tabela send_queue não existe — rode make migrate-up para criar"
-				results = append(results, res)
-				continue
-			}
-
-			// Conta candidatos para o grupo
 			channelID := int64(0)
 			if g.ChannelID != nil {
 				channelID = *g.ChannelID
 			}
+
+			// Usa a função canônica — mesma lógica do tick.
+			ranked, flags, err := selection.SelectCandidatesForGroup(ctx, db, g.ID, channelID, g.DailyMsgCap)
+			if err != nil {
+				res.Blocked = true
+				res.Reason = "erro ao selecionar candidatos: " + err.Error()
+				results = append(results, res)
+				continue
+			}
+
+			res.InWindow = flags.InWindow
+			res.PacingOK = flags.PacingOK
+			res.HasModem = flags.HasModem
+			res.CandidatesFound = len(ranked)
+
 			if channelID == 0 {
 				res.Blocked = true
 				res.Reason = "grupo sem channel_id — vincule o grupo a um canal em /channels"
@@ -137,53 +114,55 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 				continue
 			}
 
-			// Conta candidatos usando a mesma lógica do selectTopKForGroup (LEFT JOIN,
-			// não filtro hard por categoria). Produtos sem category_id passam mas recebem
-			// score de canal = 0.
-			var candidates int
-			_ = db.QueryRowContext(ctx, `
-				SELECT COUNT(*) FROM catalog c
-				WHERE c.send_ready = true
-				  AND c.canonical_url_alive = true
-				  AND COALESCE(c.quality_score, 0) >= $1
-				  AND NOT EXISTS (
-				      SELECT 1 FROM group_sent_history h
-				      WHERE h.group_id = $2 AND h.dedup_key = c.dedup_key
-				        AND h.sent_at > now() - INTERVAL '7 days'
-				  )
-				  AND NOT EXISTS (
-				      SELECT 1 FROM send_queue q
-				      WHERE q.group_id = $2 AND q.catalog_id = c.id
-				        AND q.status IN ('pending','sending')
-				  )
-			`, qThreshold, g.ID).Scan(&candidates)
-			res.CandidatesFound = candidates
-
-			// Sub-diagnóstico extra (informativo, não bloqueante)
-			if candidates == 0 {
-				var antiRepeatBlock int
-				_ = db.QueryRowContext(ctx, `
-					SELECT COUNT(*) FROM catalog c
-					WHERE c.send_ready=true AND c.canonical_url_alive=true
-					  AND COALESCE(c.quality_score,0)>=$1
-				`, qThreshold).Scan(&antiRepeatBlock)
-				if antiRepeatBlock > 0 {
-					res.Reason = "todos os produtos elegíveis já foram enviados nos últimos 7 dias (anti-repeat 7d)"
-				} else {
-					res.Reason = "sem produtos send_ready com quality_score >= threshold"
+			if !flags.HasChannel {
+				reason := flags.NoChannelReason
+				if reason == "" {
+					reason = "canal não encontrado ou inativo"
 				}
 				res.Blocked = true
+				res.Reason = reason
 				results = append(results, res)
 				continue
 			}
 
-			// Tem candidatos mas canal sem pesos — produtos aparecerão mas com score baixo
-			var channelHasWeights int
-			_ = db.QueryRowContext(ctx,
-				`SELECT COUNT(*) FROM channel_category_weights WHERE channel_id=$1 AND weight>0`,
-				channelID).Scan(&channelHasWeights)
-			if channelHasWeights == 0 {
-				res.Reason = "ok (canal sem sliders configurados — produtos serão enviados mas sem peso de categoria, score menor)"
+			if !flags.HasModem {
+				res.Blocked = true
+				res.Reason = "sem conta WA primary/backup vinculada ao grupo"
+				results = append(results, res)
+				continue
+			}
+
+			if len(ranked) == 0 {
+				res.Blocked = true
+				res.Reason = "sem candidatos após target.Match + match.Score (verifique target config do canal)"
+				results = append(results, res)
+				continue
+			}
+
+			top := ranked[0]
+			res.TopCandidate = &candidateInfo{
+				CatalogID:    top.CatalogID,
+				Title:        top.Title,
+				Score:        top.Score,
+				QualityScore: top.QualityScore,
+				DiscountPct:  top.DiscountPct,
+				Price:        top.Price,
+			}
+
+			if !flags.PacingOK {
+				// Tem candidatos, mas pacing bloqueia agora — informar sem marcar blocked
+				// (o tick teria pulado, mas o dry-run mostra o que enfileiraria)
+				res.Blocked = false
+				res.Reason = "pacing_blocked — passaria se o gap de pacing fosse respeitado; top candidato disponível"
+				results = append(results, res)
+				continue
+			}
+
+			if !flags.InWindow {
+				res.Blocked = false
+				res.Reason = "out_of_window — passaria se estivesse na janela de envio; top candidato disponível"
+				results = append(results, res)
+				continue
 			}
 
 			res.Blocked = false
@@ -192,12 +171,10 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 		}
 
 		type summary struct {
-			TotalGroups     int           `json:"total_groups"`
-			WouldEnqueue    int           `json:"would_enqueue"`
-			Blocked         int           `json:"blocked"`
-			CatalogReady    int           `json:"catalog_send_ready"`
-			SendQueueExists bool          `json:"send_queue_exists"`
-			Groups          []groupResult `json:"groups"`
+			TotalGroups  int           `json:"total_groups"`
+			WouldEnqueue int           `json:"would_enqueue"`
+			Blocked      int           `json:"blocked"`
+			Groups       []groupResult `json:"groups"`
 		}
 
 		would, blocked := 0, 0
@@ -209,14 +186,11 @@ func AlgoDryRunHandler(db *sqlx.DB) http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(summary{
-			TotalGroups:     len(results),
-			WouldEnqueue:    would,
-			Blocked:         blocked,
-			CatalogReady:    totalSendReady,
-			SendQueueExists: sendQueueExists,
-			Groups:          results,
+		writeJSON(w, http.StatusOK, summary{
+			TotalGroups:  len(results),
+			WouldEnqueue: would,
+			Blocked:      blocked,
+			Groups:       results,
 		})
 	}
 }

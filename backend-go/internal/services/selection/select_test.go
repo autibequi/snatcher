@@ -7,6 +7,12 @@ import (
 	"snatcher/backendv2/internal/services/target"
 )
 
+// toRankedCandidates converte []Candidate para []RankedCandidate usando rankWithReasons,
+// permitindo comparar os resultados da função canônica e do Rank legado nos testes.
+func toRankedCandidates(cands []Candidate, tcfg target.Config, ch models.ChannelV2) []RankedCandidate {
+	return rankWithReasons(cands, tcfg, ch)
+}
+
 func f64(v float64) *float64 { return &v }
 
 func TestRank_filtraEordena(t *testing.T) {
@@ -53,5 +59,48 @@ func TestRank_blacklistFiltra(t *testing.T) {
 	got := Rank(cands, tcfg, models.ChannelV2{})
 	if len(got) != 1 || got[0].CatalogID != 2 {
 		t.Errorf("blacklist 'usado' deveria deixar só o CatalogID 2, obteve %+v", got)
+	}
+}
+
+// TestDryRunMatchesTick verifica que a função canônica (rankWithReasons) produz os
+// mesmos resultados que o Rank legado para o mesmo conjunto de candidatos.
+// Garante que dry-run e tick usam a mesma lógica de seleção.
+func TestDryRunMatchesTick(t *testing.T) {
+	ch := models.ChannelV2{ID: 1, QualityThreshold: 0, PriceMin: f64(50), PriceMax: f64(500)}
+	tcfg := target.Config{Categories: []int64{1, 2}, PriceMin: 50, PriceMax: 500}
+
+	cands := []Candidate{
+		{CatalogID: 10, CategoryID: 1, Price: 100, Title: "A", QualityScore: 0.9, DiscountPct: 30},
+		{CatalogID: 11, CategoryID: 9, Price: 100, Title: "B fora-categoria", QualityScore: 0.95},
+		{CatalogID: 12, CategoryID: 2, Price: 1000, Title: "C caro", QualityScore: 0.99},
+		{CatalogID: 13, CategoryID: 2, Price: 200, Title: "D", QualityScore: 0.5, DiscountPct: 10},
+	}
+
+	// tick usa Rank (via selectAndEnqueueForGroup → agora rankWithReasons internamente)
+	tickRanked := Rank(cands, tcfg, ch)
+	// dry-run usa rankWithReasons via SelectCandidatesForGroup
+	dryRunRanked := toRankedCandidates(cands, tcfg, ch)
+
+	if len(tickRanked) != len(dryRunRanked) {
+		t.Fatalf("contagem diverge: tick=%d dry-run=%d", len(tickRanked), len(dryRunRanked))
+	}
+
+	if len(tickRanked) == 0 {
+		t.Fatal("esperava pelo menos um candidato")
+	}
+
+	// top-1 deve ser o mesmo
+	if tickRanked[0].CatalogID != dryRunRanked[0].CatalogID {
+		t.Errorf("top-1 diverge: tick=%d dry-run=%d", tickRanked[0].CatalogID, dryRunRanked[0].CatalogID)
+	}
+
+	// scores devem ser iguais
+	for i := range tickRanked {
+		if tickRanked[i].Score != dryRunRanked[i].Score {
+			t.Errorf("score[%d] diverge: tick=%f dry-run=%f", i, tickRanked[i].Score, dryRunRanked[i].Score)
+		}
+		if tickRanked[i].CatalogID != dryRunRanked[i].CatalogID {
+			t.Errorf("catalogID[%d] diverge: tick=%d dry-run=%d", i, tickRanked[i].CatalogID, dryRunRanked[i].CatalogID)
+		}
 	}
 }

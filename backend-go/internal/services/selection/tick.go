@@ -8,9 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
-	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/senders"
-	"snatcher/backendv2/internal/services/sendwindow"
 	"snatcher/backendv2/internal/services/target"
 )
 
@@ -63,26 +61,26 @@ func RunSelectionTick(ctx context.Context, db *sqlx.DB) error {
 
 // selectAndEnqueueForGroup escolhe e enfileira o melhor produto para um grupo.
 // Retorna true se enfileirou algo.
+// Delega a seleção para SelectCandidatesForGroup (função canônica) — mesmo caminho
+// usado pelo dry-run, garantindo que ambos reflitam a mesma lógica.
 func selectAndEnqueueForGroup(ctx context.Context, db *sqlx.DB, writer *senders.OutboxWriter, groupID, channelID int64, dailyCap int) (bool, error) {
-	// pacing + janela de envio (reusa o gate preservado na W1).
-	if !sendwindow.ShouldEnqueueGroup(ctx, db, groupID, dailyCap) {
-		return false, nil
-	}
-
-	var ch models.ChannelV2
-	if err := db.GetContext(ctx, &ch, `
-		SELECT id, name, quality_threshold, daily_cap, active, created_at,
-		       price_min, price_max, min_discount_pct
-		FROM channels_v2 WHERE id = $1`, channelID); err != nil {
-		return false, err
-	}
-	if !ch.Active {
-		return false, nil
-	}
-
-	tcfg, err := loadTargetConfig(ctx, db, channelID)
+	ranked, flags, err := SelectCandidatesForGroup(ctx, db, groupID, channelID, dailyCap)
 	if err != nil {
 		return false, err
+	}
+
+	// Gates de pacing/janela: se não passa, nada a enfileirar.
+	if !flags.PacingOK {
+		return false, nil
+	}
+	if !flags.HasChannel {
+		return false, nil
+	}
+	if !flags.HasModem {
+		return false, nil
+	}
+	if len(ranked) == 0 {
+		return false, nil
 	}
 
 	// Resolve o modem do grupo (conta primary/backup, rotação por último envio).
@@ -97,14 +95,6 @@ func selectAndEnqueueForGroup(ctx context.Context, db *sqlx.DB, writer *senders.
 		return false, nil
 	}
 
-	cands, err := loadCandidates(ctx, db, groupID, ch.QualityThreshold)
-	if err != nil {
-		return false, err
-	}
-	ranked := Rank(cands, tcfg, ch)
-	if len(ranked) == 0 {
-		return false, nil
-	}
 	top := ranked[0]
 
 	priority := int(top.Score * 100)
