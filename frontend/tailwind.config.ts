@@ -71,12 +71,15 @@ export default {
         '18': '72px',
       },
       borderRadius: {
-        xs: '4px',
-        sm: '6px',
-        md: '8px',
-        lg: '12px',
-        xl: '16px',
-        '2xl': '20px',
+        // Curvatura reduzida (~metade) para um visual mais reto/coeso.
+        // Tudo deriva daqui — rounded-md/lg dominam a UI; rounded-full segue
+        // intocado (avatares/pills). Para cantos retos, zerar estes valores.
+        xs: '2px',
+        sm: '3px',
+        md: '4px',
+        lg: '6px',
+        xl: '8px',
+        '2xl': '10px',
       },
       boxShadow: {
         sm: 'var(--shadow-sm)',
