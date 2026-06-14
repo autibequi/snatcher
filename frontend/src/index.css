@@ -29,12 +29,8 @@
   --shadow-sm:      0 1px 2px oklch(0.25 0.02 268 / 0.06);
   --shadow:         0 1px 3px oklch(0.25 0.02 268 / 0.07), 0 1px 2px oklch(0.25 0.02 268 / 0.04);
   --shadow-lg:      0 8px 24px oklch(0.25 0.025 268 / 0.09);
-  --r-xs:           4px;
-  --r-sm:           6px;
-  --r:              8px;
-  --r-md:           10px;
-  --r-lg:           14px;
-  --r-xl:           20px;
+  /* (set --r-* removido — era vestigial, não consumido pelo Tailwind; a curvatura
+     deriva de --radius via tailwind.config, Fase 0.) */
   --gap-1:          4px;
   --gap-2:          8px;
   --gap-3:          12px;

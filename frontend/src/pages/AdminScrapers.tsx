@@ -61,7 +61,7 @@ function rateBg(rate?: number): string {
 function statusBadge(status: string): string {
   switch (status) {
     case 'active':   return 'bg-success-soft text-success'
-    case 'shadow':   return 'bg-blue-100 text-accent'
+    case 'shadow':   return 'bg-accent-soft text-accent'
     case 'archived': return 'bg-surface-2 text-fg-3'
     default:         return 'bg-surface-2 text-fg-2'
   }
@@ -251,7 +251,7 @@ export default function AdminScrapers() {
                 className={[
                   'text-xs px-3 py-1 rounded border transition-colors',
                   statusFilter === s
-                    ? 'bg-blue-600 text-white border-blue-600'
+                    ? 'bg-accent text-white border-accent'
                     : 'hover:bg-surface-2 border-border',
                 ].join(' ')}
               >
@@ -320,7 +320,7 @@ export default function AdminScrapers() {
                         {cfg.status === 'shadow' && (
                           <button
                             onClick={() => promote(cfg)}
-                            className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+                            className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover"
                           >
                             Promover
                           </button>
@@ -345,7 +345,7 @@ export default function AdminScrapers() {
             <select
               value={logSourceID}
               onChange={e => setLogSourceID(e.target.value)}
-              className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 min-w-[160px]"
+              className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-accent min-w-[160px]"
             >
               <option value="">Todos</option>
               {allSources.map(s => <option key={s} value={s}>{s}</option>)}
@@ -356,7 +356,7 @@ export default function AdminScrapers() {
             <select
               value={logField}
               onChange={e => setLogField(e.target.value)}
-              className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 min-w-[120px]"
+              className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-accent min-w-[120px]"
             >
               <option value="">Todos</option>
               {allFields.map(f => <option key={f} value={f}>{f}</option>)}
@@ -365,7 +365,7 @@ export default function AdminScrapers() {
           <button
             onClick={() => loadLogs(logSourceID, logField)}
             disabled={logsLoading}
-            className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-1.5 bg-accent text-white rounded text-sm hover:bg-accent-hover disabled:opacity-50"
           >
             {logsLoading ? 'Carregando...' : 'Buscar'}
           </button>
@@ -434,7 +434,7 @@ export default function AdminScrapers() {
                 value={editSelector}
                 onChange={e => setEditSelector(e.target.value)}
                 rows={5}
-                className="border rounded px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-y"
+                className="border rounded px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent resize-y"
                 spellCheck={false}
               />
             </div>
@@ -449,7 +449,7 @@ export default function AdminScrapers() {
               <button
                 onClick={saveSelector}
                 disabled={editSaving || !editSelector.trim()}
-                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 text-sm rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {editSaving ? 'Salvando...' : 'Salvar (cria nova version)'}
               </button>

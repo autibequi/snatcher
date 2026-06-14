@@ -54,7 +54,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
 
 function VarBadge({ label }: { label: string }) {
   return (
-    <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-xs font-mono mr-1 mb-1">
+    <span className="inline-block px-1.5 py-0.5 rounded bg-accent-soft text-accent text-xs font-mono mr-1 mb-1">
       {label}
     </span>
   )
@@ -311,7 +311,7 @@ export default function AdminTemplates() {
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-surface-2 text-text-secondary">
                       #{t.id}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-accent-soft text-accent font-medium">
                       {t.category_slug}
                     </span>
                     <span className="text-xs text-text-secondary">peso {t.weight}</span>

@@ -45,7 +45,7 @@ export function SourcePicker({ value, onChange, category, disabled = false }: So
         <button
           onClick={handleSelectAll}
           disabled={disabled || allSelected}
-          className="px-3 py-1.5 text-sm font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 text-sm font-medium bg-accent-soft text-accent rounded hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Select All
         </button>
@@ -69,7 +69,7 @@ export function SourcePicker({ value, onChange, category, disabled = false }: So
             key={source.id}
             className={`flex items-center gap-2 p-2 rounded border-2 cursor-pointer transition-colors ${
               value.includes(source.id)
-                ? 'border-blue-500 bg-blue-50'
+                ? 'border-accent bg-accent-soft'
                 : 'border-border bg-surface hover:border-border'
             } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           >

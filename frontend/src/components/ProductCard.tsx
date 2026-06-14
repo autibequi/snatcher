@@ -74,7 +74,7 @@ export default function ProductCard({ product, showGroup = false }: ProductCardP
               R$ {product.price.toFixed(2).replace('.', ',')}
             </span>
             {product.sent_at && (
-              <span className="text-xs text-blue-400">✓ Enviado</span>
+              <span className="text-xs text-accent">✓ Enviado</span>
             )}
           </div>
 

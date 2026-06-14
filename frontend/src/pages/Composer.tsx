@@ -96,7 +96,7 @@ function TemplateDropdown({ onSelect }: { onSelect: (body: string) => void }) {
                 }}
               >
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent font-medium">
                     {t.category_slug}
                   </span>
                   <span className="text-[10px] text-fg-3">peso {t.weight}</span>
