@@ -209,41 +209,9 @@ JOIN categories cat ON cat.slug = 'suplemento'
 WHERE ch.name = 'Suplementos'
 ON CONFLICT (channel_id, category_id) DO UPDATE SET weight = EXCLUDED.weight;
 
--- ── 4. Grupos PromoJon — com canal vinculado ──────────────────────────────────
--- whatsapp_jid = NULL: operador importa grupos reais da conta em /admin/senders.
--- daily_msg_cap = 10 conservador para começar (ajustar conforme crescimento).
-INSERT INTO groups (name, platform, status, daily_msg_cap, channel_id)
-SELECT
-    g.name,
-    'whatsapp',
-    'active',
-    g.cap,
-    ch.id
-FROM (VALUES
-    ('PromoJon - Tech',              'Tech',            10),
-    ('PromoJon - Gaming',            'Gaming',          10),
-    ('PromoJon - Casa e Deco',       'Casa & Deco',     10),
-    ('PromoJon - Churrasqueiras',    'Churrasqueiras',  8),
-    ('PromoJon - Café Gourmet',      'Café Gourmet',    8),
-    ('PromoJon - Cosméticos',        'Cosméticos',      10),
-    ('PromoJon - Moda',              'Moda',            10),
-    ('PromoJon - Tenis',             'Tênis & Esporte', 10),
-    ('PromoJon - Whey e Suplementos','Suplementos',     10)
-) AS g(name, channel_name, cap)
-JOIN channels_v2 ch ON ch.name = g.channel_name
-WHERE NOT EXISTS (
-    SELECT 1 FROM groups WHERE name = g.name
-);
-
--- ── 5. group_admins — vincula grupos à conta WA principal ─────────────────────
--- Assume account id=1 (criado na migration de seed de contas ou manualmente).
--- Idempotente: só insere se a conta existir.
-INSERT INTO group_admins (group_id, account_type, account_id)
-SELECT g.id, 'wa', a.id
-FROM groups g
-JOIN accounts a ON a.id = (SELECT MIN(id) FROM accounts WHERE status = 'primary')
-WHERE g.name LIKE 'PromoJon%'
-  AND NOT EXISTS (
-      SELECT 1 FROM group_admins ga
-      WHERE ga.group_id = g.id AND ga.account_type = 'wa'
-  );
+-- ── 4. (REMOVIDO) Grupos PromoJon fantasma ────────────────────────────────────
+-- Antes este seed criava 9 grupos PromoJon com jid = NULL (nunca conectados ao
+-- WhatsApp real). Poluíam a lista e travavam o tick (sem conta/admin/jid → não
+-- disparam). Removido em 2026-06-14: os canais/categorias/pesos acima já dão o
+-- terreno funcional; o operador importa grupos REAIS da conta em /admin/senders.
+-- A migration 20260614120000_remove_phantom_promojon_groups limpa os já existentes.

@@ -98,6 +98,27 @@ func TestBuildAlerts_ScanParadoGeraWarning(t *testing.T) {
 	}
 }
 
+// TestBuildAlerts_GruposSemContaGeraWarning verifica o alerta de grupos ativos
+// sem conta vinculada (não disparam — gate HasModem do tick).
+func TestBuildAlerts_GruposSemContaGeraWarning(t *testing.T) {
+	snapshot := HealthSnapshot{
+		QueueDepth:           0,
+		ActiveWorkers:        1,
+		CircuitBreaker:       map[string]string{},
+		ContasWA:             ContasWAStatus{Total: 1, PrimaryConectadas: 1},
+		Scan:                 ScanStatus{Rodando: true, MarketplacesAtivos: 1},
+		Janela:               JanelaStatus{Aberta: true, SendStartHour: 8, SendEndHour: 22},
+		GruposAtivosSemConta: 3,
+	}
+
+	alertas := buildAlerts(snapshot)
+
+	got := filterAlerts(alertas, "warning", "Distribuição")
+	if len(got) == 0 {
+		t.Error("esperado warning em 'Distribuição' para grupos sem conta, nenhum encontrado")
+	}
+}
+
 // TestBuildAlerts_FilaTravadaGeraCritical verifica a regra queue_depth>0 + active_workers==0.
 func TestBuildAlerts_FilaTravadaGeraCritical(t *testing.T) {
 	snapshot := HealthSnapshot{

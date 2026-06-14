@@ -72,12 +72,13 @@ func SystemHealthFullHandler(db *sqlx.DB) http.HandlerFunc {
 
 		// Snapshot imutável entregue ao motor de alertas (função pura, testável).
 		snapshot := HealthSnapshot{
-			QueueDepth:     extractInt(base.Dispatcher, "queue_depth"),
-			ActiveWorkers:  extractInt(base.Dispatcher, "active_workers"),
-			CircuitBreaker: base.CircuitBreaker,
-			ContasWA:       contasWA,
-			Scan:           scan,
-			Janela:         janela,
+			QueueDepth:           extractInt(base.Dispatcher, "queue_depth"),
+			ActiveWorkers:        extractInt(base.Dispatcher, "active_workers"),
+			CircuitBreaker:       base.CircuitBreaker,
+			ContasWA:             contasWA,
+			Scan:                 scan,
+			Janela:               janela,
+			GruposAtivosSemConta: fetchGruposAtivosSemConta(db, ctx),
 		}
 
 		resp := HealthFullResponse{
@@ -102,6 +103,9 @@ type HealthSnapshot struct {
 	ContasWA       ContasWAStatus
 	Scan           ScanStatus
 	Janela         JanelaStatus
+	// GruposAtivosSemConta: grupos status=active que NÃO têm conta primary/backup
+	// vinculada via group_admins — o tick não dispara neles (gate HasModem).
+	GruposAtivosSemConta int
 }
 
 // buildAlerts aplica as regras de alerta sobre o snapshot e retorna a lista de alertas.
@@ -152,9 +156,21 @@ func buildAlerts(s HealthSnapshot) []Alerta {
 		}
 	}
 
+	// Grupos ativos que não disparam: status=active mas sem conta primary/backup
+	// vinculada (gate HasModem do selection.tick). Surface direto do "por que nada
+	// dispara" — operador atua vinculando conta/importando grupo real.
+	if s.GruposAtivosSemConta > 0 {
+		alertas = append(alertas, Alerta{
+			Severity: "warning",
+			Area:     "Distribuição",
+			Message:  formatAlertMsg("%d grupo(s) ativo(s) sem conta WhatsApp vinculada — não disparam automaticamente", s.GruposAtivosSemConta),
+			Action:   "Vincule uma conta/importe o grupo real em Distribuição › Modems",
+		})
+	}
+
 	// Marketplace em uso (com produtos send_ready) sem programa de afiliado ativo.
-	// TODO: requer join catalog × affiliate_programs; implementar quando disponível.
-	// Por ora ignorado para não travar o card (query cara sem índice adequado).
+	// TODO: requer normalizar nomes de marketplace (catalog usa 'amz', affiliate_programs
+	// usa 'amazon') antes de joinar — senão gera falso-positivo. Follow-up.
 
 	// Janela fechada em horário comercial (8h-22h BRT).
 	if !s.Janela.Aberta {
@@ -287,6 +303,26 @@ func fetchJanelaStatus(db *sqlx.DB, ctx context.Context) JanelaStatus {
 	result.Aberta = sendwindow.InSendWindow(ctx, db)
 
 	return result
+}
+
+// fetchGruposAtivosSemConta conta grupos status=active que NÃO têm conta
+// primary/backup vinculada via group_admins — espelha o gate HasModem do
+// selection.tick (grupo sem conta nunca dispara automaticamente).
+func fetchGruposAtivosSemConta(db *sqlx.DB, ctx context.Context) int {
+	var n int
+	_ = db.GetContext(ctx, &n, `
+		SELECT COUNT(*)
+		FROM groups g
+		WHERE g.status = 'active'
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM group_admins ga
+			JOIN accounts a ON a.id = ga.account_id
+			WHERE ga.group_id = g.id
+			  AND a.status IN ('primary', 'backup')
+		  )
+	`)
+	return n
 }
 
 // extractInt extrai um int de um mapa interface{} retornando 0 se ausente ou tipo errado.
