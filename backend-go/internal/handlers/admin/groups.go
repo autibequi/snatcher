@@ -191,11 +191,6 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Status:     "active",
 		Overrides:  []byte("{}"),
 	}
-	// O disparo (dispatch/sender) lê whatsapp_jid; o import preenche jid. Mantém os dois em
-	// sincronia para o grupo importado receber mensagem. (A unificação dos campos está no plano.)
-	if req.Platform == "whatsapp" && req.JID != "" {
-		g.WhatsappJID = models.NullString{NullString: sql.NullString{String: req.JID, Valid: true}}
-	}
 	if req.Status != "" {
 		g.Status = req.Status
 	}
