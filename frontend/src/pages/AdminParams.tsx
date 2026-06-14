@@ -286,8 +286,8 @@ export default function AdminParams({ embedded = false }: { embedded?: boolean }
   const [editValues, setEditValues] = useState<Record<number, string>>({})
   const [saving, setSaving] = useState<Record<number, boolean>>({})
   const [query, setQuery] = useState('')
-  // Seções abertas: primeira aberta por default; busca abre todas.
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ [SECTIONS[0].id]: true })
+  // Seções abertas: todas recolhidas por default (visão geral); busca abre as que casam.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
 
   const load = async () => {
     setLoading(true)

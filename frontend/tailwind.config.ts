@@ -71,15 +71,14 @@ export default {
         '18': '72px',
       },
       borderRadius: {
-        // Curvatura reduzida (~metade) para um visual mais reto/coeso.
-        // Tudo deriva daqui — rounded-md/lg dominam a UI; rounded-full segue
-        // intocado (avatares/pills). Para cantos retos, zerar estes valores.
-        xs: '2px',
-        sm: '3px',
-        md: '4px',
-        lg: '6px',
-        xl: '8px',
-        '2xl': '10px',
+        // Fase 0 — escala derivada de um knob único (--radius em index.css, default 6px).
+        // Mudar --radius reescala toda a UI; rounded-full segue intocado (avatares/pills).
+        xs: 'calc(var(--radius) - 4px)',  // ~2px
+        sm: 'calc(var(--radius) - 3px)',  // ~3px
+        md: 'calc(var(--radius) - 2px)',  // ~4px
+        lg: 'var(--radius)',              // ~6px
+        xl: 'calc(var(--radius) + 2px)',  // ~8px
+        '2xl': 'calc(var(--radius) + 4px)', // ~10px
       },
       boxShadow: {
         sm: 'var(--shadow-sm)',

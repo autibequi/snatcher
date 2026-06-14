@@ -63,7 +63,9 @@
   /* --border omitted: var(--border) seria auto-referencial (no-op) */
   --input: var(--border);
   --ring: var(--accent);
-  --radius: 0.5rem;
+  /* Knob único de curvatura (Fase 0 design system). O Tailwind deriva toda a
+     escala rounded-* daqui via calc(). Reduzir/zerar aqui afeta a app inteira. */
+  --radius: 0.375rem; /* 6px */
 }
 
 /* ──────────────── Dracula Dark — base mais profunda (#12131a ~ #1a1b26), hierarquia coerente ──────────────── */

@@ -11,14 +11,16 @@ import { DangerTab } from './settings/DangerTab'
 import { ParamsTab } from './settings/ParamsTab'
 import { AutomationsTab } from './settings/AutomationsTab'
 
-// 6 abas (antes 9): 'Alertas' removido (era só <SystemHealth/>, já no Painel/Pulso);
-// 'LLM' fundido em Integrações; 'Aparência' fundido em Sistema.
+// 7 abas (antes 9): 'Alertas' removido (era só <SystemHealth/>, já no Painel/Pulso);
+// 'LLM' fundido em Integrações. Aparência mantém aba própria (é preferência de
+// exibição, não config de sistema).
 const TABS = [
   { id: 'system',       label: 'Sistema' },
   { id: 'integrations', label: 'Integrações' },
   { id: 'automations',  label: 'Automações' },
   { id: 'params',       label: 'Parâmetros' },
   { id: 'team',         label: 'Equipe' },
+  { id: 'appearance',   label: 'Aparência' },
   { id: 'danger',       label: 'Danger' },
 ]
 
@@ -27,7 +29,6 @@ const VALID_TABS = new Set(TABS.map(t => t.id))
 // Aliases para deep-links antigos das abas que foram fundidas/removidas.
 const TAB_ALIASES: Record<string, string> = {
   llm: 'integrations',
-  appearance: 'system',
   alerts: 'system', // Alertas vivem no Painel; cai em Sistema.
 }
 
@@ -70,13 +71,7 @@ export default function Settings() {
           onChange={id => navigate(`/settings/${id}`)}
         />
         <div className="px-4 py-4 sm:p-6 space-y-6">
-          {active === 'system' && (
-            <>
-              <SystemTab />
-              <SectionDivider label="Aparência" />
-              <AppearanceTab />
-            </>
-          )}
+          {active === 'system' && <SystemTab />}
           {active === 'integrations' && (
             <>
               <IntegrationsTab />
@@ -87,6 +82,7 @@ export default function Settings() {
           {active === 'automations' && <AutomationsTab />}
           {active === 'params'      && <ParamsTab />}
           {active === 'team'        && <TeamTab />}
+          {active === 'appearance'  && <AppearanceTab />}
           {active === 'danger'      && <DangerTab />}
         </div>
       </div>
