@@ -245,11 +245,16 @@ func processJob(ctx context.Context, db *sqlx.DB, job *sendJob, workerID string,
 		return
 	}
 
-	_, err := sendViaEvolution(ctx, db, job.ModemID, job.GroupID, catalogID, accountID, templateID, domainID)
+	resolvedDomainID, err := sendViaEvolution(ctx, db, job.ModemID, job.GroupID, catalogID, accountID, templateID, domainID)
 	if err != nil {
 		slog.Warn("dispatcher.send_failed", "qid", job.ID, "worker", workerID, "err", err)
 		markFailed(ctx, db, job.ID, accountID, job.ModemID, err)
 		return
 	}
-	// sendViaEvolution faz markSent internamente (preserva comportamento atual).
+	// Finaliza o envio do motor: grava send_log 'sent' (com catalog_id → alimenta
+	// analytics + learning loop), marca send_queue 'sent' (evita o reaper re-enfileirar
+	// → duplicata) e registra group_sent_history (anti-repeat). Antes faltava esta
+	// chamada — sendViaEvolution NÃO faz markSent internamente, apesar do comentário
+	// antigo: todo send do motor ficava invisível ao send_log e travado em 'sending'.
+	markSent(ctx, db, job.ID, job.GroupID, &catalogID, accountID, templateID, resolvedDomainID)
 }
