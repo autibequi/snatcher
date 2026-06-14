@@ -11,7 +11,7 @@ import { KpiCard, PageHeader, SegmentedControl, Skeleton, Tabs } from '../compon
 import type { SegmentedOption } from '../components/ui'
 import { pageContainer, responsiveKpiGrid, sectionCard } from '../lib/uiTokens'
 // Abas do antigo /admin/metrics — absorvidas aqui para uma única tela de análise.
-import { DailyMetricsTab, ABTestsTab, ViralityTab, LearnedWeightsTab } from './AdminMetrics'
+import { DailyMetricsTab, ABTestsTab, ViralityTab } from './AdminMetrics'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -335,14 +335,13 @@ function DesempenhoTab() {
 
 // ── Página principal — Analytics unificado (desempenho + métricas do motor) ─────
 
-type AnalyticsTab = 'desempenho' | 'daily' | 'abtests' | 'virality' | 'weights'
+type AnalyticsTab = 'desempenho' | 'daily' | 'abtests' | 'virality'
 
 const ANALYTICS_TABS: { id: AnalyticsTab; label: string; title?: string }[] = [
   { id: 'desempenho', label: 'Desempenho', title: 'Cliques, CTR e ranking — resultado de negócio' },
   { id: 'daily',      label: 'Diário',     title: 'Métricas diárias agregadas' },
   { id: 'abtests',    label: 'A/B',        title: 'Experimentos de parâmetros do motor' },
   { id: 'virality',   label: 'Viralidade', title: 'Coeficiente de viralização dos disparos' },
-  { id: 'weights',    label: 'Pesos',      title: 'Pesos aprendidos pelo algoritmo de seleção' },
 ]
 
 const VALID_ANALYTICS_TABS = new Set<AnalyticsTab>(
@@ -383,7 +382,6 @@ export default function Analytics() {
       {tab === 'daily'      && <DailyMetricsTab />}
       {tab === 'abtests'    && <ABTestsTab />}
       {tab === 'virality'   && <ViralityTab />}
-      {tab === 'weights'    && <LearnedWeightsTab />}
     </div>
   )
 }

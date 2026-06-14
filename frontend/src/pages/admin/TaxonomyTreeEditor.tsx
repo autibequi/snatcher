@@ -54,7 +54,8 @@ function filterNodesByKind(
   return nodes
     .map((node) => ({
       ...node,
-      children: filterNodesByKind(node.children, kind),
+      // children pode vir null (slice nil do Go → null no JSON); normaliza pra [].
+      children: filterNodesByKind(node.children ?? [], kind),
     }))
     .filter((node) => node.kind === kind || node.children.length > 0)
 }
@@ -72,7 +73,8 @@ function TaxonomyNodeRow({
   onSelect: (node: TaxonomyNode) => void
 }) {
   const [open, setOpen] = useState(depth === 0)
-  const hasChildren = node.children.length > 0
+  const children = node.children ?? []
+  const hasChildren = children.length > 0
 
   return (
     <div style={{ paddingLeft: depth * 16 }}>
@@ -99,7 +101,7 @@ function TaxonomyNodeRow({
       </div>
       {open &&
         hasChildren &&
-        node.children.map((child) => (
+        children.map((child) => (
           <TaxonomyNodeRow
             key={child.id}
             node={child}
