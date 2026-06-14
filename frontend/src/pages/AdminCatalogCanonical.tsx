@@ -243,8 +243,12 @@ function ChildrenTable({ items }: { items: CanonicalChild[] }) {
 function ProductRow({ product }: { product: CanonicalProduct }) {
   const [expanded, setExpanded] = useState(false)
 
+  // O backend pode devolver `children: null` (slice nil em Go) para produtos sem
+  // filhos vinculados — normaliza para [] antes de qualquer .map/.length.
+  const children = product.children ?? []
+
   // Coleta marketplaces únicos dos filhos para exibição no badge de cobertura
-  const uniqueMarketplaces = [...new Set(product.children.map((child) => child.marketplace))]
+  const uniqueMarketplaces = [...new Set(children.map((child) => child.marketplace))]
 
   return (
     <div className={`${sectionCard} transition-all`}>
@@ -275,10 +279,10 @@ function ProductRow({ product }: { product: CanonicalProduct }) {
           size="sm"
           onClick={() => setExpanded((prev) => !prev)}
         >
-          {expanded ? 'Fechar' : `Ver filhos (${product.children.length})`}
+          {expanded ? 'Fechar' : `Ver filhos (${children.length})`}
         </Button>
       </div>
-      {expanded && <ChildrenTable items={product.children} />}
+      {expanded && <ChildrenTable items={children} />}
     </div>
   )
 }
