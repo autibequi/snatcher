@@ -225,6 +225,25 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.ID = id
+
+	// Auto-vincula a conta como admin do grupo (group_admins) quando uma conta foi
+	// informada — fecha o gate HasModem do selection.tick. Sem isso, um grupo
+	// importado com wa_account_id nascia sem admin e nunca disparava (gap descoberto
+	// ao configurar os grupos Snatcher). Best-effort: não falha o create se errar.
+	if req.WAAccountID != nil && *req.WAAccountID != 0 {
+		if _, aerr := h.store.AddGroupAdmin(models.GroupAdmin{
+			GroupID: id, AccountID: *req.WAAccountID, AccountType: "wa",
+		}); aerr != nil {
+			slog.Warn("Create group: falha ao auto-vincular group_admin", "group_id", id, "account_id", *req.WAAccountID, "err", aerr)
+		}
+	} else if req.TGAccountID != nil && *req.TGAccountID != 0 {
+		if _, aerr := h.store.AddGroupAdmin(models.GroupAdmin{
+			GroupID: id, AccountID: *req.TGAccountID, AccountType: "tg",
+		}); aerr != nil {
+			slog.Warn("Create group: falha ao auto-vincular group_admin", "group_id", id, "account_id", *req.TGAccountID, "err", aerr)
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, g)
 }
 

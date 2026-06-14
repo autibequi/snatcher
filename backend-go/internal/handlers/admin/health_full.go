@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"snatcher/backendv2/internal/models"
+	"snatcher/backendv2/internal/services/affiliates"
 	"snatcher/backendv2/internal/services/sendwindow"
 
 	"github.com/jmoiron/sqlx"
@@ -77,8 +80,9 @@ func SystemHealthFullHandler(db *sqlx.DB) http.HandlerFunc {
 			CircuitBreaker:       base.CircuitBreaker,
 			ContasWA:             contasWA,
 			Scan:                 scan,
-			Janela:               janela,
-			GruposAtivosSemConta: fetchGruposAtivosSemConta(db, ctx),
+			Janela:                  janela,
+			GruposAtivosSemConta:    fetchGruposAtivosSemConta(db, ctx),
+			MarketplacesSemAfiliado: fetchMarketplacesSemAfiliado(db, ctx),
 		}
 
 		resp := HealthFullResponse{
@@ -106,6 +110,9 @@ type HealthSnapshot struct {
 	// GruposAtivosSemConta: grupos status=active que NÃO têm conta primary/backup
 	// vinculada via group_admins — o tick não dispara neles (gate HasModem).
 	GruposAtivosSemConta int
+	// MarketplacesSemAfiliado: marketplaces com produtos send_ready mas sem programa
+	// de afiliado ativo válido — links sem comissão (nomes já canonicalizados).
+	MarketplacesSemAfiliado []string
 }
 
 // buildAlerts aplica as regras de alerta sobre o snapshot e retorna a lista de alertas.
@@ -168,9 +175,16 @@ func buildAlerts(s HealthSnapshot) []Alerta {
 		})
 	}
 
-	// Marketplace em uso (com produtos send_ready) sem programa de afiliado ativo.
-	// TODO: requer normalizar nomes de marketplace (catalog usa 'amz', affiliate_programs
-	// usa 'amazon') antes de joinar — senão gera falso-positivo. Follow-up.
+	// Marketplace com produtos send_ready mas sem programa de afiliado ativo → link
+	// sem comissão. Nomes já canonicalizados (amz↔amazon) pelo fetcher via affiliates.HasAffiliate.
+	if len(s.MarketplacesSemAfiliado) > 0 {
+		alertas = append(alertas, Alerta{
+			Severity: "warning",
+			Area:     "Afiliados",
+			Message:  formatAlertMsg("produtos prontos em marketplace(s) sem afiliado ativo: %s — links sem comissão", strings.Join(s.MarketplacesSemAfiliado, ", ")),
+			Action:   "Configure o programa em Sistema › Afiliados",
+		})
+	}
 
 	// Janela fechada em horário comercial (8h-22h BRT).
 	if !s.Janela.Aberta {
@@ -323,6 +337,40 @@ func fetchGruposAtivosSemConta(db *sqlx.DB, ctx context.Context) int {
 		  )
 	`)
 	return n
+}
+
+// fetchMarketplacesSemAfiliado retorna os marketplaces (canonicalizados) que têm
+// produtos send_ready mas nenhum programa de afiliado ativo válido — links sem
+// comissão. Usa affiliates.HasAffiliate (resolve amz↔amazon + valida credenciais).
+func fetchMarketplacesSemAfiliado(db *sqlx.DB, ctx context.Context) []string {
+	var sources []string
+	_ = db.SelectContext(ctx, &sources, `
+		SELECT DISTINCT split_part(dedup_key, ':', 1) AS mkt
+		FROM catalog
+		WHERE send_ready = true AND dedup_key IS NOT NULL AND dedup_key <> ''
+	`)
+	if len(sources) == 0 {
+		return nil
+	}
+	var programs []models.AffiliateProgram
+	_ = db.SelectContext(ctx, &programs, `SELECT marketplace, active, credentials FROM affiliate_programs`)
+
+	seen := map[string]bool{}
+	var missing []string
+	for _, src := range sources {
+		if src == "" {
+			continue
+		}
+		if affiliates.HasAffiliate(src, programs) {
+			continue
+		}
+		canon := affiliates.CanonicalAffiliateMarketplace(src)
+		if !seen[canon] {
+			seen[canon] = true
+			missing = append(missing, canon)
+		}
+	}
+	return missing
 }
 
 // extractInt extrai um int de um mapa interface{} retornando 0 se ausente ou tipo errado.

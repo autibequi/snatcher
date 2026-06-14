@@ -122,7 +122,24 @@ func loadTargetConfig(ctx context.Context, db *sqlx.DB, channelID int64) (target
 		FROM channels_v2 WHERE id = $1`, channelID).
 		Scan(pq.Array(&cfg.Categories), &cfg.PriceMin, &cfg.PriceMax,
 			pq.Array(&cfg.Blacklist), pq.Array(&cfg.Whitelist))
-	return cfg, err
+	if err != nil {
+		return cfg, err
+	}
+
+	// Fallback de categoria: se o canal não tem target_categories explícito, deriva
+	// das categorias que ele pondera (channel_category_weights com weight > 0). Sem
+	// isso, target.Match só filtrava por preço — e produto de QUALQUER categoria na
+	// faixa de preço entrava (ex.: capinha de celular num canal de Suplementos).
+	// As categorias ponderadas SÃO o público-alvo do canal; viram filtro duro.
+	if len(cfg.Categories) == 0 {
+		var derived []int64
+		if derr := db.SelectContext(ctx, &derived, `
+			SELECT category_id FROM channel_category_weights
+			WHERE channel_id = $1 AND weight > 0`, channelID); derr == nil && len(derived) > 0 {
+			cfg.Categories = derived
+		}
+	}
+	return cfg, nil
 }
 
 // loadCandidates busca produtos do catálogo v2 elegíveis (send_ready, vivos, acima do
