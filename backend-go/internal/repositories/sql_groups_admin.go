@@ -75,13 +75,15 @@ func (s *SQLStore) UpdateRedesignGroup(g models.RedesignGroup) error {
 			jid=NULLIF($4,''),
 			invite_link=NULLIF($5,''), member_count=$6,
 			wa_account_id=NULLIF($7,0), tg_account_id=NULLIF($8,0),
-			channel_id=NULLIF($9,0), category_id=NULLIF($10,0)
-		WHERE id=$11`,
+			channel_id=NULLIF($9,0), category_id=NULLIF($10,0),
+			daily_msg_cap=$11
+		WHERE id=$12`,
 		g.Name, g.Status, g.Platform,
 		g.JID.String,
 		g.InviteLink.String, g.MemberCount,
 		g.WAAccountID.Int64, g.TGAccountID.Int64,
 		g.ChannelID.Int64, g.CategoryID.Int64,
+		g.DailyMsgCap,
 		g.ID,
 	)
 	return err

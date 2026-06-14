@@ -51,9 +51,10 @@ type groupRequest struct {
 	TGAccountID *int64  `json:"tg_account_id"`
 	// AccountID: alias aceito pela UI antiga ao vincular WA no detalhe do canal (equivalente a wa_account_id).
 	AccountID  *int64 `json:"account_id"`
-	InviteLink string `json:"invite_link"`
-	JID        string `json:"jid"`
-	Status     string `json:"status"`
+	InviteLink  string `json:"invite_link"`
+	JID         string `json:"jid"`
+	Status      string `json:"status"`
+	DailyMsgCap *int   `json:"daily_msg_cap"`
 }
 
 // groupEnriched estende RedesignGroup com campos calculados para o redesign.
@@ -182,14 +183,21 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.ChannelID != nil && *req.ChannelID != 0 {
 		chID = models.NullInt64{NullInt64: sql.NullInt64{Int64: *req.ChannelID, Valid: true}}
 	}
+	// Cap diário: default 10 quando não informado — cap 0 bloqueia silenciosamente
+	// o dispatch (ShouldEnqueueGroup retorna false p/ cap<=0).
+	dailyCap := 10
+	if req.DailyMsgCap != nil && *req.DailyMsgCap > 0 {
+		dailyCap = *req.DailyMsgCap
+	}
 	g := models.RedesignGroup{
-		ChannelID:  chID,
-		Name:       req.Name,
-		Platform:   req.Platform,
-		InviteLink: models.NullString{NullString: sql.NullString{String: invite, Valid: invite != ""}},
-		JID:        models.NullString{NullString: sql.NullString{String: req.JID, Valid: req.JID != ""}},
-		Status:     "active",
-		Overrides:  []byte("{}"),
+		ChannelID:   chID,
+		Name:        req.Name,
+		Platform:    req.Platform,
+		InviteLink:  models.NullString{NullString: sql.NullString{String: invite, Valid: invite != ""}},
+		JID:         models.NullString{NullString: sql.NullString{String: req.JID, Valid: req.JID != ""}},
+		Status:      "active",
+		DailyMsgCap: dailyCap,
+		Overrides:   []byte("{}"),
 	}
 	if req.Status != "" {
 		g.Status = req.Status
@@ -321,6 +329,9 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["tg_account_id"].(float64); ok {
 		existing.TGAccountID = models.NullInt64{NullInt64: sql.NullInt64{Int64: int64(v), Valid: true}}
+	}
+	if v, ok := patch["daily_msg_cap"].(float64); ok && v >= 0 {
+		existing.DailyMsgCap = int(v)
 	}
 	if setID, clear, found, perr := parsePatchChannelID(patch); found {
 		if perr != nil {
