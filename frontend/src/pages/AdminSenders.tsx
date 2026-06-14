@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { authFetch, authFetchJSON } from '../lib/authFetch'
 import { pageContainer, closeButton } from '../lib/uiTokens'
+import { PageHeader } from '../components/ui/PageHeader'
 
 interface ModemStatus {
   id: number
@@ -404,12 +405,10 @@ export default function AdminSenders() {
 
   return (
     <div className={`${pageContainer} space-y-6`}>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Modems & Contas</h1>
-          <p className="text-sm text-fg-3 mt-1">Gerencie modems e as contas WhatsApp vinculadas a cada um.</p>
-        </div>
-        {evoHealth && (
+      <PageHeader
+        title="Modems & Contas"
+        subtitle="Gerencie modems e as contas WhatsApp vinculadas a cada um."
+        actions={evoHealth ? (
           <div className={[
             'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border',
             !evoHealth.configured
@@ -433,8 +432,9 @@ export default function AdminSenders() {
               <span className="text-[10px] opacity-70 ml-1">{evoHealth.instance}</span>
             )}
           </div>
-        )}
-      </div>
+        ) : undefined}
+        className="mb-0"
+      />
 
       {loading && (
         <div className="flex items-center gap-2 text-fg-3 text-sm">

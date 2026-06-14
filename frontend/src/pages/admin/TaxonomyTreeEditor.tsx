@@ -200,8 +200,9 @@ function FeedbackPanel({
   )
 }
 
-// TaxonomyTreeEditor é a tela admin de visualização e feedback da árvore de taxonomia.
-export default function TaxonomyTreeEditor() {
+// TaxonomyTreeContent contém o conteúdo da árvore de taxonomia sem o wrapper de página.
+// Exportado nomeadamente para ser embutido em outras telas (ex: Taxonomy.tsx aba "Árvore").
+export function TaxonomyTreeContent() {
   const [kindFilter, setKindFilter] = useState<TaxonomyNodeKind | 'all'>('all')
   const [selectedNode, setSelectedNode] = useState<TaxonomyNode | null>(null)
 
@@ -260,9 +261,7 @@ export default function TaxonomyTreeEditor() {
   }
 
   return (
-    <div className={pageContainer}>
-      <PageHeader title="Árvore de Taxonomia" className="mb-4" />
-
+    <div>
       {/* Filtro por kind */}
       <div className={`${filterBar} mb-4 rounded`}>
         {ALL_KINDS.map((kind) => (
@@ -296,6 +295,17 @@ export default function TaxonomyTreeEditor() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// TaxonomyTreeEditor é a tela admin standalone de visualização e feedback da árvore de taxonomia.
+// Usado na rota /admin/taxonomy-tree que redireciona para /taxonomy?tab=tree.
+export default function TaxonomyTreeEditor() {
+  return (
+    <div className={pageContainer}>
+      <PageHeader title="Árvore de Taxonomia" className="mb-4" />
+      <TaxonomyTreeContent />
     </div>
   )
 }

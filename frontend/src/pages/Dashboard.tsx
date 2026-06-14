@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { Button, KpiCard, PageHeader } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
+import { AlertsStrip } from '../components/dashboard/AlertsStrip'
+import { SubsystemStatus } from '../components/dashboard/SubsystemStatus'
 import { apiClient } from '../lib/apiClient'
+import { fetchHealthFull } from '../lib/api/health'
 import { useAuth } from '../lib/auth'
 import { pageContainer, responsiveKpiGrid } from '../lib/uiTokens'
 import type { InboxItem } from '../components/dashboard/OperationInbox'
+import type { HealthFull } from '../lib/api/health'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -32,18 +36,21 @@ function healthScoreClass(score: number): string {
 
 // ── Dynamic subtitle helper ────────────────────────────────────────────────────
 
-function renderDynamicSubtitle(inboxCount: number, nextDispatchEta?: string) {
-  if (inboxCount > 0 && nextDispatchEta) {
+function renderDynamicSubtitle(inboxCount: number, alertUrgentCount?: number, nextDispatchEta?: string) {
+  const urgentAlerts = alertUrgentCount ?? 0
+  const totalAttention = inboxCount + urgentAlerts
+
+  if (totalAttention > 0 && nextDispatchEta) {
     return (
       <>
-        <span className="text-danger font-medium">{inboxCount}</span> itens precisam da sua atenção · próximo disparo em {nextDispatchEta}
+        <span className="text-danger font-medium">{totalAttention}</span> itens precisam da sua atenção · próximo disparo em {nextDispatchEta}
       </>
     )
   }
-  if (inboxCount > 0) {
+  if (totalAttention > 0) {
     return (
       <>
-        <span className="text-danger">{inboxCount}</span> itens precisam da sua atenção
+        <span className="text-danger">{totalAttention}</span> itens precisam da sua atenção
       </>
     )
   }
@@ -80,6 +87,17 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
+  const { data: healthFull, dataUpdatedAt: healthUpdatedAt } = useQuery<HealthFull>({
+    queryKey: ['health', 'full'],
+    queryFn: fetchHealthFull,
+    refetchInterval: 30_000,
+  })
+
+  const alertas = healthFull?.alertas ?? []
+  const alertUrgentCount = alertas.filter(
+    a => a.severity === 'critical' || a.severity === 'warning',
+  ).length
+
   const resolvedKpis = kpis ?? null
   const dispatches7d = resolvedKpis?.dispatches_24h ?? '—'
   const dispatchesDelta = resolvedKpis?.dispatches_delta_pct
@@ -103,6 +121,7 @@ export default function Dashboard() {
   function handleRefresh() {
     qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
     qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
+    qc.invalidateQueries({ queryKey: ['health', 'full'] })
     qc.invalidateQueries({ queryKey: ['catalog'] })
   }
 
@@ -115,7 +134,7 @@ export default function Dashboard() {
       <PageHeader
         title={`Bom dia, ${firstName}`}
         subtitleId="dashboard-subtitle"
-        subtitle={renderDynamicSubtitle(inboxItems.length)}
+        subtitle={renderDynamicSubtitle(inboxItems.length, alertUrgentCount)}
         actions={
           <>
             <Button
@@ -138,7 +157,13 @@ export default function Dashboard() {
         }
       />
 
-      {/* ── 2. Quick actions ─────────────────────────────────────────────────── */}
+      {/* ── 2. Alertas de saúde ──────────────────────────────────────────────── */}
+      <AlertsStrip items={alertas} />
+
+      {/* ── 3. Status dos subsistemas ────────────────────────────────────────── */}
+      {healthFull && <SubsystemStatus data={healthFull} now={healthUpdatedAt} />}
+
+      {/* ── 4. Quick actions ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" size="sm" type="button" onClick={() => navigate('/compose')}>
           ✈ Compor
@@ -151,7 +176,7 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* ── 3. KPIs — responsivos (2 col mobile / 4 col desktop) ─────────────── */}
+      {/* ── 5. KPIs — responsivos (2 col mobile / 4 col desktop) ─────────────── */}
       <div className={responsiveKpiGrid}>
         <button type="button" className="text-left w-full" onClick={() => navigate('/activity?filter=dispatches')}>
           <KpiCard
@@ -200,7 +225,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── 4. Inbox | dica LLM ──────────────────────────────────────────────── */}
+      {/* ── 6. Inbox | dica LLM ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <OperationInbox />
         <RecommendationCard />

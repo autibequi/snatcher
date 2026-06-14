@@ -8,15 +8,14 @@ import {
   BarChart3,
   Package,
   Tags,
-  Layers,
   Send,
   Users,
   LinkIcon,
   Smartphone,
   Globe,
   Network,
-  Gauge,
   Activity,
+  Brain,
   Eye,
   Settings,
   BookOpen,
@@ -58,24 +57,29 @@ const NAV: NavGroup[] = [
     id: 'catalogo',
     label: 'Catálogo',
     items: [
-      { to: '/admin/catalog-canonical', label: 'Catálogo',   Icon: Package },
+      // Produtos: catálogo principal + aba "Grupos Canônicos" (dedup cross-marketplace)
+      { to: '/admin/catalog-canonical', label: 'Produtos',   Icon: Package },
+      // Taxonomia: CRUD de categorias/marcas/patterns + aba "Árvore" de feedback
       { to: '/taxonomy',                label: 'Taxonomia',  Icon: Tags    },
-      // Canônicos — rota criada em FW-4; aponta para rota futura (404 aceitável nesta wave)
-      { to: '/admin/canonical-groups',  label: 'Produtos',   Icon: Layers  },
     ],
   },
   {
     id: 'distribuicao',
     label: 'Distribuição',
     items: [
-      { to: '/channels',                    label: 'Canais',         Icon: Send        },
-      { to: '/groups',                      label: 'Grupos',         Icon: Users       },
-      { to: '/affiliates',                  label: 'Afiliados',      Icon: LinkIcon    },
-      { to: '/admin/senders',               label: 'Modems',         Icon: Smartphone  },
-      { to: '/admin/domains',               label: 'Domínios',       Icon: Globe       },
-      // Roteamento e Rate Buckets — rotas criadas em FW-4 (404 aceitável nesta wave)
-      { to: '/admin/dispatch/routing',      label: 'Roteamento',     Icon: Network     },
-      { to: '/admin/dispatch/rate-buckets', label: 'Rate Buckets',   Icon: Gauge       },
+      { to: '/groups',                 label: 'Grupos',       Icon: Users      },
+      { to: '/channels',               label: 'Canais',       Icon: Send       },
+      { to: '/admin/senders',          label: 'Modems',       Icon: Smartphone },
+      { to: '/admin/domains',          label: 'Domínios',     Icon: Globe      },
+      // Roteamento e Rate Buckets unificados: aba rate-buckets em ?tab=rate-buckets
+      { to: '/admin/dispatch/routing', label: 'Roteamento',   Icon: Network    },
+    ],
+  },
+  {
+    id: 'inteligencia',
+    label: 'Inteligência',
+    items: [
+      { to: '/intelligence', label: 'Hub Inteligência', Icon: Brain },
     ],
   },
   {
@@ -91,8 +95,9 @@ const NAV: NavGroup[] = [
     id: 'sistema',
     label: 'Sistema',
     items: [
-      { to: '/settings', label: 'Configurações', Icon: Settings  },
-      { to: '/manual',   label: 'Manual',        Icon: BookOpen  },
+      { to: '/settings',    label: 'Configurações', Icon: Settings  },
+      { to: '/affiliates',  label: 'Afiliados',     Icon: LinkIcon  },
+      { to: '/manual',      label: 'Manual',        Icon: BookOpen  },
     ],
   },
 ]

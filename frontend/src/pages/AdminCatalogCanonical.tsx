@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { BrandAutocomplete, type ProductBrandRow } from '../components/BrandAutocomplete'
-import { Tabs, toast } from '../components/ui'
+import { Badge, Button, EmptyState, Input, Skeleton, Switch, Tabs, toast } from '../components/ui'
+import { PageHeader } from '../components/ui/PageHeader'
 import { authFetch } from '../lib/authFetch'
+import { fetchCanonicalGroups, type CanonicalProduct, type CanonicalChild } from '../lib/api/canonical'
+import { sectionCard, tblDense, thDense, tdDense, trDense } from '../lib/uiTokens'
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -177,19 +181,207 @@ function QualityBadge({ score }: { score?: number }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{score.toFixed(2)}</span>
 }
 
-type CatalogTab = 'catalog' | 'llm'
+// ── Grupos Canônicos sub-components ─────────────────────────────────────────
+
+// MARKETPLACE_PLATFORMS lista os marketplaces conhecidos para exibição no badge de cobertura.
+const MARKETPLACE_PLATFORMS = ['Amazon', 'ML', 'Shopee', 'B2W', 'Magalu']
+
+// marketplaceBadgeVariant retorna a variante de Badge para um marketplace.
+function marketplaceBadgeVariant(marketplace: string): 'accent' | 'default' {
+  const known = MARKETPLACE_PLATFORMS.map(p => p.toLowerCase())
+  return known.includes(marketplace.toLowerCase()) ? 'accent' : 'default'
+}
+
+// ChildrenTable exibe os produtos filhos de um grupo canônico.
+function ChildrenTable({ items }: { items: CanonicalChild[] }) {
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title="Sem filhos cadastrados"
+        description="Este produto canônico ainda não tem itens vinculados nos marketplaces."
+      />
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto rounded border border-border mt-2">
+      <table className={tblDense}>
+        <thead>
+          <tr>
+            <th className={thDense}>Título</th>
+            <th className={thDense}>Marketplace</th>
+            <th className={thDense}>Source</th>
+            <th className={thDense}>Preço</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((child) => (
+            <tr key={child.id} className={trDense}>
+              <td className={tdDense}>
+                <span className="line-clamp-1 max-w-xs">{child.title}</span>
+              </td>
+              <td className={tdDense}>
+                <Badge variant={marketplaceBadgeVariant(child.marketplace)}>
+                  {child.marketplace}
+                </Badge>
+              </td>
+              <td className={`${tdDense} font-mono text-xs text-fg-3`}>{child.source_id}</td>
+              <td className={tdDense}>
+                {child.price_current !== undefined
+                  ? brl.format(child.price_current)
+                  : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ProductRow exibe um produto canônico com toggle de expansão para filhos.
+function ProductRow({ product }: { product: CanonicalProduct }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Coleta marketplaces únicos dos filhos para exibição no badge de cobertura
+  const uniqueMarketplaces = [...new Set(product.children.map((child) => child.marketplace))]
+
+  return (
+    <div className={`${sectionCard} transition-all`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-sm font-semibold text-fg">{product.name}</span>
+            {product.low_confidence && (
+              <Badge variant="warning">baixa confiança</Badge>
+            )}
+          </div>
+          {product.brand && (
+            <p className="text-xs text-fg-3 mb-2">{product.brand}</p>
+          )}
+          <div className="flex flex-wrap gap-1">
+            {uniqueMarketplaces.map((marketplace) => (
+              <Badge key={marketplace} variant={marketplaceBadgeVariant(marketplace)} size="sm">
+                {marketplace}
+              </Badge>
+            ))}
+            <Badge variant="outline" size="sm">
+              {product.marketplace_count} marketplace{product.marketplace_count !== 1 ? 's' : ''}
+            </Badge>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Fechar' : `Ver filhos (${product.children.length})`}
+        </Button>
+      </div>
+      {expanded && <ChildrenTable items={product.children} />}
+    </div>
+  )
+}
+
+// CanonicalGroupsTab exibe os grupos canônicos (vista dedup cross-marketplace).
+function CanonicalGroupsTab() {
+  const [brandFilter, setBrandFilter] = useState('')
+  const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['canonical-groups', { brand: brandFilter, low_confidence: lowConfidenceOnly }],
+    queryFn: () =>
+      fetchCanonicalGroups({
+        brand: brandFilter || undefined,
+        low_confidence: lowConfidenceOnly || undefined,
+      }),
+  })
+
+  function renderContent() {
+    if (isLoading) {
+      return (
+        <div className="space-y-3">
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
+        </div>
+      )
+    }
+
+    if (isError) {
+      return (
+        <EmptyState
+          title="Erro ao carregar grupos canônicos"
+          description="Não foi possível buscar os dados. Verifique o backend ou tente novamente."
+        />
+      )
+    }
+
+    if (!data || data.length === 0) {
+      return (
+        <EmptyState
+          title="Nenhum grupo canônico encontrado"
+          description="Nenhum produto canônico foi encontrado com esses filtros."
+        />
+      )
+    }
+
+    return (
+      <div className="space-y-3">
+        {data.map((product) => (
+          <ProductRow key={product.id} product={product} />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          placeholder="Filtrar por marca..."
+          value={brandFilter}
+          onChange={(e) => setBrandFilter(e.target.value)}
+          className="w-56"
+        />
+        <label className="flex items-center gap-2 text-sm text-fg-2 cursor-pointer">
+          <Switch
+            checked={lowConfidenceOnly}
+            onChange={setLowConfidenceOnly}
+          />
+          Apenas baixa confiança
+        </label>
+      </div>
+
+      {renderContent()}
+    </div>
+  )
+}
+
+// ── CatalogTab type ──────────────────────────────────────────────────────────
+
+type CatalogTab = 'catalog' | 'llm' | 'groups'
 
 export default function AdminCatalogCanonical() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab: CatalogTab = searchParams.get('tab') === 'llm' ? 'llm' : 'catalog'
+  const rawTab = searchParams.get('tab')
+  const tab: CatalogTab =
+    rawTab === 'llm' ? 'llm'
+    : rawTab === 'groups' ? 'groups'
+    : 'catalog'
 
+  // setTab atualiza o search param `tab`; o valor 'catalog' limpa o param para URL limpa.
   const setTab = (id: string) => {
     setSearchParams(
       prev => {
         const next = new URLSearchParams(prev)
-        if (id === 'catalog') next.delete('tab')
-        else next.set('tab', 'llm')
+        if (id === 'catalog') {
+          next.delete('tab')
+        } else {
+          next.set('tab', id)
+        }
         return next
       },
       { replace: true },
@@ -332,14 +524,16 @@ export default function AdminCatalogCanonical() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Catálogo</h1>
-        <p className="text-sm text-fg-3 mt-1">
-          Lista geral do catálogo (inclui incompletos). Enriquecimento pendente aparece na aba{' '}
-          <strong className="text-fg-2">Fila LLM</strong> — use o filtro <em>Ativos</em> para ver também itens em processamento.
-        </p>
-      </div>
+      <PageHeader
+        title="Catálogo"
+        subtitle={
+          <>
+            Lista geral do catálogo (inclui incompletos). Enriquecimento pendente aparece na aba{' '}
+            <strong className="text-fg-2">Fila LLM</strong> — use o filtro <em>Ativos</em> para ver também itens em processamento.
+          </>
+        }
+        className="mb-0"
+      />
 
       {/* KPI cards */}
       {statsLoading ? (
@@ -380,6 +574,7 @@ export default function AdminCatalogCanonical() {
         tabs={[
           { id: 'catalog', label: 'Catálogo' },
           { id: 'llm', label: 'Fila LLM', badge: pendingLLM, title: 'catalog_llm_queue — enriquecimento marca/categoria' },
+          { id: 'groups', label: 'Grupos Canônicos', title: 'Agrupamento canônico cross-marketplace (dedup)' },
         ]}
         active={tab}
         onChange={setTab}
@@ -672,6 +867,9 @@ export default function AdminCatalogCanonical() {
       </div>
       </>
       )}
+
+      {/* Grupos Canônicos — agrupamento dedup cross-marketplace */}
+      {tab === 'groups' && <CanonicalGroupsTab />}
 
       {/* Modal detalhe */}
       {detailItem && <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />}

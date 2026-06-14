@@ -94,8 +94,9 @@ func validateForDispatch(entry OutboxEntry) error {
 	return nil
 }
 
-// InsertOutbox enfileira um item em send_queue e atualiza catalog.catalog_status → 'queued'
-// DENTRO da transação TX recebida. Caller controla BEGIN/COMMIT/ROLLBACK.
+// InsertOutbox enfileira um item em send_queue e atualiza catalog.catalog_status → 'sent'
+// (valor do enum catalog_status_t, W2.A) DENTRO da transação TX recebida.
+// Caller controla BEGIN/COMMIT/ROLLBACK.
 //
 // Anti-pattern explícito: InsertOutbox NUNCA cria transação própria.
 // Se o caller faz rollback após InsertOutbox, nenhuma das duas operações persiste.

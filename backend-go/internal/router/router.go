@@ -407,6 +407,9 @@ func Build(
 		// Score Engine dry-run
 		r.Get("/api/admin/algo/dry-run", adminhnd.AlgoDryRunHandler(db))
 
+		// Hub Inteligência — explicabilidade por grupo
+		r.Get("/api/admin/intelligence/group/{id}", adminhnd.IntelligenceGroupHandler(db))
+
 		// Metrics dashboard — daily metrics, A/B tests, virality
 		r.Get("/api/admin/metrics/daily", adminhnd.DailyMetricsHandler(db))
 		r.Get("/api/admin/metrics/ab-tests", adminhnd.ABTestsHandler(db))
@@ -423,6 +426,8 @@ func Build(
 
 		// System health agregado (dispatcher, circuit breakers, LLM cost, catalog)
 		r.Get("/api/admin/health", adminhnd.SystemHealthHandler(db))
+		// Full health: todos os subsistemas + alertas acionáveis (Painel de Saúde)
+		r.Get("/api/admin/health/full", adminhnd.SystemHealthFullHandler(db))
 
 		danger := adminhnd.NewDangerHandler(db, st)
 		// /api/admin/danger/* é destrutivo — exige role=admin.

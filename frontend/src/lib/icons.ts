@@ -26,4 +26,13 @@ export {
   ChevronRight,
   Menu,
   X,
+  // Dashboard health panel
+  CheckCircle,
+  Clock,
+  Wifi,
+  WifiOff,
+  Zap,
+  ZapOff,
+  Server,
+  ArrowRight,
 } from 'lucide-react'

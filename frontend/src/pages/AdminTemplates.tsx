@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authFetch, authFetchJSON } from '../lib/authFetch'
 import { sectionCard, pageContainer } from '../lib/uiTokens'
+import { PageHeader } from '../components/ui/PageHeader'
 
 interface Category {
   id: number
@@ -234,20 +235,19 @@ export default function AdminTemplates() {
 
   return (
     <div className={pageContainer}>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-text">Templates de Mensagem</h1>
-          <p className="text-sm text-text-secondary mt-0.5">
-            {templates.length} template{templates.length !== 1 ? 's' : ''} cadastrado{templates.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={() => { setCreating(true); setEditing(null) }}
-          className="px-4 py-2 rounded bg-primary text-white text-sm font-medium"
-        >
-          + Novo template
-        </button>
-      </div>
+      <PageHeader
+        title="Templates de Mensagem"
+        subtitle={`${templates.length} template${templates.length !== 1 ? 's' : ''} cadastrado${templates.length !== 1 ? 's' : ''}`}
+        actions={
+          <button
+            onClick={() => { setCreating(true); setEditing(null) }}
+            className="px-4 py-2 rounded bg-primary text-white text-sm font-medium"
+          >
+            + Novo template
+          </button>
+        }
+        className="mb-6"
+      />
 
       {creating && (
         <div className={`${sectionCard} mb-6`}>

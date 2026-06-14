@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
 import { DataTable } from '../components/ui'
+import { PageHeader } from '../components/ui/PageHeader'
 import type { ColumnDef } from '@tanstack/react-table'
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -393,7 +394,7 @@ function ABTestsTab() {
   const toggle = (id: number) =>
     setExpanded(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
       return next
     })
 
@@ -554,13 +555,11 @@ export default function AdminMetrics() {
 
   return (
     <div className="p-4 md:mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-semibold text-fg">Métricas</h1>
-        <p className="text-sm text-fg-3 mt-0.5">
-          Pesos aprendidos, métricas diárias, A/B, viralização e clusters de canais
-        </p>
-      </div>
+      <PageHeader
+        title="Métricas"
+        subtitle="Pesos aprendidos, métricas diárias, A/B, viralização e clusters de canais"
+        className="mb-0"
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border overflow-x-auto">

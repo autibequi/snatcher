@@ -57,7 +57,7 @@ func seedCatalog(t *testing.T, db *sql.DB, id int64, status string) {
 }
 
 // TestOutbox_HappyPath verifica que InsertOutbox em TX commitada persiste ambas as operações:
-// row em send_queue e catalog_status atualizado para 'queued'.
+// row em send_queue e catalog_status atualizado para 'sent' (enum catalog_status_t, W2.A).
 func TestOutbox_HappyPath(t *testing.T) {
 	db := setupOutboxDB(t)
 	seedCatalog(t, db, 42, "ready")
@@ -98,8 +98,8 @@ func TestOutbox_HappyPath(t *testing.T) {
 	if err := db.QueryRow(`SELECT catalog_status FROM catalog WHERE id=42`).Scan(&status); err != nil {
 		t.Fatalf("query catalog: %v", err)
 	}
-	if status != "queued" {
-		t.Errorf("catalog_status: esperava 'queued', got %q", status)
+	if status != "sent" {
+		t.Errorf("catalog_status: esperava 'sent', got %q", status)
 	}
 
 	// Verifica score normalizado: Priority 80 → score 0.80.

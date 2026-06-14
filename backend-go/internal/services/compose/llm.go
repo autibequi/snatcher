@@ -100,7 +100,9 @@ func (s *Service) Preview(ctx context.Context, product ProductInput, _ any) (Sug
 	resp, err := s.cli.Complete(ctx, rendered, opts)
 	if err != nil {
 		slog.Warn("compose LLM falhou", "err", err)
-		return Suggestion{}, fmt.Errorf("LLM error: %w", err)
+		// Degradação graciosa: em vez de propagar o erro, devolve copy humano de
+		// fallback (mesmo contrato do erro de registry acima).
+		return s.fallback(product), nil
 	}
 
 	return parseResponse(resp, product), nil
@@ -169,34 +171,6 @@ func buildDealReminder(p ProductInput) string {
 	}
 	save := p.PriceOrig - p.Price
 	return fmt.Sprintf("Dica: mencione economia real (~R$ %.2f a menos que R$ %.2f).", save, p.PriceOrig)
-}
-
-// injectToneInstruction adiciona instrução de tom ao final do prompt.
-func injectToneInstruction(prompt, tone, customContext string) string {
-	toneMap := map[string]string{
-		"promocional": "Use um tom promocional direto, destacando economia e urgência moderada.",
-		"animada":     "Use um tom animado e entusiasmado com emojis e exclamações, transmitindo empolgação.",
-		"chamativa":   "Use um tom chamativo e impactante, com linguagem forte e call-to-action agressivo.",
-		"urgente":     "Use um tom de urgência extrema — estoque limitado, tempo acabando, ação imediata.",
-		"casual":      "Use um tom casual e descontraído, como se estivesse indicando para um amigo.",
-		"formal":      "Use um tom formal e profissional, sem gírias ou emojis excessivos.",
-		"personalizado": "Tom personalizado: " + customContext,
-	}
-
-	instruction := toneMap[strings.ToLower(tone)]
-	if instruction == "" {
-		instruction = toneMap["promocional"]
-	}
-	if tone == "personalizado" && customContext != "" {
-		instruction = "Tom personalizado: " + customContext
-	}
-
-	// Substituir o prompt completo por instrução direta — evita conflito com templates JSON do registry
-	_ = prompt // descartamos o template; geramos direto
-	return fmt.Sprintf(`Crie uma mensagem de propaganda para WhatsApp sobre um produto.
-Tom: %s
-Responda APENAS com o texto da mensagem, sem JSON, sem aspas, sem explicações.
-Máximo 180 caracteres. Pode usar emojis. Sem links nem hashtags.`, instruction)
 }
 
 // fallback retorna copy formulaico quando o LLM falha.

@@ -16,8 +16,6 @@ PRODUTO:
 - Preço atual: R$ {{printf "%.2f" .Product.Price}}
 - Desconto: {{printf "%.0f" .Product.Drop}}%
 
-{{if .Channel}}AUDIÊNCIA: {{.Channel.Name}}{{end}}
-
 Estilo de saída (alinhado ao disparo real):
 - Várias linhas curtas; bloco de preço destacado; *negrito WhatsApp* com asteriscos; ~tachado~ para preço antigo quando fizer sentido.
 - Tom brasileiro, sem CAPS inteiro; emojis com moderação.

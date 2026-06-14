@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authFetchJSON, authFetch } from '../lib/authFetch'
 import { pageContainer } from '../lib/uiTokens'
+import { PageHeader } from '../components/ui/PageHeader'
 
 interface Domain {
   id: number
@@ -51,19 +52,21 @@ export default function RedirectDomains() {
   }
 
   const enabled = domains.filter(d => d.enabled)
-  const disabled = domains.filter(d => !d.enabled)
 
   return (
     <div className={`${pageContainer} space-y-6`}>
-      <div>
-        <h1 className="text-2xl font-bold">Domínios de redirecionamento</h1>
-        <p className="text-sm text-fg-3 mt-1">
-          Todos apontam para este servidor. Os links gerados rotacionam entre os domínios habilitados.
-          {enabled.length > 0 && (
-            <span className="ml-1 text-success font-medium">{enabled.length} ativo{enabled.length !== 1 ? 's' : ''}</span>
-          )}
-        </p>
-      </div>
+      <PageHeader
+        title="Domínios de redirecionamento"
+        subtitle={
+          <>
+            Todos apontam para este servidor. Os links gerados rotacionam entre os domínios habilitados.
+            {enabled.length > 0 && (
+              <span className="ml-1 text-success font-medium">{enabled.length} ativo{enabled.length !== 1 ? 's' : ''}</span>
+            )}
+          </>
+        }
+        className="mb-0"
+      />
 
       {/* Add form */}
       <div className="flex gap-2">

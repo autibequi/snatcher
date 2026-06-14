@@ -98,17 +98,19 @@ const AdminAudit = lazy(() => import('./pages/AdminAudit'))
 const AdminMetrics = lazy(() => import('./pages/AdminMetrics'))
 const AdminObservability = lazy(() => import('./pages/AdminObservability'))
 const BaselineTab = lazy(() => import('./pages/admin/BaselineTab').then(m => ({ default: m.BaselineTab })))
-const SystemHealth = lazy(() => import('./pages/admin/SystemHealth').then(m => ({ default: m.SystemHealth })))
 const AdminScrapers = lazy(() => import('./pages/AdminScrapers'))
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'))
 const RedirectDomains = lazy(() => import('./pages/RedirectDomains'))
 const Channels = lazy(() => import('./pages/Channels'))
 
+// Fase A: Hub Inteligência
+const Intelligence = lazy(() => import('./pages/intelligence/Intelligence'))
+
 // W1-W5: Novas telas de schema backend
-const CanonicalGroupsView = lazy(() => import('./pages/admin/CanonicalGroupsView'))
-const TaxonomyTreeEditor = lazy(() => import('./pages/admin/TaxonomyTreeEditor'))
+// CanonicalGroupsView absorvida como aba em AdminCatalogCanonical (rota original → redirect)
+// TaxonomyTreeEditor absorvida como aba em Taxonomy (rota original → redirect)
+// RateBucketsView absorvida como aba em DispatchRoutingView (rota original → redirect)
 const DispatchRoutingView = lazy(() => import('./pages/admin/DispatchRoutingView'))
-const RateBucketsView = lazy(() => import('./pages/admin/RateBucketsView'))
 
 const DevAtoms = import.meta.env.DEV
   ? lazy(() => import('./pages/DevAtoms'))
@@ -192,14 +194,20 @@ export default function App() {
               <Route path="admin/templates" element={<AdminTemplates />} />
               <Route path="admin/domains" element={<RedirectDomains />} />
 
-              {/* W1-W5: Novas telas de schema backend */}
-              <Route path="admin/canonical-groups" element={<CanonicalGroupsView />} />
-              <Route path="admin/taxonomy-tree" element={<TaxonomyTreeEditor />} />
-              <Route path="admin/dispatch/routing" element={<DispatchRoutingView />} />
-              <Route path="admin/dispatch/rate-buckets" element={<RateBucketsView />} />
+              {/* Fase A: Hub Inteligência */}
+              <Route path="intelligence" element={<Intelligence />} />
 
-              {/* W4: SystemHealth — rota direta */}
-              <Route path="admin/health" element={<SystemHealth />} />
+              {/* W1-W5: Novas telas de schema backend */}
+              {/* admin/canonical-groups absorvida na aba "Grupos Canônicos" de /admin/catalog-canonical */}
+              <Route path="admin/canonical-groups" element={<Navigate to="/admin/catalog-canonical?tab=groups" replace />} />
+              {/* admin/taxonomy-tree absorvida na aba "Árvore" de /taxonomy */}
+              <Route path="admin/taxonomy-tree" element={<Navigate to="/taxonomy?tab=tree" replace />} />
+              <Route path="admin/dispatch/routing" element={<DispatchRoutingView />} />
+              {/* rate-buckets absorvida como aba em DispatchRoutingView */}
+              <Route path="admin/dispatch/rate-buckets" element={<Navigate to="/admin/dispatch/routing?tab=rate-buckets" replace />} />
+
+              {/* admin/health substituído pelo Painel (C2) — redirect para home */}
+              <Route path="admin/health" element={<Navigate to="/" replace />} />
 
               {/* Redirects de URLs antigas */}
               <Route path="logs" element={<Navigate to="/activity" replace />} />

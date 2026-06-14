@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Badge,
@@ -23,6 +24,7 @@ import {
   formGroup,
   formHint,
 } from '../lib/uiTokens'
+import { TaxonomyTreeContent } from './admin/TaxonomyTreeEditor'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,7 +147,34 @@ function KeywordsTab({ type, search, onSearch, isLoading, items, onDelete, onAdd
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// OUTER_TABS define as abas de primeiro nível da tela Taxonomia.
+const OUTER_TABS = [
+  { id: 'crud', label: 'CRUD' },
+  { id: 'tree', label: 'Árvore' },
+]
+
 export default function Taxonomy() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // outerTab controla qual visão de alto nível está ativa: CRUD ou Árvore.
+  const outerTab = searchParams.get('tab') === 'tree' ? 'tree' : 'crud'
+
+  // setOuterTab atualiza o param `tab`; 'crud' limpa o param para URL limpa.
+  function setOuterTab(id: string) {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        if (id === 'crud') {
+          next.delete('tab')
+        } else {
+          next.set('tab', id)
+        }
+        return next
+      },
+      { replace: true },
+    )
+  }
+
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('category')
   const [search, setSearch] = useState('')
@@ -175,6 +204,8 @@ export default function Taxonomy() {
             ? '/api/admin/brand-keywords'
             : `/api/taxonomy?type=${tab}`
 
+  // useQuery retorna tipos distintos por aba (TaxonomyEntry | TaxonomyPattern | keyword record).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey,
     queryFn: () => apiClient.get(url).then(r => (Array.isArray(r.data) ? r.data : [])),
@@ -224,7 +255,7 @@ export default function Taxonomy() {
         subtitle="Categorias, marcas e patterns de deteccao de produtos."
         className="mb-6"
         actions={
-          showAddButton ? (
+          outerTab === 'crud' && showAddButton ? (
             <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
               Adicionar termo
             </Button>
@@ -232,89 +263,104 @@ export default function Taxonomy() {
         }
       />
 
+      {/* Abas de primeiro nível: CRUD vs Árvore */}
       <Tabs
-        tabs={TABS}
-        active={tab}
-        onChange={handleTabChange}
+        tabs={OUTER_TABS}
+        active={outerTab}
+        onChange={setOuterTab}
         className="mb-4"
       />
 
-      {tab === 'patterns' ? (
-        <PatternsTab
-          selectedTaxonomyId={selectedTaxonomyId}
-          onSelect={setSelectedTaxonomyId}
-          items={items as TaxonomyPattern[]}
-          isLoading={isLoading}
-          onDelete={id => {
-            if (confirm('Excluir este pattern?')) deletePatternMut.mutate(id)
-          }}
-          onAdd={() => setShowCreate(true)}
-        />
-      ) : tab === 'category' || tab === 'brand' ? (
-        <KeywordsTab
-          type={tab}
-          search={search}
-          onSearch={setSearch}
-          isLoading={isLoading}
-          items={filtered}
-          onDelete={id => {
-            const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
-            if (confirm('Remover keyword?')) apiClient.delete(`/api/admin/${endpoint}/${id}`)
-              .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
-          }}
-          onAdd={(slug, pattern, display) => {
-            const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
-            const body = tab === 'category'
-              ? { category_slug: slug, pattern }
-              : { brand_slug: slug, brand_display: display || slug, pattern }
-            apiClient.post(`/api/admin/${endpoint}`, body)
-              .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
-          }}
-        />
-      ) : (
-        <TaxonomyTab
-          tab={tab}
-          search={search}
-          onSearch={setSearch}
-          isLoading={isLoading}
-          filtered={filtered as TaxonomyEntry[]}
-          editingId={editingId}
-          onEdit={setEditingId}
-          onCancelEdit={() => setEditingId(null)}
-          onSaved={() => {
-            setEditingId(null)
-            qc.invalidateQueries({ queryKey: ['taxonomy'] })
-          }}
-          onApprove={id => approveMut.mutate(id)}
-          onReject={id => rejectMut.mutate(id)}
-          onDelete={id => {
-            if (confirm('Excluir este item?')) deleteMut.mutate(id)
-          }}
-        />
-      )}
+      {outerTab === 'tree' && <TaxonomyTreeContent />}
 
-      {/* Create taxonomy term modal */}
-      <CreateModal
-        open={showCreate && tab !== 'patterns'}
-        defaultType={tab === 'pending' ? 'category' : (tab as 'category' | 'brand')}
-        onClose={() => setShowCreate(false)}
-        onCreated={() => {
-          setShowCreate(false)
-          qc.invalidateQueries({ queryKey: ['taxonomy'] })
-        }}
-      />
+      {outerTab === 'crud' && (
+        <>
+          {/* Abas internas do CRUD */}
+          <Tabs
+            tabs={TABS}
+            active={tab}
+            onChange={handleTabChange}
+            className="mb-4"
+          />
 
-      {/* Create pattern modal */}
-      {selectedTaxonomyId && (
-        <CreatePatternModal
-          open={showCreate && tab === 'patterns'}
-          taxonomyId={selectedTaxonomyId}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => {
-            setShowCreate(false)
-            qc.invalidateQueries({ queryKey: ['patterns', selectedTaxonomyId] })
-          }}
-        />
+          {tab === 'patterns' ? (
+            <PatternsTab
+              selectedTaxonomyId={selectedTaxonomyId}
+              onSelect={setSelectedTaxonomyId}
+              items={items as TaxonomyPattern[]}
+              isLoading={isLoading}
+              onDelete={id => {
+                if (confirm('Excluir este pattern?')) deletePatternMut.mutate(id)
+              }}
+              onAdd={() => setShowCreate(true)}
+            />
+          ) : tab === 'category' || tab === 'brand' ? (
+            <KeywordsTab
+              type={tab}
+              search={search}
+              onSearch={setSearch}
+              isLoading={isLoading}
+              items={filtered}
+              onDelete={id => {
+                const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
+                if (confirm('Remover keyword?')) apiClient.delete(`/api/admin/${endpoint}/${id}`)
+                  .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
+              }}
+              onAdd={(slug, pattern, display) => {
+                const endpoint = tab === 'category' ? 'category-keywords' : 'brand-keywords'
+                const body = tab === 'category'
+                  ? { category_slug: slug, pattern }
+                  : { brand_slug: slug, brand_display: display || slug, pattern }
+                apiClient.post(`/api/admin/${endpoint}`, body)
+                  .then(() => qc.invalidateQueries({ queryKey: tab === 'category' ? ['category-keywords'] : ['brand-keywords'] }))
+              }}
+            />
+          ) : (
+            <TaxonomyTab
+              tab={tab}
+              search={search}
+              onSearch={setSearch}
+              isLoading={isLoading}
+              filtered={filtered as TaxonomyEntry[]}
+              editingId={editingId}
+              onEdit={setEditingId}
+              onCancelEdit={() => setEditingId(null)}
+              onSaved={() => {
+                setEditingId(null)
+                qc.invalidateQueries({ queryKey: ['taxonomy'] })
+              }}
+              onApprove={id => approveMut.mutate(id)}
+              onReject={id => rejectMut.mutate(id)}
+              onDelete={id => {
+                if (confirm('Excluir este item?')) deleteMut.mutate(id)
+              }}
+            />
+          )}
+
+          {/* Create taxonomy term modal */}
+          <CreateModal
+            open={showCreate && tab !== 'patterns'}
+            defaultType={tab === 'pending' ? 'category' : (tab as 'category' | 'brand')}
+            onClose={() => setShowCreate(false)}
+            onCreated={() => {
+              setShowCreate(false)
+              qc.invalidateQueries({ queryKey: ['taxonomy'] })
+            }}
+          />
+
+          {/* Create pattern modal */}
+          {selectedTaxonomyId && (
+            <CreatePatternModal
+              open={showCreate && tab === 'patterns'}
+              taxonomyId={selectedTaxonomyId}
+              onClose={() => setShowCreate(false)}
+              onCreated={() => {
+                setShowCreate(false)
+                qc.invalidateQueries({ queryKey: ['patterns', selectedTaxonomyId] })
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   )
@@ -707,7 +753,10 @@ function CreatePatternModal({
       setKind('word_boundary')
       onCreated()
     },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar pattern'),
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Erro ao criar pattern'
+      alert(msg)
+    },
   })
 
   return (
@@ -809,7 +858,10 @@ function CreateModal({
       setKeywords('')
       onCreated()
     },
-    onError: (err: any) => alert(err?.response?.data?.error ?? 'Erro ao criar'),
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Erro ao criar'
+      alert(msg)
+    },
   })
 
   return (
