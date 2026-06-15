@@ -149,7 +149,30 @@ func loadTargetConfig(ctx context.Context, db *sqlx.DB, channelID int64) (target
 			cfg.Categories = derived
 		}
 	}
+
+	// Blacklist global B2B: filtro de ADEQUAÇÃO AO PÚBLICO somado à blacklist do canal.
+	// Produtos profissionais/industriais/atacado são inadequados para grupos de consumidor
+	// final (ex.: "Fritadeira Industrial de Mesa para Restaurante 15L" num grupo de
+	// eletrodomésticos de casa). Termos CONSERVADORES (frases compostas / sinais fortes)
+	// pra minimizar falso positivo em B2C — "secador profissional" passa, mas "uso
+	// profissional"/"para restaurante"/"atacado" não. Ajuste fino agressivo fica na
+	// blacklist própria do canal (channels_v2.blacklist, editável via target-config).
+	cfg.Blacklist = append(cfg.Blacklist, globalB2BBlacklist...)
 	return cfg, nil
+}
+
+// globalB2BBlacklist — termos de alta precisão que sinalizam produto B2B/profissional/
+// atacado, inadequado para qualquer canal de consumidor final. Aplicado a TODOS os canais
+// via loadTargetConfig. Frases compostas e termos fortes (não palavras soltas como
+// "profissional"/"industrial", que têm uso B2C legítimo — esses ficam por-canal).
+var globalB2BBlacklist = []string{
+	"uso comercial", "uso profissional", "uso industrial",
+	"food service", "foodservice",
+	"industrial de mesa", "industrial de bancada",
+	"linha gastronômica", "gastronômica profissional",
+	"para restaurante", "para restaurantes",
+	"para estabelecimento", "para estabelecimentos",
+	"atacado", "revenda", "fins comerciais", "grau alimentício industrial",
 }
 
 // loadCandidates busca produtos do catálogo v2 elegíveis (send_ready, vivos, acima do
