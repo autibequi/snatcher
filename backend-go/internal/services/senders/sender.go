@@ -477,16 +477,25 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 }
 
 // alreadySentToGroup informa se o produto (catalogID) já foi enviado a este grupo
-// nos últimos 7 dias, casando por dedup_key (cobre o mesmo produto re-scraped com
-// catalog_id diferente). É a defesa de idempotência contra re-entrega do reaper.
+// nos últimos 7 dias. Casa por dedup_key (mesmo produto re-scraped) OU por título
+// normalizado (produtos-irmãos do mesmo vendedor com ASIN diferente mas mesma cara,
+// ex.: várias variações "YASDA"). Defesa de idempotência contra re-entrega do reaper.
 func alreadySentToGroup(ctx context.Context, db *sqlx.DB, groupID, catalogID int64) bool {
 	var exists bool
 	_ = db.GetContext(ctx, &exists, `
 		SELECT EXISTS(
 			SELECT 1 FROM group_sent_history h
-			JOIN catalog c ON c.dedup_key = h.dedup_key
-			WHERE h.group_id = $1 AND c.id = $2
-			  AND h.sent_at > now() - INTERVAL '7 days')`, groupID, catalogID)
+			WHERE h.group_id = $1
+			  AND h.sent_at > now() - INTERVAL '7 days'
+			  AND (
+			      h.dedup_key = (SELECT dedup_key FROM catalog WHERE id = $2)
+			      OR EXISTS (
+			          SELECT 1 FROM catalog c2
+			          WHERE c2.dedup_key = h.dedup_key
+			            AND lower(btrim(c2.title)) = (
+			                SELECT lower(btrim(title)) FROM catalog WHERE id = $2)
+			            AND btrim(coalesce(c2.title,'')) <> '')
+			  ))`, groupID, catalogID)
 	return exists
 }
 

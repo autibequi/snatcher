@@ -182,6 +182,17 @@ func loadCandidates(ctx context.Context, db *sqlx.DB, groupID int64, threshold f
 		      SELECT 1 FROM group_sent_history h
 		      WHERE h.group_id = $1 AND h.dedup_key = c.dedup_key
 		        AND h.sent_at > now() - INTERVAL '7 days')
+		  -- Anti-repeat por TÍTULO normalizado (4ª fonte de duplicata): produtos-irmãos
+		  -- do mesmo vendedor (ex.: "YASDA" com vários ASIN/dedup_key) têm a mesma cara
+		  -- pro usuário. Se um título igual já foi pro grupo em 7d, segura — evita floodar
+		  -- o grupo com variações que parecem a mesma promo.
+		  AND COALESCE(NULLIF(btrim(c.title), ''), '') <> ''
+		  AND NOT EXISTS (
+		      SELECT 1 FROM group_sent_history h
+		      JOIN catalog c2 ON c2.dedup_key = h.dedup_key
+		      WHERE h.group_id = $1
+		        AND lower(btrim(c2.title)) = lower(btrim(c.title))
+		        AND h.sent_at > now() - INTERVAL '7 days')
 		  AND NOT EXISTS (
 		      SELECT 1 FROM send_queue q
 		      WHERE q.group_id = $1 AND q.catalog_id = c.id
