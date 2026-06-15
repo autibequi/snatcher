@@ -476,6 +476,26 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	}
 }
 
+// alreadySentToGroup informa se o produto (catalogID) já foi enviado a este grupo
+// nos últimos 7 dias, casando por dedup_key (cobre o mesmo produto re-scraped com
+// catalog_id diferente). É a defesa de idempotência contra re-entrega do reaper.
+func alreadySentToGroup(ctx context.Context, db *sqlx.DB, groupID, catalogID int64) bool {
+	var exists bool
+	_ = db.GetContext(ctx, &exists, `
+		SELECT EXISTS(
+			SELECT 1 FROM group_sent_history h
+			JOIN catalog c ON c.dedup_key = h.dedup_key
+			WHERE h.group_id = $1 AND c.id = $2
+			  AND h.sent_at > now() - INTERVAL '7 days')`, groupID, catalogID)
+	return exists
+}
+
+// markDuplicate finaliza um job que seria uma duplicata SEM reenviar nem gravar
+// send_log (não é um envio real). Status 'skipped_dup' deixa rastro pra auditoria.
+func markDuplicate(ctx context.Context, db *sqlx.DB, qid int64) {
+	_, _ = db.ExecContext(ctx, `UPDATE send_queue SET status='skipped_dup' WHERE id=$1`, qid)
+}
+
 // markInvalid marca um item da send_queue como 'invalid' — usado quando o produto
 // não tem desconto real (price_original NULL ou <= price_current). Não penaliza a conta
 // pois não é falha de infra.

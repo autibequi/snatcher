@@ -32,13 +32,25 @@ func ShouldEnqueueGroup(ctx context.Context, db *sqlx.DB, groupID int64, cap int
 	if minutesLeft <= 0 {
 		return false
 	}
+	// Cadência: espalha os envios restantes pela janela, MAS com piso de gap mínimo
+	// (tunable min_send_gap_minutes, default 40min → ~1-2 posts/grupo/hora). Sem o
+	// piso, caps altos (25-30) geravam targetGap pequeno → rajada/spam. O *0.5 antigo
+	// (folga) foi removido — o gap agora é duro pra não estourar o ritmo.
+	var minGap float64
+	_ = db.GetContext(ctx, &minGap, `SELECT get_param('min_send_gap_minutes','global',NULL)`)
+	if minGap <= 0 {
+		minGap = 40
+	}
 	targetGap := float64(minutesLeft) / float64(remaining)
+	if targetGap < minGap {
+		targetGap = minGap
+	}
 
 	sinceLast := 999.0
 	if lastSent != nil {
 		sinceLast = time.Since(*lastSent).Minutes()
 	}
-	return sinceLast >= targetGap*0.5
+	return sinceLast >= targetGap
 }
 
 // minutesUntilWindowEnd foi movida para window.go — delegate

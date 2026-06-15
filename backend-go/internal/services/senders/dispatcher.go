@@ -245,6 +245,17 @@ func processJob(ctx context.Context, db *sqlx.DB, job *sendJob, workerID string,
 		return
 	}
 
+	// Idempotência anti-duplicata: se este produto (por dedup_key) já foi enviado a
+	// este grupo nos últimos 7d, NÃO reenvia — só finaliza o job. Blinda contra o
+	// reaper/Reclaim re-claimando um job cujo envio já chegou ao WhatsApp (a mesma
+	// promo NUNCA pode aparecer 2× no grupo). Casa por dedup_key, então cobre também
+	// o mesmo produto re-scraped com catalog_id diferente (mesmo dedup_key).
+	if alreadySentToGroup(ctx, db, job.GroupID, catalogID) {
+		slog.Info("dispatcher.skip_duplicate", "qid", job.ID, "group", job.GroupID, "catalog", catalogID)
+		markDuplicate(ctx, db, job.ID)
+		return
+	}
+
 	resolvedDomainID, err := sendViaEvolution(ctx, db, job.ModemID, job.GroupID, catalogID, accountID, templateID, domainID)
 	if err != nil {
 		slog.Warn("dispatcher.send_failed", "qid", job.ID, "worker", workerID, "err", err)
