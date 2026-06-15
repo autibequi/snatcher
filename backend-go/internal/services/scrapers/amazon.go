@@ -103,7 +103,14 @@ func parseAmazonSearchResults(doc *goquery.Document, minVal, maxVal float64) []p
 			}
 		}
 
-		img, _ := sel.Find("img.s-image").First().Attr("src")
+		imgSel := sel.Find("img.s-image").First()
+		img, _ := imgSel.Attr("src")
+		// Título descritivo: vendedores às vezes põem só a marca/loja no <h2> (ex.:
+		// "YASDA"), enquanto o alt da imagem carrega o nome completo do produto. Quando
+		// o h2 é fraco, prefere o alt — assim o dedup por título não confunde produtos
+		// distintos como a mesma promo (4ª fonte de duplicata).
+		imgAlt := strings.TrimSpace(imgSel.AttrOr("alt", ""))
+		title = bestAmazonTitle(title, imgAlt)
 
 		if title == "" || price == 0 || link == "" {
 			return
@@ -152,6 +159,26 @@ func parseAmazonSearchResults(doc *goquery.Document, minVal, maxVal float64) []p
 		})
 	})
 	return items
+}
+
+// bestAmazonTitle escolhe o título mais descritivo entre o do bloco <h2> e o alt da
+// imagem. O h2 às vezes traz só a marca/loja (curto, 1-2 palavras); o alt costuma ter
+// o nome completo. Se o h2 é fraco (<20 chars ou <4 palavras) e o alt é mais rico,
+// usa o alt. Cap em 200 chars pra caber no catálogo/template.
+func bestAmazonTitle(h2, alt string) string {
+	h2 = strings.TrimSpace(h2)
+	alt = strings.TrimSpace(alt)
+	chosen := h2
+	if alt != "" {
+		weak := len([]rune(h2)) < 20 || len(strings.Fields(h2)) < 4
+		if h2 == "" || (weak && len(alt) > len(h2)) {
+			chosen = alt
+		}
+	}
+	if r := []rune(chosen); len(r) > 200 {
+		chosen = strings.TrimSpace(string(r[:200]))
+	}
+	return chosen
 }
 
 func (s *AmazonScraper) Provider() string { return "amazon" }

@@ -82,3 +82,22 @@ func TestParseAmazonSearchResults_PrecoDeIgualOuMenorIgnorado(t *testing.T) {
 		t.Errorf("preço de == atual deve ser ignorado (0), got %v", m.OriginalPrice)
 	}
 }
+
+// TestBestAmazonTitle cobre a 4ª fonte de duplicata: h2 fraco (marca/loja) vs alt rico.
+func TestBestAmazonTitle(t *testing.T) {
+	cases := []struct {
+		name, h2, alt, want string
+	}{
+		{"h2 fraco usa alt", "YASDA", "YASDA Blusa Feminina Cropped Gola Alta Tricô Preto", "YASDA Blusa Feminina Cropped Gola Alta Tricô Preto"},
+		{"h2 descritivo mantem", "Whey Protein Concentrado 1kg Growth", "Growth", "Whey Protein Concentrado 1kg Growth"},
+		{"alt vazio mantem h2", "YASDA", "", "YASDA"},
+		{"h2 vazio usa alt", "", "Camiseta Masculina Algodão", "Camiseta Masculina Algodão"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := bestAmazonTitle(c.h2, c.alt); got != c.want {
+				t.Errorf("bestAmazonTitle(%q,%q)=%q want %q", c.h2, c.alt, got, c.want)
+			}
+		})
+	}
+}
