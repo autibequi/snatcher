@@ -1,4 +1,3 @@
-import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, ArrowRight } from '../../lib/icons'
 import type { Alerta } from '../../lib/api/health'
@@ -16,6 +15,9 @@ const SEVERITY_ORDER: Record<string, number> = {
 // Retorna undefined se não conseguir inferir rota navegável.
 function alertNavTarget(action: string): string | undefined {
   const lower = action.toLowerCase()
+  if (lower.includes('scraper') || lower.includes('scheduler') || lower.includes('análise') || lower.includes('analise')) {
+    return '/admin/scrapers'
+  }
   if (lower.includes('modem') || lower.includes('sender') || lower.includes('distribuição') || lower.includes('distribuicao')) {
     return '/admin/senders'
   }
@@ -24,6 +26,12 @@ function alertNavTarget(action: string): string | undefined {
   }
   if (lower.includes('conta') || lower.includes('whatsapp') || lower.includes('wa')) {
     return '/admin/senders'
+  }
+  if (lower.includes('afiliado')) {
+    return '/affiliates'
+  }
+  if (lower.includes('configurações') || lower.includes('configuracoes')) {
+    return '/settings'
   }
   return undefined
 }

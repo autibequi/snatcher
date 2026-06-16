@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
 import { rateColor as rateColorToken, statusBg } from '../lib/uiTokens'
 
@@ -76,9 +77,38 @@ function truncate(s: string, max = 60): string {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
 
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+type Tab = 'health' | 'configs' | 'logs'
+
+const VALID_TABS = new Set<Tab>(['health', 'configs', 'logs'])
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'health',  label: 'Health' },
+  { id: 'configs', label: 'Configs' },
+  { id: 'logs',    label: 'Extraction Logs' },
+]
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AdminScrapers() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const tab: Tab =
+    tabParam && VALID_TABS.has(tabParam as Tab) ? (tabParam as Tab) : 'health'
+
+  const setTab = (t: Tab) => {
+    setSearchParams(
+      prev => {
+        const p = new URLSearchParams(prev)
+        if (t === 'health') p.delete('tab')
+        else p.set('tab', t)
+        return p
+      },
+      { replace: true },
+    )
+  }
+
   // Health
   const [health, setHealth] = useState<HealthRow[]>([])
   const [healthLoading, setHealthLoading] = useState(true)
@@ -189,11 +219,30 @@ export default function AdminScrapers() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-10">
+    <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 space-y-6">
       <h1 className="text-2xl font-bold">Scrapers Admin</h1>
 
-      {/* ── Section 1: Health ──────────────────────────────────────────────── */}
-      <section>
+      {/* ── Tab bar ───────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={[
+              'px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors shrink-0',
+              tab === t.id
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-3 hover:text-fg',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Health ───────────────────────────────────────────────────── */}
+      {tab === 'health' && <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Health (mv_scraper_health)</h2>
           <button
@@ -237,10 +286,10 @@ export default function AdminScrapers() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
-      {/* ── Section 2: Active Configs ──────────────────────────────────────── */}
-      <section>
+      {/* ── Tab: Configs ──────────────────────────────────────────────────── */}
+      {tab === 'configs' && <section>
         <div className="flex items-center gap-4 mb-3">
           <h2 className="text-lg font-semibold">Configs</h2>
           <div className="flex gap-1">
@@ -333,10 +382,10 @@ export default function AdminScrapers() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
-      {/* ── Section 3: Extraction Logs ─────────────────────────────────────── */}
-      <section>
+      {/* ── Tab: Logs ─────────────────────────────────────────────────────── */}
+      {tab === 'logs' && <section>
         <h2 className="text-lg font-semibold mb-3">Extraction Logs</h2>
 
         <div className="flex flex-wrap gap-3 mb-4 items-end">
@@ -413,7 +462,7 @@ export default function AdminScrapers() {
         {!logsLoading && logs.length === 0 && (
           <p className="text-fg-4 text-sm">Use os filtros acima e clique Buscar para carregar logs.</p>
         )}
-      </section>
+      </section>}
 
       {/* ── Modal: Edit Selector ───────────────────────────────────────────── */}
       {editModal && (
