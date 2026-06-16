@@ -258,16 +258,21 @@ func fetchScanStatus(db *sqlx.DB, ctx context.Context) ScanStatus {
 	result := ScanStatus{}
 
 	// Busca a coleta mais recente da materialized view.
+	// to_char garante formato ISO 8601 (YYYY-MM-DDThh:mm:ss) independente do timezone da sessão,
+	// evitando que TIMESTAMPTZ::text produza "2026-01-02 10:30:45+00" (espaço, não T) que
+	// quebra os dois formatos esperados pelo time.Parse abaixo.
 	var row scanHealthRow
 	err := db.GetContext(ctx, &row, `
-		SELECT computed_at::text AS computed_at
+		SELECT to_char(computed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') AS computed_at
 		FROM mv_scraper_health
 		ORDER BY computed_at DESC
 		LIMIT 1
 	`)
 	if err != nil {
-		// Sem dados na MV = nenhuma coleta registrada.
+		// Sem dados na MV = nenhuma coleta registrada — trata como stale para
+		// que o alerta dispare (sem dados é tão ruim quanto dados antigos).
 		result.Rodando = false
+		result.Stale = true
 		return result
 	}
 
