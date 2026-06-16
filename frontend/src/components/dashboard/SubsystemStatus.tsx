@@ -64,7 +64,7 @@ function MiniCard({ label, tone, children }: MiniCardProps) {
   return (
     <div className={`flex flex-col gap-1 rounded-lg border p-3 ${toneClasses(tone)}`}>
       <span className="text-2xs font-semibold uppercase tracking-wide text-fg-3">{label}</span>
-      <div className={`flex items-baseline gap-1 text-sm font-medium ${labelToneClass(tone)}`}>
+      <div className={`flex min-w-0 items-baseline gap-1 text-sm font-medium ${labelToneClass(tone)}`}>
         {children}
       </div>
     </div>
@@ -179,7 +179,7 @@ export function SubsystemStatus({ data, now }: SubsystemStatusProps) {
         {cbEntries.length === 0 ? (
           <span className="text-xs text-fg-3">Nenhum</span>
         ) : (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex min-w-0 w-full flex-wrap gap-1">
             {cbEntries.map(([upstream, state]) => (
               <span
                 key={upstream}
@@ -187,8 +187,7 @@ export function SubsystemStatus({ data, now }: SubsystemStatusProps) {
                 title={`${upstream}: ${state}`}
               >
                 <Server className="h-2.5 w-2.5" />
-                <span className="max-w-[6rem] truncate font-mono">{upstream}</span>
-                <span>{state}</span>
+                <span className="max-w-[7rem] truncate font-mono">{upstream}</span>
               </span>
             ))}
           </div>
