@@ -418,6 +418,43 @@ func markSent(ctx context.Context, db *sqlx.DB, qid, groupID int64, catalogID *i
 	_ = tx.Commit()
 }
 
+// isBanIndicativeError classifica o erro como indicativo de ban/bloqueio WA.
+// Erros transitórios (rede, timeout, servidor 5xx) retornam false e NÃO devem
+// penalizar consecutive_failures da conta — são falhas de infra, não do WA.
+// Erros WA reais (4xx exceto 429, sessão fechada) retornam true e contam para quarentena.
+func isBanIndicativeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Contexto cancelado/expirado: sempre transitório.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	// HTTP 429 = rate limit transitório — backoff, não quarentena.
+	if strings.Contains(msg, "status 429") {
+		return false
+	}
+	// HTTP 5xx = falha do servidor Evolution/infra: transitório.
+	for _, code := range []string{"status 500", "status 502", "status 503", "status 504"} {
+		if strings.Contains(msg, code) {
+			return false
+		}
+	}
+	// Erros de rede/conectividade: transitórios.
+	for _, sig := range []string{
+		"timeout", "timed out", "connection refused", " eof", "dial tcp",
+		"no route to host", "connection reset by peer",
+		"i/o timeout", "request canceled", "tls handshake",
+	} {
+		if strings.Contains(msg, sig) {
+			return false
+		}
+	}
+	// Tudo mais (HTTP 4xx não-429, erros de sessão WA): ban-indicativo.
+	return true
+}
+
 func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64, sendErr error) {
 	payload, _ := json.Marshal(map[string]any{"error": sendErr.Error()})
 	tx, err := db.BeginTxx(ctx, nil)
@@ -426,26 +463,33 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	}
 	defer tx.Rollback() //nolint:errcheck
 	_, _ = tx.ExecContext(ctx, "UPDATE send_queue SET status='failed' WHERE id=$1", qid)
-	_, _ = tx.ExecContext(ctx, "UPDATE accounts SET consecutive_failures = consecutive_failures+1 WHERE id=$1", accountID)
+
+	// Só penaliza a conta se o erro é ban-indicativo (WA/protocolo).
+	// Erros de rede ou infra (timeout, 5xx) não incrementam consecutive_failures.
+	banIndicative := isBanIndicativeError(sendErr)
 	var failures int
-	_ = tx.GetContext(ctx, &failures, "SELECT consecutive_failures FROM accounts WHERE id=$1", accountID)
-	// Threshold via tunable_params; default 5 (era 3, aumentado para tolerar falhas transientes da Evolution API).
 	var quarantineThreshold float64
-	_ = db.GetContext(ctx, &quarantineThreshold, `SELECT get_param('quarantine_threshold','global',NULL)`)
-	if quarantineThreshold <= 0 {
-		quarantineThreshold = 5
-	}
-	wentQuarantine := float64(failures) >= quarantineThreshold
-	if wentQuarantine {
-		_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine' WHERE id=$1", accountID)
-		_, _ = tx.ExecContext(ctx, `
-			INSERT INTO ban_events (account_id, modem_id, reason, raw_response)
-			VALUES ($1, $2, 'consecutive_failures>='||$3, $4)
-		`, accountID, modemID, int(quarantineThreshold), payload)
+	var wentQuarantine bool
+
+	if banIndicative {
+		_, _ = tx.ExecContext(ctx, "UPDATE accounts SET consecutive_failures = consecutive_failures+1 WHERE id=$1", accountID)
+		_ = tx.GetContext(ctx, &failures, "SELECT consecutive_failures FROM accounts WHERE id=$1", accountID)
+		_ = db.GetContext(ctx, &quarantineThreshold, `SELECT get_param('quarantine_threshold','global',NULL)`)
+		if quarantineThreshold <= 0 {
+			quarantineThreshold = 5
+		}
+		wentQuarantine = float64(failures) >= quarantineThreshold
+		if wentQuarantine {
+			_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine' WHERE id=$1", accountID)
+			_, _ = tx.ExecContext(ctx, `
+				INSERT INTO ban_events (account_id, modem_id, reason, raw_response)
+				VALUES ($1, $2, 'consecutive_failures>='||$3, $4)
+			`, accountID, modemID, int(quarantineThreshold), payload)
+		}
 	}
 	_ = tx.Commit()
 
-	// Registra falha no send_log para aparecer no Activity → visibilidade de erros silenciosos.
+	// Registra falha no send_log para aparecer no Activity — independente do tipo de erro.
 	_, _ = db.ExecContext(ctx, `
 		INSERT INTO send_log (send_queue_id, group_id, account_id, catalog_id, template_id, domain_id, status, error_code, sent_at)
 		SELECT $1, group_id, $2, catalog_id, template_id, domain_id, 'failed', $3, now()
@@ -468,11 +512,26 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 		accountNotifier.Notify(notifier.KindAccountIssue, body, fmt.Sprintf("quarantine:%d", accountID), 6*time.Hour)
 	}
 
-	// se 3+ bans/24h no mesmo modem → pausa modem (era 2, aumentado para menos agressividade)
+	if !banIndicative {
+		return
+	}
+
+	// 3+ bans/24h no mesmo modem → pausa o modem e alerta o operador.
 	var bans24h int
 	_ = db.GetContext(ctx, &bans24h, `SELECT COUNT(*) FROM ban_events WHERE modem_id=$1 AND detected_at > now()-INTERVAL '24h'`, modemID)
 	if bans24h >= 3 {
 		_, _ = db.ExecContext(ctx, `UPDATE modems SET status='paused', paused_until=now()+INTERVAL '1 hour', paused_reason='3+ bans/24h' WHERE id=$1`, modemID)
+		if accountNotifier != nil {
+			errStr := sendErr.Error()
+			if len(errStr) > 280 {
+				errStr = errStr[:280] + "…"
+			}
+			alertBody := fmt.Sprintf(
+				"Modem #%d pausado por 1h — %d bans nas últimas 24h.\nÚltimo erro: %s",
+				modemID, bans24h, errStr,
+			)
+			accountNotifier.Notify(notifier.KindAccountIssue, alertBody, fmt.Sprintf("modem-paused:%d", modemID), 2*time.Hour)
+		}
 	}
 }
 
