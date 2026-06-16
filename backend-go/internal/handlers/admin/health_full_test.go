@@ -75,7 +75,8 @@ func TestBuildAlerts_ContaDesconectadaGeraCritical(t *testing.T) {
 	}
 }
 
-// TestBuildAlerts_ScanParadoGeraWarning verifica que scan sem coleta recente gera warning.
+// TestBuildAlerts_ScanParadoGeraWarning verifica que scan sem coleta recente (> 2h) gera warning.
+// Rodando=false sozinho não dispara: o alerta depende de Stale=true (coleta > 2h ausente).
 func TestBuildAlerts_ScanParadoGeraWarning(t *testing.T) {
 	snapshot := HealthSnapshot{
 		QueueDepth:     0,
@@ -83,7 +84,8 @@ func TestBuildAlerts_ScanParadoGeraWarning(t *testing.T) {
 		CircuitBreaker: map[string]string{},
 		ContasWA:       ContasWAStatus{Total: 1, PrimaryConectadas: 1},
 		Scan: ScanStatus{
-			Rodando:            false, // scan parado
+			Rodando:            false, // parado (sem coleta há > 30min)
+			Stale:              true,  // sem coleta há > 2h — threshold do alerta
 			MarketplacesAtivos: 1,
 		},
 		Janela: JanelaStatus{Aberta: true, SendStartHour: 8, SendEndHour: 22},

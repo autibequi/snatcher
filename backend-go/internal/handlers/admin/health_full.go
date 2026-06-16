@@ -38,9 +38,12 @@ type ContasWAStatus struct {
 
 // ScanStatus resume o estado do scraper/coletor.
 type ScanStatus struct {
-	Rodando           bool    `json:"rodando"`
-	UltimaColeta      *string `json:"ultima_coleta"`
-	MarketplacesAtivos int    `json:"marketplaces_ativos"`
+	Rodando            bool    `json:"rodando"`
+	UltimaColeta       *string `json:"ultima_coleta"`
+	MarketplacesAtivos int     `json:"marketplaces_ativos"`
+	// Stale é true quando não houve coleta nos últimos 2h (threshold do alerta).
+	// Não serializado — usado apenas internamente pelo motor de alertas.
+	Stale bool `json:"-"`
 }
 
 // JanelaStatus informa se a janela de envio está aberta agora.
@@ -131,13 +134,14 @@ func buildAlerts(s HealthSnapshot) []Alerta {
 		})
 	}
 
-	// Scan parado: scraper sem coleta recente (mv_scraper_health computed_at > 2h).
-	if !s.Scan.Rodando {
+	// Scan stale: scraper sem coleta nos últimos 2h (2× o intervalo padrão da MV).
+	// Usa Stale (não Rodando) — Rodando=false já em 30min, mas alerta só em 2h.
+	if s.Scan.Stale {
 		alertas = append(alertas, Alerta{
 			Severity: "warning",
 			Area:     "Scan",
 			Message:  "Scraper sem coleta recente (> 2h)",
-			Action:   "Verifique o scheduler em Admin › Scan",
+			Action:   "Verifique o scheduler em Análise › Scrapers",
 		})
 	}
 
@@ -276,7 +280,9 @@ func fetchScanStatus(db *sqlx.DB, ctx context.Context) ScanStatus {
 		parsed, err = time.Parse("2006-01-02T15:04:05-07:00", row.ComputedAt)
 	}
 	if err == nil {
-		result.Rodando = time.Since(parsed) < 2*time.Hour
+		age := time.Since(parsed)
+		result.Rodando = age < 30*time.Minute
+		result.Stale = age > 2*time.Hour
 	}
 
 	// Conta marketplaces ativos (sources com enabled=true que têm catalog items).
@@ -322,6 +328,8 @@ func fetchJanelaStatus(db *sqlx.DB, ctx context.Context) JanelaStatus {
 // fetchGruposAtivosSemConta conta grupos status=active que NÃO têm conta
 // primary/backup vinculada via group_admins — espelha o gate HasModem do
 // selection.tick (grupo sem conta nunca dispara automaticamente).
+// Exclui o grupo de notificações (app_config.notifications_group_id): ele é
+// ativo por design mas recebe mensagens pelo notifier, não pelo dispatcher.
 func fetchGruposAtivosSemConta(db *sqlx.DB, ctx context.Context) int {
 	var n int
 	_ = db.GetContext(ctx, &n, `
@@ -334,6 +342,11 @@ func fetchGruposAtivosSemConta(db *sqlx.DB, ctx context.Context) int {
 			JOIN accounts a ON a.id = ga.account_id
 			WHERE ga.group_id = g.id
 			  AND a.status IN ('primary', 'backup')
+		  )
+		  AND g.id NOT IN (
+			SELECT notifications_group_id
+			FROM app_config
+			WHERE notifications_group_id IS NOT NULL
 		  )
 	`)
 	return n
