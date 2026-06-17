@@ -45,6 +45,7 @@ const (
 	KindLoopFailure        Kind = "loop-failure"
 	KindJonfreyJobQueued   Kind = "jonfrey-job-queued"
 	KindGenericInfo        Kind = "info"
+	KindDailyReport        Kind = "daily-report"
 )
 
 // Notifier é a fachada usada pelos hooks. Implementações reais vivem aqui;
@@ -190,6 +191,8 @@ func labelFor(k Kind) string {
 		return "Loop LLM"
 	case KindJonfreyJobQueued:
 		return "Jonfrey · Fila"
+	case KindDailyReport:
+		return "Relatório diário"
 	default:
 		return "Snatcher"
 	}

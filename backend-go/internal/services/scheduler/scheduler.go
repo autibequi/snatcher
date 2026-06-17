@@ -145,6 +145,25 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Relatório diário de métricas — manda um resumo (posts enviados, cliques, CTR,
+	// conversões, receita, bans, top grupos) pro grupo de alertas (Settings →
+	// Notificações) à meia-noite BRT. Cron "0 3 * * *" = 03:00 UTC = 00:00
+	// America/Sao_Paulo (o scheduler roda em UTC; mesma convenção dos demais crons).
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("0 3 * * *", false),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: daily_metrics_report started")
+				runDailyMetricsReport(context.Background(), sc.db, sc.notif)
+			}),
+			gocron.WithName("daily_metrics_report"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Job diário de reset de budget LLM — zera daily_spent_usd à meia-noite UTC (00:00).
 	// Usa BudgetGuard.ResetAll() que atualiza também last_reset_at.
 	if sc.db != nil {
