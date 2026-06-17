@@ -15,6 +15,7 @@ import (
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/services/notifier"
 	"snatcher/backendv2/internal/services/pipeline"
+	"snatcher/backendv2/internal/services/reports"
 	"snatcher/backendv2/internal/services/selection"
 	"snatcher/backendv2/internal/services/senders"
 
@@ -154,7 +155,9 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 			gocron.CronJob("0 3 * * *", false),
 			gocron.NewTask(func() {
 				slog.Info("scheduler: daily_metrics_report started")
-				runDailyMetricsReport(context.Background(), sc.db, sc.notif)
+				if _, repErr := reports.RunDailyMetricsReport(context.Background(), sc.db, sc.notif, false); repErr != nil {
+					slog.Error("scheduler: daily_metrics_report error", "err", repErr)
+				}
 			}),
 			gocron.WithName("daily_metrics_report"),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),

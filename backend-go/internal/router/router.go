@@ -318,6 +318,8 @@ func Build(
 		r.Get("/api/dashboard/upcoming-dispatches", dash.UpcomingDispatches)
 		r.Get("/api/dashboard/recommendation", dash.Recommendation)
 		r.Get("/api/dashboard/automation-diagnostics", dash.AutomationDiagnostics)
+		r.Post("/api/dashboard/report-now", dash.GenerateReport)
+		r.Get("/api/dashboard/last-report", dash.LastReport)
 
 		// Team (operadores)
 		r.Get("/api/team", team.List)

@@ -13,6 +13,7 @@ import (
 	"snatcher/backendv2/internal/services/llm"
 	"snatcher/backendv2/internal/models"
 	"snatcher/backendv2/internal/services/notifier"
+	"snatcher/backendv2/internal/services/reports"
 	store "snatcher/backendv2/internal/repositories"
 
 	"github.com/jmoiron/sqlx"
@@ -43,6 +44,46 @@ func NewDashboardHandler(st store.Store, db *sqlx.DB) *DashboardHandler {
 
 func (h *DashboardHandler) SetLLMFn(fn func() llm.Client) { h.llmFn = fn }
 func (h *DashboardHandler) SetNotifier(n *notifier.Notifier) { h.notif = n }
+
+// GenerateReport — POST /api/dashboard/report-now. Gera o relatório de métricas
+// do dia AGORA (manual, sem dedup), dispara pro grupo de alertas e persiste como
+// "último relatório". Retorna o preview do texto + se há grupo de alertas configurado.
+func (h *DashboardHandler) GenerateReport(w http.ResponseWriter, r *http.Request) {
+	preview, err := reports.RunDailyMetricsReport(r.Context(), h.db, h.notif, true)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sentToGroup := false
+	if cfg, cfgErr := h.store.GetConfig(); cfgErr == nil {
+		sentToGroup = cfg.NotificationsGroupID.Valid && cfg.NotificationsGroupID.Int64 > 0
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"preview":       preview,
+		"sent_to_group": sentToGroup,
+	})
+}
+
+// LastReport — GET /api/dashboard/last-report. Retorna o último relatório diário
+// gerado (cron ou manual) pra exibir como referência no dashboard. null se nenhum.
+func (h *DashboardHandler) LastReport(w http.ResponseWriter, r *http.Request) {
+	var row struct {
+		ReportText  string    `db:"report_text" json:"report_text"`
+		Source      string    `db:"source" json:"source"`
+		Sent        bool      `db:"sent" json:"sent"`
+		GeneratedAt time.Time `db:"generated_at" json:"generated_at"`
+	}
+	if err := h.db.GetContext(r.Context(), &row,
+		`SELECT report_text, source, sent, generated_at FROM last_daily_report WHERE id = 1`); err != nil {
+		// Sem relatório ainda (ErrNoRows) ou tabela indisponível → null; a UI mostra empty state.
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, row)
+}
 
 // GET /api/dashboard/kpis — retorna KPIs com deltas WoW + saúde anti-ban.
 //

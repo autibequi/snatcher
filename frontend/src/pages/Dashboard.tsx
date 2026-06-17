@@ -1,8 +1,9 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Button, KpiCard, PageHeader } from '../components/ui'
+import { Button, KpiCard, PageHeader, toast } from '../components/ui'
 import { OperationInbox } from '../components/dashboard/OperationInbox'
 import { RecommendationCard } from '../components/dashboard/RecommendationCard'
+import { LastReportCard } from '../components/dashboard/LastReportCard'
 import { AlertsStrip } from '../components/dashboard/AlertsStrip'
 import { SubsystemStatus } from '../components/dashboard/SubsystemStatus'
 import { apiClient } from '../lib/apiClient'
@@ -118,6 +119,24 @@ export default function Dashboard() {
         )
       : '—'
 
+  // Gera o relatório de métricas do dia AGORA e dispara pro grupo de alertas (WhatsApp).
+  // Ao concluir, invalida a query do card "Último relatório" pra ele atualizar na hora.
+  const reportMutation = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post('/api/dashboard/report-now')
+        .then(r => r.data as { ok: boolean; preview: string; sent_to_group: boolean }),
+    onSuccess: data => {
+      if (data.sent_to_group) {
+        toast('Relatório gerado e enviado pro grupo de alertas ✅', 'ok')
+      } else {
+        toast('Relatório gerado, mas não há grupo de alertas configurado (Configurações → Notificações).', 'warn')
+      }
+      qc.invalidateQueries({ queryKey: ['dashboard', 'last-report'] })
+    },
+    onError: () => toast('Falha ao gerar o relatório.', 'error'),
+  })
+
   function handleRefresh() {
     qc.invalidateQueries({ queryKey: ['dashboard', 'kpis'] })
     qc.invalidateQueries({ queryKey: ['dashboard', 'inbox-v2'] })
@@ -174,7 +193,19 @@ export default function Dashboard() {
         <Button variant="ghost" size="sm" type="button" onClick={() => navigate('/activity')}>
           Ver activity →
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={reportMutation.isPending}
+          onClick={() => reportMutation.mutate()}
+        >
+          {reportMutation.isPending ? '⏳ Gerando…' : '📊 Gerar relatório'}
+        </Button>
       </div>
+
+      {/* ── 4b. Último relatório diário (referência) ─────────────────────────── */}
+      <LastReportCard />
 
       {/* ── 5. KPIs — responsivos (2 col mobile / 4 col desktop) ─────────────── */}
       <div className={responsiveKpiGrid}>

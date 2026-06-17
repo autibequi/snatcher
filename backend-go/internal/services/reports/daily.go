@@ -1,4 +1,12 @@
-package scheduler
+// Package reports monta e dispara relatórios operacionais derivados das tabelas
+// de métricas (clicks, send_log, conversions, ban_events).
+//
+// Mora num package neutro de propósito: tanto o scheduler (job diário) quanto o
+// handler admin (botão "gerar agora") precisam disparar o relatório. Não pode
+// viver em services/jobs porque repositories importa jobs e notifier importa
+// repositories → jobs→notifier fecharia um import cycle. reports só depende de
+// notifier + sqlx, e ninguém abaixo dele o importa.
+package reports
 
 import (
 	"context"
@@ -12,21 +20,18 @@ import (
 	"snatcher/backendv2/internal/services/notifier"
 )
 
-// runDailyMetricsReport agrega as métricas das últimas 24h e envia um resumo
-// formatado pro grupo de alertas (Settings → Notificações) via Notifier.
+// RunDailyMetricsReport agrega as métricas das últimas 24h, monta o resumo e
+// (se houver notifier + grupo configurado) envia pro grupo de alertas via WhatsApp.
+// Retorna o texto do resumo (pra preview na UI) e erro só se a agregação falhar.
 //
-// Mora no package scheduler (e não em services/jobs) de propósito: o jobs é
-// importado por repositories (job_persistence.go), e notifier importa
-// repositories — então jobs → notifier fecharia um import cycle. O scheduler é
-// o topo da cadeia e já depende de ambos, sendo o lar natural deste job.
+// manual=true (botão da UI): envia SEMPRE, sem dedup — o usuário pediu agora.
+// manual=false (cron meia-noite BRT): usa dedup diário pra não duplicar em re-deploy.
 //
-// Roda à meia-noite BRT (cron "0 3 * * *" = 03:00 UTC, pois o scheduler usa UTC).
-// A janela de 24h fecha exatamente o dia BRT que acabou. Best-effort: nunca
-// quebra o scheduler — erros viram slog. Sem grupo configurado, o Notifier é no-op.
-func runDailyMetricsReport(ctx context.Context, db *sqlx.DB, notif *notifier.Notifier) {
-	if db == nil || notif == nil {
-		slog.Warn("metrics_report: db ou notifier nil — skip")
-		return
+// Best-effort no envio: o Notify é async e nunca quebra o caller; sem grupo
+// configurado vira no-op silencioso (mas o preview ainda é retornado).
+func RunDailyMetricsReport(ctx context.Context, db *sqlx.DB, notif *notifier.Notifier, manual bool) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("reports: db nil")
 	}
 
 	loc, err := time.LoadLocation("America/Sao_Paulo")
@@ -62,11 +67,10 @@ func runDailyMetricsReport(ctx context.Context, db *sqlx.DB, notif *notifier.Not
 			 WHERE detected_at >= NOW() - INTERVAL '24 hours') AS bans
 	`)
 	if err != nil {
-		slog.Error("metrics_report: totals query", "err", err)
-		return
+		return "", fmt.Errorf("reports: totals query: %w", err)
 	}
 
-	// Top 3 grupos por cliques no dia (nome via JOIN em groups).
+	// Top 3 grupos por cliques no dia (nome via JOIN em groups). Não-fatal.
 	type topGroup struct {
 		Name   string `db:"name"`
 		Clicks int64  `db:"clicks"`
@@ -82,8 +86,7 @@ func runDailyMetricsReport(ctx context.Context, db *sqlx.DB, notif *notifier.Not
 		ORDER BY clicks DESC
 		LIMIT 3
 	`); topErr != nil {
-		// Não-fatal: o resumo principal vale sem o ranking.
-		slog.Warn("metrics_report: top groups query", "err", topErr)
+		slog.Warn("reports: top groups query", "err", topErr)
 	}
 
 	ctr := 0.0
@@ -108,10 +111,39 @@ func runDailyMetricsReport(ctx context.Context, db *sqlx.DB, notif *notifier.Not
 			fmt.Fprintf(&b, "%d. %s — %d\n", i+1, g.Name, g.Clicks)
 		}
 	}
+	body := b.String()
 
-	// dedupKey por dia evita duplicata se o job rodar duas vezes (ex.: re-deploy).
-	notif.Notify(notifier.KindDailyReport, b.String(), "daily-report:"+day, 23*time.Hour)
-	slog.Info("metrics_report: resumo enviado",
-		"day", day, "sends", t.Sends, "clicks", t.Clicks, "ctr_pct", ctr,
-		"conversions", t.Conversions, "revenue", t.Revenue, "bans", t.Bans)
+	if notif != nil {
+		// dedupKey vazio no modo manual = envia sempre; no cron, 1x/dia.
+		dedupKey := ""
+		if !manual {
+			dedupKey = "daily-report:" + day
+		}
+		notif.Notify(notifier.KindDailyReport, body, dedupKey, 23*time.Hour)
+	} else {
+		slog.Warn("reports: notifier nil — preview gerado mas não enviado")
+	}
+
+	// Persiste o último relatório (single-row id=1) pra exibir como referência no
+	// dashboard. Captura tanto o cron quanto o botão manual (ponto único de geração).
+	source := "cron"
+	if manual {
+		source = "manual"
+	}
+	if _, dbErr := db.ExecContext(ctx, `
+		INSERT INTO last_daily_report (id, report_text, source, sent, generated_at)
+		VALUES (1, $1, $2, $3, now())
+		ON CONFLICT (id) DO UPDATE
+		    SET report_text  = EXCLUDED.report_text,
+		        source       = EXCLUDED.source,
+		        sent         = EXCLUDED.sent,
+		        generated_at = EXCLUDED.generated_at
+	`, body, source, notif != nil); dbErr != nil {
+		slog.Warn("reports: persist last_daily_report", "err", dbErr)
+	}
+
+	slog.Info("reports: daily metrics report",
+		"manual", manual, "day", day, "sends", t.Sends, "clicks", t.Clicks,
+		"ctr_pct", ctr, "conversions", t.Conversions, "revenue", t.Revenue, "bans", t.Bans)
+	return body, nil
 }
