@@ -42,8 +42,14 @@ func RunQuarantineAutoLiftOnce(ctx context.Context, db *sqlx.DB) (int, error) {
 		}
 
 		if r.SubjectKind == "account" {
+			// 'primary' (não 'active', que nem existe no enum de accounts) — mesma
+			// semântica do resume manual (handlers/admin/senders.go). Zera os
+			// contadores: voltar com consecutive_failures no limite faria a conta
+			// recair na quarentena na primeira falha seguinte. Nunca toca 'banned'.
 			_, _ = db.ExecContext(ctx, `
-				UPDATE accounts SET status = 'active'
+				UPDATE accounts
+				SET status = 'primary', status_changed_at = now(),
+				    consecutive_failures = 0, last_failure_at = NULL
 				WHERE id = $1 AND status = 'quarantine'
 			`, r.SubjectID)
 		}

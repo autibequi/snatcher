@@ -6,13 +6,24 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"snatcher/backendv2/internal/httpx"
 )
+
+// readErrBody extrai um trecho do corpo da resposta de erro da Evolution.
+// O corpo é o que distingue "mídia/conteúdo rejeitado" de "sessão/conta morta"
+// na classificação de isBanIndicativeError — sem ele o classificador decide cego
+// e pune a conta por um 400 que era só uma imagem ruim.
+func readErrBody(resp *http.Response) string {
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	return strings.TrimSpace(string(b))
+}
 
 // SendMediaArgs encapsula args para envio multimodal.
 type SendMediaArgs struct {
@@ -47,7 +58,7 @@ func SendTextWithMedia(ctx context.Context, args SendMediaArgs) error {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
-			return fmt.Errorf("evolution sendText status %d", resp.StatusCode)
+			return fmt.Errorf("evolution sendText status %d: %s", resp.StatusCode, readErrBody(resp))
 		}
 		return nil
 	}
@@ -76,7 +87,7 @@ func SendTextWithMedia(ctx context.Context, args SendMediaArgs) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("evolution sendMedia status %d", resp.StatusCode)
+		return fmt.Errorf("evolution sendMedia status %d: %s", resp.StatusCode, readErrBody(resp))
 	}
 	return nil
 }

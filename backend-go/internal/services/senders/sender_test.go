@@ -28,8 +28,21 @@ func TestIsBanIndicativeError(t *testing.T) {
 		{"evolution 503",          fmt.Errorf("evolution sendText status 503"),             false},
 		{"evolution 504",          fmt.Errorf("evolution sendText status 504"),             false},
 		{"evolution 429",          fmt.Errorf("evolution sendText status 429"),             false},
+		// Conteúdo/mídia rejeitado — NÃO devem punir a conta (problema do envio, não da conta).
+		// Os erros reais de sendMedia chegam pelados (sem corpo) → não há sinal de sessão morta.
+		{"sendMedia 400 pelado",   fmt.Errorf("evolution sendMedia status 400: "),          false},
+		{"sendMedia 400 bad req",  fmt.Errorf("evolution sendMedia status 400: Bad Request"), false},
+		{"sendMedia 404",          fmt.Errorf("evolution sendMedia status 404: "),          false},
+		{"sendMedia 413",          fmt.Errorf("evolution sendMedia status 413: payload too large"), false},
+		{"sendMedia 415",          fmt.Errorf("evolution sendMedia status 415: unsupported media"), false},
+		{"sendMedia 422",          fmt.Errorf("evolution sendMedia status 422: "),          false},
+		// Modem/instância caído — infra do modem, NÃO punir a conta (transitório).
+		{"400 + connection closed", fmt.Errorf("evolution /sendText: status 400 — Connection Closed"), false},
+		{"sendMedia 400 + disc",   fmt.Errorf("evolution sendMedia status 400: disconnected"), false},
+		{"sendMedia 400 + not connected", fmt.Errorf("evolution sendMedia status 400: instance is not connected"), false},
+		{"instance not found",     fmt.Errorf("evolution sendText status 404: instance not found"), false},
 		// Ban-indicativos — DEVEM contar para quarentena
-		{"evolution 400",          fmt.Errorf("evolution /sendText: status 400 — Connection Closed"), true},
+		{"sendMedia 400 + logout", fmt.Errorf("evolution sendMedia status 400: logged out"), true},
 		{"evolution 401",          fmt.Errorf("evolution sendText status 401"),             true},
 		{"evolution 403",          fmt.Errorf("evolution sendText status 403"),             true},
 		{"generic wha error",      errors.New("whatsapp session closed by remote"),         true},

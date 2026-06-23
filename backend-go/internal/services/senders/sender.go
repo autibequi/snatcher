@@ -418,10 +418,54 @@ func markSent(ctx context.Context, db *sqlx.DB, qid, groupID int64, catalogID *i
 	_ = tx.Commit()
 }
 
+// modemDownSignals indicam que o MODEM / instância Evolution caiu (socket fechado,
+// instância desconectada ou inexistente) — infra do modem, NÃO saúde da conta. Quando
+// o modem trava todo envio por ele falha; contar isso como falha-da-conta quarentenaria
+// contas saudáveis em massa (falso positivo central reportado). Tratados como
+// transitórios: a conta segue ativa e volta a enviar sozinha quando o modem reconecta.
+var modemDownSignals = []string{
+	"connection closed", "not connected", "disconnected",
+	"instance not found", "instance does not exist",
+}
+
+// sessionDeadSignals são marcadores de que a SESSÃO/CONTA WhatsApp específica caiu
+// (logout daquele número, não autorizado) — ban real da conta. Esses sim contam para
+// quarentena, independente do status HTTP.
+var sessionDeadSignals = []string{
+	"session closed", "logged out", "logged_out", "loggedout",
+	"unauthorized", "status 401", "status 403",
+}
+
+// contentRejectStatuses são status HTTP em que a Evolution rejeitou a MENSAGEM/MÍDIA
+// (imagem corrompida no cache, base64 grande demais, payload malformado, recurso
+// inexistente) — problema do conteúdo daquele envio, NÃO da saúde da conta. Não
+// devem penalizar consecutive_failures: do contrário uma sequência de imagens ruins
+// derruba uma conta saudável (falso positivo central da quarentena).
+var contentRejectStatuses = []string{"status 400", "status 404", "status 413", "status 415", "status 422"}
+
+// isModemDownError indica que o erro é de modem/instância caída (infra), não da conta.
+// Usado pelo markFailed para não penalizar a conta quando o modem trava.
+func isModemDownError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, sig := range modemDownSignals {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 // isBanIndicativeError classifica o erro como indicativo de ban/bloqueio WA.
-// Erros transitórios (rede, timeout, servidor 5xx) retornam false e NÃO devem
-// penalizar consecutive_failures da conta — são falhas de infra, não do WA.
-// Erros WA reais (4xx exceto 429, sessão fechada) retornam true e contam para quarentena.
+// Ordem de avaliação (do mais transitório ao mais grave):
+//  1. nil / contexto cancelado / 429 / 5xx / rede → transitório (não penaliza).
+//  2. modem/instância caída → transitório (infra do modem, não saúde da conta).
+//  3. sinais de sessão/conta morta no texto → ban (penaliza), mesmo em 4xx —
+//     por isso o corpo da resposta precisa chegar até aqui (ver sender_media.go).
+//  4. 4xx de conteúdo/mídia SEM sinal de sessão → não penaliza (é a mensagem, não a conta).
+//  5. desconhecido → conservador: ban-indicativo (não cega detecção de ban novo).
 func isBanIndicativeError(err error) bool {
 	if err == nil {
 		return false
@@ -451,7 +495,24 @@ func isBanIndicativeError(err error) bool {
 			return false
 		}
 	}
-	// Tudo mais (HTTP 4xx não-429, erros de sessão WA): ban-indicativo.
+	// Modem/instância desconectado: infra do modem, não ban da conta → transitório.
+	// Não penaliza consecutive_failures (a conta está saudável, o modem é que caiu).
+	if isModemDownError(err) {
+		return false
+	}
+	// Sessão/conta morta: ban real do número — avaliado ANTES dos 4xx de conteúdo.
+	for _, sig := range sessionDeadSignals {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	// 4xx de conteúdo/mídia sem sinal de sessão: problema do envio, não da conta.
+	for _, code := range contentRejectStatuses {
+		if strings.Contains(msg, code) {
+			return false
+		}
+	}
+	// Desconhecido (ex.: 4xx não mapeado): conservador — ban-indicativo.
 	return true
 }
 
@@ -472,7 +533,18 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 	var wentQuarantine bool
 
 	if banIndicative {
-		_, _ = tx.ExecContext(ctx, "UPDATE accounts SET consecutive_failures = consecutive_failures+1 WHERE id=$1", accountID)
+		// Decaimento temporal: reinicia a contagem se a última falha foi há mais
+		// que a janela — só falhas agrupadas no tempo acumulam até a quarentena.
+		// Antes o contador só zerava num sucesso, então falhas esparsas (uma por dia)
+		// somavam 5 e quarentenavam uma conta saudável.
+		_, _ = tx.ExecContext(ctx, `
+			UPDATE accounts SET
+				consecutive_failures = CASE
+					WHEN last_failure_at IS NULL OR last_failure_at < now() - INTERVAL '3 hours' THEN 1
+					ELSE consecutive_failures + 1
+				END,
+				last_failure_at = now()
+			WHERE id=$1`, accountID)
 		_ = tx.GetContext(ctx, &failures, "SELECT consecutive_failures FROM accounts WHERE id=$1", accountID)
 		_ = db.GetContext(ctx, &quarantineThreshold, `SELECT get_param('quarantine_threshold','global',NULL)`)
 		if quarantineThreshold <= 0 {
@@ -480,11 +552,19 @@ func markFailed(ctx context.Context, db *sqlx.DB, qid, accountID, modemID int64,
 		}
 		wentQuarantine = float64(failures) >= quarantineThreshold
 		if wentQuarantine {
-			_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine' WHERE id=$1", accountID)
+			_, _ = tx.ExecContext(ctx, "UPDATE accounts SET status='quarantine', status_changed_at=now() WHERE id=$1", accountID)
 			_, _ = tx.ExecContext(ctx, `
 				INSERT INTO ban_events (account_id, modem_id, reason, raw_response)
 				VALUES ($1, $2, 'consecutive_failures>='||$3, $4)
 			`, accountID, modemID, int(quarantineThreshold), payload)
+			// TTL da quarentena: RunQuarantineAutoLiftOnce levanta a conta após 2h
+			// (auto-recovery). Sem esta linha a quarentena ficava órfã — status
+			// 'quarantine' sem evento com quarantine_until → nunca era levantada
+			// automaticamente, travando a conta por dias até resgate manual.
+			_, _ = tx.ExecContext(ctx, `
+				INSERT INTO quarantine_events (subject_kind, subject_id, reason, quarantine_until, payload)
+				VALUES ('account', $1, 'consecutive_failures>='||$2, now() + INTERVAL '2 hours', $3)
+			`, accountID, int(quarantineThreshold), payload)
 		}
 	}
 	_ = tx.Commit()

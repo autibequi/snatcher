@@ -504,6 +504,45 @@ func (sc *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
+	// Quarentena: auto-lift por TTL — levanta contas cujo quarantine_until expirou
+	// (2h após entrar na quarentena), a cada 5min. Recuperação rápida de falso positivo.
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("*/5 * * * *", false),
+			gocron.NewTask(func() {
+				slog.Debug("scheduler: quarantine_auto_lift started")
+				if _, err := jobs.RunQuarantineAutoLiftOnce(context.Background(), sc.db); err != nil {
+					slog.Error("scheduler: quarantine_auto_lift error", "err", err)
+				}
+			}),
+			gocron.WithName("quarantine_auto_lift"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Reset diário de bloqueios — abre quarentenas de conta e pausas de modem à
+	// meia-noite BRT (cron "0 3 * * *" = 03:00 UTC). Rede de segurança redundante
+	// ao auto-lift: nenhuma conta/modem fica desligado por mais de um dia.
+	if sc.db != nil {
+		_, err = sc.s.NewJob(
+			gocron.CronJob("0 3 * * *", false),
+			gocron.NewTask(func() {
+				slog.Info("scheduler: daily_block_reset started")
+				if _, err := jobs.RunDailyBlockResetOnce(context.Background(), sc.db); err != nil {
+					slog.Error("scheduler: daily_block_reset error", "err", err)
+				}
+			}),
+			gocron.WithName("daily_block_reset"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	sc.s.Start()
 	return nil
 }
